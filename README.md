@@ -22,12 +22,14 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
   - `urb2405s-3wr3-datasheet.md` – URB/URA‑3WR3 3 W 隔离 DC/DC 模块手册 Markdown 版（基于 Hi‑Link HLK‑URB_S‑3WR3）。  
   - `urb2405s-6wr3-datasheet.md` – URB/URA‑6WR3 6 W 隔离 DC/DC 模块手册摘要（基于 MORNSUN URB_S‑6WR3 系列）。  
   - `tps55288-datasheet.md` – TI TPS55288 Buck‑Boost 转换器手册 Markdown 版。  
+  - `tps62933-datasheet.md` – TI TPS6293x / TPS62933 降压转换器手册 Markdown 版。  
   - `tvs0500-datasheet.md` – TI TVS0500 5 V Flat‑Clamp 浪涌保护器件手册 Markdown 版（TVS0500DRVR 用于 VBUS 保护）。  
   - `images/` – 上述数据手册中引用的本地图片资源。
 
 其他设计笔记：
 
 - `docs/ch217-upstream-vbus-protection.md` – 上行 USB‑C VBUS 使用 CH217 替代 PPTC 的设计记录。  
+- `docs/tps62933-uvlo-en-divider.md` – TPS62933 通过 EN 分压实现约 8 V UVLO（`330 kΩ / 56 kΩ`）的选型记录。  
 
 后续会补充：
 
