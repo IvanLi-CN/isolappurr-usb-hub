@@ -1,0 +1,15 @@
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      glob: "*.{rs}"
+      run: bash scripts/format_staged.sh
+      stage_fixed: true
+    web-check:
+      glob: "web/**/*.{ts,tsx,js,jsx,json,css}"
+      run: cd web && bun run check
+
+commit-msg:
+  commands:
+    commitlint:
+      run: bun run commitlint -- --edit {1}

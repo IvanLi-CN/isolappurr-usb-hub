@@ -16,6 +16,10 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 
 当前主要目录：
 
+- `src/` / `Cargo.toml`  
+  - ESP32‑S3 固件（Rust `no_std`），用于对电源/协议芯片进行动态控制与状态读取（后续会逐步补齐功能）。  
+- `web/`  
+  - React SPA Web 界面（Vite + React + TypeScript），支持 GitHub Pages 部署。  
 - `docs/datasheets/`  
   - `ch224q-datasheet.md` – CH224Q/CH224A/CH224K/CH224D/CH221K 的官方手册 Markdown 版。  
   - `ch217-datasheet.md` – CH217 USB 限流配电开关芯片手册 Markdown 版。  
@@ -35,17 +39,43 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 后续会补充：
 
 - `hardware/` – 原理图与 PCB（KiCad / Altium 等，视实际选型而定）。  
-- `firmware/` – 如需 MCU/I²C 控制（例如对 TPS55288/CH224Q 进行动态调压和状态读取）。  
+- `firmware/` – 如未来出现多固件/多 MCU，可将根目录固件迁移到该目录下分目标管理。  
 - `mechanical/` – 外壳及 3D 模型（若有）。
 
 ## 开发与文档约定
 
 - 项目中 **不保存 PDF 数据手册**，统一转为 Markdown + 本地图片，放在 `docs/datasheets/`。  
 - 如需新增器件，请优先将数据手册转换为 Markdown，并在 README 中补充说明。  
-- 提交信息遵循 conventional commits 规范，例如：  
+- 提交信息遵循 Conventional Commits（英文）规范，例如：  
   - `docs: add markdown datasheets`  
   - `feat: add upstream power mux schematic`
 
 ## 状态
 
 目前仓库处于早期文档准备阶段，已完成主要电源与协议芯片的数据手册整理，后续会逐步补充原理图和 PCB 设计。
+
+## 开发快速开始
+
+如果你安装了 `just`，也可以直接用：`just web-dev`、`just fw-flash /dev/ttyXXX`。
+
+启用本地 Git hooks（格式化 + commitlint）：
+
+- 安装提交工具依赖：`bun install`
+- 安装 hooks：`just hooks-install`（等价于 `lefthook install`）
+
+### 固件（ESP32‑S3 / Rust no_std / defmt）
+
+- 构建：`cargo build`
+- 烧录 + 串口监视（USB‑UART）：`ESPFLASH_PORT=/dev/ttyXXX cargo run`
+  - 日志使用 `defmt`，由 `espflash` 以 `--log-format defmt` 解码输出。
+  - 为避免误操作，本仓库不自动选择串口，必须显式设置 `ESPFLASH_PORT`。
+
+### Web（React SPA / bun）
+
+- 安装依赖：`cd web && bun install`
+- 本地开发：`bun dev`
+- 构建：`bun run build`
+
+### GitHub Pages
+
+- 推送到 `main` 后，GitHub Actions 会构建 `web/` 并发布到 GitHub Pages（工作流：`.github/workflows/pages.yml`）。

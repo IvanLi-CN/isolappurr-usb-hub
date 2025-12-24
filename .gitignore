@@ -1,2 +1,14 @@
 downloads/
 .venv/
+tmp/
+logs/
+
+# Rust build artifacts
+**/target/
+
+# Frontend build artifacts and dependencies
+**/node_modules/
+**/dist/
+**/.vite/
+
+.DS_Store

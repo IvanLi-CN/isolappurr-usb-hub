@@ -1,0 +1,12 @@
+[target.xtensa-esp32s3-none-elf]
+runner = "bash tools/espflash-runner"
+
+[env]
+DEFMT_LOG = "info"
+
+[build]
+rustflags = ["-C", "link-arg=-nostartfiles"]
+target = "xtensa-esp32s3-none-elf"
+
+[unstable]
+build-std = ["core"]

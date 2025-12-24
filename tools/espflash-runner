@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -z "${ESPFLASH_PORT:-}" ]]; then
+  echo "error: ESPFLASH_PORT is not set. Refusing to auto-select a serial port." >&2
+  echo "Set it explicitly, e.g.:" >&2
+  echo "  ESPFLASH_PORT=/dev/tty.usbserial-XXXX cargo run" >&2
+  echo "  just fw-flash /dev/tty.usbserial-XXXX" >&2
+  exit 2
+fi
+
+if [[ ! -e "${ESPFLASH_PORT}" ]]; then
+  echo "error: ESPFLASH_PORT='${ESPFLASH_PORT}' does not exist." >&2
+  exit 2
+fi
+
+exec espflash flash --monitor --chip esp32s3 --log-format defmt --port "${ESPFLASH_PORT}" "$@"
