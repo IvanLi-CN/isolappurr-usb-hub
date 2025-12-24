@@ -45,3 +45,7 @@ There are no dedicated test suites yet. At minimum, keep:
 
 - Never commit secrets. Use local env files (e.g. `.env`) for machine-specific settings.
 - Flashing requires an explicit serial port: set `ESPFLASH_PORT` (auto-selection is intentionally disabled).
+
+## License
+
+Unless noted otherwise, this repository is dual-licensed under `MIT OR Apache-2.0` (see `LICENSE-MIT` and `LICENSE-APACHE`).

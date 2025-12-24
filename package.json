@@ -1,6 +1,7 @@
 {
   "name": "isolapurr-usb-hub-dev-tools",
   "private": true,
+  "license": "MIT OR Apache-2.0",
   "engines": {
     "bun": ">=1.0.0"
   },

@@ -79,3 +79,7 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 ### GitHub Pages
 
 - 推送到 `main` 后，GitHub Actions 会构建 `web/` 并发布到 GitHub Pages（工作流：`.github/workflows/pages.yml`）。
+
+## 许可证
+
+除 `docs/datasheets/` 等第三方资料外，本仓库的原创代码与文档以 `MIT OR Apache-2.0` 双许可证发布（见 `LICENSE-MIT` / `LICENSE-APACHE`）。
