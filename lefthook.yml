@@ -6,7 +6,9 @@ pre-commit:
       run: bash scripts/format_staged.sh
       stage_fixed: true
     web-check:
-      glob: "web/**/*.{ts,tsx,js,jsx,json,css}"
+      glob:
+        - "web/*.{ts,tsx,js,jsx,json,css}"
+        - "web/**/*.{ts,tsx,js,jsx,json,css}"
       run: cd web && bun run check
 
 commit-msg:
