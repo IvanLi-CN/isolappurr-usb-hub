@@ -19,7 +19,7 @@ fw-clean:
 
 # Flash + monitor via espflash runner (set in .cargo/config.toml)
 fw-ports:
-	espflash scan-ports || espflash list-ports || true
+	espflash list-ports --skip-update-check || true
 
 fw-select-port:
 	PORT="${PORT:-}" bash scripts/select_esp32_port.sh

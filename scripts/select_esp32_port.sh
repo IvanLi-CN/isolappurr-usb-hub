@@ -12,8 +12,8 @@ if ! command -v espflash >/dev/null 2>&1; then
   exit 127
 fi
 
-# espflash list-ports may print leading spaces before /dev/...; allow optional whitespace.
-PORT_LIST=$(espflash list-ports 2>/dev/null | awk '/^[[:space:]]*\/dev\// {print $1}')
+# List only ports likely to be ESP dev boards (espflash default) and keep output script-friendly.
+PORT_LIST=$(espflash list-ports --name-only --skip-update-check 2>/dev/null)
 if [ -z "$PORT_LIST" ]; then
   err "[esp32-port] no ESP32 serial ports detected."
   err "[esp32-port] Run: just fw-ports"
@@ -53,4 +53,3 @@ fi
 
 echo "$PORT" >"$CACHE_FILE"
 echo "$PORT"
-
