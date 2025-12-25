@@ -34,11 +34,14 @@ fn main() -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
+    info!("boot: isolapurr-usb-hub starting (pd i2c coordinator)");
+
     // CE_TPS is U39 pad 42 => GPIO37.
     // CE_TPS drives Q9 (NMOS) which pulls TPS EN/UVLO low when CE_TPS is high.
     // Start hard-disabled at boot.
     let mut ce_tps = Output::new(peripherals.GPIO37, Level::High, OutputConfig::default());
     let mut ce_tps_asserted = true;
+    info!("tps: CE_TPS asserted at boot (TPS hard-disabled)");
 
     // Shared PD I2C bus (no scanning; strictly allowlisted).
     // SDA = GPIO39 (SDA_TPS), SCL = GPIO40 (SCL_TPS).
@@ -50,6 +53,7 @@ fn main() -> ! {
     .with_sda(peripherals.GPIO39)
     .with_scl(peripherals.GPIO40);
     let mut i2c = I2cAllowlist::new(i2c);
+    info!("pd i2c: I2C0@400kHz SDA=GPIO39 SCL=GPIO40 allowlist=[0x3C,0x74]");
 
     let mut tps_state = TpsApplyState::new();
     let mut last_request: Option<PowerRequest> = None;

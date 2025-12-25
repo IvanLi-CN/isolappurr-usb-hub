@@ -57,6 +57,15 @@ if [ -n "${PORT:-}" ]; then
   exit 1
 fi
 
+# Respect previously selected port first (when multiple ports are present).
+if [ -f "$CACHE_FILE" ]; then
+  cached=$(cat "$CACHE_FILE" 2>/dev/null || true)
+  if [ -n "$cached" ] && contains_port "$cached" "${ALL_PORTS[@]}"; then
+    echo "$cached"
+    exit 0
+  fi
+fi
+
 if [ "${#CU_PORTS[@]}" -eq 1 ]; then
   pick_port "${CU_PORTS[0]}"
   exit 0
@@ -65,14 +74,6 @@ fi
 if [ "${#ALL_PORTS[@]}" -eq 1 ]; then
   pick_port "${ALL_PORTS[0]}"
   exit 0
-fi
-
-if [ -f "$CACHE_FILE" ]; then
-  cached=$(cat "$CACHE_FILE" 2>/dev/null || true)
-  if [ -n "$cached" ] && contains_port "$cached" "${ALL_PORTS[@]}"; then
-    echo "$cached"
-    exit 0
-  fi
 fi
 
 # Interactive selection when multiple ports are present and we are in a TTY.

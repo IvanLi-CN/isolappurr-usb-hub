@@ -5,6 +5,8 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 ENSURE_ESP32_PORT="$REPO_ROOT/scripts/ensure_esp32_port.sh"
 
+ESPFLASH="${ESPFLASH:-espflash}"
+
 if [[ -z "${ESPFLASH_PORT:-}" ]]; then
   if [[ -f "$ENSURE_ESP32_PORT" ]]; then
     ESPFLASH_PORT="$(bash "$ENSURE_ESP32_PORT")"
@@ -24,4 +26,21 @@ if [[ ! -e "${ESPFLASH_PORT}" ]]; then
   exit 2
 fi
 
-exec espflash flash --monitor --chip esp32s3 --log-format defmt --port "${ESPFLASH_PORT}" "$@"
+CMD=(
+  "$ESPFLASH"
+  flash
+  --monitor
+  --chip esp32s3
+  --log-format defmt
+  --port "${ESPFLASH_PORT}"
+  "$@"
+)
+
+# espflash's monitor output (including defmt decoding) behaves best when stdout is a TTY.
+# When running in non-interactive contexts (CI, tools piping output, Codex harness),
+# wrap it in `script` to force a pseudo-terminal so logs are visible.
+if [[ ! -t 1 ]] && command -v script >/dev/null 2>&1; then
+  exec script -q -F /dev/null "${CMD[@]}"
+fi
+
+exec "${CMD[@]}"
