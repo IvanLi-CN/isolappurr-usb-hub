@@ -8,6 +8,9 @@ logs/
 # Rust build artifacts
 **/target/
 
+# Local hardware port cache (never commit)
+.esp32-port
+
 # Frontend build artifacts and dependencies
 **/node_modules/
 **/dist/

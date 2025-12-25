@@ -45,6 +45,9 @@ There are no dedicated test suites yet. At minimum, keep:
 
 - Never commit secrets. Use local env files (e.g. `.env`) for machine-specific settings.
 - Flashing requires an explicit serial port: set `ESPFLASH_PORT` (auto-selection is intentionally disabled).
+- Flashing safety: only flash to the owner-confirmed port for this project (stored in `.esp32-port`). Do not override it or write `.esp32-port` yourself, and never pick a different port “because it exists”.
+- Scripts must never auto-select a port (even if only one port exists). If `.esp32-port` is missing or invalid, scripts must error out and instruct the user to run `just fw-ports` and then `PORT=/dev/cu.xxx just fw-select-port`.
+- Do not set `PORT=...` / `ESPFLASH_PORT=...` unless the owner explicitly provided the exact device path. If the expected port is missing or multiple ports exist, stop and ask the owner to confirm/re-select the port.
 
 ## License
 

@@ -14,9 +14,12 @@ esp-hal = { version = "1", features = ["defmt", "esp32s3"] }
 
 critical-section = "1"
 defmt = "1"
+embedded-hal = "1"
 esp-backtrace = { version = "0.18", features = ["defmt", "esp32s3", "panic-handler"] }
 esp-bootloader-esp-idf = { version = "0.4", features = ["defmt", "esp32s3"] }
-esp-println = { version = "0.16", features = ["defmt-espflash", "esp32s3"] }
+esp-println = { version = "0.16", default-features = false, features = ["esp32s3", "uart", "defmt-espflash"] }
+sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "ba44c0c7eb0ff6256333b708925babc1f6a06a9c" }
+tps55288 = { package = "tps55288-rs", path = "../tps55288-rs" }
 
 [profile.dev]
 # Rust debug is too slow.
