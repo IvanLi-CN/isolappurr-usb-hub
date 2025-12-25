@@ -4,8 +4,20 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 ENSURE_ESP32_PORT="$REPO_ROOT/scripts/ensure_esp32_port.sh"
+CACHE_FILE="$REPO_ROOT/.esp32-port"
 
 ESPFLASH="${ESPFLASH:-espflash}"
+
+if [[ -n "${ESPFLASH_PORT:-}" ]] && [[ -f "$CACHE_FILE" ]]; then
+  cached=$(cat "$CACHE_FILE" 2>/dev/null || true)
+  if [[ -n "$cached" ]] && [[ "$cached" != "$ESPFLASH_PORT" ]]; then
+    echo "error: ESPFLASH_PORT='${ESPFLASH_PORT}' does not match .esp32-port='${cached}'." >&2
+    echo "Select the project port explicitly:" >&2
+    echo "  just fw-ports" >&2
+    echo "  PORT=/dev/cu.xxx just fw-select-port" >&2
+    exit 2
+  fi
+fi
 
 if [[ -z "${ESPFLASH_PORT:-}" ]]; then
   if [[ -f "$ENSURE_ESP32_PORT" ]]; then

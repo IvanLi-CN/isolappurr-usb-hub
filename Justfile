@@ -22,15 +22,14 @@ fw-ports:
 	espflash scan-ports || espflash list-ports || true
 
 fw-select-port:
-	rm -f .esp32-port
-	PORT="${PORT:-}" bash scripts/ensure_esp32_port.sh
+	PORT="${PORT:-}" bash scripts/select_esp32_port.sh
 
 fw-flash:
-	PORT_SEL=$(PORT="${PORT:-}" bash scripts/ensure_esp32_port.sh) && \
+	PORT_SEL=$(bash scripts/ensure_esp32_port.sh) && \
 	ESPFLASH_PORT="$PORT_SEL" cargo run
 
 fw-flash-release:
-	PORT_SEL=$(PORT="${PORT:-}" bash scripts/ensure_esp32_port.sh) && \
+	PORT_SEL=$(bash scripts/ensure_esp32_port.sh) && \
 	ESPFLASH_PORT="$PORT_SEL" cargo run --release
 
 # Web (React SPA / bun)

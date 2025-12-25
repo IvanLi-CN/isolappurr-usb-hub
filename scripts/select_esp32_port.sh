@@ -12,21 +12,11 @@ if ! command -v espflash >/dev/null 2>&1; then
   exit 127
 fi
 
-if [ -n "${PORT:-}" ]; then
-  err "[esp32-port] refusing to use PORT=... here."
-  err "[esp32-port] Select the port explicitly via:"
-  err "[esp32-port]   just fw-ports"
-  err "[esp32-port]   PORT=/dev/cu.xxx just fw-select-port"
-  exit 2
-fi
-
 # espflash list-ports may print leading spaces before /dev/...; allow optional whitespace.
 PORT_LIST=$(espflash list-ports 2>/dev/null | awk '/^[[:space:]]*\/dev\// {print $1}')
 if [ -z "$PORT_LIST" ]; then
   err "[esp32-port] no ESP32 serial ports detected."
   err "[esp32-port] Run: just fw-ports"
-  err "[esp32-port] Then select explicitly:"
-  err "[esp32-port]   PORT=/dev/cu.xxx just fw-select-port"
   exit 1
 fi
 
@@ -47,21 +37,20 @@ contains_port() {
   return 1
 }
 
-if [ -f "$CACHE_FILE" ]; then
-  cached=$(cat "$CACHE_FILE" 2>/dev/null || true)
-  if [ -n "$cached" ] && contains_port "$cached" "${ALL_PORTS[@]}"; then
-    echo "$cached"
-    exit 0
-  fi
-  err "[esp32-port] cached port '$cached' is not available."
+if [ -z "${PORT:-}" ]; then
+  err "[esp32-port] PORT is required to select a flash port."
   err "[esp32-port] Run: just fw-ports"
-  err "[esp32-port] Then re-select explicitly:"
+  err "[esp32-port] Then select explicitly:"
   err "[esp32-port]   PORT=/dev/cu.xxx just fw-select-port"
+  exit 2
+fi
+
+if ! contains_port "$PORT" "${ALL_PORTS[@]}"; then
+  err "[esp32-port] PORT=$PORT is not available; valid ports: ${ALL_PORTS[*]}"
+  err "[esp32-port] Run: just fw-ports"
   exit 1
 fi
 
-err "[esp32-port] no port selected for this repo (.esp32-port missing)."
-err "[esp32-port] Run: just fw-ports"
-err "[esp32-port] Then select explicitly:"
-err "[esp32-port]   PORT=/dev/cu.xxx just fw-select-port"
-exit 1
+echo "$PORT" >"$CACHE_FILE"
+echo "$PORT"
+
