@@ -19,6 +19,9 @@ where
     let online = (reg0d & 0x80) != 0;
 
     let reg06 = dev.read_register(sw2303::registers::Register::FastChargingStatus)?;
+    let fast_charging = (reg06 & 0x80) != 0;
+    let type_c_connected = (reg06 & 0x40) != 0;
+    let pd_version_raw = (reg06 >> 4) & 0x03;
     let protocol_raw = reg06 & 0x0F;
 
     let reg03 = dev.read_register(sw2303::registers::Register::VoltageHigh)?;
@@ -32,6 +35,9 @@ where
 
     Ok(PowerRequest {
         online,
+        type_c_connected,
+        fast_charging,
+        pd_version_raw,
         protocol_raw,
         v_req_mv,
         i_req_ma,
