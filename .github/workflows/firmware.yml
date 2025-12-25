@@ -1,0 +1,61 @@
+name: Firmware (ESP32-S3)
+
+on:
+  pull_request:
+    paths:
+      - ".cargo/**"
+      - "src/**"
+      - "tools/**"
+      - "build.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  push:
+    branches:
+      - main
+    paths:
+      - ".cargo/**"
+      - "src/**"
+      - "tools/**"
+      - "build.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (Xtensa)
+        uses: esp-rs/xtensa-toolchain@v1
+        with:
+          default: true
+          buildtargets: esp32s3
+          ldproxy: false
+
+      - name: Checkout tps55288-rs
+        uses: actions/checkout@v4
+        with:
+          repository: IvanLi-CN/tps55288-rs
+          path: tps55288-rs
+
+      - name: Link ../tps55288-rs (Cargo.toml path dependency)
+        run: |
+          if [ -e ../tps55288-rs ]; then
+            exit 0
+          fi
+          ln -s "$GITHUB_WORKSPACE/tps55288-rs" ../tps55288-rs
+
+      - name: cargo build
+        run: cargo build
