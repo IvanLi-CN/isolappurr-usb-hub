@@ -1,6 +1,10 @@
 pub mod allowlist;
+pub mod sw2303;
+pub mod tps55288;
+pub mod types;
 
 pub use allowlist::{I2cAllowlist, PdI2cAddr};
+pub use types::{PowerRequest, PowerSetpoint};
 
 /// SW2303 7-bit I2C address.
 pub const SW2303_ADDR_7BIT: u8 = 0x3C;
