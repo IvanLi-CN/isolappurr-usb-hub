@@ -15,11 +15,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Dependency Review
-        id: review
         uses: actions/dependency-review-action@v4
-        continue-on-error: true
-
-      - name: Dependency Review notice
-        if: steps.review.outcome == 'failure'
-        run: |
-          echo "::warning::Dependency Review could not run. Enable Dependency graph in repo settings: Settings -> Code security and analysis -> Dependency graph."
