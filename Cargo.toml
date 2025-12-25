@@ -18,7 +18,7 @@ embedded-hal = "1"
 esp-backtrace = { version = "0.18", features = ["defmt", "esp32s3", "panic-handler"] }
 esp-bootloader-esp-idf = { version = "0.4", features = ["defmt", "esp32s3"] }
 esp-println = { version = "0.16", features = ["defmt-espflash", "esp32s3"] }
-sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "e40ee47cb7c672893defc7dadf89e70da1052f85" }
+sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "ba44c0c7eb0ff6256333b708925babc1f6a06a9c" }
 tps55288 = { package = "tps55288-rs", path = "../tps55288-rs" }
 
 [profile.dev]
