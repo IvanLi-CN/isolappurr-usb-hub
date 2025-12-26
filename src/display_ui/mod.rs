@@ -21,6 +21,17 @@ const TILES_X: u16 = 13;
 const X_OFFSET: u16 = (320 - TILE_W * TILES_X) / 2;
 const Y_OFFSET: u16 = (172 - TILE_H * 3) / 2;
 
+const GLYPH_SRC_W: u16 = 6;
+const GLYPH_SRC_H: u16 = 8;
+
+// Smaller font + spacing: render 6x8 glyph centered into a 24x48 tile.
+const GLYPH_SX: u16 = 3;
+const GLYPH_SY: u16 = 4;
+const GLYPH_W: u16 = GLYPH_SRC_W * GLYPH_SX;
+const GLYPH_H: u16 = GLYPH_SRC_H * GLYPH_SY;
+const GLYPH_X0: u16 = (TILE_W - GLYPH_W) / 2;
+const GLYPH_Y0: u16 = (TILE_H - GLYPH_H) / 2;
+
 const FG: Rgb565 = Rgb565::WHITE;
 const BG: Rgb565 = Rgb565::BLACK;
 
@@ -171,7 +182,7 @@ where
             self.draw_tile_str(3, row, next_v)?;
         }
         if next_i != prev_i {
-            self.draw_tile_str(8, row, next_i)?;
+            self.draw_tile_str(9, row, next_i)?;
         }
         Ok(())
     }
@@ -242,21 +253,18 @@ fn format_ma_2dp_4(i: Field<u16>) -> [u8; 4] {
 fn render_char_6x8_scaled(ch: u8, out: &mut [u8; 144]) {
     out.fill(0);
 
-    const SX: u16 = 4;
-    const SY: u16 = 6;
-
     let glyph = glyph_6x8(ch);
 
     for (src_y, &row_bits) in glyph.iter().enumerate() {
-        for rep_y in 0..SY {
-            let y = src_y as u16 * SY + rep_y;
+        for rep_y in 0..GLYPH_SY {
+            let y = GLYPH_Y0 + src_y as u16 * GLYPH_SY + rep_y;
             for src_x in 0..6u16 {
                 let on = row_bits & (1 << (5 - src_x)) != 0;
                 if !on {
                     continue;
                 }
-                for rep_x in 0..SX {
-                    let x = src_x * SX + rep_x;
+                for rep_x in 0..GLYPH_SX {
+                    let x = GLYPH_X0 + src_x * GLYPH_SX + rep_x;
                     set_1bpp_24x48(out, x, y);
                 }
             }
