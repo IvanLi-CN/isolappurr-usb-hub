@@ -14,7 +14,7 @@ use esp_hal::main;
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::{Duration, Instant, Rate};
-use isolapurr_usb_hub::display_ui::{ActiveLowBacklight, DisplayUi, WORKBUF_SIZE};
+use isolapurr_usb_hub::display_ui::{ActiveLowBacklight, DisplayUi, EspHalSpinTimer, WORKBUF_SIZE};
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
 use isolapurr_usb_hub::pd_i2c::sw2303::read_power_request;
@@ -106,9 +106,10 @@ fn main() -> ! {
 
     let spi = CsSpiDevice::new(spi_bus, cs);
 
-    let workbuf = unsafe { &mut DISPLAY_WORKBUF };
+    let workbuf = unsafe { &mut *core::ptr::addr_of_mut!(DISPLAY_WORKBUF) };
     let backlight = ActiveLowBacklight(blk);
-    let mut ui = DisplayUi::new(spi, dc, rst, workbuf, backlight);
+    let mut ui: DisplayUi<'_, _, _, _, EspHalSpinTimer, _> =
+        DisplayUi::new(spi, dc, rst, workbuf, backlight);
     info!(
         "display: GC9307 landscape SPI2 MOSI=GPIO11 SCLK=GPIO12 CS=GPIO13 DC=GPIO10 RES=GPIO14 BLK=GPIO15(active-low)"
     );

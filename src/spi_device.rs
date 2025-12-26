@@ -1,9 +1,7 @@
-#![no_std]
-
 use core::convert::Infallible;
 
 use embedded_hal::digital::OutputPin;
-use embedded_hal::spi::{Operation, SpiBus, SpiDevice};
+use embedded_hal::spi::{ErrorType, Operation, SpiBus, SpiDevice};
 use esp_hal::time::{Duration, Instant};
 
 pub struct CsSpiDevice<BUS, CS> {
@@ -40,13 +38,19 @@ fn spin_delay_ns(ns: u32) {
     while start.elapsed() < Duration::from_micros(us) {}
 }
 
-impl<BUS, CS, E> SpiDevice<u8> for CsSpiDevice<BUS, CS>
+impl<BUS, CS> ErrorType for CsSpiDevice<BUS, CS>
 where
-    BUS: SpiBus<u8, Error = E>,
+    BUS: SpiBus<u8>,
     CS: OutputPin<Error = Infallible>,
 {
-    type Error = E;
+    type Error = BUS::Error;
+}
 
+impl<BUS, CS> SpiDevice<u8> for CsSpiDevice<BUS, CS>
+where
+    BUS: SpiBus<u8>,
+    CS: OutputPin<Error = Infallible>,
+{
     fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
         self.cs.set_low().ok();
         let _guard = CsGuard { cs: &mut self.cs };
@@ -61,6 +65,7 @@ where
             }
         }
 
+        self.bus.flush()?;
         Ok(())
     }
 }
