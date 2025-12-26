@@ -96,7 +96,9 @@ fn main() -> ! {
     let dc = Output::new(peripherals.GPIO10, Level::Low, OutputConfig::default());
     let rst = Output::new(peripherals.GPIO14, Level::High, OutputConfig::default());
     let cs = Output::new(peripherals.GPIO13, Level::High, OutputConfig::default());
-    let blk = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
+    // Backlight gate BLK is active-low. Force it ON immediately so backlight is not
+    // coupled to display init success.
+    let blk = Output::new(peripherals.GPIO15, Level::Low, OutputConfig::default());
 
     let spi_bus = Spi::new(
         peripherals.SPI2,
