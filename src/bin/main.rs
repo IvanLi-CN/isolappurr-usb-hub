@@ -6,6 +6,9 @@
     holding buffers for the duration of a data transfer."
 )]
 
+#[path = "../spi_device.rs"]
+mod spi_device;
+
 use defmt::info;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Level, Output, OutputConfig};
@@ -21,9 +24,10 @@ use isolapurr_usb_hub::pd_i2c::sw2303::read_power_request;
 use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
 };
-use isolapurr_usb_hub::spi_device::CsSpiDevice;
 use isolapurr_usb_hub::telemetry::TelemetrySampler;
 use {esp_backtrace as _, esp_println as _};
+
+use spi_device::CsSpiDevice;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>

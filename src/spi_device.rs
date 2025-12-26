@@ -13,10 +13,6 @@ impl<BUS, CS> CsSpiDevice<BUS, CS> {
     pub const fn new(bus: BUS, cs: CS) -> Self {
         Self { bus, cs }
     }
-
-    pub fn into_inner(self) -> (BUS, CS) {
-        (self.bus, self.cs)
-    }
 }
 
 struct CsGuard<'a, CS: OutputPin<Error = Infallible>> {
