@@ -12,14 +12,17 @@
 Prefer `Justfile`:
 
 - `just fw-build` / `just fw-build-release` — build firmware
-- `just fw-flash /dev/tty.usbserial-XXXX` — flash + monitor (serial port must be explicit)
+- `just agentd-install` — install host `mcu-agentd` from `~/Projects/Ivan/mcu-agentd`
+- `just fw-flash` / `just fw-flash-release` — build + flash + monitor via `mcu-agentd` (`mcu-agentd.toml`, port cached in `.esp32-port`)
+- `just fw-select-port` — persist the owner-confirmed serial port into `.esp32-port` (requires explicit `PORT=/dev/cu.xxx`)
 - `just web-install` / `just web-dev` / `just web-build` — install/run/build the SPA
 - `just web-check` — run Biome checks
 - `just hooks-install` — install Git hooks (lefthook)
 
 Direct equivalents:
 
-- Firmware: `cargo build`, `ESPFLASH_PORT=/dev/ttyXXX cargo run`
+- Firmware (recommended): `mcu-agentd flash usb_hub` / `mcu-agentd monitor usb_hub --reset`
+- Firmware (legacy): `cargo build`, `ESPFLASH_PORT=/dev/ttyXXX cargo run`
 - Web: `cd web && bun install && bun dev`
 
 ## Coding Style & Naming Conventions
@@ -48,6 +51,7 @@ There are no dedicated test suites yet. At minimum, keep:
 - Flashing safety: only flash to the owner-confirmed port for this project (stored in `.esp32-port`). Do not override it or write `.esp32-port` yourself, and never pick a different port “because it exists”.
 - Scripts must never auto-select a port (even if only one port exists). If `.esp32-port` is missing or invalid, scripts must error out and instruct the user to run `just fw-ports` and then `PORT=/dev/cu.xxx just fw-select-port`.
 - Do not set `PORT=...` / `ESPFLASH_PORT=...` unless the owner explicitly provided the exact device path. If the expected port is missing or multiple ports exist, stop and ask the owner to confirm/re-select the port.
+- `mcu-agentd` uses `.esp32-port` as its selector cache (see `mcu-agentd.toml`). Never run `mcu-agentd selector set ... --auto` or change `.esp32-port` without explicit owner permission.
 
 ## License
 

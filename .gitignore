@@ -10,6 +10,7 @@ logs/
 
 # Local hardware port cache (never commit)
 .esp32-port
+.mcu-agentd/
 
 # Frontend build artifacts and dependencies
 **/node_modules/
