@@ -1,14 +1,13 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PowerRequest {
-    /// SystemStatus3 (REG 0x0D) bit7.
+    /// Sink device online status.
     pub online: bool,
-    /// FastChargingStatus (REG 0x06) bit6.
-    pub type_c_connected: bool,
-    /// FastChargingStatus (REG 0x06) bit7.
-    pub fast_charging: bool,
-    /// FastChargingStatus (REG 0x06) bits5-4.
-    pub pd_version_raw: u8,
-    pub protocol_raw: u8,
+    /// Fast protocol flag (decoded via driver APIs).
+    pub fast_protocol: bool,
+    /// Fast voltage flag (decoded via driver APIs).
+    pub fast_voltage: bool,
+    /// Currently negotiated charging protocol (if any).
+    pub negotiated_protocol: Option<sw2303::ProtocolType>,
     pub v_req_mv: u16,
     pub i_req_ma: u16,
 }
