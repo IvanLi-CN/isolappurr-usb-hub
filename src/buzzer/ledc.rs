@@ -11,7 +11,11 @@ use super::{BuzzerControl, BuzzerError};
 
 use esp_hal::{
     gpio::{DriveMode, DriveStrength, Level, Output, OutputConfig, OutputPin, Pull},
-    ledc::{LSGlobalClkSource, Ledc, LowSpeed, channel, timer},
+    ledc::{
+        LSGlobalClkSource, Ledc, LowSpeed,
+        channel::{self, ChannelIFace},
+        timer::{self, TimerIFace},
+    },
     time::Rate,
 };
 
