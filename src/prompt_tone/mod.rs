@@ -15,15 +15,17 @@ pub use manager::PromptToneManager;
 
 /// Default base frequency in Hertz.
 ///
-/// Matches the buzzer's nominal frequency and is used for most patterns.
-pub const DEFAULT_FREQ_HZ: u32 = 2700;
+/// The buzzer's nominal resonance is ~2.7kHz (see BOM / netlist). We default
+/// slightly below resonance to make the sound less piercing while keeping it
+/// clearly audible.
+pub const DEFAULT_FREQ_HZ: u32 = 2200;
 
 /// Default duty cycle in percent.
 ///
-/// "Light volume" is a safety requirement (no base resistor on the NPN stage).
-/// Implementations should keep duty cycles low (typically 5–10%) and avoid
-/// extended high-duty tones.
-pub const DEFAULT_DUTY_PCT: u8 = 8;
+/// Datasheet-recommended drive is a 50% duty square-wave at the resonant
+/// frequency. We intentionally use a much lower default duty for a softer
+/// "notification" sound.
+pub const DEFAULT_DUTY_PCT: u8 = 6;
 
 /// Predefined prompt sounds.
 ///

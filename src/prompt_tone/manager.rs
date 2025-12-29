@@ -399,34 +399,34 @@ const BOOT_OK_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(80),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(160),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(80),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(160),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(80),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(160),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(80),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(1300),
     },
 ];
 
@@ -434,18 +434,18 @@ const BOOT_WARN_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(500),
+        duration: Duration::from_millis(200),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(250),
+        duration: Duration::from_millis(200),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(500),
+        duration: Duration::from_millis(200),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(750),
+        duration: Duration::from_millis(1500),
     },
 ];
 
@@ -453,18 +453,26 @@ const BOOT_FAIL_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(800),
+        duration: Duration::from_millis(250),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(150),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(800),
+        duration: Duration::from_millis(250),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(150),
+    },
+    SoundStep::Tone {
+        freq_hz: DEFAULT_FREQ_HZ,
+        duty_pct: DEFAULT_DUTY_PCT,
+        duration: Duration::from_millis(250),
+    },
+    SoundStep::Silence {
+        duration: Duration::from_millis(1050),
     },
 ];
 
@@ -472,42 +480,50 @@ const WARNING_ONCE_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(50),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(150),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(50),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(150),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(50),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(150),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(50),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(150),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(50),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(150),
+    },
+    SoundStep::Tone {
+        freq_hz: DEFAULT_FREQ_HZ,
+        duty_pct: DEFAULT_DUTY_PCT,
+        duration: Duration::from_millis(50),
+    },
+    SoundStep::Silence {
+        duration: Duration::from_millis(1050),
     },
 ];
 
@@ -515,50 +531,50 @@ const ERROR_ONCE_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(150),
+        duration: Duration::from_millis(120),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(180),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(150),
+        duration: Duration::from_millis(120),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(180),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(150),
+        duration: Duration::from_millis(120),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(180),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(150),
+        duration: Duration::from_millis(120),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(180),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(150),
+        duration: Duration::from_millis(120),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(180),
     },
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(150),
+        duration: Duration::from_millis(120),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(200),
+        duration: Duration::from_millis(480),
     },
 ];
 
@@ -566,10 +582,10 @@ const SAFETY_ALARM_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
         duty_pct: DEFAULT_DUTY_PCT,
-        duration: Duration::from_millis(700),
+        duration: Duration::from_millis(300),
     },
     SoundStep::Silence {
-        duration: Duration::from_millis(300),
+        duration: Duration::from_millis(700),
     },
 ];
 

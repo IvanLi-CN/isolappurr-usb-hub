@@ -27,7 +27,8 @@ use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
 };
 use isolapurr_usb_hub::prompt_tone::{
-    ErrorKind, InitFailReason, InitWarnReason, PromptToneManager, SafetyKind, SoundEvent,
+    DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitFailReason, InitWarnReason,
+    PromptToneManager, SafetyKind, SoundEvent,
 };
 use isolapurr_usb_hub::telemetry::TelemetrySampler;
 use {esp_backtrace as _, esp_println as _};
@@ -54,6 +55,10 @@ fn main() -> ! {
 
     let buzzer = LedcBuzzer::new(peripherals.LEDC, peripherals.GPIO21).expect("buzzer LEDC init");
     let mut prompt_tone = PromptToneManager::new(buzzer);
+    info!(
+        "buzzer: prompt_tone default freq={}Hz duty={}%",
+        DEFAULT_FREQ_HZ, DEFAULT_DUTY_PCT
+    );
 
     // CE_TPS is U39 pad 42 => GPIO37.
     // CE_TPS drives Q9 (NMOS) which pulls TPS EN/UVLO low when CE_TPS is high.
