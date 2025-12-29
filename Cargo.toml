@@ -21,7 +21,7 @@ ina226 = "0.3.0"
 esp-backtrace = { version = "0.18", features = ["defmt", "esp32s3", "panic-handler"] }
 esp-bootloader-esp-idf = { version = "0.4", features = ["defmt", "esp32s3"] }
 esp-println = { version = "0.16", default-features = false, features = ["esp32s3", "uart", "defmt-espflash"] }
-sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "9b0d8cbd6e47d8cf90fd3c83b0e844f4b54e907f" }
+sw2303 = { path = "../sw2303-rs" }
 tps55288 = { package = "tps55288-rs", path = "../tps55288-rs" }
 
 [profile.dev]

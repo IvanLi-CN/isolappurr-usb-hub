@@ -1189,7 +1189,6 @@ dependencies = [
 [[package]]
 name = "sw2303"
 version = "0.0.0"
-source = "git+https://github.com/IvanLi-CN/sw2303-rs?rev=9b0d8cbd6e47d8cf90fd3c83b0e844f4b54e907f#9b0d8cbd6e47d8cf90fd3c83b0e844f4b54e907f"
 dependencies = [
  "bitflags 2.10.0",
  "embedded-hal 1.0.0",
