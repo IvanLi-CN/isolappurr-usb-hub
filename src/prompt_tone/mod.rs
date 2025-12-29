@@ -9,6 +9,10 @@
 
 use core::time::Duration;
 
+mod manager;
+
+pub use manager::PromptToneManager;
+
 /// Default base frequency in Hertz.
 ///
 /// Matches the buzzer's nominal frequency and is used for most patterns.
