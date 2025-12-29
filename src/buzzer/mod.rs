@@ -4,6 +4,8 @@
 //! manager. Hardware-specific PWM setup (e.g. ESP32-S3 LEDC) is implemented in
 //! a separate task.
 
+pub mod ledc;
+
 /// A buzzer control error.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
