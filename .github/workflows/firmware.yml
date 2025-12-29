@@ -57,5 +57,18 @@ jobs:
           fi
           ln -s "$GITHUB_WORKSPACE/tps55288-rs" ../tps55288-rs
 
+      - name: Checkout sw2303-rs
+        uses: actions/checkout@v4
+        with:
+          repository: IvanLi-CN/sw2303-rs
+          path: sw2303-rs
+
+      - name: Link ../sw2303-rs (Cargo.toml path dependency)
+        run: |
+          if [ -e ../sw2303-rs ]; then
+            exit 0
+          fi
+          ln -s "$GITHUB_WORKSPACE/sw2303-rs" ../sw2303-rs
+
       - name: cargo build
         run: cargo build

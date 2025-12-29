@@ -20,7 +20,8 @@ use esp_hal::time::{Duration, Instant, Rate};
 use isolapurr_usb_hub::display_ui::{ActiveLowBacklight, DisplayUi, EspHalSpinTimer, WORKBUF_SIZE};
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
-use isolapurr_usb_hub::pd_i2c::sw2303::read_power_request;
+use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
+use isolapurr_usb_hub::pd_i2c::sw2303::{apply_enable_profile_full, read_power_request};
 use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
 };
@@ -134,24 +135,80 @@ fn main() -> ! {
 
     let mut tps_state = TpsApplyState::new();
     let mut last_request: Option<PowerRequest> = None;
-    let mut last_tc_connected: Option<bool> = None;
-    let mut last_fc_active: Option<bool> = None;
+    let mut last_fast_protocol: Option<bool> = None;
 
     let mut sw2303_error_latched = false;
     let mut tps_error_latched = false;
     let mut ui_error_latched = false;
+    let mut last_sw2303_profile_attempt: Option<Instant> = None;
+    let mut last_diag_tick = Instant::now();
 
     let boot_sp = boot_supply_setpoint();
     // Give TPS and SW2303 time to power up before first I2C poll.
     spin_delay_ms(200);
 
+    // Boot-time SW2303 "Enable Profile" apply: up to 3 attempts, 200ms backoff.
+    // Failure strategy: warn and continue PD loop.
+    let mut boot_profile_applied = false;
+    for attempt in 1..=3 {
+        match apply_enable_profile_full(&mut i2c) {
+            Ok(status) => {
+                info!(
+                    "sw2303 profile: applied full (attempt {}/3) power_register_mode={} cap_w={}W protocols={:?} fast={:?} type_c={:?} vin_mv={:?} vbus_mv={:?} sys0={:?} sys1={:?} sys2={:?} sys3={:?}",
+                    attempt,
+                    status.power_config_register_mode,
+                    status.power_watts,
+                    defmt::Debug2Format(&status.protocols),
+                    defmt::Debug2Format(&status.fast_charge),
+                    defmt::Debug2Format(&status.type_c),
+                    defmt::Debug2Format(&status.vin_mv),
+                    defmt::Debug2Format(&status.vbus_mv),
+                    defmt::Debug2Format(&status.system_status0),
+                    defmt::Debug2Format(&status.system_status1),
+                    defmt::Debug2Format(&status.system_status2),
+                    defmt::Debug2Format(&status.system_status3)
+                );
+                last_sw2303_profile_attempt = Some(Instant::now());
+                boot_profile_applied = true;
+                break;
+            }
+            Err(err) => {
+                defmt::warn!(
+                    "sw2303 profile: apply failed (attempt {}/3): {:?}",
+                    attempt,
+                    defmt::Debug2Format(&err)
+                );
+                if attempt < 3 {
+                    spin_delay_ms(200);
+                }
+            }
+        }
+    }
+    if !boot_profile_applied {
+        defmt::warn!("sw2303 profile: giving up after 3 attempts (PD loop continues)");
+    }
+
     let mut last_tick = Instant::now();
 
     loop {
+        let sw2303_was_in_error = sw2303_error_latched;
+
         let (request, setpoint) = match read_power_request(&mut i2c) {
             Ok(request) => {
                 sw2303_error_latched = false;
-                let sp = power_request_to_setpoint(request);
+                // NOTE: Do not use `request.online` (REG0x0D bit7) for any functional behavior.
+                // Some chips may customize its semantics (Type‑C insert or A‑port current threshold).
+                //
+                // Follow SW2303 requests when a protocol is indicated as active; otherwise keep a
+                // conservative 5V "keep-alive" supply for VBUS.
+                let sp = if request.negotiated_protocol.is_some()
+                    || request.fast_protocol
+                    || request.fast_voltage
+                {
+                    power_request_to_setpoint(request)
+                } else {
+                    boot_sp
+                };
                 (Some(request), sp)
             }
             Err(err) => {
@@ -166,45 +223,73 @@ fn main() -> ! {
             }
         };
 
+        // Runtime SW2303 profile retry:
+        // - only on I2C recovery (error -> ok transition)
+        // - at least 60s between attempts
+        if sw2303_was_in_error && request.is_some() {
+            let allow_retry = last_sw2303_profile_attempt
+                .map(|t| t.elapsed() >= Duration::from_secs(60))
+                .unwrap_or(true);
+            if allow_retry {
+                last_sw2303_profile_attempt = Some(Instant::now());
+                match apply_enable_profile_full(&mut i2c) {
+                    Ok(status) => {
+                        info!(
+                            "sw2303 profile: re-applied full after i2c recovery power_register_mode={} cap_w={}W protocols={:?} fast={:?} type_c={:?} vin_mv={:?} vbus_mv={:?} sys0={:?} sys1={:?} sys2={:?} sys3={:?}",
+                            status.power_config_register_mode,
+                            status.power_watts,
+                            defmt::Debug2Format(&status.protocols),
+                            defmt::Debug2Format(&status.fast_charge),
+                            defmt::Debug2Format(&status.type_c),
+                            defmt::Debug2Format(&status.vin_mv),
+                            defmt::Debug2Format(&status.vbus_mv),
+                            defmt::Debug2Format(&status.system_status0),
+                            defmt::Debug2Format(&status.system_status1),
+                            defmt::Debug2Format(&status.system_status2),
+                            defmt::Debug2Format(&status.system_status3)
+                        );
+                    }
+                    Err(err) => {
+                        defmt::warn!(
+                            "sw2303 profile: re-apply failed after i2c recovery: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                    }
+                }
+            }
+        }
+
         if let Some(request) = request {
             if last_request != Some(request) {
                 info!(
-                    "pd request: online={} tc={} fc={} pd_ver={} proto_raw={} v_req_mv={} i_req_ma={}",
+                    "pd request: online_bit={} fast_proto={} fast_v={} proto={:?} v_req_mv={} i_req_ma={}",
                     request.online,
-                    request.type_c_connected,
-                    request.fast_charging,
-                    request.pd_version_raw,
-                    request.protocol_raw,
+                    request.fast_protocol,
+                    request.fast_voltage,
+                    defmt::Debug2Format(&request.negotiated_protocol),
                     request.v_req_mv,
                     request.i_req_ma
                 );
                 last_request = Some(request);
             }
 
-            if last_tc_connected != Some(request.type_c_connected) {
-                if request.type_c_connected {
-                    info!("pd link: type-c connected");
-                } else {
-                    info!("pd link: type-c disconnected");
-                }
-                last_tc_connected = Some(request.type_c_connected);
-            }
-
-            if last_fc_active != Some(request.fast_charging) {
-                if request.fast_charging {
-                    info!("pd state: fast-charging active");
+            if last_fast_protocol != Some(request.fast_protocol) {
+                if request.fast_protocol {
+                    info!("pd state: fast protocol active");
                 } else {
                     info!("pd state: inactive");
                 }
-                last_fc_active = Some(request.fast_charging);
+                last_fast_protocol = Some(request.fast_protocol);
             }
         } else {
             last_request = None;
-            last_tc_connected = None;
-            last_fc_active = None;
+            last_fast_protocol = None;
         }
 
-        let mut loop_delay_ms = if request.is_some() { 10 } else { 50 };
+        let mut loop_delay_ms = match request {
+            Some(r) if r.negotiated_protocol.is_some() || r.fast_protocol || r.fast_voltage => 10,
+            _ => 50,
+        };
 
         if let Err(err) = apply_setpoint(&mut i2c, &mut tps_state, setpoint) {
             if !tps_error_latched {
@@ -219,6 +304,51 @@ fn main() -> ! {
             loop_delay_ms = 100;
         } else {
             tps_error_latched = false;
+        }
+
+        // 1 Hz diagnostics (never gate on `online` bit):
+        // - requested vs applied setpoint
+        // - measured VBUS/IBUS (INA226)
+        // - TPS operating mode + fault flags
+        if last_diag_tick.elapsed() >= Duration::from_secs(1) {
+            last_diag_tick = Instant::now();
+
+            let (tps_operating, tps_faults) = {
+                let mut dev = tps55288::Tps55288::with_address(&mut i2c, TPS55288_ADDR_7BIT);
+                match dev.read_status() {
+                    Ok(v) => v,
+                    Err(_) => (
+                        tps55288::data_types::OperatingStatus::Reserved,
+                        tps55288::data_types::FaultStatus::default(),
+                    ),
+                }
+            };
+
+            let snapshot = sampler.sample_snapshot(setpoint);
+            let (online_bit, fast_proto, fast_v, proto, v_req_mv, i_req_ma) = match request {
+                Some(r) => (
+                    r.online,
+                    r.fast_protocol,
+                    r.fast_voltage,
+                    r.negotiated_protocol,
+                    r.v_req_mv,
+                    r.i_req_ma,
+                ),
+                None => (false, false, false, None, 0, 0),
+            };
+            info!(
+                "diag: req_online_bit={} req_fast_proto={} req_fast_v={} req_proto={:?} req_v_mv={} req_i_ma={} set={:?} meas_u17={:?} tps={:?} faults={:?}",
+                online_bit,
+                fast_proto,
+                fast_v,
+                defmt::Debug2Format(&proto),
+                v_req_mv,
+                i_req_ma,
+                defmt::Debug2Format(&snapshot.set_applied),
+                defmt::Debug2Format(&snapshot.u17_meas),
+                defmt::Debug2Format(&tps_operating),
+                defmt::Debug2Format(&tps_faults),
+            );
         }
 
         // 10 Hz (100ms) UI tick. Keep PD loop behavior intact outside this path.
