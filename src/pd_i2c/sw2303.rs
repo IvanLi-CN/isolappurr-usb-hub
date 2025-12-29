@@ -9,6 +9,12 @@ pub struct EnableProfileStatus {
     pub protocols: sw2303::ProtocolConfiguration,
     pub fast_charge: sw2303::FastChargeConfiguration,
     pub type_c: sw2303::TypeCConfiguration,
+    pub vin_mv: Option<u32>,
+    pub vbus_mv: Option<u32>,
+    pub system_status0: Option<sw2303::registers::SystemStatus0Flags>,
+    pub system_status1: Option<sw2303::registers::SystemStatus1Flags>,
+    pub system_status2: Option<sw2303::registers::SystemStatus2Flags>,
+    pub system_status3: Option<sw2303::registers::SystemStatus3Flags>,
 }
 
 /// Apply SW2303 "Enable Profile" (full) configuration:
@@ -72,8 +78,11 @@ where
     })?;
 
     dev.configure_type_c(sw2303::TypeCConfiguration {
-        current_1_5a: true,
-        pd_pps_5a: true,
+        // Do not force broadcast currents here:
+        // - Let SW2303 decide Type‑C advertisement based on negotiated PD power.
+        // - Only advertise PPS 5A when cable/emarker constraints allow it.
+        current_1_5a: false,
+        pd_pps_5a: false,
         cc_un_driving: false,
     })?;
 
@@ -81,6 +90,12 @@ where
     let protocols = dev.get_protocol_status()?;
     let fast_charge = dev.get_fast_charge_status()?;
     let type_c = dev.get_type_c_status()?;
+    let vin_mv = dev.read_vin_mv_12bit().ok();
+    let vbus_mv = dev.read_vbus_mv_12bit().ok();
+    let system_status0 = dev.get_system_status0().ok();
+    let system_status1 = dev.get_system_status_1().ok();
+    let system_status2 = dev.get_system_status_2().ok();
+    let system_status3 = dev.get_system_status3().ok();
 
     Ok(EnableProfileStatus {
         power_config_register_mode,
@@ -88,6 +103,12 @@ where
         protocols,
         fast_charge,
         type_c,
+        vin_mv,
+        vbus_mv,
+        system_status0,
+        system_status1,
+        system_status2,
+        system_status3,
     })
 }
 
