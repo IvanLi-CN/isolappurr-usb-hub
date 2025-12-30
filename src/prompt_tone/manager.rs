@@ -171,11 +171,15 @@ where
             SoundEvent::EnterSafety(_) => {
                 self.safety_active = true;
                 self.queue.remove(SoundId::SafetyAlarm);
+                self.queue.remove(SoundId::ActionOkOnce);
+                self.queue.remove(SoundId::ActionFailOnce);
                 self.start_immediately(SoundId::SafetyAlarm);
             }
             SoundEvent::ExitSafety(_) => {
                 self.safety_active = false;
                 self.queue.remove(SoundId::SafetyAlarm);
+                self.queue.remove(SoundId::ActionOkOnce);
+                self.queue.remove(SoundId::ActionFailOnce);
                 if self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm) {
                     let _ = self.buzzer.stop();
                     self.playing = None;
@@ -187,6 +191,21 @@ where
                 self.request_one_shot(id);
             }
             SoundEvent::ExitError(_) => {}
+
+            SoundEvent::ActionOk => {
+                if self.safety_active || self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm)
+                {
+                    return;
+                }
+                self.request_one_shot(SoundId::ActionOkOnce);
+            }
+            SoundEvent::ActionFail => {
+                if self.safety_active || self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm)
+                {
+                    return;
+                }
+                self.request_one_shot(SoundId::ActionFailOnce);
+            }
         }
     }
 
@@ -376,6 +395,8 @@ fn sound_priority(id: SoundId) -> u8 {
         SoundId::WarningOnce => 50,
 
         SoundId::RecoverOnce => 40,
+        SoundId::ActionOkOnce => 35,
+        SoundId::ActionFailOnce => 35,
         SoundId::ActionOnce => 30,
         SoundId::PdOnce => 30,
 
@@ -394,6 +415,11 @@ fn map_error_to_sound(kind: ErrorKind) -> SoundId {
 }
 
 // --- Default patterns ---
+
+const ACTION_FREQ_HZ: u32 = 2700;
+const ACTION_DUTY_PCT: u8 = 12;
+const ACTION_CLICK_MS: u64 = 30;
+const ACTION_DOUBLE_GAP_MS: u64 = 40;
 
 const BOOT_OK_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
@@ -578,6 +604,28 @@ const ERROR_ONCE_STEPS: &[SoundStep] = &[
     },
 ];
 
+const ACTION_OK_ONCE_STEPS: &[SoundStep] = &[SoundStep::Tone {
+    freq_hz: ACTION_FREQ_HZ,
+    duty_pct: ACTION_DUTY_PCT,
+    duration: Duration::from_millis(ACTION_CLICK_MS),
+}];
+
+const ACTION_FAIL_ONCE_STEPS: &[SoundStep] = &[
+    SoundStep::Tone {
+        freq_hz: ACTION_FREQ_HZ,
+        duty_pct: ACTION_DUTY_PCT,
+        duration: Duration::from_millis(ACTION_CLICK_MS),
+    },
+    SoundStep::Silence {
+        duration: Duration::from_millis(ACTION_DOUBLE_GAP_MS),
+    },
+    SoundStep::Tone {
+        freq_hz: ACTION_FREQ_HZ,
+        duty_pct: ACTION_DUTY_PCT,
+        duration: Duration::from_millis(ACTION_CLICK_MS),
+    },
+];
+
 const SAFETY_ALARM_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
         freq_hz: DEFAULT_FREQ_HZ,
@@ -594,6 +642,8 @@ pub const PATTERN_BOOT_WARN: SoundPattern = SoundPattern::once(BOOT_WARN_STEPS);
 pub const PATTERN_BOOT_FAIL: SoundPattern = SoundPattern::once(BOOT_FAIL_STEPS);
 pub const PATTERN_WARNING_ONCE: SoundPattern = SoundPattern::once(WARNING_ONCE_STEPS);
 pub const PATTERN_ERROR_ONCE: SoundPattern = SoundPattern::once(ERROR_ONCE_STEPS);
+pub const PATTERN_ACTION_OK_ONCE: SoundPattern = SoundPattern::once(ACTION_OK_ONCE_STEPS);
+pub const PATTERN_ACTION_FAIL_ONCE: SoundPattern = SoundPattern::once(ACTION_FAIL_ONCE_STEPS);
 pub const PATTERN_SAFETY_ALARM: SoundPattern = SoundPattern::looped(SAFETY_ALARM_STEPS);
 
 fn pattern_for(id: SoundId) -> Option<&'static SoundPattern> {
@@ -603,6 +653,8 @@ fn pattern_for(id: SoundId) -> Option<&'static SoundPattern> {
         SoundId::BootFail => Some(&PATTERN_BOOT_FAIL),
         SoundId::WarningOnce => Some(&PATTERN_WARNING_ONCE),
         SoundId::ErrorOnce => Some(&PATTERN_ERROR_ONCE),
+        SoundId::ActionOkOnce => Some(&PATTERN_ACTION_OK_ONCE),
+        SoundId::ActionFailOnce => Some(&PATTERN_ACTION_FAIL_ONCE),
         SoundId::SafetyAlarm => Some(&PATTERN_SAFETY_ALARM),
         _ => None,
     }
