@@ -17,6 +17,7 @@ use esp_hal::main;
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::{Duration, Instant, Rate};
+use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{ActiveLowBacklight, DisplayUi, EspHalSpinTimer, WORKBUF_SIZE};
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
@@ -24,6 +25,10 @@ use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
 use isolapurr_usb_hub::pd_i2c::sw2303::{apply_enable_profile_full, read_power_request};
 use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
+};
+use isolapurr_usb_hub::prompt_tone::{
+    DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitFailReason, InitWarnReason,
+    PromptToneManager, SafetyKind, SoundEvent,
 };
 use isolapurr_usb_hub::telemetry::TelemetrySampler;
 use {esp_backtrace as _, esp_println as _};
@@ -47,6 +52,13 @@ fn main() -> ! {
     let peripherals = esp_hal::init(config);
 
     info!("boot: isolapurr-usb-hub starting (pd i2c coordinator)");
+
+    let buzzer = LedcBuzzer::new(peripherals.LEDC, peripherals.GPIO21).expect("buzzer LEDC init");
+    let mut prompt_tone = PromptToneManager::new(buzzer);
+    info!(
+        "buzzer: prompt_tone default freq={}Hz duty={}%",
+        DEFAULT_FREQ_HZ, DEFAULT_DUTY_PCT
+    );
 
     // CE_TPS is U39 pad 42 => GPIO37.
     // CE_TPS drives Q9 (NMOS) which pulls TPS EN/UVLO low when CE_TPS is high.
@@ -89,6 +101,7 @@ fn main() -> ! {
             "telemetry: INA226 init error (PD loop continues; fields may show ERR): {:?}",
             defmt::Debug2Format(&err)
         );
+        prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::Ina226Init));
     }
 
     // GC9307 display (landscape) + backlight control.
@@ -126,11 +139,13 @@ fn main() -> ! {
             "display: init error (PD loop continues): {:?}",
             defmt::Debug2Format(&err)
         );
+        prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::DisplayInit));
     } else if let Err(err) = ui.draw_frame() {
         defmt::warn!(
             "display: draw_frame error (PD loop continues): {:?}",
             defmt::Debug2Format(&err)
         );
+        prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::DisplayInit));
     }
 
     let mut tps_state = TpsApplyState::new();
@@ -186,12 +201,24 @@ fn main() -> ! {
     }
     if !boot_profile_applied {
         defmt::warn!("sw2303 profile: giving up after 3 attempts (PD loop continues)");
+        prompt_tone.notify(SoundEvent::InitFail(InitFailReason::Sw2303ProfileBoot));
     }
 
     let mut last_tick = Instant::now();
 
+    prompt_tone.notify(SoundEvent::InitDone);
+    {
+        let now_us = esp_hal::time::Instant::now()
+            .duration_since_epoch()
+            .as_micros();
+        let now = core::time::Duration::from_micros(now_us);
+        prompt_tone.tick(now);
+    }
+
     loop {
         let sw2303_was_in_error = sw2303_error_latched;
+        let tps_was_in_error = tps_error_latched;
+        let ui_was_in_error = ui_error_latched;
 
         let (request, setpoint) = match read_power_request(&mut i2c) {
             Ok(request) => {
@@ -222,6 +249,12 @@ fn main() -> ! {
                 (None, boot_sp)
             }
         };
+
+        if !sw2303_was_in_error && sw2303_error_latched {
+            prompt_tone.notify(SoundEvent::EnterError(ErrorKind::Sw2303I2c));
+        } else if sw2303_was_in_error && !sw2303_error_latched {
+            prompt_tone.notify(SoundEvent::ExitError(ErrorKind::Sw2303I2c));
+        }
 
         // Runtime SW2303 profile retry:
         // - only on I2C recovery (error -> ok transition)
@@ -306,6 +339,12 @@ fn main() -> ! {
             tps_error_latched = false;
         }
 
+        if !tps_was_in_error && tps_error_latched {
+            prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
+        } else if tps_was_in_error && !tps_error_latched {
+            prompt_tone.notify(SoundEvent::ExitSafety(SafetyKind::TpsApply));
+        }
+
         // 1 Hz diagnostics (never gate on `online` bit):
         // - requested vs applied setpoint
         // - measured VBUS/IBUS (INA226)
@@ -366,7 +405,19 @@ fn main() -> ! {
             } else {
                 ui_error_latched = false;
             }
+
+            if !ui_was_in_error && ui_error_latched {
+                prompt_tone.notify(SoundEvent::EnterError(ErrorKind::UiRender));
+            } else if ui_was_in_error && !ui_error_latched {
+                prompt_tone.notify(SoundEvent::ExitError(ErrorKind::UiRender));
+            }
         }
+
+        let now_us = esp_hal::time::Instant::now()
+            .duration_since_epoch()
+            .as_micros();
+        let now = core::time::Duration::from_micros(now_us);
+        prompt_tone.tick(now);
 
         spin_delay_ms(loop_delay_ms);
     }

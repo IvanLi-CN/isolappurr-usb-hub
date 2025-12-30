@@ -10,7 +10,7 @@ name = "isolapurr-usb-hub"
 path = "./src/bin/main.rs"
 
 [dependencies]
-esp-hal = { version = "1", features = ["defmt", "esp32s3"] }
+esp-hal = { version = "1", features = ["defmt", "esp32s3", "unstable"] }
 
 critical-section = "1"
 defmt = "1"
