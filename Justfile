@@ -6,7 +6,7 @@ default:
 
 # Firmware (ESP32-S3 / Rust no_std)
 fw-build:
-	cargo build
+	cargo build --release
 
 fw-build-release:
 	cargo build --release
@@ -25,9 +25,9 @@ fw-select-port:
 	PORT="${PORT:-}" bash scripts/select_esp32_port.sh
 
 fw-flash:
-	cargo build
-	mcu-agentd flash usb_hub_dev
-	exec mcu-agentd monitor usb_hub_dev --reset
+	cargo build --release
+	mcu-agentd flash usb_hub
+	exec mcu-agentd monitor usb_hub --reset
 
 fw-flash-release:
 	cargo build --release
@@ -38,13 +38,13 @@ fw-monitor:
 	exec mcu-agentd monitor usb_hub
 
 fw-monitor-dev:
-	exec mcu-agentd monitor usb_hub_dev
+	exec mcu-agentd monitor usb_hub
 
 fw-reset:
 	mcu-agentd reset usb_hub
 
 fw-reset-dev:
-	mcu-agentd reset usb_hub_dev
+	mcu-agentd reset usb_hub
 
 # --- MCU agent daemon passthrough (recommended) ----------------------------
 
