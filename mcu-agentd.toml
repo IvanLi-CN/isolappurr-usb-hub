@@ -13,14 +13,3 @@ selector_cache_file = ".esp32-port"
 log_format = "defmt"
 after_flash = "no-reset"
 skip_update_check = true
-
-[mcu.usb_hub_dev]
-backend = "espflash"
-chip = "esp32s3"
-artifact_elf = "target/xtensa-esp32s3-none-elf/debug/isolapurr-usb-hub"
-selector_cache_file = ".esp32-port"
-
-[mcu.usb_hub_dev.espflash]
-log_format = "defmt"
-after_flash = "no-reset"
-skip_update_check = true
