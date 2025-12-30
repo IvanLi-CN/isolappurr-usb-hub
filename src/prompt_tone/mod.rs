@@ -52,7 +52,12 @@ pub enum SoundId {
     /// Optional "recovered" acknowledgement (reserved for future wiring).
     RecoverOnce,
 
-    /// Reserved: a short acknowledgement for user actions.
+    /// A short acknowledgement for a successful user action.
+    ActionOkOnce,
+    /// A short acknowledgement for a failed user action.
+    ActionFailOnce,
+
+    /// Reserved: a generic acknowledgement for user actions.
     ActionOnce,
     /// Reserved: PD-related acknowledgement or alert.
     PdOnce,
@@ -83,6 +88,11 @@ pub enum SoundEvent {
     EnterSafety(SafetyKind),
     /// Exited a safety-critical state (must stop the alarm immediately).
     ExitSafety(SafetyKind),
+
+    /// A user action completed successfully.
+    ActionOk,
+    /// A user action completed but failed.
+    ActionFail,
 }
 
 /// Warning reasons during initialization.

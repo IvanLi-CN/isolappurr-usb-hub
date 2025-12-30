@@ -11,7 +11,7 @@ mod spi_device;
 
 use defmt::info;
 use esp_hal::clock::CpuClock;
-use esp_hal::gpio::{Level, Output, OutputConfig};
+use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
 use esp_hal::i2c::master::{Config as I2cConfig, I2c, SoftwareTimeout};
 use esp_hal::main;
 use esp_hal::spi::Mode;
@@ -41,6 +41,70 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 static mut DISPLAY_WORKBUF: [u8; WORKBUF_SIZE] = [0; WORKBUF_SIZE];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ButtonId {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ActionError {
+    PlaceholderFailure,
+}
+
+fn run_placeholder_action(button: ButtonId) -> Result<(), ActionError> {
+    match button {
+        ButtonId::Left => Ok(()),
+        ButtonId::Right => Err(ActionError::PlaceholderFailure),
+    }
+}
+
+#[derive(Debug)]
+struct DebouncedButton {
+    stable_pressed: bool,
+    candidate_pressed: bool,
+    candidate_since: Option<Instant>,
+}
+
+impl DebouncedButton {
+    fn new() -> Self {
+        Self {
+            stable_pressed: false,
+            candidate_pressed: false,
+            candidate_since: None,
+        }
+    }
+
+    fn update(&mut self, now: Instant, is_pressed: bool, debounce: Duration) -> bool {
+        if is_pressed == self.stable_pressed {
+            self.candidate_pressed = is_pressed;
+            self.candidate_since = None;
+            return false;
+        }
+
+        let Some(since) = self.candidate_since else {
+            self.candidate_pressed = is_pressed;
+            self.candidate_since = Some(now);
+            return false;
+        };
+
+        if self.candidate_pressed != is_pressed {
+            self.candidate_pressed = is_pressed;
+            self.candidate_since = Some(now);
+            return false;
+        }
+
+        if now - since < debounce {
+            return false;
+        }
+
+        self.stable_pressed = is_pressed;
+        self.candidate_since = None;
+
+        is_pressed
+    }
+}
+
 fn spin_delay_ms(ms: u64) {
     let start = Instant::now();
     while start.elapsed() < Duration::from_millis(ms) {}
@@ -58,6 +122,22 @@ fn main() -> ! {
     info!(
         "buzzer: prompt_tone default freq={}Hz duty={}%",
         DEFAULT_FREQ_HZ, DEFAULT_DUTY_PCT
+    );
+
+    // Physical buttons:
+    // - BTNR = GPIO0 (active-low, requires internal pull-up)
+    // - BTNL = GPIO1 (active-low, requires internal pull-up)
+    let btn_cfg = InputConfig::default().with_pull(Pull::Up);
+    let btn_left = Input::new(peripherals.GPIO1, btn_cfg);
+    let btn_right = Input::new(peripherals.GPIO0, btn_cfg);
+    let mut btn_left_state = DebouncedButton::new();
+    let mut btn_right_state = DebouncedButton::new();
+    let btn_debounce = Duration::from_millis(30);
+    let mut btn_raw_left_pressed = btn_left.is_low();
+    let mut btn_raw_right_pressed = btn_right.is_low();
+    info!(
+        "buttons: initial raw left_pressed={} right_pressed={}",
+        btn_raw_left_pressed, btn_raw_right_pressed
     );
 
     // CE_TPS is U39 pad 42 => GPIO37.
@@ -157,6 +237,7 @@ fn main() -> ! {
     let mut ui_error_latched = false;
     let mut last_sw2303_profile_attempt: Option<Instant> = None;
     let mut last_diag_tick = Instant::now();
+    let mut button_fast_loop_until: Option<Instant> = None;
 
     let boot_sp = boot_supply_setpoint();
     // Give TPS and SW2303 time to power up before first I2C poll.
@@ -413,11 +494,65 @@ fn main() -> ! {
             }
         }
 
+        // Placeholder button actions:
+        // - Left button: always Ok -> play ActionOk
+        // - Right button: always Err -> play ActionFail
+        //
+        // Note: action result tones are suppressed during SafetyAlarm in `prompt_tone`.
+        let buttons_now = Instant::now();
+        let raw_left_pressed = btn_left.is_low();
+        let raw_right_pressed = btn_right.is_low();
+        if raw_left_pressed != btn_raw_left_pressed || raw_right_pressed != btn_raw_right_pressed {
+            btn_raw_left_pressed = raw_left_pressed;
+            btn_raw_right_pressed = raw_right_pressed;
+            info!(
+                "buttons: raw left_pressed={} right_pressed={}",
+                raw_left_pressed, raw_right_pressed
+            );
+        }
+
+        if btn_left_state.update(buttons_now, raw_left_pressed, btn_debounce) {
+            info!("button: left pressed");
+            match run_placeholder_action(ButtonId::Left) {
+                Ok(()) => {
+                    info!("button: left action ok");
+                    prompt_tone.notify(SoundEvent::ActionOk);
+                    button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+                }
+                Err(_) => {
+                    info!("button: left action fail");
+                    prompt_tone.notify(SoundEvent::ActionFail);
+                    button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+                }
+            }
+        }
+        if btn_right_state.update(buttons_now, raw_right_pressed, btn_debounce) {
+            info!("button: right pressed");
+            match run_placeholder_action(ButtonId::Right) {
+                Ok(()) => {
+                    info!("button: right action ok");
+                    prompt_tone.notify(SoundEvent::ActionOk);
+                    button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+                }
+                Err(_) => {
+                    info!("button: right action fail");
+                    prompt_tone.notify(SoundEvent::ActionFail);
+                    button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+                }
+            }
+        }
+
         let now_us = esp_hal::time::Instant::now()
             .duration_since_epoch()
             .as_micros();
         let now = core::time::Duration::from_micros(now_us);
         prompt_tone.tick(now);
+
+        if button_fast_loop_until.is_some_and(|until| Instant::now() < until) {
+            loop_delay_ms = loop_delay_ms.min(10);
+        } else {
+            button_fast_loop_until = None;
+        }
 
         spin_delay_ms(loop_delay_ms);
     }
