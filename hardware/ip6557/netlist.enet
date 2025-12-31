@@ -375,51 +375,6 @@
         }
       }
     },
-    "gge3": {
-      "props": {
-        "Device": "55899ccd32184129883be6fffcbf11ec",
-        "Designator": "C42",
-        "LCSC Part Name": "22uF ±20% 35V",
-        "Supplier Part": "C6119901",
-        "Manufacturer": "HRE(芯声)",
-        "Manufacturer Part": "CGA0805X5R226M350MT",
-        "Supplier Footprint": "0805",
-        "JLCPCB Part Class": "扩展库",
-        "Datasheet": "https://atta.szlcsc.com/upload/public/pdf/source/20231129/D589D0CC4D260F7AC3A77E53B455CCB3.pdf",
-        "Supplier": "LCSC",
-        "Add into BOM": "yes",
-        "Value": "22uF",
-        "Tolerance": "±20%",
-        "Voltage Rated": "35V",
-        "Temperature Coefficient": "X5R",
-        "Name": "22uF",
-        "Description": "容值:22uF;精度:±20%;额定电压:35V;材质(温度系数):X5R;",
-        "3D Model": "1ba041120af144c991958decab20d241",
-        "3D Model Title": "C0805_L2.0-W1.3-H1.3",
-        "3D Model Transform": "78.74,51.181,0,0,0,0,0,0.0005,0",
-        "Unique ID": "gge3",
-        "Reuse Block": "",
-        "Group ID": "",
-        "Channel ID": "$1e7181",
-        "FootprintName": "C0805_1",
-        "DeviceName": "CGA0805X5R226M350MT",
-        "Footprint": "c45da4b204884a338c41477a0aa1e93c_e9",
-        "PCB Layer": "TopLayer",
-        "Convert to PCB": "yes"
-      },
-      "pinInfoMap": {
-        "1": {
-          "name": "",
-          "number": "1",
-          "net": "GND"
-        },
-        "2": {
-          "name": "",
-          "number": "2",
-          "net": "VIN_IP"
-        }
-      }
-    },
     "gge485": {
       "props": {
         "Designator": "C122",
@@ -507,51 +462,6 @@
           "name": "",
           "number": "2",
           "net": "$1N20487"
-        }
-      }
-    },
-    "gge4": {
-      "props": {
-        "Device": "55899ccd32184129883be6fffcbf11ec",
-        "Designator": "C43",
-        "LCSC Part Name": "22uF ±20% 35V",
-        "Supplier Part": "C6119901",
-        "Manufacturer": "HRE(芯声)",
-        "Manufacturer Part": "CGA0805X5R226M350MT",
-        "Supplier Footprint": "0805",
-        "JLCPCB Part Class": "扩展库",
-        "Datasheet": "https://atta.szlcsc.com/upload/public/pdf/source/20231129/D589D0CC4D260F7AC3A77E53B455CCB3.pdf",
-        "Supplier": "LCSC",
-        "Add into BOM": "yes",
-        "Value": "22uF",
-        "Tolerance": "±20%",
-        "Voltage Rated": "35V",
-        "Temperature Coefficient": "X5R",
-        "Name": "22uF",
-        "Description": "容值:22uF;精度:±20%;额定电压:35V;材质(温度系数):X5R;",
-        "3D Model": "1ba041120af144c991958decab20d241",
-        "3D Model Title": "C0805_L2.0-W1.3-H1.3",
-        "3D Model Transform": "78.74,51.181,0,0,0,0,0,0.0005,0",
-        "Unique ID": "gge4",
-        "Reuse Block": "",
-        "Group ID": "",
-        "Channel ID": "$1e7338",
-        "FootprintName": "C0805_1",
-        "DeviceName": "CGA0805X5R226M350MT",
-        "Footprint": "c45da4b204884a338c41477a0aa1e93c_e13",
-        "PCB Layer": "TopLayer",
-        "Convert to PCB": "yes"
-      },
-      "pinInfoMap": {
-        "1": {
-          "name": "",
-          "number": "1",
-          "net": "GND"
-        },
-        "2": {
-          "name": "",
-          "number": "2",
-          "net": "VIN_IP"
         }
       }
     },
@@ -797,7 +707,7 @@
         "Unique ID": "gge124_1",
         "Reuse Block": "",
         "Group ID": "",
-        "Channel ID": "$1e7304",
+        "Channel ID": "$1I21310",
         "FootprintName": "C1210",
         "DeviceName": "GRM32ER60J107ME20L",
         "Footprint": "c45da4b204884a338c41477a0aa1e93c_e21",
@@ -1943,12 +1853,12 @@
         "35": {
           "name": "",
           "number": "35",
-          "net": "DP_IP"
+          "net": ""
         },
         "36": {
           "name": "",
           "number": "36",
-          "net": "DM_IP"
+          "net": ""
         },
         "37": {
           "name": "",
@@ -11142,6 +11052,51 @@
           "name": "",
           "number": "2",
           "net": "$1N6410"
+        }
+      }
+    },
+    "gge124_2": {
+      "props": {
+        "Designator": "C42",
+        "LCSC Part Name": "100uF ±20% 6.3V",
+        "Supplier Part": "",
+        "Manufacturer": "muRata(村田)",
+        "Manufacturer Part": "GRM32ER60J107ME20L",
+        "Supplier Footprint": "1210",
+        "JLCPCB Part Class": "Extended Part",
+        "Datasheet": "https://item.szlcsc.com/datasheet/GRM32ER60J107ME20L/89332.html",
+        "Supplier": "LCSC",
+        "Add into BOM": "yes",
+        "Value": "n.c.",
+        "Tolerance": "±20%",
+        "Voltage Rating": "6.3V",
+        "Temperature Coefficient": "X5R",
+        "Name": "n.c.",
+        "Description": "容值:100uF;精度:±20%;额定电压:6.3V;温度系数:X5R;",
+        "3D Model": "833068e7fe044595a6eec77c56179455",
+        "3D Model Title": "C1210_L3.2-W2.5-H2.5",
+        "3D Model Transform": "125.984,98.425,0,0,0,0,0,0,0",
+        "Device": "62a4294ad2db4e9eb648e7fb27bd3650",
+        "Unique ID": "gge124_2",
+        "Reuse Block": "",
+        "Group ID": "",
+        "Channel ID": "$1I21309",
+        "FootprintName": "C1210",
+        "DeviceName": "GRM32ER60J107ME20L",
+        "Footprint": "c45da4b204884a338c41477a0aa1e93c_74e04b1f2a04ab6c",
+        "PCB Layer": "TopLayer",
+        "Convert to PCB": "yes"
+      },
+      "pinInfoMap": {
+        "1": {
+          "name": "",
+          "number": "1",
+          "net": "GND"
+        },
+        "2": {
+          "name": "",
+          "number": "2",
+          "net": "VIN_IP"
         }
       }
     }
