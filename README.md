@@ -4,7 +4,10 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 
 - 上行：USB‑C 口（数据 + 供电），使用 **CH334P** 做 USB2.0 Hub 控制。  
 - 下行 USB‑A ×2：每个口用一颗 **URB2405S‑3WR3** 隔离 DC/DC 模块独立供电，实现数据与电源隔离。  
-- 下行 USB‑C ×1：使用 **CH224Q + TPS55288 + SW2303** 实现 USB‑PD 受电与 3.3–21 V 可调输出（PPS/AVS 能力由 SW2303 侧控制）。  
+- 下行 USB‑C ×1：硬件实现随方案不同：  
+  - `tps-sw`：**CH224Q + TPS55288 + SW2303**（USB‑PD 受电 + 3.3–21 V 可调输出；PPS/AVS 能力由 SW2303 侧控制）  
+  - `ip6557`：**CH224Q + IP6557**  
+  详见 `docs/hardware-variants.md`。  
 - 电源输入：
   - 来自主机的 USB‑C 上行口，通过 **CH224Q** 争取更高功率 PD 档位；  
   - 来自 DC5025 圆孔直流口（12–24 V 输入）；  
@@ -20,6 +23,10 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
   - ESP32‑S3 固件（Rust `no_std`），用于对电源/协议芯片进行动态控制与状态读取（后续会逐步补齐功能）。  
 - `web/`  
   - React SPA Web 界面（Vite + React + TypeScript），支持 GitHub Pages 部署。  
+- `hardware/`  
+  - 硬件方案产物（按方案名分目录）；当前包含两份网表：  
+    - `hardware/tps-sw/netlist.enet`  
+    - `hardware/ip6557/netlist.enet`  
 - `docs/datasheets/`  
   - `ch224q-datasheet.md` – CH224Q/CH224A/CH224K/CH224D/CH221K 的官方手册 Markdown 版。  
   - `ch217-datasheet.md` – CH217 USB 限流配电开关芯片手册 Markdown 版。  
@@ -38,7 +45,7 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 
 后续会补充：
 
-- `hardware/` – 原理图与 PCB（KiCad / Altium 等，视实际选型而定）。  
+- `hardware/` – 原理图与 PCB 源文件（KiCad / Altium 等，视实际选型而定）。  
 - `firmware/` – 如未来出现多固件/多 MCU，可将根目录固件迁移到该目录下分目标管理。  
 - `mechanical/` – 外壳及 3D 模型（若有）。
 

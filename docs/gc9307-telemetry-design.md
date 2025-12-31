@@ -2,6 +2,8 @@
 
 本文档已按主人确认冻结为 **v1 规格**：在 GC9307 横屏上以 **10 Hz** 刷新显示三组（电压/电流）信息，并明确总线/地址/数据口径/错误显示策略，作为实现阶段的基线。
 
+适用硬件：`tps-sw`（见 `docs/hardware-variants.md`）。`ip6557` 的遥测/显示方案如有差异，后续另行补齐。
+
 ---
 
 ## 1. 背景与目标
@@ -94,7 +96,7 @@
 
 ### 5.2 遥测 I2C（I2C1，总线 `SDA/SCL`）
 
-来自网表 `docs/netlist/pcb.enet`：
+来自网表 `hardware/tps-sw/netlist.enet`：
 
 - I2C 控制器：**建议使用 `I2C1`**（与 PD 总线隔离）
 - 频率：建议 `400 kHz`（与 INA226 Fast‑mode 匹配）
@@ -109,7 +111,7 @@
 
 ### 5.3 屏幕 SPI 与控制脚
 
-来自网表 `docs/netlist/pcb.enet`（U19 与 FPC1）：
+来自网表 `hardware/tps-sw/netlist.enet`（U19 与 FPC1）：
 
 - SPI 信号：
   - `MOSI`：U19 pin16 → GPIO11
