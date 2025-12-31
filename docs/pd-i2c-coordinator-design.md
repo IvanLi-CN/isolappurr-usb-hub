@@ -2,6 +2,8 @@
 
 本文档用于 **设计阶段**：规划如何在本项目中使用 **同一条 I2C 总线**，由 MCU **轮询 SW2303** 获取协商后的目标参数，并将其 **转换/量化后写入 TPS55288**，从而实现 USB‑PD 输出电压/电流的协同控制。
 
+适用硬件：`tps-sw`（见 `docs/hardware-variants.md`）。`ip6557` 方案不使用 `SW2303/TPS55288`，不适用本文档。
+
 > 重要范围约束：本次工作 **只允许** MCU 与 `SW2303`、`TPS55288` 两个 I2C 从设备通信；不得与其他 I2C 设备通信，也不得做 I2C 地址扫描。
 
 ---
@@ -52,7 +54,7 @@
 - `SCL_TPS`
 - `SDA_TPS`
 
-来自网表 `docs/netlist/pcb.enet` 的关键连接：
+来自网表 `hardware/tps-sw/netlist.enet` 的关键连接：
 
 - MCU（U19，ESP32‑S3R2）：
   - pin44（GPIO39 / `MTCK`）→ `SDA_TPS`

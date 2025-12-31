@@ -5,6 +5,7 @@
 - Firmware (ESP32‑S3, Rust `no_std`): `src/`, `Cargo.toml`, `.cargo/config.toml`, `tools/espflash-runner`
 - Web UI (React SPA): `web/` (see `web/src/`, `web/public/`, `web/vite.config.ts`)
 - Docs & datasheets: `docs/`
+- Hardware variants & netlists: `hardware/` (per-variant artifacts; see `docs/hardware-variants.md`)
 - CI/deploy: `.github/workflows/pages.yml` builds `web/dist` for GitHub Pages
 
 ## Build, Test, and Development Commands
@@ -29,6 +30,7 @@ Direct equivalents:
 
 - Rust: `rustfmt` (edition 2024). Keep firmware `#![no_std]`; avoid heap unless justified. Use `snake_case` for modules/functions.
 - Web: Biome enforces 2‑space indentation and double quotes. Use `cd web && bun run format` and `bun run check`.
+- Hardware variants: name directories by **scheme name only** (e.g. `tps-sw`, `ip6557`), avoid board revision/version numbers; place netlists at `hardware/<variant>/netlist.enet` and update `docs/hardware-variants.md`.
 
 ## Testing Guidelines
 
