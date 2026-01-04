@@ -1,7 +1,9 @@
+[project]
+id = "isolapurr-usb-hub"
+
 [agentd]
 auto_start_daemon = true
 tail_default = 200
-non_interactive = false
 
 [mcu.usb_hub]
 backend = "espflash"
