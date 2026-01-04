@@ -1,5 +1,5 @@
 [target.xtensa-esp32s3-none-elf]
-runner = "bash tools/espflash-runner"
+runner = "bash tools/mcu-agentd-runner"
 
 [env]
 DEFMT_LOG = "info"

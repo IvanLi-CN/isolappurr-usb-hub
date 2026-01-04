@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-- Firmware (ESP32‑S3, Rust `no_std`): `src/`, `Cargo.toml`, `.cargo/config.toml`, `tools/espflash-runner`
+- Firmware (ESP32‑S3, Rust `no_std`): `src/`, `Cargo.toml`, `.cargo/config.toml`, `tools/mcu-agentd-runner`
 - Web UI (React SPA): `web/` (see `web/src/`, `web/public/`, `web/vite.config.ts`)
 - Docs & datasheets: `docs/`
 - Hardware variants & netlists: `hardware/` (per-variant artifacts; see `docs/hardware-variants.md`)
@@ -12,18 +12,21 @@
 
 Prefer `Justfile`:
 
-- `just fw-build` / `just fw-build-release` — build firmware
-- `just agentd-install` — install host `mcu-agentd` from `~/Projects/Ivan/mcu-agentd`
-- `just fw-flash` / `just fw-flash-release` — build + flash + monitor via `mcu-agentd` (`mcu-agentd.toml`, port cached in `.esp32-port`)
-- `just fw-select-port` — persist the owner-confirmed serial port into `.esp32-port` (requires explicit `PORT=/dev/cu.xxx`)
-- `just web-install` / `just web-dev` / `just web-build` — install/run/build the SPA
+- `just build` — build firmware (`cargo build --release`)
+- `just agentd-init` — install + start `mcu-agentd` from a local checkout (default `../mcu-agentd`)
+- `just ports` — list selector candidates (serial ports)
+- `PORT=/dev/cu.xxx just select-port` — persist the owner-confirmed serial port into `.esp32-port`
+- `just flash` — build + flash + monitor via `mcu-agentd` (`mcu-agentd.toml`, port cached in `.esp32-port`)
+- `just monitor` — monitor via `mcu-agentd`
+- `just reset` — reset via `mcu-agentd`
+- `just web-install` / `just web` / `just web-build` — install/run/build the SPA
 - `just web-check` — run Biome checks
 - `just hooks-install` — install Git hooks (lefthook)
 
 Direct equivalents:
 
 - Firmware (recommended): `mcu-agentd flash usb_hub` / `mcu-agentd monitor usb_hub --reset`
-- Firmware (legacy): `cargo build`, `ESPFLASH_PORT=/dev/ttyXXX cargo run`
+- Firmware (via cargo runner): `cargo run --release` (invokes `tools/mcu-agentd-runner`)
 - Web: `cd web && bun install && bun dev`
 
 ## Coding Style & Naming Conventions
@@ -49,10 +52,10 @@ There are no dedicated test suites yet. At minimum, keep:
 ## Security & Configuration
 
 - Never commit secrets. Use local env files (e.g. `.env`) for machine-specific settings.
-- Flashing requires an explicit serial port: set `ESPFLASH_PORT` (auto-selection is intentionally disabled).
+- Flashing requires an explicit serial port selection in `.esp32-port` (auto-selection is intentionally disabled).
 - Flashing safety: only flash to the owner-confirmed port for this project (stored in `.esp32-port`). Do not override it or write `.esp32-port` yourself, and never pick a different port “because it exists”.
-- Scripts must never auto-select a port (even if only one port exists). If `.esp32-port` is missing or invalid, scripts must error out and instruct the user to run `just fw-ports` and then `PORT=/dev/cu.xxx just fw-select-port`.
-- Do not set `PORT=...` / `ESPFLASH_PORT=...` unless the owner explicitly provided the exact device path. If the expected port is missing or multiple ports exist, stop and ask the owner to confirm/re-select the port.
+- Tools must never auto-select a port (even if only one port exists). If `.esp32-port` is missing or invalid, error out and instruct the user to run `just ports` and then `PORT=/dev/cu.xxx just select-port`.
+- Do not set `PORT=...` unless the owner explicitly provided the exact device path. If the expected port is missing or multiple ports exist, stop and ask the owner to confirm/re-select the port.
 - `mcu-agentd` uses `.esp32-port` as its selector cache (see `mcu-agentd.toml`). Never run `mcu-agentd selector set ... --auto` or change `.esp32-port` without explicit owner permission.
 
 ## License

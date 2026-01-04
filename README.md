@@ -65,10 +65,10 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 
 如果你安装了 `just`，建议按以下顺序：
 
-- 安装 `mcu-agentd`：`just agentd-install`（来自 `~/Projects/Ivan/mcu-agentd`）
-- 列出串口：`just fw-ports`
-- 选择并缓存串口：`PORT=/dev/cu.xxx just fw-select-port`（写入 `.esp32-port`）
-- 烧录 + 监视：`just fw-flash`
+- 安装并启动 `mcu-agentd`：`just agentd-init`（默认使用 `../mcu-agentd`；也可 `path=/path/to/mcu-agentd just agentd-init`）
+- 列出串口：`just ports`
+- 选择并缓存串口：`PORT=/dev/cu.xxx just select-port`（写入 `.esp32-port`）
+- 烧录 + 监视：`just flash`
 
 启用本地 Git hooks（格式化 + commitlint）：
 
@@ -77,11 +77,10 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 
 ### 固件（ESP32‑S3 / Rust no_std / defmt）
 
-- 构建：`just fw-build`（或直接 `cargo build --release`）
-- 烧录 + 串口监视（推荐）：`just fw-flash`
+- 构建：`just build`（或直接 `cargo build --release`）
+- 烧录 + 串口监视（推荐）：`just flash`
   - 由 `mcu-agentd` 执行（配置：`mcu-agentd.toml`；串口缓存：`.esp32-port`；日志 `defmt` 解码由 `espflash` 完成）。
-- 兼容旧流程（不推荐）：`ESPFLASH_PORT=/dev/ttyXXX cargo run --release`
-  - 为避免误操作，本仓库不自动选择串口；仅允许在你明确指定设备路径时使用 `ESPFLASH_PORT`。
+- `cargo run --release`（可选）：会通过 `tools/mcu-agentd-runner` 调用 `mcu-agentd`（同样要求先选定 `.esp32-port`，不会自动选串口）。
 
 ### Web（React SPA / bun）
 
