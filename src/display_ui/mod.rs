@@ -5,6 +5,7 @@ use core::future::{Future, ready};
 
 use embedded_graphics_core::pixelcolor::Rgb565;
 use embedded_graphics_core::pixelcolor::RgbColor;
+use embedded_graphics_core::pixelcolor::raw::RawU16;
 use embedded_hal::digital::OutputPin;
 use embedded_hal::spi::SpiDevice;
 use esp_hal::time::{Duration, Instant};
@@ -34,6 +35,52 @@ const GLYPH_Y0: u16 = (TILE_H - GLYPH_H) / 2;
 
 const FG: Rgb565 = Rgb565::WHITE;
 const BG: Rgb565 = Rgb565::BLACK;
+
+// --- GC9307 normal UI (3×2 fixed-width) colors (RGB565; frozen spec) ---
+const UI_BG_RAW: u16 = 0x0000;
+
+const UI_OK_VOLT_RAW: u16 = 0xFE45;
+const UI_OK_CURR_RAW: u16 = 0xF206;
+const UI_OK_PWR_RAW: u16 = 0x4D6A;
+
+const UI_STATUS_NOT_PRESENT_RAW: u16 = 0x8410;
+const UI_STATUS_ERROR_RAW: u16 = 0xF800;
+const UI_STATUS_OVER_RAW: u16 = 0xFCC0;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NormalUiField {
+    Ok(u32),
+    Err,
+}
+
+impl NormalUiField {
+    pub const fn ok(value: u32) -> Self {
+        Self::Ok(value)
+    }
+
+    pub const fn err() -> Self {
+        Self::Err
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NormalUiPort {
+    pub present: bool,
+    /// Voltage in µV.
+    pub voltage_uv: NormalUiField,
+    /// Current in µA.
+    pub current_ua: NormalUiField,
+    /// Power in µW.
+    pub power_uw: NormalUiField,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NormalUiSnapshot {
+    /// Left column: USB-A.
+    pub usb_a: NormalUiPort,
+    /// Right column: USB-C/PD.
+    pub usb_c: NormalUiPort,
+}
 
 pub trait BacklightControl {
     fn on(&mut self);
@@ -170,6 +217,70 @@ where
         Ok(())
     }
 
+    /// Render GC9307 "normal UI" (3 rows × 2 columns, 13 chars per row).
+    ///
+    /// Layout (each row): `left_cell(6) + ' ' + right_cell(6)`.
+    /// Units are fixed per row: V / A / W.
+    pub fn render_normal_ui(&mut self, snapshot: &NormalUiSnapshot) -> Result<(), GcError<E>> {
+        // Safe default: always clear to black so switching views doesn't leave stale pixels.
+        self.display.fill_color(BG)?;
+
+        // Row 0: Voltage (V)
+        self.draw_normal_ui_row(
+            0,
+            snapshot.usb_a.present,
+            snapshot.usb_a.voltage_uv,
+            snapshot.usb_c.present,
+            snapshot.usb_c.voltage_uv,
+            b'V',
+            UI_OK_VOLT_RAW,
+        )?;
+
+        // Row 1: Current (A)
+        self.draw_normal_ui_row(
+            1,
+            snapshot.usb_a.present,
+            snapshot.usb_a.current_ua,
+            snapshot.usb_c.present,
+            snapshot.usb_c.current_ua,
+            b'A',
+            UI_OK_CURR_RAW,
+        )?;
+
+        // Row 2: Power (W)
+        self.draw_normal_ui_row(
+            2,
+            snapshot.usb_a.present,
+            snapshot.usb_a.power_uw,
+            snapshot.usb_c.present,
+            snapshot.usb_c.power_uw,
+            b'W',
+            UI_OK_PWR_RAW,
+        )?;
+
+        Ok(())
+    }
+
+    fn draw_normal_ui_row(
+        &mut self,
+        row: u16,
+        left_present: bool,
+        left: NormalUiField,
+        right_present: bool,
+        right: NormalUiField,
+        unit: u8,
+        ok_color_raw: u16,
+    ) -> Result<(), GcError<E>> {
+        let (left_s, left_fg_raw) = format_normal_ui_cell(left_present, left, unit, ok_color_raw);
+        let (right_s, right_fg_raw) =
+            format_normal_ui_cell(right_present, right, unit, ok_color_raw);
+
+        self.draw_tile_str_colored(0, row, &left_s, rgb565(left_fg_raw))?;
+        self.draw_tile_colored(6, row, b' ', rgb565(UI_BG_RAW))?;
+        self.draw_tile_str_colored(7, row, &right_s, rgb565(right_fg_raw))?;
+        Ok(())
+    }
+
     fn draw_values_row(
         &mut self,
         row: u16,
@@ -194,15 +305,43 @@ where
         Ok(())
     }
 
+    fn draw_tile_str_colored(
+        &mut self,
+        tile_x: u16,
+        tile_y: u16,
+        s: &[u8],
+        fg: Rgb565,
+    ) -> Result<(), GcError<E>> {
+        for (i, &ch) in s.iter().enumerate() {
+            self.draw_tile_colored(tile_x + i as u16, tile_y, ch, fg)?;
+        }
+        Ok(())
+    }
+
     fn draw_tile(&mut self, tile_x: u16, tile_y: u16, ch: u8) -> Result<(), GcError<E>> {
+        self.draw_tile_colored(tile_x, tile_y, ch, FG)
+    }
+
+    fn draw_tile_colored(
+        &mut self,
+        tile_x: u16,
+        tile_y: u16,
+        ch: u8,
+        fg: Rgb565,
+    ) -> Result<(), GcError<E>> {
         let x = X_OFFSET + tile_x * TILE_W;
         let y = Y_OFFSET + tile_y * TILE_H;
 
         let mut data = [0_u8; (TILE_W as usize * TILE_H as usize) / 8];
         render_char_6x8_scaled(ch, &mut data);
-        self.display.write_area(x, y, TILE_W, &data, FG, BG)?;
+        self.display.write_area(x, y, TILE_W, &data, fg, BG)?;
         Ok(())
     }
+}
+
+fn rgb565(raw: u16) -> Rgb565 {
+    // `Rgb565` is a newtype around a raw 16-bit value. Keep the spec constants exact.
+    Rgb565::from(RawU16::new(raw))
 }
 
 fn format_mv_2dp_5(v: Field<u16>) -> [u8; 5] {
@@ -248,6 +387,82 @@ fn format_ma_2dp_4(i: Field<u16>) -> [u8; 4] {
             ]
         }
     }
+}
+
+fn format_normal_ui_cell(
+    present: bool,
+    value: NormalUiField,
+    unit: u8,
+    ok_color_raw: u16,
+) -> ([u8; 6], u16) {
+    if !present {
+        return (
+            [b'-', b'-', b'.', b'-', b'-', unit],
+            UI_STATUS_NOT_PRESENT_RAW,
+        );
+    }
+
+    match value {
+        NormalUiField::Err => (*b"ERROR ", UI_STATUS_ERROR_RAW),
+        NormalUiField::Ok(micros) => match format_ok_value_6(micros, unit) {
+            Ok(s) => (s, ok_color_raw),
+            Err(OkValueError::Over) => (*b"OVER  ", UI_STATUS_OVER_RAW),
+        },
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OkValueError {
+    Over,
+}
+
+fn format_ok_value_6(micros: u32, unit: u8) -> Result<[u8; 6], OkValueError> {
+    // Try 3 decimals: D.ddd
+    let milli = (micros + 500) / 1_000; // value * 1_000, half-up
+    if milli < 10_000 {
+        let int = milli / 1_000; // 0..=9
+        let frac = milli % 1_000;
+        return Ok([
+            b'0' + int as u8,
+            b'.',
+            b'0' + (frac / 100) as u8,
+            b'0' + ((frac / 10) % 10) as u8,
+            b'0' + (frac % 10) as u8,
+            unit,
+        ]);
+    }
+
+    // Try 2 decimals: DD.dd
+    let centi = (micros + 5_000) / 10_000; // value * 100, half-up
+    if centi < 10_000 {
+        let int = centi / 100; // 0..=99 (expected 10..=99)
+        let frac = centi % 100;
+        return Ok([
+            b'0' + (int / 10) as u8,
+            b'0' + (int % 10) as u8,
+            b'.',
+            b'0' + (frac / 10) as u8,
+            b'0' + (frac % 10) as u8,
+            unit,
+        ]);
+    }
+
+    // Try 1 decimal: DDD.d
+    let deci = (micros + 50_000) / 100_000; // value * 10, half-up
+    if deci < 10_000 {
+        let int = deci / 10; // 0..=999 (expected 100..=999)
+        let frac = deci % 10;
+        return Ok([
+            b'0' + (int / 100) as u8,
+            b'0' + ((int / 10) % 10) as u8,
+            b'0' + (int % 10) as u8,
+            b'.',
+            b'0' + frac as u8,
+            unit,
+        ]);
+    }
+
+    Err(OkValueError::Over)
 }
 
 fn render_char_6x8_scaled(ch: u8, out: &mut [u8; 144]) {
@@ -333,6 +548,15 @@ fn glyph_6x8(ch: u8) -> [u8; 8] {
         ],
         b'U' => [
             0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b011110, 0,
+        ],
+        b'V' => [
+            0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b011110, 0b001100, 0,
+        ],
+        b'W' => [
+            0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b110111, 0b011110, 0,
+        ],
+        b'O' => [
+            0b011110, 0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b011110, 0,
         ],
 
         b'?' => [
