@@ -189,6 +189,31 @@
 
 - 视为该项 `ERROR`。
 
+#### 7.1.1 INA226 校准与电流满量程（规范）
+
+本项目使用 INA226 的 **Calibration + Current_LSB** 进行电流/功率换算；因此必须对两路分别按各自期望最大电流进行校准，以避免显示区间内出现寄存器溢出或缩放错误。
+
+共同前提：
+
+- 两路分流电阻均为 `10mΩ`（`R22=10mΩ`，`R29=10mΩ`）。
+- Current 寄存器为有符号数；若读到负值（`raw < 0`）视为 `ERROR`（见 §7.1）。
+
+校准计算（实现必须遵循）：
+
+- 设 `I_MAX` 为该口期望最大电流（A），则 `Current_LSB = ceil(I_MAX / 32768)`（A/bit）。
+- `Calibration = floor(0.00512 / (Current_LSB * Rshunt))`（写入 16-bit Calibration 寄存器）。
+
+本规范固定参数（实现必须使用）：
+
+- USB‑A（U13）：`I_MAX = 2.000A`
+  - `Current_LSB = 62µA/bit`
+  - `Calibration = 8258`
+  - 对应正向满量程约 `32768 * 62µA ≈ 2.03A`
+- USB‑C/PD（U17）：`I_MAX = 3.500A`
+  - `Current_LSB = 107µA/bit`
+  - `Calibration = 4785`
+  - 对应正向满量程约 `32768 * 107µA ≈ 3.51A`
+
 ### 7.2 功率（必须来自 INA226）
 
 功率：读取 INA226 Power 寄存器。
