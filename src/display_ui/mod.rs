@@ -137,6 +137,27 @@ impl FrameCache {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActiveView {
+    TelemetryFrame,
+    NormalUi,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NormalUiTileCache {
+    chars: [[u8; 13]; 3],
+    fg_raw: [[u16; 13]; 3],
+}
+
+impl NormalUiTileCache {
+    const fn sentinel() -> Self {
+        Self {
+            chars: [[0; 13]; 3],
+            fg_raw: [[0xFFFF; 13]; 3],
+        }
+    }
+}
+
 pub struct DisplayUi<'b, SPI, DC, RST, TimerImpl = EspHalSpinTimer, BL = AlwaysOnBacklight>
 where
     SPI: SpiDevice,
@@ -147,7 +168,9 @@ where
 {
     display: GC9307C<'b, SPI, DC, RST, TimerImpl>,
     backlight: BL,
+    active_view: ActiveView,
     cache: FrameCache,
+    normal_ui_cache: NormalUiTileCache,
 }
 
 impl<'b, SPI, DC, RST, E, TimerImpl, BL> DisplayUi<'b, SPI, DC, RST, TimerImpl, BL>
@@ -173,7 +196,9 @@ where
         Self {
             display: GC9307C::new(config, spi, dc, rst, &mut workbuf[..]),
             backlight,
+            active_view: ActiveView::TelemetryFrame,
             cache: FrameCache::empty(),
+            normal_ui_cache: NormalUiTileCache::sentinel(),
         }
     }
 
@@ -184,6 +209,7 @@ where
     }
 
     pub fn draw_frame(&mut self) -> Result<(), GcError<E>> {
+        self.active_view = ActiveView::TelemetryFrame;
         self.display.fill_color(BG)?;
 
         // Row 0: "U17"
@@ -197,6 +223,7 @@ where
     }
 
     pub fn render_snapshot(&mut self, snapshot: &TelemetrySnapshot) -> Result<(), GcError<E>> {
+        self.active_view = ActiveView::TelemetryFrame;
         let prev = self.cache;
         let mut next = self.cache;
 
@@ -222,62 +249,100 @@ where
     /// Layout (each row): `left_cell(6) + ' ' + right_cell(6)`.
     /// Units are fixed per row: V / A / W.
     pub fn render_normal_ui(&mut self, snapshot: &NormalUiSnapshot) -> Result<(), GcError<E>> {
-        // Safe default: always clear to black so switching views doesn't leave stale pixels.
-        self.display.fill_color(BG)?;
+        // Clear only when entering normal UI (or switching from another view).
+        if self.active_view != ActiveView::NormalUi {
+            self.display.fill_color(BG)?;
+            self.normal_ui_cache = NormalUiTileCache::sentinel();
+            self.active_view = ActiveView::NormalUi;
+        }
 
         // Row 0: Voltage (V)
-        self.draw_normal_ui_row(
-            0,
-            snapshot.usb_a.present,
-            snapshot.usb_a.voltage_uv,
-            snapshot.usb_c.present,
-            snapshot.usb_c.voltage_uv,
-            b'V',
-            UI_OK_VOLT_RAW,
-        )?;
+        {
+            let (left_s, left_fg_raw) = format_normal_ui_cell(
+                snapshot.usb_a.present,
+                snapshot.usb_a.voltage_uv,
+                b'V',
+                UI_OK_VOLT_RAW,
+            );
+            let (right_s, right_fg_raw) = format_normal_ui_cell(
+                snapshot.usb_c.present,
+                snapshot.usb_c.voltage_uv,
+                b'V',
+                UI_OK_VOLT_RAW,
+            );
+            self.draw_normal_ui_row_diff(0, 0, &left_s, left_fg_raw, &right_s, right_fg_raw)?;
+        }
 
         // Row 1: Current (A)
-        self.draw_normal_ui_row(
-            1,
-            snapshot.usb_a.present,
-            snapshot.usb_a.current_ua,
-            snapshot.usb_c.present,
-            snapshot.usb_c.current_ua,
-            b'A',
-            UI_OK_CURR_RAW,
-        )?;
+        {
+            let (left_s, left_fg_raw) = format_normal_ui_cell(
+                snapshot.usb_a.present,
+                snapshot.usb_a.current_ua,
+                b'A',
+                UI_OK_CURR_RAW,
+            );
+            let (right_s, right_fg_raw) = format_normal_ui_cell(
+                snapshot.usb_c.present,
+                snapshot.usb_c.current_ua,
+                b'A',
+                UI_OK_CURR_RAW,
+            );
+            self.draw_normal_ui_row_diff(1, 1, &left_s, left_fg_raw, &right_s, right_fg_raw)?;
+        }
 
         // Row 2: Power (W)
-        self.draw_normal_ui_row(
-            2,
-            snapshot.usb_a.present,
-            snapshot.usb_a.power_uw,
-            snapshot.usb_c.present,
-            snapshot.usb_c.power_uw,
-            b'W',
-            UI_OK_PWR_RAW,
-        )?;
+        {
+            let (left_s, left_fg_raw) = format_normal_ui_cell(
+                snapshot.usb_a.present,
+                snapshot.usb_a.power_uw,
+                b'W',
+                UI_OK_PWR_RAW,
+            );
+            let (right_s, right_fg_raw) = format_normal_ui_cell(
+                snapshot.usb_c.present,
+                snapshot.usb_c.power_uw,
+                b'W',
+                UI_OK_PWR_RAW,
+            );
+            self.draw_normal_ui_row_diff(2, 2, &left_s, left_fg_raw, &right_s, right_fg_raw)?;
+        }
 
         Ok(())
     }
 
-    fn draw_normal_ui_row(
+    fn draw_normal_ui_row_diff(
         &mut self,
+        row_idx: usize,
         row: u16,
-        left_present: bool,
-        left: NormalUiField,
-        right_present: bool,
-        right: NormalUiField,
-        unit: u8,
-        ok_color_raw: u16,
+        left_s: &[u8; 6],
+        left_fg_raw: u16,
+        right_s: &[u8; 6],
+        right_fg_raw: u16,
     ) -> Result<(), GcError<E>> {
-        let (left_s, left_fg_raw) = format_normal_ui_cell(left_present, left, unit, ok_color_raw);
-        let (right_s, right_fg_raw) =
-            format_normal_ui_cell(right_present, right, unit, ok_color_raw);
+        let prev_chars = self.normal_ui_cache.chars[row_idx];
+        let prev_fg_raw = self.normal_ui_cache.fg_raw[row_idx];
 
-        self.draw_tile_str_colored(0, row, &left_s, rgb565(left_fg_raw))?;
-        self.draw_tile_colored(6, row, b' ', rgb565(UI_BG_RAW))?;
-        self.draw_tile_str_colored(7, row, &right_s, rgb565(right_fg_raw))?;
+        let mut next_chars = [0_u8; 13];
+        let mut next_fg_raw = [0_u16; 13];
+
+        next_chars[0..6].copy_from_slice(left_s);
+        next_chars[6] = b' ';
+        next_chars[7..13].copy_from_slice(right_s);
+
+        next_fg_raw[0..6].fill(left_fg_raw);
+        next_fg_raw[6] = UI_BG_RAW;
+        next_fg_raw[7..13].fill(right_fg_raw);
+
+        for tile_x in 0..13usize {
+            let ch = next_chars[tile_x];
+            let fg_raw = next_fg_raw[tile_x];
+            if prev_chars[tile_x] != ch || prev_fg_raw[tile_x] != fg_raw {
+                self.draw_tile_colored(tile_x as u16, row, ch, rgb565(fg_raw))?;
+            }
+        }
+
+        self.normal_ui_cache.chars[row_idx] = next_chars;
+        self.normal_ui_cache.fg_raw[row_idx] = next_fg_raw;
         Ok(())
     }
 
@@ -301,19 +366,6 @@ where
     fn draw_tile_str(&mut self, tile_x: u16, tile_y: u16, s: &[u8]) -> Result<(), GcError<E>> {
         for (i, &ch) in s.iter().enumerate() {
             self.draw_tile(tile_x + i as u16, tile_y, ch)?;
-        }
-        Ok(())
-    }
-
-    fn draw_tile_str_colored(
-        &mut self,
-        tile_x: u16,
-        tile_y: u16,
-        s: &[u8],
-        fg: Rgb565,
-    ) -> Result<(), GcError<E>> {
-        for (i, &ch) in s.iter().enumerate() {
-            self.draw_tile_colored(tile_x + i as u16, tile_y, ch, fg)?;
         }
         Ok(())
     }
