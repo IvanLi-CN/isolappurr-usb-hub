@@ -18,7 +18,10 @@ use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::{Duration, Instant, Rate};
 use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
-use isolapurr_usb_hub::display_ui::{ActiveLowBacklight, DisplayUi, EspHalSpinTimer, WORKBUF_SIZE};
+use isolapurr_usb_hub::display_ui::{
+    ActiveLowBacklight, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort, NormalUiSnapshot,
+    WORKBUF_SIZE,
+};
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
 use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
@@ -30,7 +33,7 @@ use isolapurr_usb_hub::prompt_tone::{
     DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitFailReason, InitWarnReason,
     PromptToneManager, SafetyKind, SoundEvent,
 };
-use isolapurr_usb_hub::telemetry::TelemetrySampler;
+use isolapurr_usb_hub::telemetry::{Field, NormalUiTelemetrySampler};
 use {esp_backtrace as _, esp_println as _};
 
 use spi_device::CsSpiDevice;
@@ -110,6 +113,13 @@ fn spin_delay_ms(ms: u64) {
     while start.elapsed() < Duration::from_millis(ms) {}
 }
 
+fn telemetry_field_to_ui(field: Field<u32>) -> NormalUiField {
+    match field {
+        Field::Ok(v) => NormalUiField::Ok(v.saturating_mul(1_000)),
+        Field::Err => NormalUiField::Err,
+    }
+}
+
 #[main]
 fn main() -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -162,7 +172,7 @@ fn main() -> ! {
     let mut i2c = I2cAllowlist::new(i2c);
     info!("pd i2c: I2C0@400kHz SDA=GPIO39 SCL=GPIO40 allowlist=[0x3C,0x74]");
 
-    // Telemetry I2C bus (no scanning; allowlist enforced in `TelemetrySampler`).
+    // Telemetry I2C bus (no scanning; allowlist enforced in telemetry wrapper).
     // SDA = GPIO8, SCL = GPIO9.
     let i2c_telemetry = I2c::new(
         peripherals.I2C1,
@@ -173,10 +183,10 @@ fn main() -> ! {
     .unwrap()
     .with_sda(peripherals.GPIO8)
     .with_scl(peripherals.GPIO9);
-    info!("telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 addr=[0x41] (no scan)");
+    info!("telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 addr=[0x40,0x41] (no scan)");
 
-    let mut sampler = TelemetrySampler::new(i2c_telemetry);
-    if let Err(err) = sampler.init() {
+    let mut telemetry_sampler = NormalUiTelemetrySampler::new(i2c_telemetry);
+    if let Err(err) = telemetry_sampler.init() {
         defmt::warn!(
             "telemetry: INA226 init error (PD loop continues; fields may show ERR): {:?}",
             defmt::Debug2Format(&err)
@@ -444,7 +454,6 @@ fn main() -> ! {
                 }
             };
 
-            let snapshot = sampler.sample_snapshot(setpoint);
             let (online_bit, fast_proto, fast_v, proto, v_req_mv, i_req_ma) = match request {
                 Some(r) => (
                     r.online,
@@ -456,26 +465,56 @@ fn main() -> ! {
                 ),
                 None => (false, false, false, None, 0, 0),
             };
+            let snapshot = telemetry_sampler.sample();
             info!(
-                "diag: req_online_bit={} req_fast_proto={} req_fast_v={} req_proto={:?} req_v_mv={} req_i_ma={} set={:?} meas_u17={:?} tps={:?} faults={:?}",
+                "diag: req_online_bit={} req_fast_proto={} req_fast_v={} req_proto={:?} req_v_mv={} req_i_ma={} set={:?} meas_usb_a={:?} meas_usb_c={:?} tps={:?} faults={:?}",
                 online_bit,
                 fast_proto,
                 fast_v,
                 defmt::Debug2Format(&proto),
                 v_req_mv,
                 i_req_ma,
-                defmt::Debug2Format(&snapshot.set_applied),
-                defmt::Debug2Format(&snapshot.u17_meas),
+                defmt::Debug2Format(&setpoint),
+                defmt::Debug2Format(&snapshot.usb_a),
+                defmt::Debug2Format(&snapshot.usb_c),
                 defmt::Debug2Format(&tps_operating),
                 defmt::Debug2Format(&tps_faults),
             );
         }
 
-        // 10 Hz (100ms) UI tick. Keep PD loop behavior intact outside this path.
-        if last_tick.elapsed() >= Duration::from_millis(100) {
+        // 2 Hz (500ms) UI tick. Keep PD loop behavior intact outside this path.
+        if last_tick.elapsed() >= Duration::from_millis(500) {
             last_tick = Instant::now();
-            let snapshot = sampler.sample_snapshot(setpoint);
-            if let Err(err) = ui.render_snapshot(&snapshot) {
+            let telemetry = telemetry_sampler.sample();
+
+            // Presence rules (frozen spec):
+            // - USB-A: if voltage is Ok(v_mv) and v_mv < 1000 => NotPresent; else Present (incl. read error).
+            // - USB-C/PD: protocol active when negotiated_protocol OR fast_protocol OR fast_voltage; ignore `online`.
+            let usb_a_present = match telemetry.usb_a.voltage_mv {
+                Field::Ok(v_mv) if v_mv < 1_000 => false,
+                _ => true,
+            };
+            let usb_c_present = request
+                .as_ref()
+                .map(|r| r.negotiated_protocol.is_some() || r.fast_protocol || r.fast_voltage)
+                .unwrap_or(false);
+
+            let snapshot = NormalUiSnapshot {
+                usb_a: NormalUiPort {
+                    present: usb_a_present,
+                    voltage_uv: telemetry_field_to_ui(telemetry.usb_a.voltage_mv),
+                    current_ua: telemetry_field_to_ui(telemetry.usb_a.current_ma),
+                    power_uw: telemetry_field_to_ui(telemetry.usb_a.power_mw),
+                },
+                usb_c: NormalUiPort {
+                    present: usb_c_present,
+                    voltage_uv: telemetry_field_to_ui(telemetry.usb_c.voltage_mv),
+                    current_ua: telemetry_field_to_ui(telemetry.usb_c.current_ma),
+                    power_uw: telemetry_field_to_ui(telemetry.usb_c.power_mw),
+                },
+            };
+
+            if let Err(err) = ui.render_normal_ui(&snapshot) {
                 if !ui_error_latched {
                     defmt::warn!(
                         "display: render error (continuing): {:?}",
