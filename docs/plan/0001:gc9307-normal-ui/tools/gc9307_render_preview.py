@@ -4,9 +4,9 @@ Generate 1:1 pixel previews of the GC9307 "normal UI" using the same glyph+tile
 rendering method as the firmware.
 
 Outputs (relative to repo root):
-- docs/spec/images/gc9307-normal-ui-preview-normal.png
-- docs/spec/images/gc9307-normal-ui-preview-not-present.png
-- docs/spec/images/gc9307-normal-ui-preview-error-over.png
+- docs/plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-normal.png
+- docs/plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-not-present.png
+- docs/plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-error-over.png
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ GLYPH_H = GLYPH_SRC_H * GLYPH_SY
 GLYPH_X0 = (TILE_W - GLYPH_W) // 2
 GLYPH_Y0 = (TILE_H - GLYPH_H) // 2
 
-# Colors (match docs/spec/gc9307-normal-ui.md §5.5)
+# Colors (match docs/plan/0001:gc9307-normal-ui/PLAN.md)
 COLOR_BG = (0, 0, 0)
 COLOR_NOT_PRESENT = (128, 128, 128)  # gray
 COLOR_ERROR = (255, 0, 0)  # red
@@ -163,7 +163,7 @@ def write_png_rgb(path: Path, rgb: bytes, width: int, height: int) -> None:
 
 
 def main() -> None:
-    out_dir = Path("docs/spec/images")
+    out_dir = Path("docs/plan/0001:gc9307-normal-ui/images")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     frames = {
