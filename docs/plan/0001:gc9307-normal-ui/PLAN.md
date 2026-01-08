@@ -136,4 +136,4 @@
 - `docs/gc9307-normal-ui-functional.md`（功能说明）
 - `docs/hardware-variants.md`（硬件适用范围）
 - `hardware/tps-sw/netlist.enet`（网表）
-- `docs/spec/tools/gc9307_render_preview.py`（预览图生成脚本）
+- `docs/plan/0001:gc9307-normal-ui/tools/gc9307_render_preview.py`（预览图生成脚本）

@@ -59,15 +59,15 @@
 
 正常示例（覆盖三种量级格式）：
 
-![](spec/images/gc9307-normal-ui-preview-normal.png)
+![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-normal.png)
 
 未插入：
 
-![](spec/images/gc9307-normal-ui-preview-not-present.png)
+![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-not-present.png)
 
 错误/超量程：
 
-![](spec/images/gc9307-normal-ui-preview-error-over.png)
+![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-error-over.png)
 
 ---
 
