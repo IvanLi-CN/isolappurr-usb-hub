@@ -106,6 +106,16 @@ impl SoundQueue {
         self.slots[idx] = None;
         Some(id)
     }
+
+    fn has_non_safety_pending(&self) -> bool {
+        self.slots
+            .iter()
+            .any(|slot| slot.is_some_and(|id| id != SoundId::SafetyAlarm))
+    }
+
+    fn is_empty(&self) -> bool {
+        self.slots.iter().all(|slot| slot.is_none())
+    }
 }
 
 /// Non-blocking prompt tone manager (event → pattern → buzzer control).
@@ -123,6 +133,8 @@ where
     boot_done_emitted: bool,
 
     safety_active: bool,
+    safety_suspended: bool,
+    safety_resume_pending: bool,
 
     playing: Option<ActivePlayback>,
     last_now: Duration,
@@ -139,6 +151,8 @@ where
             boot_severity: BootSeverity::Ok,
             boot_done_emitted: false,
             safety_active: false,
+            safety_suspended: false,
+            safety_resume_pending: false,
             playing: None,
             last_now: Duration::ZERO,
         }
@@ -170,13 +184,18 @@ where
 
             SoundEvent::EnterSafety(_) => {
                 self.safety_active = true;
+                self.safety_suspended = false;
+                self.safety_resume_pending = false;
                 self.queue.remove(SoundId::SafetyAlarm);
-                self.queue.remove(SoundId::ActionOkOnce);
-                self.queue.remove(SoundId::ActionFailOnce);
-                self.start_immediately(SoundId::SafetyAlarm);
+
+                if self.playing.is_none() {
+                    self.start_immediately(SoundId::SafetyAlarm);
+                }
             }
             SoundEvent::ExitSafety(_) => {
                 self.safety_active = false;
+                self.safety_suspended = false;
+                self.safety_resume_pending = false;
                 self.queue.remove(SoundId::SafetyAlarm);
                 self.queue.remove(SoundId::ActionOkOnce);
                 self.queue.remove(SoundId::ActionFailOnce);
@@ -193,16 +212,14 @@ where
             SoundEvent::ExitError(_) => {}
 
             SoundEvent::ActionOk => {
-                if self.safety_active || self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm)
-                {
-                    return;
+                if self.safety_active {
+                    self.pause_safety_for_one_shot();
                 }
                 self.request_one_shot(SoundId::ActionOkOnce);
             }
             SoundEvent::ActionFail => {
-                if self.safety_active || self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm)
-                {
-                    return;
+                if self.safety_active {
+                    self.pause_safety_for_one_shot();
                 }
                 self.request_one_shot(SoundId::ActionFailOnce);
             }
@@ -213,18 +230,41 @@ where
         let now = now.max(self.last_now);
         self.last_now = now;
 
-        if self.safety_active && !self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm) {
-            self.start_with_now(SoundId::SafetyAlarm, now);
-        }
-
         self.advance_playback(now);
 
-        if self.safety_active || self.playing.is_some() {
+        // If SafetyAlarm is active, allow any queued one-shot to preempt it so that
+        // button feedback (ActionOk/ActionFail) is always audible.
+        if self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm)
+            && self.queue.has_non_safety_pending()
+        {
+            let _ = self.buzzer.stop();
+            self.playing = None;
+            self.safety_suspended = true;
+            self.safety_resume_pending = true;
+        }
+
+        if self.playing.is_some() {
             return;
         }
 
         if let Some(id) = self.queue.pop_highest() {
+            if self.safety_active {
+                self.safety_suspended = true;
+                self.safety_resume_pending = true;
+            }
             self.start_with_now(id, now);
+            return;
+        }
+
+        if self.safety_active {
+            if self.safety_suspended && self.queue.is_empty() && self.safety_resume_pending {
+                self.safety_suspended = false;
+                self.safety_resume_pending = false;
+            }
+
+            if !self.safety_suspended {
+                self.start_with_now(SoundId::SafetyAlarm, now);
+            }
         }
     }
 
@@ -252,13 +292,24 @@ where
             .playing
             .is_some_and(|p| p.id != SoundId::SafetyAlarm && new_prio > sound_priority(p.id));
 
-        if should_preempt && !self.safety_active {
+        if should_preempt {
             let _ = self.buzzer.stop();
             self.start_immediately(id);
             return;
         }
 
         let _ = self.queue.push(id);
+    }
+
+    fn pause_safety_for_one_shot(&mut self) {
+        self.safety_suspended = true;
+        self.safety_resume_pending = true;
+        self.queue.remove(SoundId::SafetyAlarm);
+
+        if self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm) {
+            let _ = self.buzzer.stop();
+            self.playing = None;
+        }
     }
 
     fn is_one_shot_active_or_pending(&self, id: SoundId) -> bool {
