@@ -92,6 +92,7 @@
 
 约束：
 - `Boot* / WarningOnce / ErrorOnce`：总时长 ≥ 2s。
+- `ActionOkOnce / ActionFailOnce`：动作结果提示音，**刻意短促**（<200ms），用于“确认/拒绝”，不参与 ≥2s 约束（详见 `docs/hw-button-action-tones-design.md`）。
 - `SafetyAlarm`：循环播放（例如 `Tone(2200Hz, 6%, 300ms)` + `Silence(700ms)`）。
 - 默认响度：低占空比（当前默认 `6%`；根据实机试听可在较小范围内调整），且避免长时间高占空比。
 
@@ -102,7 +103,7 @@
 
 ## 默认提示音集合（建议）
 
-> 说明：以下为概要节奏规范；实现时可用常量数组落地。除 `SafetyAlarm` 外均保证 ≥2s。
+> 说明：以下为概要节奏规范；实现时可用常量数组落地。除 `SafetyAlarm` 与 `Action*Once` 外均保证 ≥2s。
 
 | SoundId | 类型 | 频率 | 节奏（示意） | 总时长 | 备注 |
 |---|---|---:|---|---:|---|
@@ -111,6 +112,8 @@
 | `BootFail` | 一次性 | 2200Hz | `中×3 + 长静默` | 2.1s | 初始化致命失败 |
 | `WarningOnce` | 一次性 | 2200Hz | `短×6 + 长静默` | 2.1s | 非安全异常 |
 | `ErrorOnce` | 一次性 | 2200Hz | `中×6 + 长静默` | 2.1s | 一般错误 |
+| `ActionOkOnce` | 一次性 | 2700Hz | `短×1` | 0.03s | 用户动作成功（短促确认） |
+| `ActionFailOnce` | 一次性 | 2700Hz | `短×2` | 0.10s | 用户动作失败（双击拒绝） |
 | `SafetyAlarm` | 持续 | 2200Hz | `300ms on / 700ms off` 循环 | 持续 | 安全风险（需持续提示） |
 | `RecoverOnce` | 一次性（预留） | — | — | — | 异常恢复提示（本次未接线/未实现 pattern） |
 
@@ -151,6 +154,7 @@
 
 - 优先级：`SafetyAlarm` > `BootFail` > `ErrorOnce` > `BootWarn/WarningOnce` > `BootOk` > 其它。
 - 抢占：`SafetyAlarm` 必须立即抢占并持续；其它音效可被安全报警抢占。
+- 特例（按键反馈）：当 `SafetyAlarm` active/playing 时，`ActionOkOnce/ActionFailOnce` 仍需可被听到；策略为播放动作结果音前**短暂暂停/抑制** `SafetyAlarm`，动作结果音结束后若安全态仍 active 则恢复（不排队、不补播）。
 - 队列：固定容量（例如 4–8 项）即可；队列满时丢弃低优先级项（不阻塞主循环）。
 - 非阻塞：所有播放通过硬件 PWM 与 `tick()` 状态机推进，不允许 busy-wait 延迟。
 
