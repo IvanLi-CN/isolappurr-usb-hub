@@ -46,20 +46,134 @@ static mut DISPLAY_WORKBUF: [u8; WORKBUF_SIZE] = [0; WORKBUF_SIZE];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ButtonId {
-    Left,
-    Right,
+    Left,  // USB-A
+    Right, // USB-C
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ActionError {
-    PlaceholderFailure,
+enum ButtonEdge {
+    Pressed,
+    Released,
 }
 
-fn run_placeholder_action(button: ButtonId) -> Result<(), ActionError> {
-    match button {
-        ButtonId::Left => Ok(()),
-        ButtonId::Right => Err(ActionError::PlaceholderFailure),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PressClass {
+    Short,
+    Long,
+    Invalid,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PowerState {
+    On,
+    Off,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DataState {
+    Connected,
+    Disconnected,
+    Pulsing { until: Instant },
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PortState {
+    power: PowerState,
+    data: DataState,
+    busy_until: Option<Instant>,
+}
+
+impl PortState {
+    const fn new(power: PowerState) -> Self {
+        let data = match power {
+            PowerState::On => DataState::Connected,
+            PowerState::Off => DataState::Disconnected,
+        };
+        Self {
+            power,
+            data,
+            busy_until: None,
+        }
     }
+
+    fn is_busy(&self, now: Instant) -> bool {
+        self.busy_until.is_some_and(|until| now < until)
+            || matches!(self.data, DataState::Pulsing { .. })
+    }
+}
+
+const DATA_DISCONNECT_MS: u64 = 250;
+const TOAST_MS: u64 = 1500;
+const POWER_SWITCH_GUARD_MS: u64 = 350;
+
+const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
+const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
+const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
+const PRESS_LONG_MAX: Duration = Duration::from_millis(3000);
+
+// Toast colors (RGB565 raw).
+const TOAST_OK_RAW: u16 = 0x4D6A; // green (same as UI OK power)
+const TOAST_INFO_RAW: u16 = 0xFE45; // yellow (same as UI OK voltage)
+const TOAST_WARN_RAW: u16 = 0xFD40; // orange-ish
+const TOAST_ERR_RAW: u16 = 0xF800; // red
+
+const TOAST_USB_A_DATA_OFF: [[u8; 13]; 3] =
+    [*b"USB-A DATAOFF", *b"250MS        ", *b"             "];
+const TOAST_USB_A_DATA_ON: [[u8; 13]; 3] =
+    [*b"USB-A DATAON ", *b"DONE         ", *b"             "];
+const TOAST_USB_A_PWR_OFF: [[u8; 13]; 3] =
+    [*b"USB-A PWROFF ", *b"DONE         ", *b"             "];
+const TOAST_USB_A_PWR_ON: [[u8; 13]; 3] = [*b"USB-A PWRON  ", *b"DONE         ", *b"             "];
+const TOAST_USB_A_BUSY: [[u8; 13]; 3] = [*b"USB-A BUSY   ", *b"REJECT       ", *b"             "];
+const TOAST_USB_A_BADTIME: [[u8; 13]; 3] =
+    [*b"USB-A BADTIME", *b"REJECT       ", *b"             "];
+
+const TOAST_USB_C_DATA_OFF: [[u8; 13]; 3] =
+    [*b"USB-C DATAOFF", *b"250MS        ", *b"             "];
+const TOAST_USB_C_DATA_ON: [[u8; 13]; 3] =
+    [*b"USB-C DATAON ", *b"DONE         ", *b"             "];
+const TOAST_USB_C_PWR_OFF: [[u8; 13]; 3] =
+    [*b"USB-C PWROFF ", *b"DONE         ", *b"             "];
+const TOAST_USB_C_PWR_ON: [[u8; 13]; 3] = [*b"USB-C PWRON  ", *b"DONE         ", *b"             "];
+const TOAST_USB_C_BUSY: [[u8; 13]; 3] = [*b"USB-C BUSY   ", *b"REJECT       ", *b"             "];
+const TOAST_USB_C_BADTIME: [[u8; 13]; 3] =
+    [*b"USB-C BADTIME", *b"REJECT       ", *b"             "];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ToastId {
+    DataOff,
+    DataOn,
+    PwrOff,
+    PwrOn,
+    Busy,
+    BadTime,
+}
+
+fn toast_spec(button: ButtonId, toast: ToastId) -> (&'static [[u8; 13]; 3], u16) {
+    let fg_raw = match toast {
+        ToastId::DataOff => TOAST_INFO_RAW,
+        ToastId::DataOn => TOAST_OK_RAW,
+        ToastId::PwrOff => TOAST_WARN_RAW,
+        ToastId::PwrOn => TOAST_OK_RAW,
+        ToastId::Busy | ToastId::BadTime => TOAST_ERR_RAW,
+    };
+
+    let lines = match (button, toast) {
+        (ButtonId::Left, ToastId::DataOff) => &TOAST_USB_A_DATA_OFF,
+        (ButtonId::Left, ToastId::DataOn) => &TOAST_USB_A_DATA_ON,
+        (ButtonId::Left, ToastId::PwrOff) => &TOAST_USB_A_PWR_OFF,
+        (ButtonId::Left, ToastId::PwrOn) => &TOAST_USB_A_PWR_ON,
+        (ButtonId::Left, ToastId::Busy) => &TOAST_USB_A_BUSY,
+        (ButtonId::Left, ToastId::BadTime) => &TOAST_USB_A_BADTIME,
+        (ButtonId::Right, ToastId::DataOff) => &TOAST_USB_C_DATA_OFF,
+        (ButtonId::Right, ToastId::DataOn) => &TOAST_USB_C_DATA_ON,
+        (ButtonId::Right, ToastId::PwrOff) => &TOAST_USB_C_PWR_OFF,
+        (ButtonId::Right, ToastId::PwrOn) => &TOAST_USB_C_PWR_ON,
+        (ButtonId::Right, ToastId::Busy) => &TOAST_USB_C_BUSY,
+        (ButtonId::Right, ToastId::BadTime) => &TOAST_USB_C_BADTIME,
+    };
+
+    (lines, fg_raw)
 }
 
 #[derive(Debug)]
@@ -78,39 +192,59 @@ impl DebouncedButton {
         }
     }
 
-    fn update(&mut self, now: Instant, is_pressed: bool, debounce: Duration) -> bool {
+    fn update(&mut self, now: Instant, is_pressed: bool, debounce: Duration) -> Option<ButtonEdge> {
         if is_pressed == self.stable_pressed {
             self.candidate_pressed = is_pressed;
             self.candidate_since = None;
-            return false;
+            return None;
         }
 
         let Some(since) = self.candidate_since else {
             self.candidate_pressed = is_pressed;
             self.candidate_since = Some(now);
-            return false;
+            return None;
         };
 
         if self.candidate_pressed != is_pressed {
             self.candidate_pressed = is_pressed;
             self.candidate_since = Some(now);
-            return false;
+            return None;
         }
 
         if now - since < debounce {
-            return false;
+            return None;
         }
 
         self.stable_pressed = is_pressed;
         self.candidate_since = None;
 
-        is_pressed
+        Some(if is_pressed {
+            ButtonEdge::Pressed
+        } else {
+            ButtonEdge::Released
+        })
     }
 }
 
 fn spin_delay_ms(ms: u64) {
     let start = Instant::now();
     while start.elapsed() < Duration::from_millis(ms) {}
+}
+
+fn classify_press(duration: Duration) -> PressClass {
+    if duration < PRESS_SHORT_MIN {
+        return PressClass::Invalid;
+    }
+    if duration <= PRESS_SHORT_MAX {
+        return PressClass::Short;
+    }
+    if duration < PRESS_LONG_MIN {
+        return PressClass::Invalid;
+    }
+    if duration <= PRESS_LONG_MAX {
+        return PressClass::Long;
+    }
+    PressClass::Invalid
 }
 
 fn telemetry_field_to_ui(field: Field<u32>) -> NormalUiField {
@@ -150,11 +284,25 @@ fn main() -> ! {
         btn_raw_left_pressed, btn_raw_right_pressed
     );
 
-    // CE_TPS is U39 pad 42 => GPIO37.
-    // CE_TPS drives Q9 (NMOS) which pulls TPS EN/UVLO low when CE_TPS is high.
-    // Keep TPS enabled at boot so it can provide default VBUS (powers SW2303).
-    let _ce_tps = Output::new(peripherals.GPIO37, Level::Low, OutputConfig::default());
-    info!("tps: CE_TPS released at boot (TPS enabled)");
+    let mut btn_left_pressed_at: Option<Instant> = None;
+    let mut btn_right_pressed_at: Option<Instant> = None;
+
+    // Port controls (tps-sw netlist):
+    // - P1_CED/P2_CED drive CH442E IN: low=connect, high=disconnect (S2x is NC).
+    // - P1_EN# drives CH217K enable: low=enable (power on), high=disable (power off).
+    // - CE_TPS drives Q9, pulling TPS EN/UVLO low when CE_TPS is high (power off).
+    //
+    // Keep everything enabled/connected at boot.
+    let mut p2_ced = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
+    let mut p1_ced = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
+    let mut p1_en_n = Output::new(peripherals.GPIO16, Level::Low, OutputConfig::default());
+    let mut ce_tps = Output::new(peripherals.GPIO37, Level::Low, OutputConfig::default());
+    info!(
+        "ports: boot state p1_en#=low(on) p1_ced=low(connect) p2_ced=low(connect) ce_tps=low(on)"
+    );
+
+    let mut port_usb_a = PortState::new(PowerState::On);
+    let mut port_usb_c = PortState::new(PowerState::On);
 
     // Shared PD I2C bus (no scanning; strictly allowlisted).
     // SDA = GPIO39 (SDA_TPS), SCL = GPIO40 (SCL_TPS).
@@ -484,60 +632,150 @@ fn main() -> ! {
 
         // 2 Hz (500ms) UI tick. Keep PD loop behavior intact outside this path.
         if last_tick.elapsed() >= Duration::from_millis(500) {
-            last_tick = Instant::now();
-            let telemetry = telemetry_sampler.sample();
+            let ui_tick_now = Instant::now();
+            last_tick = ui_tick_now;
 
-            // Presence rules (frozen spec):
-            // - USB-A: if voltage is Ok(v_mv) and v_mv < 1000 => NotPresent; else Present (incl. read error).
-            // - USB-C/PD: protocol active when negotiated_protocol OR fast_protocol OR fast_voltage; ignore `online`.
-            let usb_a_present = match telemetry.usb_a.voltage_mv {
-                Field::Ok(v_mv) if v_mv < 1_000 => false,
-                _ => true,
-            };
-            let usb_c_present = request
-                .as_ref()
-                .map(|r| r.negotiated_protocol.is_some() || r.fast_protocol || r.fast_voltage)
-                .unwrap_or(false);
-
-            let snapshot = NormalUiSnapshot {
-                usb_a: NormalUiPort {
-                    present: usb_a_present,
-                    voltage_uv: telemetry_field_to_ui(telemetry.usb_a.voltage_mv),
-                    current_ua: telemetry_field_to_ui(telemetry.usb_a.current_ma),
-                    power_uw: telemetry_field_to_ui(telemetry.usb_a.power_mw),
-                },
-                usb_c: NormalUiPort {
-                    present: usb_c_present,
-                    voltage_uv: telemetry_field_to_ui(telemetry.usb_c.voltage_mv),
-                    current_ua: telemetry_field_to_ui(telemetry.usb_c.current_ma),
-                    power_uw: telemetry_field_to_ui(telemetry.usb_c.power_mw),
-                },
-            };
-
-            if let Err(err) = ui.render_normal_ui(&snapshot) {
-                if !ui_error_latched {
-                    defmt::warn!(
-                        "display: render error (continuing): {:?}",
-                        defmt::Debug2Format(&err)
-                    );
-                    ui_error_latched = true;
-                }
+            if ui.toast_active(ui_tick_now) {
+                // Pause normal UI updates while an action toast is active.
+                // Telemetry/PD loop continues unaffected.
             } else {
-                ui_error_latched = false;
-            }
+                let telemetry = telemetry_sampler.sample();
 
-            if !ui_was_in_error && ui_error_latched {
-                prompt_tone.notify(SoundEvent::EnterError(ErrorKind::UiRender));
-            } else if ui_was_in_error && !ui_error_latched {
-                prompt_tone.notify(SoundEvent::ExitError(ErrorKind::UiRender));
+                // Presence rules (frozen spec):
+                // - USB-A: if voltage is Ok(v_mv) and v_mv < 1000 => NotPresent; else Present (incl. read error).
+                // - USB-C/PD: protocol active when negotiated_protocol OR fast_protocol OR fast_voltage; ignore `online`.
+                let usb_a_present = match telemetry.usb_a.voltage_mv {
+                    Field::Ok(v_mv) if v_mv < 1_000 => false,
+                    _ => true,
+                };
+                let usb_c_present = request
+                    .as_ref()
+                    .map(|r| r.negotiated_protocol.is_some() || r.fast_protocol || r.fast_voltage)
+                    .unwrap_or(false);
+
+                let snapshot = NormalUiSnapshot {
+                    usb_a: NormalUiPort {
+                        present: usb_a_present,
+                        voltage_uv: telemetry_field_to_ui(telemetry.usb_a.voltage_mv),
+                        current_ua: telemetry_field_to_ui(telemetry.usb_a.current_ma),
+                        power_uw: telemetry_field_to_ui(telemetry.usb_a.power_mw),
+                    },
+                    usb_c: NormalUiPort {
+                        present: usb_c_present,
+                        voltage_uv: telemetry_field_to_ui(telemetry.usb_c.voltage_mv),
+                        current_ua: telemetry_field_to_ui(telemetry.usb_c.current_ma),
+                        power_uw: telemetry_field_to_ui(telemetry.usb_c.power_mw),
+                    },
+                };
+
+                if let Err(err) = ui.render_normal_ui(&snapshot) {
+                    if !ui_error_latched {
+                        defmt::warn!(
+                            "display: render error (continuing): {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                        ui_error_latched = true;
+                    }
+                } else {
+                    ui_error_latched = false;
+                }
+
+                if !ui_was_in_error && ui_error_latched {
+                    prompt_tone.notify(SoundEvent::EnterError(ErrorKind::UiRender));
+                } else if ui_was_in_error && !ui_error_latched {
+                    prompt_tone.notify(SoundEvent::ExitError(ErrorKind::UiRender));
+                }
             }
         }
 
-        // Placeholder button actions:
-        // - Left button: always Ok -> play ActionOk
-        // - Right button: always Err -> play ActionFail
-        //
-        // Note: action result tones are suppressed during SafetyAlarm in `prompt_tone`.
+        // Port state machine tick (data replug completion, busy windows, power/data invariants).
+        let ports_now = Instant::now();
+        if port_usb_a
+            .busy_until
+            .is_some_and(|until| ports_now >= until)
+        {
+            port_usb_a.busy_until = None;
+        }
+        if port_usb_c
+            .busy_until
+            .is_some_and(|until| ports_now >= until)
+        {
+            port_usb_c.busy_until = None;
+        }
+
+        // USB-A invariants.
+        match port_usb_a.power {
+            PowerState::On => {
+                let _ = p1_en_n.set_low();
+                match port_usb_a.data {
+                    DataState::Connected => {
+                        let _ = p1_ced.set_low();
+                    }
+                    DataState::Disconnected => {
+                        let _ = p1_ced.set_high();
+                    }
+                    DataState::Pulsing { until } => {
+                        if ports_now >= until {
+                            port_usb_a.data = DataState::Connected;
+                            port_usb_a.busy_until = None;
+                            let _ = p1_ced.set_low();
+                            let (lines, fg_raw) = toast_spec(ButtonId::Left, ToastId::DataOn);
+                            let _ = ui.show_toast(
+                                ports_now,
+                                lines,
+                                fg_raw,
+                                Duration::from_millis(TOAST_MS),
+                            );
+                        } else {
+                            let _ = p1_ced.set_high();
+                        }
+                    }
+                }
+            }
+            PowerState::Off => {
+                port_usb_a.data = DataState::Disconnected;
+                let _ = p1_en_n.set_high();
+                let _ = p1_ced.set_high();
+            }
+        }
+
+        // USB-C invariants.
+        match port_usb_c.power {
+            PowerState::On => {
+                let _ = ce_tps.set_low();
+                match port_usb_c.data {
+                    DataState::Connected => {
+                        let _ = p2_ced.set_low();
+                    }
+                    DataState::Disconnected => {
+                        let _ = p2_ced.set_high();
+                    }
+                    DataState::Pulsing { until } => {
+                        if ports_now >= until {
+                            port_usb_c.data = DataState::Connected;
+                            port_usb_c.busy_until = None;
+                            let _ = p2_ced.set_low();
+                            let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOn);
+                            let _ = ui.show_toast(
+                                ports_now,
+                                lines,
+                                fg_raw,
+                                Duration::from_millis(TOAST_MS),
+                            );
+                        } else {
+                            let _ = p2_ced.set_high();
+                        }
+                    }
+                }
+            }
+            PowerState::Off => {
+                port_usb_c.data = DataState::Disconnected;
+                let _ = ce_tps.set_high();
+                let _ = p2_ced.set_high();
+            }
+        }
+
+        // Button handling: stable press/release with duration classification.
         let buttons_now = Instant::now();
         let raw_left_pressed = btn_left.is_low();
         let raw_right_pressed = btn_right.is_low();
@@ -550,33 +788,237 @@ fn main() -> ! {
             );
         }
 
-        if btn_left_state.update(buttons_now, raw_left_pressed, btn_debounce) {
-            info!("button: left pressed");
-            match run_placeholder_action(ButtonId::Left) {
-                Ok(()) => {
-                    info!("button: left action ok");
-                    prompt_tone.notify(SoundEvent::ActionOk);
-                    button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+        if let Some(edge) = btn_left_state.update(buttons_now, raw_left_pressed, btn_debounce) {
+            match edge {
+                ButtonEdge::Pressed => {
+                    info!("button: left pressed");
+                    btn_left_pressed_at = Some(buttons_now);
+                    button_fast_loop_until = Some(buttons_now + PRESS_LONG_MAX);
                 }
-                Err(_) => {
-                    info!("button: left action fail");
-                    prompt_tone.notify(SoundEvent::ActionFail);
-                    button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+                ButtonEdge::Released => {
+                    info!("button: left released");
+                    let Some(pressed_at) = btn_left_pressed_at.take() else {
+                        // Ignore unmatched releases.
+                        continue;
+                    };
+                    let class = classify_press(buttons_now - pressed_at);
+
+                    let rejected = match class {
+                        PressClass::Invalid => Some(ToastId::BadTime),
+                        _ if port_usb_a.is_busy(buttons_now) => Some(ToastId::Busy),
+                        _ => None,
+                    };
+
+                    if let Some(reject_toast) = rejected {
+                        let (lines, fg_raw) = toast_spec(ButtonId::Left, reject_toast);
+                        let _ = ui.show_toast(
+                            buttons_now,
+                            lines,
+                            fg_raw,
+                            Duration::from_millis(TOAST_MS),
+                        );
+                        prompt_tone.notify(SoundEvent::ActionFail);
+                        button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+                    } else {
+                        match class {
+                            PressClass::Short => match port_usb_a.power {
+                                PowerState::Off => {
+                                    port_usb_a.power = PowerState::On;
+                                    port_usb_a.data = DataState::Connected;
+                                    port_usb_a.busy_until = Some(
+                                        buttons_now + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                    );
+                                    let _ = p1_en_n.set_low();
+                                    let _ = p1_ced.set_low();
+                                    let (lines, fg_raw) =
+                                        toast_spec(ButtonId::Left, ToastId::PwrOn);
+                                    let _ = ui.show_toast(
+                                        buttons_now,
+                                        lines,
+                                        fg_raw,
+                                        Duration::from_millis(TOAST_MS),
+                                    );
+                                    prompt_tone.notify(SoundEvent::ActionOk);
+                                }
+                                PowerState::On => {
+                                    port_usb_a.data = DataState::Pulsing {
+                                        until: buttons_now
+                                            + Duration::from_millis(DATA_DISCONNECT_MS),
+                                    };
+                                    port_usb_a.busy_until = Some(
+                                        buttons_now + Duration::from_millis(DATA_DISCONNECT_MS),
+                                    );
+                                    let _ = p1_ced.set_high();
+                                    let (lines, fg_raw) =
+                                        toast_spec(ButtonId::Left, ToastId::DataOff);
+                                    let _ = ui.show_toast(
+                                        buttons_now,
+                                        lines,
+                                        fg_raw,
+                                        Duration::from_millis(TOAST_MS),
+                                    );
+                                    prompt_tone.notify(SoundEvent::ActionOk);
+                                }
+                            },
+                            PressClass::Long => match port_usb_a.power {
+                                PowerState::Off => {
+                                    port_usb_a.power = PowerState::On;
+                                    port_usb_a.data = DataState::Connected;
+                                    port_usb_a.busy_until = Some(
+                                        buttons_now + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                    );
+                                    let _ = p1_en_n.set_low();
+                                    let _ = p1_ced.set_low();
+                                    let (lines, fg_raw) =
+                                        toast_spec(ButtonId::Left, ToastId::PwrOn);
+                                    let _ = ui.show_toast(
+                                        buttons_now,
+                                        lines,
+                                        fg_raw,
+                                        Duration::from_millis(TOAST_MS),
+                                    );
+                                    prompt_tone.notify(SoundEvent::ActionOk);
+                                }
+                                PowerState::On => {
+                                    port_usb_a.power = PowerState::Off;
+                                    port_usb_a.data = DataState::Disconnected;
+                                    port_usb_a.busy_until = Some(
+                                        buttons_now + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                    );
+                                    let _ = p1_en_n.set_high();
+                                    let _ = p1_ced.set_high();
+                                    let (lines, fg_raw) =
+                                        toast_spec(ButtonId::Left, ToastId::PwrOff);
+                                    let _ = ui.show_toast(
+                                        buttons_now,
+                                        lines,
+                                        fg_raw,
+                                        Duration::from_millis(TOAST_MS),
+                                    );
+                                    prompt_tone.notify(SoundEvent::ActionOk);
+                                }
+                            },
+                            PressClass::Invalid => unreachable!("handled above"),
+                        }
+                        button_fast_loop_until = Some(buttons_now + Duration::from_millis(350));
+                    }
                 }
             }
         }
-        if btn_right_state.update(buttons_now, raw_right_pressed, btn_debounce) {
-            info!("button: right pressed");
-            match run_placeholder_action(ButtonId::Right) {
-                Ok(()) => {
-                    info!("button: right action ok");
-                    prompt_tone.notify(SoundEvent::ActionOk);
-                    button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+
+        if let Some(edge) = btn_right_state.update(buttons_now, raw_right_pressed, btn_debounce) {
+            match edge {
+                ButtonEdge::Pressed => {
+                    info!("button: right pressed");
+                    btn_right_pressed_at = Some(buttons_now);
+                    button_fast_loop_until = Some(buttons_now + PRESS_LONG_MAX);
                 }
-                Err(_) => {
-                    info!("button: right action fail");
-                    prompt_tone.notify(SoundEvent::ActionFail);
-                    button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+                ButtonEdge::Released => {
+                    info!("button: right released");
+                    let Some(pressed_at) = btn_right_pressed_at.take() else {
+                        continue;
+                    };
+                    let class = classify_press(buttons_now - pressed_at);
+
+                    let rejected = match class {
+                        PressClass::Invalid => Some(ToastId::BadTime),
+                        _ if port_usb_c.is_busy(buttons_now) => Some(ToastId::Busy),
+                        _ => None,
+                    };
+
+                    if let Some(reject_toast) = rejected {
+                        let (lines, fg_raw) = toast_spec(ButtonId::Right, reject_toast);
+                        let _ = ui.show_toast(
+                            buttons_now,
+                            lines,
+                            fg_raw,
+                            Duration::from_millis(TOAST_MS),
+                        );
+                        prompt_tone.notify(SoundEvent::ActionFail);
+                        button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
+                    } else {
+                        match class {
+                            PressClass::Short => match port_usb_c.power {
+                                PowerState::Off => {
+                                    port_usb_c.power = PowerState::On;
+                                    port_usb_c.data = DataState::Connected;
+                                    port_usb_c.busy_until = Some(
+                                        buttons_now + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                    );
+                                    let _ = ce_tps.set_low();
+                                    let _ = p2_ced.set_low();
+                                    let (lines, fg_raw) =
+                                        toast_spec(ButtonId::Right, ToastId::PwrOn);
+                                    let _ = ui.show_toast(
+                                        buttons_now,
+                                        lines,
+                                        fg_raw,
+                                        Duration::from_millis(TOAST_MS),
+                                    );
+                                    prompt_tone.notify(SoundEvent::ActionOk);
+                                }
+                                PowerState::On => {
+                                    port_usb_c.data = DataState::Pulsing {
+                                        until: buttons_now
+                                            + Duration::from_millis(DATA_DISCONNECT_MS),
+                                    };
+                                    port_usb_c.busy_until = Some(
+                                        buttons_now + Duration::from_millis(DATA_DISCONNECT_MS),
+                                    );
+                                    let _ = p2_ced.set_high();
+                                    let (lines, fg_raw) =
+                                        toast_spec(ButtonId::Right, ToastId::DataOff);
+                                    let _ = ui.show_toast(
+                                        buttons_now,
+                                        lines,
+                                        fg_raw,
+                                        Duration::from_millis(TOAST_MS),
+                                    );
+                                    prompt_tone.notify(SoundEvent::ActionOk);
+                                }
+                            },
+                            PressClass::Long => match port_usb_c.power {
+                                PowerState::Off => {
+                                    port_usb_c.power = PowerState::On;
+                                    port_usb_c.data = DataState::Connected;
+                                    port_usb_c.busy_until = Some(
+                                        buttons_now + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                    );
+                                    let _ = ce_tps.set_low();
+                                    let _ = p2_ced.set_low();
+                                    let (lines, fg_raw) =
+                                        toast_spec(ButtonId::Right, ToastId::PwrOn);
+                                    let _ = ui.show_toast(
+                                        buttons_now,
+                                        lines,
+                                        fg_raw,
+                                        Duration::from_millis(TOAST_MS),
+                                    );
+                                    prompt_tone.notify(SoundEvent::ActionOk);
+                                }
+                                PowerState::On => {
+                                    port_usb_c.power = PowerState::Off;
+                                    port_usb_c.data = DataState::Disconnected;
+                                    port_usb_c.busy_until = Some(
+                                        buttons_now + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                    );
+                                    let _ = ce_tps.set_high();
+                                    let _ = p2_ced.set_high();
+                                    let (lines, fg_raw) =
+                                        toast_spec(ButtonId::Right, ToastId::PwrOff);
+                                    let _ = ui.show_toast(
+                                        buttons_now,
+                                        lines,
+                                        fg_raw,
+                                        Duration::from_millis(TOAST_MS),
+                                    );
+                                    prompt_tone.notify(SoundEvent::ActionOk);
+                                }
+                            },
+                            PressClass::Invalid => unreachable!("handled above"),
+                        }
+                        button_fast_loop_until = Some(buttons_now + Duration::from_millis(350));
+                    }
                 }
             }
         }

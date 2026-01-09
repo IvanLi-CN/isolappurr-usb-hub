@@ -141,6 +141,7 @@ impl FrameCache {
 enum ActiveView {
     TelemetryFrame,
     NormalUi,
+    Toast,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -171,6 +172,7 @@ where
     active_view: ActiveView,
     cache: FrameCache,
     normal_ui_cache: NormalUiTileCache,
+    toast_until: Option<Instant>,
 }
 
 impl<'b, SPI, DC, RST, E, TimerImpl, BL> DisplayUi<'b, SPI, DC, RST, TimerImpl, BL>
@@ -199,6 +201,7 @@ where
             active_view: ActiveView::TelemetryFrame,
             cache: FrameCache::empty(),
             normal_ui_cache: NormalUiTileCache::sentinel(),
+            toast_until: None,
         }
     }
 
@@ -210,6 +213,7 @@ where
 
     pub fn draw_frame(&mut self) -> Result<(), GcError<E>> {
         self.active_view = ActiveView::TelemetryFrame;
+        self.toast_until = None;
         self.display.fill_color(BG)?;
 
         // Row 0: "U17"
@@ -222,8 +226,40 @@ where
         Ok(())
     }
 
+    pub fn toast_active(&self, now: Instant) -> bool {
+        self.toast_until.is_some_and(|until| now < until)
+    }
+
+    pub fn clear_toast(&mut self) {
+        self.toast_until = None;
+    }
+
+    /// Render a 3×13 character toast screen (pixel-perfect tile grid).
+    ///
+    /// Note: this is a full-screen view; callers should pause normal UI updates while
+    /// the toast is active, then resume normal UI after it expires.
+    pub fn show_toast(
+        &mut self,
+        now: Instant,
+        lines: &[[u8; 13]; 3],
+        fg_raw: u16,
+        duration: Duration,
+    ) -> Result<(), GcError<E>> {
+        self.active_view = ActiveView::Toast;
+        self.toast_until = Some(now + duration);
+
+        self.display.fill_color(BG)?;
+        for (tile_y, row) in lines.iter().enumerate() {
+            for (tile_x, &ch) in row.iter().enumerate() {
+                self.draw_tile_colored(tile_x as u16, tile_y as u16, ch, rgb565(fg_raw))?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn render_snapshot(&mut self, snapshot: &TelemetrySnapshot) -> Result<(), GcError<E>> {
         self.active_view = ActiveView::TelemetryFrame;
+        self.toast_until = None;
         let prev = self.cache;
         let mut next = self.cache;
 
@@ -255,6 +291,7 @@ where
             self.normal_ui_cache = NormalUiTileCache::sentinel();
             self.active_view = ActiveView::NormalUi;
         }
+        self.toast_until = None;
 
         // Row 0: Voltage (V)
         {
@@ -586,8 +623,32 @@ fn glyph_6x8(ch: u8) -> [u8; 8] {
         b'A' => [
             0b011110, 0b110011, 0b110011, 0b111111, 0b110011, 0b110011, 0b110011, 0,
         ],
+        b'B' => [
+            0b111110, 0b110011, 0b110011, 0b111110, 0b110011, 0b110011, 0b111110, 0,
+        ],
+        b'C' => [
+            0b011110, 0b110011, 0b110000, 0b110000, 0b110000, 0b110011, 0b011110, 0,
+        ],
+        b'D' => [
+            0b111100, 0b110110, 0b110011, 0b110011, 0b110011, 0b110110, 0b111100, 0,
+        ],
         b'E' => [
             0b111111, 0b110000, 0b110000, 0b111110, 0b110000, 0b110000, 0b111111, 0,
+        ],
+        b'F' => [
+            0b111111, 0b110000, 0b110000, 0b111110, 0b110000, 0b110000, 0b110000, 0,
+        ],
+        b'I' => [
+            0b111111, 0b001100, 0b001100, 0b001100, 0b001100, 0b001100, 0b111111, 0,
+        ],
+        b'J' => [
+            0b111111, 0b001100, 0b001100, 0b001100, 0b001100, 0b110011, 0b011110, 0,
+        ],
+        b'M' => [
+            0b110011, 0b111111, 0b111111, 0b110011, 0b110011, 0b110011, 0b110011, 0,
+        ],
+        b'N' => [
+            0b110011, 0b111011, 0b111011, 0b110111, 0b110111, 0b110011, 0b110011, 0,
         ],
         b'R' => [
             0b111110, 0b110011, 0b110011, 0b111110, 0b110110, 0b110011, 0b110011, 0,
@@ -609,6 +670,12 @@ fn glyph_6x8(ch: u8) -> [u8; 8] {
         ],
         b'O' => [
             0b011110, 0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b011110, 0,
+        ],
+        b'P' => [
+            0b111110, 0b110011, 0b110011, 0b111110, 0b110000, 0b110000, 0b110000, 0,
+        ],
+        b'Y' => [
+            0b110011, 0b110011, 0b011110, 0b001100, 0b001100, 0b001100, 0b001100, 0,
         ],
 
         b'?' => [
