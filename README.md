@@ -96,12 +96,19 @@ Plan `#0003` 引入了实验性网络能力（feature gate：`net_http`）：
 ### Web（React SPA / bun）
 
 - 安装依赖：`cd web && bun install`
-- 本地开发：`bun dev`
-- 构建：`bun run build`
+- 本地开发：`cd web && bun dev`
+- 默认端口（高位，避免冲突）：Web `http://127.0.0.1:45173`；Storybook `http://127.0.0.1:46006`；Preview `http://127.0.0.1:45175`
+- 质量门槛：`cd web && bun run check`
+- 构建：`cd web && bun run build`
+- Unit tests：`cd web && bun run test:unit`
+- Storybook：`cd web && bun run storybook`
+- Storybook（CI）：`cd web && bun run build-storybook && bun run test:storybook`
+- E2E（Playwright）：`cd web && bun run build && bun run test:e2e`
 
 ### GitHub Pages
 
 - 推送到 `main` 后，GitHub Actions 会构建 `web/` 并发布到 GitHub Pages（工作流：`.github/workflows/pages.yml`）。
+- 说明：为了支持 SPA 路由的“刷新/直达”，构建产物会额外生成 `web/dist/404.html`。
 
 ## 许可证
 

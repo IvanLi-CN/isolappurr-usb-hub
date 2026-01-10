@@ -2,7 +2,7 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 待验收
 - Created: 2026-01-10
 - Last: 2026-01-10
 
@@ -279,12 +279,12 @@ export type PortCardProps = {
 ## 里程碑（Milestones）
 
 - [x] M1: 需求对齐与验收标准冻结（工程化基座 + Mock Dashboard + Pages）
-- [ ] M2: （impl）UI：双端口 Dashboard（V/I/P + Replug/Power mock）+ 设备信息独立页入口
-- [ ] M3: （impl）Web 工程升级：Tailwind + DaisyUI + 基础布局
-- [ ] M4: （impl）Storybook：组件 stories + 可在 CI 构建/测试
-- [ ] M5: （impl）测试分层：unit + storybook + e2e 最小闭环
-- [ ] M6: （impl）CI/Pages：触发条件对齐、质量门槛接入、部署稳定
-- [ ] M7: （impl）文档补齐：README 中的 Web 使用说明与质量门槛
+- [x] M2: （impl）UI：双端口 Dashboard（V/I/P + Replug/Power mock）+ 设备信息独立页入口
+- [x] M3: （impl）Web 工程升级：Tailwind + DaisyUI + 基础布局
+- [x] M4: （impl）Storybook：组件 stories + 可在 CI 构建/测试
+- [x] M5: （impl）测试分层：unit + storybook + e2e 最小闭环
+- [x] M6: （impl）CI/Pages：触发条件对齐、质量门槛接入、部署稳定
+- [x] M7: （impl）文档补齐：README 中的 Web 使用说明与质量门槛
 
 ## 开放问题（Open Questions）
 
