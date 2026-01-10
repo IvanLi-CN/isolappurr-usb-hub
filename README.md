@@ -89,7 +89,7 @@ Plan `#0003` 引入了实验性网络能力（feature gate：`net_http`）：
 - Wi‑Fi STA 联网（默认 DHCP；可选静态 IPv4）
 - mDNS：`<hostname>.local` 解析 + `_http._tcp.local` 服务发现
 - HTTP：`GET /` 返回 `Hello World`
-- UI 兜底：左右键同时按住 1–3 秒后松手，显示 ID / IPv4（>3 秒作废；未联网显示 `NO WIFI`/`NO IP`）
+- UI 兜底：左右键同时按住 1–5 秒后松手，显示 ID / IPv4（>5 秒作废；未联网显示 `NO WIFI`/`NO IP`）
 
 启用方式与排障命令见：`docs/networking.md`。
 
