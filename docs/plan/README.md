@@ -55,3 +55,4 @@
 | 0001 | GC9307 正常界面规范（USB‑A + USB‑C/PD 双口电参量） | 已完成 | `0001:gc9307-normal-ui/PLAN.md` | 2026-01-08 | - |
 | 0002 | CH442E 短按重插 / 长按断电（USB‑A 左键，USB‑C 右键） | 待实现 | `0002:usb-replug-power-cut/PLAN.md` | 2026-01-09 | - |
 | 0003 | 固件联网：Wi‑Fi + mDNS + HTTP（Hello World） | 已完成 | `0003:wifi-mdns-http/PLAN.md` | 2026-01-10 | feature: `net_http` |
+| 0004 | GitHub Pages Web：双口遥测与控制台（Mock，多设备） | 待实现 | `0004:github-pages-ports-dashboard/PLAN.md` | 2026-01-10 | Mock only（暂不连真机；后续用 PNA） |

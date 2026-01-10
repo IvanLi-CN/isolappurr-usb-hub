@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-label="Desktop wireframe for dual-port telemetry and controls UI">
+  <style>
+    .frame {
+      fill: #ffffff;
+      stroke: #111827;
+      stroke-width: 2;
+    }
+    .panel {
+      fill: #f9fafb;
+      stroke: #111827;
+      stroke-width: 2;
+    }
+    .card {
+      fill: #ffffff;
+      stroke: #374151;
+      stroke-width: 2;
+    }
+    .label {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      font-size: 18px;
+      fill: #111827;
+    }
+    .small {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      font-size: 14px;
+      fill: #374151;
+    }
+    .muted {
+      fill: #6b7280;
+    }
+    .badge {
+      fill: #e5e7eb;
+      stroke: #111827;
+      stroke-width: 2;
+    }
+  </style>
+
+  <!-- Outer frame -->
+  <rect class="frame" x="10" y="10" width="1420" height="880" rx="14" />
+
+  <!-- App bar -->
+  <rect class="panel" x="30" y="30" width="1380" height="70" rx="12" />
+  <text class="label" x="50" y="74">App Bar: IsolaPurr Hub Console</text>
+  <rect class="badge" x="1065" y="46" width="130" height="38" rx="10" />
+  <text class="small" x="1080" y="71">Mock Mode</text>
+  <text class="small muted" x="1220" y="71">Theme</text>
+  <text class="small muted" x="1300" y="71">About</text>
+
+  <!-- Left sidebar (devices) -->
+  <rect class="panel" x="30" y="120" width="360" height="750" rx="12" />
+  <text class="label" x="50" y="160">Devices</text>
+
+  <rect class="card" x="50" y="180" width="320" height="44" rx="10" />
+  <text class="small muted" x="62" y="208">Search…</text>
+
+  <rect class="card" x="50" y="236" width="160" height="44" rx="10" />
+  <text class="small" x="70" y="264">+ Add device</text>
+
+  <!-- Device list items -->
+  <rect class="card" x="50" y="300" width="320" height="76" rx="12" />
+  <text class="small" x="62" y="330">Device A</text>
+  <text class="small muted" x="62" y="354">id: a1b2c3 • baseUrl: http://192.168.1.23</text>
+  <text class="small muted" x="285" y="330">Remove</text>
+
+  <rect class="card" x="50" y="388" width="320" height="76" rx="12" />
+  <text class="small" x="62" y="418">Device B</text>
+  <text class="small muted" x="62" y="442">id: d4e5f6 • baseUrl: http://loadlynx-d4e5f6.local</text>
+  <text class="small muted" x="285" y="418">Remove</text>
+
+  <rect class="card" x="50" y="476" width="320" height="76" rx="12" />
+  <text class="small" x="62" y="506">Device C (selected)</text>
+  <text class="small muted" x="62" y="530">id: 001122 • baseUrl: http://10.0.0.42</text>
+  <text class="small muted" x="285" y="506">Remove</text>
+
+  <!-- Main content -->
+  <rect class="panel" x="410" y="120" width="1000" height="750" rx="12" />
+  <text class="label" x="430" y="160">Device Dashboard</text>
+  <text class="small muted" x="430" y="184">Route: /devices/:deviceId</text>
+
+  <!-- Details header row -->
+  <rect class="card" x="430" y="205" width="960" height="60" rx="12" />
+  <text class="small" x="450" y="242">Selected: Device C</text>
+  <text class="small muted" x="820" y="242">Tabs: Dashboard | Device Info</text>
+
+  <!-- Two port cards -->
+  <rect class="card" x="430" y="285" width="470" height="260" rx="12" />
+  <text class="small" x="450" y="320">Port A (USB-A)</text>
+  <text class="small muted" x="450" y="350">V: 5.12 V</text>
+  <text class="small muted" x="450" y="378">I: 1.20 A</text>
+  <text class="small muted" x="450" y="406">P: 6.14 W</text>
+  <text class="small muted" x="450" y="442">Power: ON</text>
+  <text class="small muted" x="450" y="470">[ Toggle ]   [ USB Replug ]</text>
+
+  <rect class="card" x="920" y="285" width="470" height="260" rx="12" />
+  <text class="small" x="940" y="320">Port C (USB-C)</text>
+  <text class="small muted" x="940" y="350">V: 9.05 V</text>
+  <text class="small muted" x="940" y="378">I: 0.80 A</text>
+  <text class="small muted" x="940" y="406">P: 7.24 W</text>
+  <text class="small muted" x="940" y="442">Power: OFF</text>
+  <text class="small muted" x="940" y="470">[ Toggle ]   [ USB Replug ]</text>
+
+  <!-- Lower area (action log) -->
+  <rect class="card" x="430" y="565" width="960" height="285" rx="12" />
+  <text class="small" x="450" y="600">Action Log (Mock)</text>
+  <text class="small muted" x="450" y="628">- Port A: USB Replug</text>
+  <text class="small muted" x="450" y="652">- Port C: Power OFF</text>
+  <text class="small muted" x="450" y="676">- Note: Device Info is a separate page (tab)</text>
+</svg>
