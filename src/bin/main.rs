@@ -338,7 +338,9 @@ async fn main(_spawner: Spawner) {
     #[cfg(feature = "net_http")]
     let mut combo_pressed_at: Option<Instant> = None;
     #[cfg(feature = "net_http")]
-    let mut combo_shown = false;
+    let mut combo_done = false;
+    #[cfg(feature = "net_http")]
+    let mut combo_expired = false;
 
     // Port controls (tps-sw netlist):
     // - P1_CED/P2_CED drive CH442E IN: low=connect, high=disconnect (S2x is NC).
@@ -849,38 +851,50 @@ async fn main(_spawner: Spawner) {
         #[cfg(feature = "net_http")]
         let right_pressed = btn_right_state.is_pressed();
 
-        // Combo: hold both buttons >= 3s to show network info (Plan #0003).
+        // Combo: press BOTH buttons, hold 1s..=3s, then release to show network info (Plan #0003).
+        // Holding >3s is invalid ("expired") and does nothing.
         #[cfg(feature = "net_http")]
         if !combo_active && left_pressed && right_pressed {
             combo_active = true;
             combo_pressed_at = Some(buttons_now);
-            combo_shown = false;
+            combo_done = false;
+            combo_expired = false;
         }
 
         #[cfg(feature = "net_http")]
-        if combo_active && left_pressed && right_pressed && !combo_shown {
+        if combo_active && left_pressed && right_pressed {
             if let Some(since) = combo_pressed_at {
-                if buttons_now - since >= Duration::from_secs(3) {
-                    let (hostname, ip) = if let Some(handles) = net_handles.as_ref() {
+                if buttons_now - since > PRESS_LONG_MAX {
+                    combo_expired = true;
+                }
+            }
+        }
+
+        #[cfg(feature = "net_http")]
+        if combo_active && (!left_pressed || !right_pressed) && !combo_done {
+            if let Some(since) = combo_pressed_at {
+                let duration = buttons_now - since;
+                if !combo_expired && duration >= PRESS_LONG_MIN && duration <= PRESS_LONG_MAX {
+                    let (short_id, ip) = if let Some(handles) = net_handles.as_ref() {
                         let ip = {
                             let state = handles.wifi_state.lock().await;
                             state.ipv4
                         };
-                        (handles.device_names.hostname.as_str(), ip)
+                        (Some(handles.device_names.short_id.as_str()), ip)
                     } else {
-                        ("no wifi", None)
+                        (None, None)
                     };
 
-                    let lines = net::format_network_toast_lines(hostname, ip);
+                    let lines = net::format_network_toast_lines(short_id, ip);
                     let _ = ui.show_toast(
                         buttons_now,
                         &lines,
                         TOAST_INFO_RAW,
                         Duration::from_millis(5_000),
                     );
-                    combo_shown = true;
                 }
             }
+            combo_done = true;
         }
 
         if let Some(edge) = left_edge {
@@ -1138,7 +1152,8 @@ async fn main(_spawner: Spawner) {
         if combo_active && !left_pressed && !right_pressed {
             combo_active = false;
             combo_pressed_at = None;
-            combo_shown = false;
+            combo_done = false;
+            combo_expired = false;
         }
 
         let now_us = esp_hal::time::Instant::now()

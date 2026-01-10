@@ -155,107 +155,84 @@ pub fn spawn_wifi_mdns_http(
     })
 }
 
-pub fn format_network_toast_lines(hostname: &str, ip: Option<Ipv4Address>) -> [[u8; 13]; 3] {
+pub fn format_network_toast_lines(
+    short_id: Option<&str>,
+    ip: Option<Ipv4Address>,
+) -> [[u8; 13]; 3] {
     let mut lines = [[b' '; 13]; 3];
 
-    let hostname = hostname.trim();
+    // IMPORTANT: the toast UI uses a tiny fixed font that only supports:
+    // digits, '.', '-', space, and a subset of uppercase letters.
+    // Do NOT render arbitrary hostnames here (will show '?' for missing glyphs).
 
+    // Line 0: device hint ("ID <short_id>") or a fallback.
+    if let Some(id) = short_id.and_then(|v| {
+        let s = v.trim();
+        if s.is_empty() { None } else { Some(s) }
+    }) {
+        let mut out: HString<13> = HString::new();
+        let _ = out.push_str("ID ");
+        for ch in id.chars() {
+            if out.len() >= 13 {
+                break;
+            }
+            if ch.is_ascii_hexdigit() {
+                let _ = out.push(ch.to_ascii_uppercase());
+            }
+        }
+        let b = out.as_bytes();
+        lines[0][..b.len()].copy_from_slice(b);
+    } else {
+        let b = b"NO WIFI";
+        lines[0][..b.len()].copy_from_slice(b);
+    }
+
+    // Line 1/2: IP (full, possibly split).
     match ip {
         None => {
-            // Hostname split across line 0/1 (no `.local`, to fit).
-            let bytes = hostname.as_bytes();
-            let first = bytes.len().min(13);
-            lines[0][..first].copy_from_slice(&bytes[..first]);
-            if bytes.len() > 13 {
-                let second = (bytes.len() - 13).min(13);
-                lines[1][..second].copy_from_slice(&bytes[13..13 + second]);
-            }
-
             let b = b"NO IP";
-            lines[2][..b.len()].copy_from_slice(b);
+            lines[1][..b.len()].copy_from_slice(b);
         }
         Some(ip) => {
             let o = ip.octets();
-
             let mut ip_full: HString<15> = HString::new();
             let _ = core::write!(ip_full, "{}.{}.{}.{}", o[0], o[1], o[2], o[3]);
 
-            if ip_full.len() <= 13 {
-                // Hostname split across line 0/1; full IP fits on line 2.
-                let bytes = hostname.as_bytes();
-                let first = bytes.len().min(13);
-                lines[0][..first].copy_from_slice(&bytes[..first]);
-                if bytes.len() > 13 {
-                    let second = (bytes.len() - 13).min(13);
-                    lines[1][..second].copy_from_slice(&bytes[13..13 + second]);
-                }
-
-                let b = ip_full.as_bytes();
-                lines[2][..b.len()].copy_from_slice(b);
+            // Prefer a clear "IP " prefix when possible.
+            if ip_full.len() + 3 <= 13 {
+                let mut line1: HString<13> = HString::new();
+                let _ = core::write!(line1, "IP {}", ip_full.as_str());
+                let b = line1.as_bytes();
+                lines[1][..b.len()].copy_from_slice(b);
             } else {
-                // Most IPv4 addresses (e.g. 192.168.31.224) don't fit in 13 chars.
-                // Prefer showing a hostname hint + full IPv4 split across 2 lines.
-                let host_hint = hostname_hint_13(hostname);
-                let b = host_hint.as_bytes();
-                lines[0][..b.len()].copy_from_slice(b);
+                // Split across two lines; keep the prefix on line 1.
+                // line1: "IP " + first 10 chars of the IP
+                // line2: remaining chars
+                let bytes = ip_full.as_bytes();
+                let first = bytes.len().min(10);
 
-                let mut ip_hi: HString<13> = HString::new();
-                let _ = core::write!(ip_hi, "IP {}.{}.", o[0], o[1]);
-                let b = ip_hi.as_bytes();
+                let mut line1: HString<13> = HString::new();
+                let _ = line1.push_str("IP ");
+                for &b in &bytes[..first] {
+                    let _ = line1.push(b as char);
+                }
+                let b = line1.as_bytes();
                 lines[1][..b.len()].copy_from_slice(b);
 
-                let mut ip_lo: HString<13> = HString::new();
-                let _ = core::write!(ip_lo, "{}.{}", o[2], o[3]);
-                let b = ip_lo.as_bytes();
+                let mut line2: HString<13> = HString::new();
+                for &b in &bytes[first..] {
+                    if line2.len() >= 13 {
+                        break;
+                    }
+                    let _ = line2.push(b as char);
+                }
+                let b = line2.as_bytes();
                 lines[2][..b.len()].copy_from_slice(b);
             }
         }
-    }
+    };
 
     lines
-}
-
-fn hostname_hint_13(hostname: &str) -> HString<13> {
-    let hostname = hostname.trim();
-    if hostname.is_empty() {
-        return HString::new();
-    }
-
-    if hostname.len() <= 13 {
-        let mut out: HString<13> = HString::new();
-        let _ = out.push_str(hostname);
-        return out;
-    }
-
-    // Prefer the last two `-`-separated segments (e.g. `hub-f293cc`) when it fits.
-    if let Some((head, last)) = hostname.rsplit_once('-') {
-        if let Some((_head2, prev)) = head.rsplit_once('-') {
-            if !prev.is_empty() && !last.is_empty() {
-                let mut cand: HString<13> = HString::new();
-                let _ = cand.push_str(prev);
-                let _ = cand.push('-');
-                let _ = cand.push_str(last);
-                if cand.len() <= 13 {
-                    return cand;
-                }
-            }
-        }
-
-        if !last.is_empty() && last.len() <= 13 {
-            let mut out: HString<13> = HString::new();
-            let _ = out.push_str(last);
-            return out;
-        }
-    }
-
-    // Fallback: keep the last 13 characters (hostname is already sanitized ASCII).
-    let bytes = hostname.as_bytes();
-    let start = bytes.len().saturating_sub(13);
-    let mut out: HString<13> = HString::new();
-    for &b in &bytes[start..] {
-        let _ = out.push(b as char);
-    }
-    out
 }
 
 #[embassy_executor::task]
