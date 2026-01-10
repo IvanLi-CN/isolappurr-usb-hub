@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-09
-- Last: 2026-01-09
+- Last: 2026-01-10
 
 ## 背景 / 问题陈述
 
@@ -144,12 +144,12 @@
 ## 里程碑（Milestones）
 
 - [x] M1: 冻结范围与验收标准（Wi‑Fi STA + mDNS 主机名 + `_http._tcp` 服务 + `GET /` + 双键显示 IP）
-- [ ] M2: （impl）网络栈接入：Wi‑Fi STA + DHCP/静态 IPv4 + 连接状态机（参考 `loadlynx`）
-- [ ] M3: （impl）mDNS：A/ANY + `_http._tcp.local` PTR/SRV/TXT（含周期性 announce 与重连处理）
-- [ ] M4: （impl）HTTP：最小 server（`GET /` → `Hello World`），并与网络栈/并发模型对齐
-- [ ] M5: （impl）UI：双键长按 3 秒显示网络信息；未联网时给出明确提示
-- [ ] M6: （impl）单元测试 + 实机验收（至少 macOS/Linux + 一条掉线恢复路径）
-- [ ] M7: （impl）文档补齐与示例命令（README + networking doc）
+- [x] M2: （impl）网络栈接入：Wi‑Fi STA + DHCP/静态 IPv4 + 连接状态机（参考 `loadlynx`）
+- [x] M3: （impl）mDNS：A/ANY + `_http._tcp.local` PTR/SRV/TXT（含周期性 announce 与重连处理）
+- [x] M4: （impl）HTTP：最小 server（`GET /` → `Hello World`），并与网络栈/并发模型对齐
+- [x] M5: （impl）UI：双键长按 3 秒显示网络信息；未联网时给出明确提示
+- [x] M6: （impl）单元测试 + 实机验收（至少 macOS/Linux + 一条掉线恢复路径）
+- [x] M7: （impl）文档补齐与示例命令（README + networking doc）
 
 ## 方案概述（Approach, high-level）
 
