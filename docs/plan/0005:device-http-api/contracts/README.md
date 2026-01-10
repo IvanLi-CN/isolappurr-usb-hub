@@ -1,0 +1,15 @@
+# 接口契约（Contracts）
+
+本目录用于存放本计划的**接口契约**。为避免形状混杂，契约按 `Kind` 拆分成不同文件（不要把 HTTP/RPC/Event/CLI/DB/File 等混在一个文件里）。
+
+编写约定：
+
+- `../PLAN.md` 是唯一的“接口清单（Inventory）”：每条接口都必须在那张表里出现。
+- 修改既有接口时，契约里必须写清楚：
+  - 变化点（旧 → 新）
+  - 向后兼容期望
+  - 迁移 / rollout 方案（feature flag、弃用周期、双写/回填等）
+
+本计划涉及：
+
+- `http-apis.md`：设备对外 HTTP APIs（`/api/v1`）+ CORS/PNA 预检约定

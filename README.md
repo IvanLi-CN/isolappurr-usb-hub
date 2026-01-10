@@ -1,9 +1,9 @@
 # IsolaPurr USB Hub
 
-IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和两个 USB‑A 下行口的有源 USB 集线器/供电模块，重点特性是：
+IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和一个 USB‑A 下行口的有源 USB 集线器/供电模块，重点特性是：
 
 - 上行：USB‑C 口（数据 + 供电），使用 **CH334P** 做 USB2.0 Hub 控制。  
-- 下行 USB‑A ×2：每个口用一颗 **URB2405S‑3WR3** 隔离 DC/DC 模块独立供电，实现数据与电源隔离。  
+- 下行 USB‑A ×1：使用 **URB2405S‑3WR3** 隔离 DC/DC 模块独立供电，实现数据与电源隔离。  
 - 下行 USB‑C ×1：硬件实现随方案不同：  
   - `tps-sw`：**CH224Q + TPS55288 + SW2303**（USB‑PD 受电 + 3.3–21 V 可调输出；PPS/AVS 能力由 SW2303 侧控制）  
   - `ip6557`：**CH224Q + IP6557**  
