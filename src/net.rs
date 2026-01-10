@@ -158,8 +158,8 @@ pub fn spawn_wifi_mdns_http(
 pub fn format_network_toast_lines(
     short_id: Option<&str>,
     ip: Option<Ipv4Address>,
-) -> [[u8; 13]; 3] {
-    let mut lines = [[b' '; 13]; 3];
+) -> [[u8; 20]; 3] {
+    let mut lines = [[b' '; 20]; 3];
 
     // IMPORTANT: the toast UI uses a tiny fixed font that only supports:
     // digits, '.', '-', space, and a subset of uppercase letters.
@@ -170,10 +170,10 @@ pub fn format_network_toast_lines(
         let s = v.trim();
         if s.is_empty() { None } else { Some(s) }
     }) {
-        let mut out: HString<13> = HString::new();
+        let mut out: HString<20> = HString::new();
         let _ = out.push_str("ID ");
         for ch in id.chars() {
-            if out.len() >= 13 {
+            if out.len() >= 20 {
                 break;
             }
             if ch.is_ascii_hexdigit() {
@@ -187,7 +187,7 @@ pub fn format_network_toast_lines(
         lines[0][..b.len()].copy_from_slice(b);
     }
 
-    // Line 1/2: IP (full, possibly split).
+    // Line 1: IP (full).
     match ip {
         None => {
             let b = b"NO IP";
@@ -195,40 +195,10 @@ pub fn format_network_toast_lines(
         }
         Some(ip) => {
             let o = ip.octets();
-            let mut ip_full: HString<15> = HString::new();
-            let _ = core::write!(ip_full, "{}.{}.{}.{}", o[0], o[1], o[2], o[3]);
-
-            // Prefer a clear "IP " prefix when possible.
-            if ip_full.len() + 3 <= 13 {
-                let mut line1: HString<13> = HString::new();
-                let _ = core::write!(line1, "IP {}", ip_full.as_str());
-                let b = line1.as_bytes();
-                lines[1][..b.len()].copy_from_slice(b);
-            } else {
-                // Split across two lines; keep the prefix on line 1.
-                // line1: "IP " + first 10 chars of the IP
-                // line2: remaining chars
-                let bytes = ip_full.as_bytes();
-                let first = bytes.len().min(10);
-
-                let mut line1: HString<13> = HString::new();
-                let _ = line1.push_str("IP ");
-                for &b in &bytes[..first] {
-                    let _ = line1.push(b as char);
-                }
-                let b = line1.as_bytes();
-                lines[1][..b.len()].copy_from_slice(b);
-
-                let mut line2: HString<13> = HString::new();
-                for &b in &bytes[first..] {
-                    if line2.len() >= 13 {
-                        break;
-                    }
-                    let _ = line2.push(b as char);
-                }
-                let b = line2.as_bytes();
-                lines[2][..b.len()].copy_from_slice(b);
-            }
+            let mut line1: HString<20> = HString::new();
+            let _ = core::write!(line1, "IP {}.{}.{}.{}", o[0], o[1], o[2], o[3]);
+            let b = line1.as_bytes();
+            lines[1][..b.len()].copy_from_slice(b);
         }
     };
 

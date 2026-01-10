@@ -28,10 +28,16 @@ const GLYPH_SRC_H: u16 = 8;
 // Smaller font + spacing: render 6x8 glyph centered into a 24x48 tile.
 const GLYPH_SX: u16 = 3;
 const GLYPH_SY: u16 = 4;
-const GLYPH_W: u16 = GLYPH_SRC_W * GLYPH_SX;
-const GLYPH_H: u16 = GLYPH_SRC_H * GLYPH_SY;
-const GLYPH_X0: u16 = (TILE_W - GLYPH_W) / 2;
-const GLYPH_Y0: u16 = (TILE_H - GLYPH_H) / 2;
+
+// Compact toast: 3 rows × 20 columns (small font so IPv4 fits in one line).
+const TOAST_COMPACT_TILE_W: u16 = 16;
+const TOAST_COMPACT_TILE_H: u16 = 32;
+const TOAST_COMPACT_TILES_X: u16 = 20;
+const TOAST_COMPACT_X_OFFSET: u16 = (320 - TOAST_COMPACT_TILE_W * TOAST_COMPACT_TILES_X) / 2;
+const TOAST_COMPACT_Y_OFFSET: u16 = (172 - TOAST_COMPACT_TILE_H * 3) / 2;
+
+const TOAST_COMPACT_GLYPH_SX: u16 = 2;
+const TOAST_COMPACT_GLYPH_SY: u16 = 3;
 
 const FG: Rgb565 = Rgb565::WHITE;
 const BG: Rgb565 = Rgb565::BLACK;
@@ -257,6 +263,29 @@ where
         Ok(())
     }
 
+    /// Render a 3×20 character toast screen (compact font for longer strings).
+    ///
+    /// Note: this is a full-screen view; callers should pause normal UI updates while
+    /// the toast is active, then resume normal UI after it expires.
+    pub fn show_toast_compact(
+        &mut self,
+        now: Instant,
+        lines: &[[u8; 20]; 3],
+        fg_raw: u16,
+        duration: Duration,
+    ) -> Result<(), GcError<E>> {
+        self.active_view = ActiveView::Toast;
+        self.toast_until = Some(now + duration);
+
+        self.display.fill_color(BG)?;
+        for (tile_y, row) in lines.iter().enumerate() {
+            for (tile_x, &ch) in row.iter().enumerate() {
+                self.draw_compact_tile_colored(tile_x as u16, tile_y as u16, ch, rgb565(fg_raw))?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn render_snapshot(&mut self, snapshot: &TelemetrySnapshot) -> Result<(), GcError<E>> {
         self.active_view = ActiveView::TelemetryFrame;
         self.toast_until = None;
@@ -426,6 +455,30 @@ where
         self.display.write_area(x, y, TILE_W, &data, fg, BG)?;
         Ok(())
     }
+
+    fn draw_compact_tile_colored(
+        &mut self,
+        tile_x: u16,
+        tile_y: u16,
+        ch: u8,
+        fg: Rgb565,
+    ) -> Result<(), GcError<E>> {
+        let x = TOAST_COMPACT_X_OFFSET + tile_x * TOAST_COMPACT_TILE_W;
+        let y = TOAST_COMPACT_Y_OFFSET + tile_y * TOAST_COMPACT_TILE_H;
+
+        let mut data = [0_u8; (TOAST_COMPACT_TILE_W as usize * TOAST_COMPACT_TILE_H as usize) / 8];
+        render_char_6x8_scaled_custom(
+            ch,
+            &mut data,
+            TOAST_COMPACT_TILE_W,
+            TOAST_COMPACT_TILE_H,
+            TOAST_COMPACT_GLYPH_SX,
+            TOAST_COMPACT_GLYPH_SY,
+        );
+        self.display
+            .write_area(x, y, TOAST_COMPACT_TILE_W, &data, fg, BG)?;
+        Ok(())
+    }
 }
 
 fn rgb565(raw: u16) -> Rgb565 {
@@ -555,29 +608,49 @@ fn format_ok_value_6(micros: u32, unit: u8) -> Result<[u8; 6], OkValueError> {
 }
 
 fn render_char_6x8_scaled(ch: u8, out: &mut [u8; 144]) {
+    render_char_6x8_scaled_custom(ch, out, TILE_W, TILE_H, GLYPH_SX, GLYPH_SY);
+}
+
+fn render_char_6x8_scaled_custom(
+    ch: u8,
+    out: &mut [u8],
+    tile_w: u16,
+    tile_h: u16,
+    glyph_sx: u16,
+    glyph_sy: u16,
+) {
     out.fill(0);
+    debug_assert_eq!(
+        out.len(),
+        (tile_w as usize * tile_h as usize) / 8,
+        "1bpp buffer must be exactly w*h/8 bytes",
+    );
+
+    let glyph_w = GLYPH_SRC_W * glyph_sx;
+    let glyph_h = GLYPH_SRC_H * glyph_sy;
+    let glyph_x0 = (tile_w - glyph_w) / 2;
+    let glyph_y0 = (tile_h - glyph_h) / 2;
 
     let glyph = glyph_6x8(ch);
-
     for (src_y, &row_bits) in glyph.iter().enumerate() {
-        for rep_y in 0..GLYPH_SY {
-            let y = GLYPH_Y0 + src_y as u16 * GLYPH_SY + rep_y;
-            for src_x in 0..6u16 {
+        for rep_y in 0..glyph_sy {
+            let y = glyph_y0 + src_y as u16 * glyph_sy + rep_y;
+            for src_x in 0..GLYPH_SRC_W {
                 let on = row_bits & (1 << (5 - src_x)) != 0;
                 if !on {
                     continue;
                 }
-                for rep_x in 0..GLYPH_SX {
-                    let x = GLYPH_X0 + src_x * GLYPH_SX + rep_x;
-                    set_1bpp_24x48(out, x, y);
+                for rep_x in 0..glyph_sx {
+                    let x = glyph_x0 + src_x * glyph_sx + rep_x;
+                    set_1bpp(out, tile_w, x, y);
                 }
             }
         }
     }
 }
 
-fn set_1bpp_24x48(buf: &mut [u8; 144], x: u16, y: u16) {
-    let idx = usize::from(y) * 24 + usize::from(x);
+fn set_1bpp(buf: &mut [u8], width: u16, x: u16, y: u16) {
+    let idx = usize::from(y) * usize::from(width) + usize::from(x);
     let byte = idx / 8;
     let bit = 7 - (idx % 8);
     buf[byte] |= 1 << bit;

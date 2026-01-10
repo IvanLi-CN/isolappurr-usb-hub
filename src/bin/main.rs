@@ -886,7 +886,7 @@ async fn main(_spawner: Spawner) {
                     };
 
                     let lines = net::format_network_toast_lines(short_id, ip);
-                    let _ = ui.show_toast(
+                    let _ = ui.show_toast_compact(
                         buttons_now,
                         &lines,
                         TOAST_INFO_RAW,
