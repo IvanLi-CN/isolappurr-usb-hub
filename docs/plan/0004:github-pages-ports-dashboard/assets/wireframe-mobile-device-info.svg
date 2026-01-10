@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="430" height="900" viewBox="0 0 430 900" role="img" aria-label="Mobile wireframe for device info page (mock)">
+  <style>
+    .frame {
+      fill: #ffffff;
+      stroke: #111827;
+      stroke-width: 2;
+    }
+    .panel {
+      fill: #f9fafb;
+      stroke: #111827;
+      stroke-width: 2;
+    }
+    .card {
+      fill: #ffffff;
+      stroke: #374151;
+      stroke-width: 2;
+    }
+    .label {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      font-size: 14px;
+      fill: #111827;
+    }
+    .small {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      fill: #374151;
+    }
+    .muted {
+      fill: #6b7280;
+    }
+  </style>
+
+  <text class="label" x="40" y="28">Mobile — Device Info</text>
+  <rect class="frame" x="20" y="40" width="390" height="844" rx="24" />
+
+  <rect class="panel" x="40" y="60" width="350" height="56" rx="14" />
+  <text class="label" x="56" y="94">Device C</text>
+  <text class="small muted" x="330" y="94">Back</text>
+
+  <rect class="panel" x="40" y="128" width="350" height="42" rx="12" />
+  <text class="small muted" x="56" y="154">Tab: Dashboard | Info (active)</text>
+
+  <rect class="card" x="40" y="182" width="350" height="150" rx="14" />
+  <text class="small" x="56" y="210">Identity (Mock)</text>
+  <text class="small muted" x="56" y="236">deviceId: 001122</text>
+  <text class="small muted" x="56" y="258">name: Device C</text>
+  <text class="small muted" x="56" y="280">baseUrl: http://10.0.0.42</text>
+
+  <rect class="card" x="40" y="344" width="350" height="150" rx="14" />
+  <text class="small" x="56" y="372">Network (Mock)</text>
+  <text class="small muted" x="56" y="398">ip: 10.0.0.42</text>
+  <text class="small muted" x="56" y="420">hostname: isolapurr-001122.local</text>
+  <text class="small muted" x="56" y="442">mac: 00:11:22:33:44:55</text>
+
+  <rect class="card" x="40" y="506" width="350" height="150" rx="14" />
+  <text class="small" x="56" y="534">MCU / Hardware (Mock)</text>
+  <text class="small muted" x="56" y="560">unique_id: (any stable identifier)</text>
+  <text class="small muted" x="56" y="582">notes: placeholder only</text>
+
+  <rect class="card" x="40" y="668" width="350" height="90" rx="14" />
+  <text class="small" x="56" y="696">Note</text>
+  <text class="small muted" x="56" y="720">Mock only. Real fetch later (PNA).</text>
+</svg>
