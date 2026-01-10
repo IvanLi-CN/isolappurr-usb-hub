@@ -140,7 +140,7 @@ const POWER_SWITCH_GUARD_MS: u64 = 350;
 const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
 const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
 const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
-const PRESS_LONG_MAX: Duration = Duration::from_millis(3000);
+const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
 
 // Toast colors (RGB565 raw).
 const TOAST_OK_RAW: u16 = 0x4D6A; // green (same as UI OK power)
@@ -851,8 +851,8 @@ async fn main(_spawner: Spawner) {
         #[cfg(feature = "net_http")]
         let right_pressed = btn_right_state.is_pressed();
 
-        // Combo: press BOTH buttons, hold 1s..=3s, then release to show network info (Plan #0003).
-        // Holding >3s is invalid ("expired") and does nothing.
+        // Combo: press BOTH buttons, hold 1s..=5s, then release to show network info (Plan #0003).
+        // Holding >5s is invalid ("expired") and does nothing.
         #[cfg(feature = "net_http")]
         if !combo_active && left_pressed && right_pressed {
             combo_active = true;
