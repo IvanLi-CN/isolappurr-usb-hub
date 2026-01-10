@@ -82,6 +82,17 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
   - 由 `mcu-agentd` 执行（配置：`mcu-agentd.toml`；串口缓存：`.esp32-port`；日志 `defmt` 解码由 `espflash` 完成）。
 - `cargo run --release`（可选）：会通过 `tools/mcu-agentd-runner` 调用 `mcu-agentd`（同样要求先选定 `.esp32-port`，不会自动选串口）。
 
+#### 网络功能（Wi‑Fi + mDNS + HTTP）
+
+Plan `#0003` 引入了实验性网络能力（feature gate：`net_http`）：
+
+- Wi‑Fi STA 联网（默认 DHCP；可选静态 IPv4）
+- mDNS：`<hostname>.local` 解析 + `_http._tcp.local` 服务发现
+- HTTP：`GET /` 返回 `Hello World`
+- UI 兜底：左右键同时按住 1–5 秒后松手，显示 ID / IPv4（>5 秒作废；未联网显示 `NO WIFI`/`NO IP`）
+
+启用方式与排障命令见：`docs/networking.md`。
+
 ### Web（React SPA / bun）
 
 - 安装依赖：`cd web && bun install`
