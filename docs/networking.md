@@ -51,7 +51,7 @@ mcu-agentd monitor usb_hub --reset
 Hold **both** buttons (left + right) for **1–5 seconds**, then **release**, to show:
 
 - `ID <SHORTID>` (derived from MAC; shown in uppercase hex)
-- IPv4 (may be split across 2 lines), or `NO IP` when not connected
+- IPv4 (fits on one line), or `NO IP` when not connected
 - Holding **> 5 seconds** is treated as invalid and does nothing.
 
 Note: the toast overlay uses a tiny fixed font with limited glyph coverage, so it intentionally avoids rendering the hostname (would show `?`).
