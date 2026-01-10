@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-09
-- Last: 2026-01-09
+- Last: 2026-01-10
 
 ## 背景 / 问题陈述
 
@@ -23,7 +23,7 @@
   - HTTP 服务发现（`_http._tcp.local` 的 PTR/SRV/TXT）
 - 设备提供 HTTP 服务：访问根路径 `/` 返回可验证的 `Hello World`。
 - 主流系统尽量可用；当 `.local`/mDNS 不可用时，提供本机屏幕显示 IPv4 作为兜底：
-  - 同时按住左右键 3 秒后，界面显示 IP/hostname 信息（若未联网则显示 “no ip” 等可测试提示）。
+  - 左右键同时按住 1–5 秒后松手，界面显示 ID/IP 信息（>5 秒作废；未联网显示 `NO WIFI`/`NO IP` 等可测试提示）。
 
 ### Non-goals
 
@@ -53,7 +53,7 @@
 - HTTP server（最小）：
   - `GET /` 返回 `200` 与正文 `Hello World`（内容与 Content-Type 在实现阶段冻结为常量）。
 - UI/交互（最小）：
-  - 同时按住左右键 `>= 3s` → 显示网络信息页/overlay（hostname、IPv4、可选网关/DNS）。
+  - 左右键同时按住 `1–5s` 后松手 → 显示网络信息页/overlay（ID、IPv4；可选网关/DNS）。
 
 ### Out of scope
 
@@ -76,7 +76,7 @@
 - HTTP：
   - `GET /` 返回 `200`，正文包含 `Hello World`（用于验收与后续扩展基线）。
 - UI：
-  - 双键长按 3 秒触发一次“显示网络信息”动作；显示内容可读且可测试。
+  - 双键同时长按 `1–5s` 后松手触发一次“显示网络信息”动作；`>5s` 作废；显示内容可读且可测试。
 
 ### SHOULD
 
@@ -113,10 +113,10 @@
   - Then：设备可自动重连并再次获得 IPv4；mDNS 与 HTTP 恢复可用（必要时重新公告）
 - **屏幕兜底显示 IP**
   - Given：设备上电运行
-  - When：同时按住左右键 `>= 3s`
+  - When：左右键同时按住 `1–5s` 后松手
   - Then：
-    - 若已获得 IPv4：界面显示 hostname、IPv4（可选显示网关/DNS）
-    - 若未联网：界面显示可测试的 `NO IP`（或等价文案），且不会影响后续联网流程
+    - 若已获得 IPv4：界面显示 ID、IPv4（可选显示网关/DNS）
+    - 若未联网：界面显示可测试的 `NO WIFI`/`NO IP`（或等价文案），且不会影响后续联网流程
 
 ## 非功能性验收 / 质量门槛（Quality Gates）
 
@@ -144,12 +144,12 @@
 ## 里程碑（Milestones）
 
 - [x] M1: 冻结范围与验收标准（Wi‑Fi STA + mDNS 主机名 + `_http._tcp` 服务 + `GET /` + 双键显示 IP）
-- [ ] M2: （impl）网络栈接入：Wi‑Fi STA + DHCP/静态 IPv4 + 连接状态机（参考 `loadlynx`）
-- [ ] M3: （impl）mDNS：A/ANY + `_http._tcp.local` PTR/SRV/TXT（含周期性 announce 与重连处理）
-- [ ] M4: （impl）HTTP：最小 server（`GET /` → `Hello World`），并与网络栈/并发模型对齐
-- [ ] M5: （impl）UI：双键长按 3 秒显示网络信息；未联网时给出明确提示
-- [ ] M6: （impl）单元测试 + 实机验收（至少 macOS/Linux + 一条掉线恢复路径）
-- [ ] M7: （impl）文档补齐与示例命令（README + networking doc）
+- [x] M2: （impl）网络栈接入：Wi‑Fi STA + DHCP/静态 IPv4 + 连接状态机（参考 `loadlynx`）
+- [x] M3: （impl）mDNS：A/ANY + `_http._tcp.local` PTR/SRV/TXT（含周期性 announce 与重连处理）
+- [x] M4: （impl）HTTP：最小 server（`GET /` → `Hello World`），并与网络栈/并发模型对齐
+- [x] M5: （impl）UI：双键同时长按 1–5 秒后松手显示网络信息（>5 秒作废）；未联网时给出明确提示
+- [x] M6: （impl）单元测试 + 实机验收（至少 macOS/Linux + 一条掉线恢复路径）
+- [x] M7: （impl）文档补齐与示例命令（README + networking doc）
 
 ## 方案概述（Approach, high-level）
 
@@ -191,9 +191,9 @@
 
 ### UI（双键显示网络信息）
 
-- 同时按住左右键 3 秒触发一次显示动作：
-  - 已联网：显示 hostname 与 IPv4（必要时分页/滚动或专用信息页）
-  - 未联网：显示 `NO IP`（并可显示当前 Wi‑Fi 状态：Connecting/Error）
+- 左右键同时按住 1–5 秒后松手触发一次显示动作（`>5s` 作废）：
+  - 已联网：显示 ID 与 IPv4（必要时分页/滚动或专用信息页）
+  - 未联网：显示 `NO WIFI`/`NO IP`（并可显示当前 Wi‑Fi 状态：Connecting/Error）
 - 注意避免与 `GPIO0` 启动模式风险耦合：仅在运行态识别该手势，不建议在复位/上电阶段按住。
 
 ## 风险与开放问题（Risks & Open Questions）
