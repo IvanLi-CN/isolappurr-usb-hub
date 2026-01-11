@@ -1,0 +1,278 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --panel: #ffffff;
+        --panel-2: #f8fafc;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #5c6ac4;
+        --primary-2: #6b78d6;
+        --primary-text: #ffffff;
+        --success: #16a34a;
+        --success-text: #dcfce7;
+        --warning: #d97706;
+        --warning-text: #fffbeb;
+        --error: #dc2626;
+        --error-text: #fee2e2;
+        --shadow: rgba(17, 24, 39, 0.08);
+      }
+
+      text {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        fill: var(--text);
+      }
+
+      .muted {
+        fill: var(--muted);
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+
+      .h1 {
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .h2 {
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .body {
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .caption {
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .card {
+        filter: drop-shadow(0 8px 18px var(--shadow));
+      }
+
+      .popover {
+        filter: drop-shadow(0 8px 18px var(--shadow));
+      }
+
+      .btn {
+        rx: 10;
+        ry: 10;
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      .btn-primary {
+        fill: var(--primary);
+        stroke: rgba(0, 0, 0, 0);
+      }
+
+      .btn-primary-text {
+        fill: var(--primary-text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .btn-ghost {
+        fill: transparent;
+      }
+
+      .btn-ghost-text {
+        fill: var(--text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .btn-disabled-fill {
+        fill: var(--panel-2);
+      }
+
+      .btn-disabled-fill-soft {
+        fill: rgba(17, 24, 39, 0.04);
+      }
+
+      .btn-disabled-text {
+        fill: var(--muted);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+    </style>
+  </defs>
+
+  <!-- background -->
+  <rect x="0" y="0" width="1600" height="900" fill="var(--bg)" />
+
+  <!-- navbar -->
+  <rect x="0" y="0" width="1600" height="64" fill="var(--panel-2)" stroke="var(--border)" />
+  <text x="32" y="40" class="h2">Isolapurr USB Hub</text>
+  <text x="1260" y="40" class="caption muted">Theme</text>
+	  <rect x="1320" y="18" width="150" height="36" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1340" y="41" class="btn-ghost-text">isolapurr ▾</text>
+	  <rect x="1484" y="18" width="92" height="36" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1508" y="41" class="btn-ghost-text">About</text>
+
+  <!-- layout -->
+  <rect x="0" y="64" width="360" height="836" fill="rgba(248,250,252,0.85)" stroke="var(--border)" />
+  <rect x="360" y="64" width="1240" height="836" fill="transparent" />
+
+  <!-- sidebar header -->
+  <text x="32" y="112" class="h2">Devices</text>
+	  <rect x="250" y="90" width="78" height="34" rx="10" ry="10" class="btn btn-primary" />
+  <text x="270" y="112" class="btn-primary-text">+ Add</text>
+
+  <!-- sidebar items -->
+  <rect x="24" y="140" width="312" height="70" rx="14" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="44" y="170" class="body">Desk Hub</text>
+  <text x="44" y="192" class="caption muted mono">http://hub-a.local</text>
+  <rect x="230" y="160" width="96" height="22" rx="11" ry="11" fill="rgba(22,163,74,0.12)" />
+  <text x="278" y="176" class="caption" fill="var(--success)" text-anchor="middle">online</text>
+
+  <rect x="24" y="224" width="312" height="70" rx="14" fill="var(--panel)" stroke="var(--border)" />
+  <text x="44" y="254" class="body">Lab Hub</text>
+  <text x="44" y="276" class="caption muted mono">http://192.168.1.42</text>
+  <rect x="230" y="244" width="96" height="22" rx="11" ry="11" fill="rgba(220,38,38,0.10)" />
+  <text x="278" y="260" class="caption" fill="var(--error)" text-anchor="middle">offline</text>
+
+  <rect x="24" y="308" width="312" height="70" rx="14" fill="var(--panel)" stroke="var(--border)" />
+  <text x="44" y="338" class="body">Spare Hub</text>
+  <text x="44" y="360" class="caption muted mono">http://hub-c.local</text>
+  <rect x="230" y="328" width="96" height="22" rx="11" ry="11" fill="rgba(217,119,6,0.12)" />
+  <text x="278" y="344" class="caption" fill="var(--warning)" text-anchor="middle">unknown</text>
+
+  <!-- main title -->
+  <text x="392" y="112" class="h1">Dashboard</text>
+  <text x="392" y="136" class="body muted">
+    Multi-device overview — V/A/W, status, quick actions
+  </text>
+
+  <!-- device cards grid (2 columns) -->
+  <!-- card 1 -->
+  <g class="card">
+    <rect x="392" y="164" width="576" height="272" rx="18" fill="var(--panel)" stroke="var(--border)" />
+    <text x="416" y="198" class="h2">Desk Hub</text>
+    <rect x="876" y="178" width="72" height="24" rx="12" ry="12" fill="rgba(22,163,74,0.12)" />
+    <text x="912" y="195" class="caption" fill="var(--success)" text-anchor="middle">online</text>
+    <text x="416" y="222" class="caption muted mono">id: aabbcc • last ok: 12:34:56</text>
+
+    <!-- port mini cards -->
+	    <rect x="416" y="240" width="260" height="132" rx="16" fill="var(--panel)" stroke="var(--border)" />
+    <text x="436" y="268" class="caption muted">USB-A</text>
+    <text x="436" y="304" class="h2 mono">5.02V</text>
+    <text x="520" y="304" class="h2 mono">0.12A</text>
+    <text x="606" y="304" class="h2 mono">0.60W</text>
+	    <rect x="436" y="326" width="100" height="34" rx="10" ry="10" class="btn btn-primary" />
+    <text x="468" y="348" class="btn-primary-text">Power</text>
+	    <rect x="544" y="326" width="112" height="34" rx="10" ry="10" class="btn btn-ghost" />
+    <text x="574" y="348" class="btn-ghost-text">Replug</text>
+
+	    <rect x="700" y="240" width="252" height="132" rx="16" fill="var(--panel)" stroke="var(--border)" />
+    <text x="720" y="268" class="caption muted">USB-C</text>
+    <text x="720" y="304" class="h2 mono">9.01V</text>
+    <text x="804" y="304" class="h2 mono">0.83A</text>
+    <text x="890" y="304" class="h2 mono">7.48W</text>
+	    <rect x="720" y="326" width="100" height="34" rx="10" ry="10" class="btn btn-primary" />
+    <text x="752" y="348" class="btn-primary-text">Power</text>
+	    <rect x="828" y="326" width="104" height="34" rx="10" ry="10" class="btn btn-ghost" />
+    <text x="856" y="348" class="btn-ghost-text">Replug</text>
+
+	    <rect x="416" y="384" width="528" height="34" rx="10" ry="10" class="btn btn-ghost" />
+	    <text x="680" y="401" class="btn-ghost-text" text-anchor="middle" dominant-baseline="middle">Open details →</text>
+
+	    <!-- popover confirmation (Power Off) -->
+	    <!-- NOTE: a floating bubble anchored to the Power button (not a full-width row). -->
+	    <!-- Drawn after other elements so it appears above (not "transparent"). -->
+	    <g class="popover">
+	      <path d="M476 372 L486 360 L496 372 Z" fill="var(--panel)" stroke="var(--border)" />
+	      <rect x="426" y="372" width="260" height="44" rx="14" fill="var(--panel)" stroke="var(--border)" />
+	      <text x="442" y="394" class="caption muted" dominant-baseline="middle">Power off?</text>
+	      <rect x="576" y="382" width="44" height="24" rx="8" ry="8" class="btn btn-ghost" />
+	      <text x="598" y="394" class="btn-ghost-text" text-anchor="middle" dominant-baseline="middle">No</text>
+	      <rect x="626" y="382" width="44" height="24" rx="8" ry="8" class="btn btn-primary" />
+	      <text x="648" y="394" class="btn-primary-text" text-anchor="middle" dominant-baseline="middle">Yes</text>
+	    </g>
+  </g>
+
+	  <!-- card 2 (offline) -->
+	  <g class="card">
+	    <rect x="992" y="164" width="576" height="272" rx="18" fill="var(--panel)" stroke="var(--border)" />
+	    <text x="1016" y="198" class="h2">Lab Hub</text>
+	    <rect x="1476" y="178" width="72" height="24" rx="12" ry="12" fill="rgba(220,38,38,0.10)" />
+	    <text x="1512" y="195" class="caption" fill="var(--error)" text-anchor="middle">offline</text>
+	    <text x="1016" y="222" class="caption muted mono">id: ddeeff • last ok: 12:34:12</text>
+
+	    <rect x="1016" y="240" width="260" height="132" rx="16" fill="var(--panel)" stroke="var(--border)" />
+    <text x="1036" y="268" class="caption muted">USB-A</text>
+    <text x="1036" y="304" class="h2 mono muted">--.-V</text>
+    <text x="1120" y="304" class="h2 mono muted">--.-A</text>
+    <text x="1206" y="304" class="h2 mono muted">--.-W</text>
+	    <rect x="1036" y="326" width="100" height="34" rx="10" ry="10" class="btn btn-disabled-fill" />
+    <text x="1068" y="348" class="btn-disabled-text">Power</text>
+	    <rect x="1144" y="326" width="112" height="34" rx="10" ry="10" class="btn btn-disabled-fill-soft" />
+    <text x="1174" y="348" class="btn-disabled-text">Replug</text>
+
+	    <rect x="1300" y="240" width="252" height="132" rx="16" fill="var(--panel)" stroke="var(--border)" />
+    <text x="1320" y="268" class="caption muted">USB-C</text>
+    <text x="1320" y="304" class="h2 mono muted">--.-V</text>
+    <text x="1404" y="304" class="h2 mono muted">--.-A</text>
+    <text x="1490" y="304" class="h2 mono muted">--.-W</text>
+	    <rect x="1320" y="326" width="100" height="34" rx="10" ry="10" class="btn btn-disabled-fill" />
+    <text x="1352" y="348" class="btn-disabled-text">Power</text>
+	    <rect x="1428" y="326" width="104" height="34" rx="10" ry="10" class="btn btn-disabled-fill-soft" />
+    <text x="1456" y="348" class="btn-disabled-text">Replug</text>
+
+	    <rect x="1016" y="384" width="528" height="34" rx="10" ry="10" class="btn btn-ghost" />
+	    <text x="1280" y="401" class="btn-ghost-text" text-anchor="middle" dominant-baseline="middle">Open details →</text>
+	  </g>
+
+	  <!-- card 3 (unknown) -->
+	  <g class="card">
+	    <rect x="392" y="460" width="576" height="272" rx="18" fill="var(--panel)" stroke="var(--border)" />
+	    <text x="416" y="494" class="h2">Spare Hub</text>
+	    <rect x="852" y="474" width="96" height="24" rx="12" ry="12" fill="rgba(217,119,6,0.12)" />
+	    <text x="900" y="491" class="caption" fill="var(--warning)" text-anchor="middle">unknown</text>
+	    <text x="416" y="518" class="caption muted mono">id: 112233 • last ok: —</text>
+
+	    <rect x="416" y="536" width="260" height="132" rx="16" fill="var(--panel)" stroke="var(--border)" />
+	    <text x="436" y="564" class="caption muted">USB-A</text>
+	    <text x="436" y="600" class="h2 mono muted">--.-V</text>
+	    <text x="520" y="600" class="h2 mono muted">--.-A</text>
+	    <text x="606" y="600" class="h2 mono muted">--.-W</text>
+	    <rect x="436" y="622" width="100" height="34" rx="10" ry="10" class="btn btn-disabled-fill" />
+	    <text x="468" y="644" class="btn-disabled-text">Power</text>
+	    <rect x="544" y="622" width="112" height="34" rx="10" ry="10" class="btn btn-disabled-fill-soft" />
+	    <text x="574" y="644" class="btn-disabled-text">Replug</text>
+
+	    <rect x="700" y="536" width="252" height="132" rx="16" fill="var(--panel)" stroke="var(--border)" />
+	    <text x="720" y="564" class="caption muted">USB-C</text>
+	    <text x="720" y="600" class="h2 mono muted">--.-V</text>
+	    <text x="804" y="600" class="h2 mono muted">--.-A</text>
+	    <text x="890" y="600" class="h2 mono muted">--.-W</text>
+	    <rect x="720" y="622" width="100" height="34" rx="10" ry="10" class="btn btn-disabled-fill" />
+	    <text x="752" y="644" class="btn-disabled-text">Power</text>
+	    <rect x="828" y="622" width="104" height="34" rx="10" ry="10" class="btn btn-disabled-fill-soft" />
+	    <text x="856" y="644" class="btn-disabled-text">Replug</text>
+
+	    <rect x="416" y="680" width="528" height="34" rx="10" ry="10" class="btn btn-ghost" />
+	    <text x="680" y="697" class="btn-ghost-text" text-anchor="middle" dominant-baseline="middle">Open details →</text>
+	  </g>
+
+	  <!-- add device placeholder -->
+	  <g class="card">
+	    <rect x="992" y="460" width="576" height="272" rx="18" fill="rgba(248,250,252,0.75)" stroke="var(--border)" stroke-dasharray="8 8" />
+	    <text x="1280" y="568" font-size="56" font-weight="800" class="muted" text-anchor="middle" dominant-baseline="middle">+</text>
+	    <text x="1280" y="620" class="h2" text-anchor="middle" dominant-baseline="middle">Add device</text>
+	    <text x="1280" y="646" class="caption muted" text-anchor="middle" dominant-baseline="middle">Create a new hub entry</text>
+	  </g>
+
+	  <!-- footer note -->
+	  <text x="392" y="800" class="caption muted">
+	    Note: mockup only — real data/actions follow Plan #0005 contracts.
+	  </text>
+</svg>

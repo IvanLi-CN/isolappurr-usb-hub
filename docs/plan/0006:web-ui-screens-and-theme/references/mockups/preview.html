@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan 0006 – Mockups Preview</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+          Helvetica, Arial;
+        margin: 24px;
+        background: #0b1220;
+        color: #e5e7eb;
+      }
+
+      a {
+        color: #a5b4fc;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        padding: 16px;
+      }
+
+      .title {
+        margin: 0 0 8px;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .note {
+        margin: 0 0 12px;
+        font-size: 12px;
+        opacity: 0.8;
+      }
+
+      img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 12px;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 style="margin: 0 0 12px; font-size: 18px">Plan 0006 – Mockups Preview</h1>
+    <p style="margin: 0 0 24px; font-size: 13px; opacity: 0.85">
+      Tip: open the raw <a href="./dashboard-light.svg" data-href="./dashboard-light.svg">SVG</a> in a new tab for
+      pixel-perfect inspection (this page auto cache-busts on reload).
+    </p>
+
+    <div class="grid">
+      <section class="card">
+        <p class="title">Dashboard (light)</p>
+        <p class="note">File: dashboard-light.svg</p>
+        <img data-src="./dashboard-light.svg" alt="Dashboard light mockup" />
+      </section>
+
+      <section class="card">
+        <p class="title">Dashboard (dark)</p>
+        <p class="note">File: dashboard-dark.svg</p>
+        <img data-src="./dashboard-dark.svg" alt="Dashboard dark mockup" />
+      </section>
+
+      <section class="card">
+        <p class="title">Device details – Overview</p>
+        <p class="note">File: device-overview.svg</p>
+        <img data-src="./device-overview.svg" alt="Device overview mockup" />
+      </section>
+
+      <section class="card">
+        <p class="title">Device details – Hardware</p>
+        <p class="note">File: device-hardware.svg</p>
+        <img data-src="./device-hardware.svg" alt="Device hardware mockup" />
+      </section>
+
+      <section class="card">
+        <p class="title">Add device (modal)</p>
+        <p class="note">File: add-device.svg</p>
+        <img data-src="./add-device.svg" alt="Add device modal mockup" />
+      </section>
+
+      <section class="card">
+        <p class="title">About</p>
+        <p class="note">File: about.svg</p>
+        <img data-src="./about.svg" alt="About mockup" />
+      </section>
+    </div>
+
+    <script>
+      // Cache-bust local SVGs so iterative design changes show up immediately.
+      // (Some browsers cache <img src="*.svg"> aggressively even on reload.)
+      const v = Date.now();
+
+      for (const img of document.querySelectorAll("img[data-src]")) {
+        const base = img.getAttribute("data-src");
+        img.src = `${base}?v=${v}`;
+      }
+
+      for (const a of document.querySelectorAll("a[data-href]")) {
+        const base = a.getAttribute("data-href");
+        a.href = `${base}?v=${v}`;
+      }
+    </script>
+  </body>
+</html>

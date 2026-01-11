@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --panel: #ffffff;
+        --panel-2: #f8fafc;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #5c6ac4;
+        --primary-text: #ffffff;
+        --success: #16a34a;
+        --shadow: rgba(17, 24, 39, 0.08);
+      }
+
+      text {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        fill: var(--text);
+      }
+
+      .muted {
+        fill: var(--muted);
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+
+      .h1 {
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .h2 {
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .body {
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .caption {
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .card {
+        filter: drop-shadow(0 8px 18px var(--shadow));
+      }
+
+      .btn {
+        rx: 10;
+        ry: 10;
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      .btn-primary {
+        fill: var(--primary);
+        stroke: rgba(0, 0, 0, 0);
+      }
+
+      .btn-primary-text {
+        fill: var(--primary-text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .btn-ghost {
+        fill: transparent;
+      }
+
+      .btn-ghost-text {
+        fill: var(--text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .tab {
+        rx: 14;
+        ry: 14;
+      }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="900" fill="var(--bg)" />
+
+  <!-- navbar -->
+  <rect x="0" y="0" width="1600" height="64" fill="var(--panel-2)" stroke="var(--border)" />
+  <text x="32" y="40" class="h2">Isolapurr USB Hub</text>
+	  <rect x="1484" y="18" width="92" height="36" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1508" y="41" class="btn-ghost-text">About</text>
+
+  <!-- sidebar -->
+  <rect x="0" y="64" width="360" height="836" fill="rgba(248,250,252,0.85)" stroke="var(--border)" />
+  <text x="32" y="112" class="h2">Devices</text>
+	  <rect x="250" y="90" width="78" height="34" rx="10" ry="10" class="btn btn-primary" />
+  <text x="270" y="112" class="btn-primary-text">+ Add</text>
+
+  <rect x="24" y="140" width="312" height="70" rx="14" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="44" y="170" class="body">Desk Hub</text>
+  <text x="44" y="192" class="caption muted mono">http://hub-a.local</text>
+  <rect x="230" y="160" width="96" height="22" rx="11" ry="11" fill="rgba(22,163,74,0.12)" />
+  <text x="278" y="176" class="caption" fill="var(--success)" text-anchor="middle">online</text>
+
+  <!-- main -->
+  <text x="392" y="112" class="h1">Desk Hub</text>
+  <text x="392" y="136" class="caption muted mono">id: aabbcc • http://hub-a.local</text>
+
+  <!-- tabs -->
+	  <rect x="392" y="156" width="132" height="38" rx="14" ry="14" class="tab" fill="rgba(248,250,252,0.7)" stroke="var(--border)" />
+  <text x="420" y="180" class="body muted">Overview</text>
+	  <rect x="532" y="156" width="132" height="38" rx="14" ry="14" class="tab" fill="var(--panel)" stroke="var(--border)" />
+  <text x="562" y="180" class="body">Hardware</text>
+
+  <!-- identity -->
+  <rect x="392" y="216" width="1176" height="168" rx="18" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="416" y="252" class="h2">Identity</text>
+  <text x="416" y="286" class="caption muted">device_id</text>
+  <text x="500" y="286" class="caption mono">aabbcc</text>
+  <text x="416" y="312" class="caption muted">hostname</text>
+  <text x="500" y="312" class="caption mono">isolapurr-usb-hub-aabbcc</text>
+  <text x="416" y="338" class="caption muted">fqdn</text>
+  <text x="500" y="338" class="caption mono">isolapurr-usb-hub-aabbcc.local</text>
+  <text x="416" y="364" class="caption muted">mac</text>
+  <text x="500" y="364" class="caption mono">aa:bb:cc:dd:ee:ff</text>
+
+  <text x="980" y="286" class="caption muted">variant</text>
+  <text x="1050" y="286" class="caption mono">tps-sw</text>
+  <text x="980" y="312" class="caption muted">uptime_ms</text>
+  <text x="1070" y="312" class="caption mono">123456</text>
+
+  <!-- firmware -->
+  <rect x="392" y="408" width="576" height="152" rx="18" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="416" y="444" class="h2">Firmware</text>
+  <text x="416" y="478" class="caption muted">name</text>
+  <text x="470" y="478" class="caption mono">isolapurr-usb-hub</text>
+  <text x="416" y="504" class="caption muted">version</text>
+  <text x="480" y="504" class="caption mono">0.1.0</text>
+  <text x="416" y="530" class="caption muted">build</text>
+  <text x="470" y="530" class="caption mono">d5a171a</text>
+
+  <!-- wifi -->
+  <rect x="992" y="408" width="576" height="152" rx="18" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="1016" y="444" class="h2">WiFi</text>
+  <text x="1016" y="478" class="caption muted">state</text>
+  <text x="1066" y="478" class="caption mono">connected</text>
+  <text x="1016" y="504" class="caption muted">ipv4</text>
+  <text x="1056" y="504" class="caption mono">192.168.1.23</text>
+  <text x="1016" y="530" class="caption muted">is_static</text>
+  <text x="1086" y="530" class="caption mono">false</text>
+
+  <!-- note -->
+  <rect x="392" y="584" width="1176" height="156" rx="18" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="416" y="620" class="h2">Notes</text>
+  <text x="416" y="654" class="body">- Missing fields render as “unknown”</text>
+  <text x="416" y="680" class="body">- Connection: offline when last ok ≥ 10s</text>
+  <text x="416" y="706" class="body">- UI labels default English; i18n later</text>
+
+  <text x="392" y="860" class="caption muted">
+    Hardware tab maps directly to Plan #0005 /api/v1/info fields.
+  </text>
+</svg>

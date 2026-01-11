@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --panel: #ffffff;
+        --panel-2: #f8fafc;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #5c6ac4;
+        --primary-text: #ffffff;
+        --shadow: rgba(17, 24, 39, 0.08);
+      }
+
+      text {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        fill: var(--text);
+      }
+
+      .muted {
+        fill: var(--muted);
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+
+      .h1 {
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .h2 {
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .body {
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .caption {
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .card {
+        filter: drop-shadow(0 8px 18px var(--shadow));
+      }
+
+      .btn {
+        rx: 10;
+        ry: 10;
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      .btn-primary {
+        fill: var(--primary);
+        stroke: rgba(0, 0, 0, 0);
+      }
+
+      .btn-primary-text {
+        fill: var(--primary-text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .btn-ghost {
+        fill: transparent;
+      }
+
+      .btn-ghost-text {
+        fill: var(--text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="900" fill="var(--bg)" />
+
+  <!-- navbar -->
+  <rect x="0" y="0" width="1600" height="64" fill="var(--panel-2)" stroke="var(--border)" />
+  <text x="32" y="40" class="h2">Isolapurr USB Hub</text>
+  <text x="1260" y="40" class="caption muted">Theme</text>
+	  <rect x="1320" y="18" width="150" height="36" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1340" y="41" class="btn-ghost-text">isolapurr ▾</text>
+	  <rect x="1484" y="18" width="92" height="36" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1508" y="41" class="btn-ghost-text">About</text>
+
+  <!-- sidebar -->
+  <rect x="0" y="64" width="360" height="836" fill="rgba(248,250,252,0.85)" stroke="var(--border)" />
+  <text x="32" y="112" class="h2">Devices</text>
+	  <rect x="250" y="90" width="78" height="34" rx="10" ry="10" class="btn btn-primary" />
+  <text x="270" y="112" class="btn-primary-text">+ Add</text>
+
+  <rect x="24" y="140" width="312" height="70" rx="14" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="44" y="170" class="body">Desk Hub</text>
+  <text x="44" y="192" class="caption muted mono">http://hub-a.local</text>
+
+  <!-- about -->
+  <text x="392" y="112" class="h1">About</text>
+  <text x="392" y="136" class="body muted">Build info, links, and quick usage</text>
+
+  <!-- about top: split cards to avoid dead space -->
+  <rect x="392" y="164" width="576" height="176" rx="18" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="416" y="202" class="h2">Build</text>
+  <text x="416" y="232" class="caption muted">build</text>
+  <text x="470" y="232" class="caption mono">d5a171a</text>
+  <text x="416" y="256" class="caption muted">date</text>
+  <text x="470" y="256" class="caption mono">2026-01-11</text>
+  <text x="416" y="280" class="caption muted">theme</text>
+  <text x="470" y="280" class="caption">isolapurr / isolapurr-dark / system</text>
+
+  <rect x="992" y="164" width="576" height="176" rx="18" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="1016" y="202" class="h2">Links &amp; defaults</text>
+
+  <text x="1016" y="226" class="caption muted">Links</text>
+	  <rect x="1016" y="240" width="120" height="36" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1044" y="263" class="btn-ghost-text">Repo</text>
+	  <rect x="1144" y="240" width="120" height="36" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1172" y="263" class="btn-ghost-text">Docs</text>
+	  <rect x="1272" y="240" width="120" height="36" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1300" y="263" class="btn-ghost-text">Issues</text>
+
+  <text x="1016" y="284" class="caption muted">Defaults</text>
+  <text x="1016" y="308" class="caption">Units: V / A / W</text>
+  <text x="1016" y="332" class="caption">Report: 1s • Offline: 10s</text>
+  <text x="1280" y="308" class="caption">Power off: confirm</text>
+  <text x="1280" y="332" class="caption">Replug: one-shot</text>
+
+  <rect x="392" y="364" width="1176" height="288" rx="18" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="416" y="402" class="h2">Quick usage</text>
+  <text x="416" y="436" class="body">1) Add a device: baseUrl examples</text>
+  <text x="448" y="462" class="caption muted mono">http://&lt;hostname&gt;.local</text>
+  <text x="448" y="486" class="caption muted mono">http://192.168.1.42</text>
+  <text x="416" y="528" class="body">2) Dashboard shows V/A/W and actions</text>
+  <text x="416" y="560" class="body">3) Power off requires a popover confirmation</text>
+
+  <text x="416" y="616" class="caption muted">Language</text>
+  <text x="470" y="616" class="caption">Default English; i18n later</text>
+</svg>

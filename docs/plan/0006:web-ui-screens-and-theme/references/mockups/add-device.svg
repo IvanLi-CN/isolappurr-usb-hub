@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --panel: #ffffff;
+        --panel-2: #f8fafc;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #5c6ac4;
+        --primary-text: #ffffff;
+        --shadow: rgba(17, 24, 39, 0.08);
+        --overlay: rgba(15, 23, 42, 0.32);
+      }
+
+      text {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        fill: var(--text);
+      }
+
+      .muted {
+        fill: var(--muted);
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+
+      .h1 {
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .h2 {
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .body {
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .caption {
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .card {
+        filter: drop-shadow(0 10px 24px var(--shadow));
+      }
+
+      .btn {
+        rx: 10;
+        ry: 10;
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      .btn-primary {
+        fill: var(--primary);
+        stroke: rgba(0, 0, 0, 0);
+      }
+
+      .btn-primary-text {
+        fill: var(--primary-text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .btn-ghost {
+        fill: transparent;
+      }
+
+      .btn-ghost-text {
+        fill: var(--text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .field {
+        rx: 12;
+        ry: 12;
+        fill: var(--panel-2);
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="900" fill="var(--bg)" />
+
+  <!-- navbar -->
+  <rect x="0" y="0" width="1600" height="64" fill="var(--panel-2)" stroke="var(--border)" />
+  <text x="32" y="40" class="h2">Isolapurr USB Hub</text>
+
+  <!-- blurred app background (simplified) -->
+  <rect x="0" y="64" width="360" height="836" fill="rgba(248,250,252,0.85)" stroke="var(--border)" />
+  <text x="32" y="112" class="h2 muted">Devices</text>
+  <rect x="392" y="112" width="260" height="18" rx="9" fill="rgba(100,116,139,0.14)" />
+  <rect x="392" y="146" width="420" height="12" rx="6" fill="rgba(100,116,139,0.10)" />
+  <rect x="392" y="176" width="1176" height="260" rx="18" fill="rgba(255,255,255,0.75)" stroke="rgba(229,231,235,0.7)" />
+
+  <!-- modal overlay (covers whole app, including navbar) -->
+  <rect x="0" y="0" width="1600" height="900" fill="var(--overlay)" />
+
+  <!-- modal -->
+  <rect x="480" y="172" width="640" height="520" rx="22" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="520" y="220" class="h1">Add device</text>
+  <text x="520" y="248" class="body muted">Store locally; used for Dashboard and device pages.</text>
+
+  <!-- fields -->
+  <text x="520" y="292" class="caption muted">Name</text>
+	  <rect x="520" y="304" width="560" height="52" rx="12" ry="12" class="field" />
+  <text x="540" y="336" class="body">Desk Hub</text>
+
+  <text x="520" y="392" class="caption muted">Base URL</text>
+	  <rect x="520" y="404" width="560" height="52" rx="12" ry="12" class="field" />
+  <text x="540" y="436" class="body mono">http://hub-a.local</text>
+  <text x="520" y="474" class="caption muted">Examples: http://&lt;hostname&gt;.local  /  http://192.168.1.42</text>
+
+  <text x="520" y="522" class="caption muted">ID (optional)</text>
+	  <rect x="520" y="534" width="560" height="52" rx="12" ry="12" class="field" />
+  <text x="540" y="566" class="body muted">auto-generated if empty</text>
+
+  <!-- actions -->
+	  <rect x="786" y="620" width="132" height="44" rx="10" ry="10" class="btn btn-ghost" fill="var(--panel-2)" />
+  <text x="826" y="648" class="btn-ghost-text">Cancel</text>
+	  <rect x="932" y="620" width="148" height="44" rx="10" ry="10" class="btn btn-primary" />
+  <text x="978" y="648" class="btn-primary-text">Create</text>
+</svg>
