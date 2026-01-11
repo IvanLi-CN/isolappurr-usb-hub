@@ -11,7 +11,7 @@ use embassy_net::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
-use esp_hal::{peripherals::WIFI, rng::Rng};
+use esp_hal::{peripherals::WIFI, rng::Rng, time::Instant as HalInstant};
 use esp_radio::{
     Controller as RadioController, init as radio_init,
     wifi::{self, ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent},
@@ -83,10 +83,154 @@ static WIFI_STATE_CELL: StaticCell<WifiStateMutex> = StaticCell::new();
 static DEVICE_NAMES_CELL: StaticCell<DeviceNames> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<RadioController<'static>> = StaticCell::new();
 static NET_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
+static API_STATE_CELL: StaticCell<ApiSharedMutex> = StaticCell::new();
+
+// --- HTTP API (Plan #0005) -------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiPortId {
+    PortA,
+    PortC,
+}
+
+impl ApiPortId {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ApiPortId::PortA => "port_a",
+            ApiPortId::PortC => "port_c",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiTelemetryStatus {
+    Ok,
+    NotInserted,
+    Error,
+    Overrange,
+}
+
+impl ApiTelemetryStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ApiTelemetryStatus::Ok => "ok",
+            ApiTelemetryStatus::NotInserted => "not_inserted",
+            ApiTelemetryStatus::Error => "error",
+            ApiTelemetryStatus::Overrange => "overrange",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiPortTelemetry {
+    pub status: ApiTelemetryStatus,
+    pub voltage_mv: Option<u32>,
+    pub current_ma: Option<u32>,
+    pub power_mw: Option<u32>,
+    pub sample_uptime_ms: u64,
+}
+
+impl ApiPortTelemetry {
+    pub const fn unknown() -> Self {
+        Self {
+            status: ApiTelemetryStatus::Error,
+            voltage_mv: None,
+            current_ma: None,
+            power_mw: None,
+            sample_uptime_ms: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiPortState {
+    pub power_enabled: bool,
+    pub data_connected: bool,
+    pub replugging: bool,
+    pub busy: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiPortSnapshot {
+    pub telemetry: ApiPortTelemetry,
+    pub state: ApiPortState,
+}
+
+impl ApiPortSnapshot {
+    pub const fn unknown() -> Self {
+        Self {
+            telemetry: ApiPortTelemetry::unknown(),
+            state: ApiPortState {
+                power_enabled: false,
+                data_connected: false,
+                replugging: false,
+                busy: false,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiPortsSnapshot {
+    pub port_a: ApiPortSnapshot,
+    pub port_c: ApiPortSnapshot,
+}
+
+impl ApiPortsSnapshot {
+    pub const fn unknown() -> Self {
+        Self {
+            port_a: ApiPortSnapshot::unknown(),
+            port_c: ApiPortSnapshot::unknown(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiPortAction {
+    Replug,
+    Power { enabled: bool },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiPendingActions {
+    pub port_a: Option<ApiPortAction>,
+    pub port_c: Option<ApiPortAction>,
+}
+
+impl ApiPendingActions {
+    pub const fn empty() -> Self {
+        Self {
+            port_a: None,
+            port_c: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiSharedState {
+    pub ports: ApiPortsSnapshot,
+    pub pending: ApiPendingActions,
+}
+
+impl ApiSharedState {
+    pub const fn new() -> Self {
+        Self {
+            ports: ApiPortsSnapshot::unknown(),
+            pending: ApiPendingActions::empty(),
+        }
+    }
+}
+
+pub type ApiSharedMutex = Mutex<CriticalSectionRawMutex, ApiSharedState>;
+
+pub fn init_http_api_state() -> &'static ApiSharedMutex {
+    API_STATE_CELL.init(Mutex::new(ApiSharedState::new()))
+}
 
 pub fn spawn_wifi_mdns_http(
     spawner: &Spawner,
     wifi_peripheral: WIFI<'static>,
+    api_state: &'static ApiSharedMutex,
 ) -> Option<NetHandles> {
     let wifi_state = WIFI_STATE_CELL.init(Mutex::new(WifiState::new()));
 
@@ -137,7 +281,9 @@ pub fn spawn_wifi_mdns_http(
         ))
         .ok()?;
 
-    spawner.spawn(http_task(stack)).ok()?;
+    spawner
+        .spawn(http_task(stack, device_names, wifi_state, api_state))
+        .ok()?;
 
     let mdns_cfg = MdnsConfig {
         hostname: device_names.hostname.clone(),
@@ -336,7 +482,12 @@ async fn wifi_task(
 const HTTP_PORT: u16 = 80;
 
 #[embassy_executor::task]
-async fn http_task(stack: Stack<'static>) {
+async fn http_task(
+    stack: Stack<'static>,
+    device_names: &'static DeviceNames,
+    wifi_state: &'static WifiStateMutex,
+    api_state: &'static ApiSharedMutex,
+) {
     let mut rx_buf = [0u8; 1024];
     let mut tx_buf = [0u8; 1024];
 
@@ -350,7 +501,9 @@ async fn http_task(stack: Stack<'static>) {
 
         match socket.accept(HTTP_PORT).await {
             Ok(()) => {
-                if let Err(err) = handle_http_connection(&mut socket).await {
+                if let Err(err) =
+                    handle_http_connection(&mut socket, device_names, wifi_state, api_state).await
+                {
                     warn!("HTTP connection handling error: {:?}", err);
                 }
                 socket.close();
@@ -364,7 +517,12 @@ async fn http_task(stack: Stack<'static>) {
     }
 }
 
-async fn handle_http_connection(socket: &mut TcpSocket<'_>) -> Result<(), embassy_net::tcp::Error> {
+async fn handle_http_connection(
+    socket: &mut TcpSocket<'_>,
+    device_names: &'static DeviceNames,
+    wifi_state: &'static WifiStateMutex,
+    api_state: &'static ApiSharedMutex,
+) -> Result<(), embassy_net::tcp::Error> {
     const MAX_REQUEST_SIZE: usize = 1024;
 
     let mut buf = [0u8; MAX_REQUEST_SIZE];
@@ -394,29 +552,492 @@ async fn handle_http_connection(socket: &mut TcpSocket<'_>) -> Result<(), embass
     let mut parts = request_line.split_whitespace();
 
     let method = parts.next().unwrap_or("");
-    let path = parts.next().unwrap_or("");
+    let path_and_query = parts.next().unwrap_or("");
+    let (path, query) = path_and_query
+        .split_once('?')
+        .unwrap_or((path_and_query, ""));
 
-    if method == "GET" && path == "/" {
-        write_http_response(socket, "200 OK", "Hello World").await?;
-    } else {
-        write_http_response(socket, "404 Not Found", "Not Found").await?;
+    let mut origin: Option<&str> = None;
+    let mut acr_headers: Option<&str> = None;
+    let mut acr_private_network = false;
+
+    for line in lines {
+        let line = line.trim_end_matches('\r');
+        if line.is_empty() {
+            break;
+        }
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+
+        if key.eq_ignore_ascii_case("Origin") {
+            origin = Some(value);
+        } else if key.eq_ignore_ascii_case("Access-Control-Request-Headers") {
+            acr_headers = Some(value);
+        } else if key.eq_ignore_ascii_case("Access-Control-Request-Private-Network") {
+            acr_private_network = value.eq_ignore_ascii_case("true");
+        }
     }
 
+    if method == "GET" && path == "/" {
+        write_plain_response(socket, "200 OK", "Hello World").await?;
+        return Ok(());
+    }
+
+    if path.starts_with("/api/v1/") {
+        if method == "OPTIONS" {
+            write_preflight_response(
+                socket,
+                origin,
+                acr_headers,
+                acr_private_network,
+                device_names,
+            )
+            .await?;
+            return Ok(());
+        }
+
+        handle_api_request(
+            socket,
+            method,
+            path,
+            query,
+            origin,
+            device_names,
+            wifi_state,
+            api_state,
+        )
+        .await?;
+        return Ok(());
+    }
+
+    write_plain_response(socket, "404 Not Found", "Not Found").await?;
     Ok(())
+}
+
+const PROD_ALLOWED_ORIGIN: &str = "https://isolapurr.ivanli.cc";
+
+fn is_allowed_origin(origin: &str) -> bool {
+    if origin == PROD_ALLOWED_ORIGIN {
+        return true;
+    }
+
+    origin == "http://localhost"
+        || origin.starts_with("http://localhost:")
+        || origin == "http://127.0.0.1"
+        || origin.starts_with("http://127.0.0.1:")
+}
+
+fn cors_allow_origin(origin: Option<&str>) -> Option<&str> {
+    let origin = origin?.trim();
+    if is_allowed_origin(origin) {
+        Some(origin)
+    } else {
+        None
+    }
+}
+
+fn uptime_ms() -> u64 {
+    let now_us = HalInstant::now().duration_since_epoch().as_micros();
+    (now_us / 1_000) as u64
+}
+
+async fn handle_api_request(
+    socket: &mut TcpSocket<'_>,
+    method: &str,
+    path: &str,
+    query: &str,
+    origin: Option<&str>,
+    device_names: &'static DeviceNames,
+    wifi_state: &'static WifiStateMutex,
+    api_state: &'static ApiSharedMutex,
+) -> Result<(), embassy_net::tcp::Error> {
+    let allow_origin = cors_allow_origin(origin);
+
+    match (method, path) {
+        ("GET", "/api/v1/health") => {
+            write_json_response(socket, "200 OK", allow_origin, "{\"ok\":true}").await?;
+            return Ok(());
+        }
+        ("GET", "/api/v1/info") => {
+            let wifi = { *wifi_state.lock().await };
+            let mut body = String::new();
+
+            let mac = format_mac_lower(device_names.mac);
+            let ipv4 = wifi.ipv4.map(format_ipv4);
+            let wifi_state_s = wifi_state_str(wifi.state);
+
+            let _ = core::write!(
+                body,
+                "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}},\"uptime_ms\":{},\"wifi\":{{\"state\":\"{}\",\"ipv4\":",
+                device_names.short_id.as_str(),
+                device_names.hostname.as_str(),
+                device_names.hostname_fqdn.as_str(),
+                mac.as_str(),
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                uptime_ms(),
+                wifi_state_s,
+            );
+
+            match ipv4 {
+                None => {
+                    let _ = body.push_str("null");
+                }
+                Some(ip) => {
+                    let _ = core::write!(body, "\"{}\"", ip.as_str());
+                }
+            }
+
+            let _ = core::write!(body, ",\"is_static\":{}}}}}}}", wifi.is_static);
+
+            write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+            return Ok(());
+        }
+        ("GET", "/api/v1/ports") => {
+            let ports = { api_state.lock().await.ports };
+            let mut body = String::new();
+            let _ = body.push_str("{\"ports\":[");
+            write_port_json(&mut body, ApiPortId::PortA, "USB-A", &ports.port_a);
+            let _ = body.push(',');
+            write_port_json(&mut body, ApiPortId::PortC, "USB-C", &ports.port_c);
+            let _ = body.push_str("]}");
+            write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    if let Some(rest) = path.strip_prefix("/api/v1/ports/") {
+        let (port_id_s, tail) = rest.split_once('/').unwrap_or((rest, ""));
+        let Some(port_id) = parse_port_id(port_id_s) else {
+            write_api_error(
+                socket,
+                "404 Not Found",
+                allow_origin,
+                "invalid_port",
+                "invalid port",
+                false,
+            )
+            .await?;
+            return Ok(());
+        };
+
+        if method == "GET" && tail.is_empty() {
+            let ports = { api_state.lock().await.ports };
+            let port = match port_id {
+                ApiPortId::PortA => ports.port_a,
+                ApiPortId::PortC => ports.port_c,
+            };
+
+            let mut body = String::new();
+            write_port_json(
+                &mut body,
+                port_id,
+                match port_id {
+                    ApiPortId::PortA => "USB-A",
+                    ApiPortId::PortC => "USB-C",
+                },
+                &port,
+            );
+            write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+            return Ok(());
+        }
+
+        if method == "POST" && tail == "actions/replug" {
+            let accepted = try_set_action(api_state, port_id, ApiPortAction::Replug).await;
+            match accepted {
+                Ok(()) => {
+                    write_json_response(
+                        socket,
+                        "202 Accepted",
+                        allow_origin,
+                        "{\"accepted\":true}",
+                    )
+                    .await?;
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "port is busy",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
+
+        if method == "POST" && tail == "power" {
+            let Some(enabled) = parse_enabled_query(query) else {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "missing or invalid enabled",
+                    false,
+                )
+                .await?;
+                return Ok(());
+            };
+
+            let accepted =
+                try_set_action(api_state, port_id, ApiPortAction::Power { enabled }).await;
+            match accepted {
+                Ok(()) => {
+                    let mut body = String::new();
+                    let _ = core::write!(
+                        body,
+                        "{{\"accepted\":true,\"power_enabled\":{}}}",
+                        if enabled { "true" } else { "false" }
+                    );
+                    write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "port is busy",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
+    }
+
+    write_api_error(
+        socket,
+        "400 Bad Request",
+        allow_origin,
+        "bad_request",
+        "unknown endpoint",
+        false,
+    )
+    .await?;
+    Ok(())
+}
+
+fn parse_port_id(s: &str) -> Option<ApiPortId> {
+    match s {
+        "port_a" => Some(ApiPortId::PortA),
+        "port_c" => Some(ApiPortId::PortC),
+        _ => None,
+    }
+}
+
+fn parse_enabled_query(query: &str) -> Option<bool> {
+    // enabled={0|1}
+    for part in query.split('&') {
+        let (k, v) = part.split_once('=')?;
+        if k == "enabled" {
+            return match v {
+                "0" => Some(false),
+                "1" => Some(true),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &ApiPortSnapshot) {
+    let _ = core::write!(
+        body,
+        "{{\"portId\":\"{}\",\"label\":\"{}\",\"telemetry\":{{\"status\":\"{}\",\"voltage_mv\":",
+        port_id.as_str(),
+        label,
+        port.telemetry.status.as_str(),
+    );
+
+    write_json_u32_or_null(body, port.telemetry.voltage_mv);
+    let _ = body.push_str(",\"current_ma\":");
+    write_json_u32_or_null(body, port.telemetry.current_ma);
+    let _ = body.push_str(",\"power_mw\":");
+    write_json_u32_or_null(body, port.telemetry.power_mw);
+    let _ = core::write!(
+        body,
+        ",\"sample_uptime_ms\":{}}},\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"power_set\":true}}}}",
+        port.telemetry.sample_uptime_ms,
+        if port.state.power_enabled {
+            "true"
+        } else {
+            "false"
+        },
+        if port.state.data_connected {
+            "true"
+        } else {
+            "false"
+        },
+        if port.state.replugging {
+            "true"
+        } else {
+            "false"
+        },
+        if port.state.busy { "true" } else { "false" },
+    );
+}
+
+fn write_json_u32_or_null(body: &mut String, v: Option<u32>) {
+    match v {
+        None => {
+            let _ = body.push_str("null");
+        }
+        Some(v) => {
+            let _ = core::write!(body, "{}", v);
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ApiActionError {
+    Busy,
+}
+
+async fn try_set_action(
+    api_state: &'static ApiSharedMutex,
+    port_id: ApiPortId,
+    action: ApiPortAction,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    let port = match port_id {
+        ApiPortId::PortA => guard.ports.port_a,
+        ApiPortId::PortC => guard.ports.port_c,
+    };
+
+    if port.state.busy {
+        return Err(ApiActionError::Busy);
+    }
+
+    let slot = match port_id {
+        ApiPortId::PortA => &mut guard.pending.port_a,
+        ApiPortId::PortC => &mut guard.pending.port_c,
+    };
+    // If a previous action is still pending, treat as busy.
+    if slot.is_some() {
+        return Err(ApiActionError::Busy);
+    }
+    *slot = Some(action);
+    Ok(())
+}
+
+async fn write_preflight_response(
+    socket: &mut TcpSocket<'_>,
+    origin: Option<&str>,
+    requested_headers: Option<&str>,
+    request_private_network: bool,
+    device_names: &'static DeviceNames,
+) -> Result<(), embassy_net::tcp::Error> {
+    let allow_origin = cors_allow_origin(origin);
+
+    let mut headers = String::new();
+    if let Some(origin) = allow_origin {
+        let _ = core::write!(
+            headers,
+            "Access-Control-Allow-Origin: {}\r\nVary: Origin\r\n",
+            origin,
+        );
+    }
+
+    let _ = headers.push_str("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n");
+    let _ = core::write!(
+        headers,
+        "Access-Control-Allow-Headers: {}\r\n",
+        requested_headers.unwrap_or("Content-Type")
+    );
+
+    if request_private_network {
+        let mac = format_mac_lower(device_names.mac);
+        let _ = headers.push_str("Access-Control-Allow-Private-Network: true\r\n");
+        let _ = core::write!(
+            headers,
+            "Private-Network-Access-ID: {}\r\nPrivate-Network-Access-Name: {}\r\n",
+            mac.as_str(),
+            device_names.hostname.as_str(),
+        );
+    }
+
+    write_http_response(socket, "204 No Content", None, headers.as_str(), "").await?;
+    Ok(())
+}
+
+async fn write_api_error(
+    socket: &mut TcpSocket<'_>,
+    status: &str,
+    allow_origin: Option<&str>,
+    code: &str,
+    message: &str,
+    retryable: bool,
+) -> Result<(), embassy_net::tcp::Error> {
+    let mut body = String::new();
+    let _ = core::write!(
+        body,
+        "{{\"error\":{{\"code\":\"{}\",\"message\":\"{}\",\"retryable\":{}}}}}",
+        code,
+        message,
+        if retryable { "true" } else { "false" }
+    );
+    write_json_response(socket, status, allow_origin, body.as_str()).await
+}
+
+async fn write_json_response(
+    socket: &mut TcpSocket<'_>,
+    status: &str,
+    allow_origin: Option<&str>,
+    body: &str,
+) -> Result<(), embassy_net::tcp::Error> {
+    let mut extra_headers = String::new();
+    let _ = extra_headers.push_str("Cache-Control: no-store\r\n");
+    if let Some(origin) = allow_origin {
+        let _ = core::write!(
+            extra_headers,
+            "Access-Control-Allow-Origin: {}\r\nVary: Origin\r\n",
+            origin,
+        );
+    }
+    write_http_response(
+        socket,
+        status,
+        Some("application/json; charset=utf-8"),
+        extra_headers.as_str(),
+        body,
+    )
+    .await
+}
+
+async fn write_plain_response(
+    socket: &mut TcpSocket<'_>,
+    status: &str,
+    body: &str,
+) -> Result<(), embassy_net::tcp::Error> {
+    write_http_response(socket, status, Some("text/plain"), "", body).await
 }
 
 async fn write_http_response(
     socket: &mut TcpSocket<'_>,
     status: &str,
+    content_type: Option<&str>,
+    extra_headers: &str,
     body: &str,
 ) -> Result<(), embassy_net::tcp::Error> {
-    let mut header: HString<192> = HString::new();
-    let _ = core::write!(
-        header,
-        "HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n",
-        status = status,
-        len = body.as_bytes().len(),
-    );
+    let mut header = String::new();
+    let _ = core::write!(header, "HTTP/1.1 {}\r\n", status);
+    if let Some(ct) = content_type {
+        let _ = core::write!(header, "Content-Type: {}\r\n", ct);
+    }
+    let _ = core::write!(header, "Content-Length: {}\r\n", body.as_bytes().len());
+    let _ = header.push_str("Connection: close\r\n");
+    let _ = header.push_str(extra_headers);
+    let _ = header.push_str("\r\n");
 
     socket_write_all(socket, header.as_bytes()).await?;
     socket_write_all(socket, body.as_bytes()).await?;
@@ -435,6 +1056,37 @@ async fn socket_write_all(
         buf = &buf[written..];
     }
     Ok(())
+}
+
+fn wifi_state_str(state: WifiConnectionState) -> &'static str {
+    match state {
+        WifiConnectionState::Idle => "idle",
+        WifiConnectionState::Connecting => "connecting",
+        WifiConnectionState::Connected => "connected",
+        WifiConnectionState::Error => "error",
+    }
+}
+
+fn format_ipv4(ip: Ipv4Address) -> HString<16> {
+    let o = ip.octets();
+    let mut out: HString<16> = HString::new();
+    let _ = core::write!(out, "{}.{}.{}.{}", o[0], o[1], o[2], o[3]);
+    out
+}
+
+fn format_mac_lower(mac: [u8; 6]) -> HString<17> {
+    let mut out: HString<17> = HString::new();
+    let _ = core::write!(
+        out,
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        mac[0],
+        mac[1],
+        mac[2],
+        mac[3],
+        mac[4],
+        mac[5]
+    );
+    out
 }
 
 fn derive_device_names(mac: [u8; 6]) -> DeviceNames {

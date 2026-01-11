@@ -6,6 +6,10 @@ This project includes an **experimental** networking feature (`net_http`) that e
 - mDNS hostname resolution: `http://<hostname>.local/`
 - mDNS HTTP service discovery: `_http._tcp.local`
 - Minimal HTTP server: `GET /` → `Hello World`
+- Device HTTP APIs (JSON): `/api/v1/...` (for Web UI integration)
+  - CORS allowlist (prod): `https://isolapurr.ivanli.cc`
+  - CORS allowlist (dev): `http://localhost:*` / `http://127.0.0.1:*`
+  - Private Network Access (PNA) preflight support for Chrome/Chromium HTTPS → HTTP device access
 
 ## Build & flash
 
@@ -76,6 +80,56 @@ Note: the toast overlay uses a tiny fixed font with limited glyph coverage, so i
   - `avahi-browse -art |_http._tcp`
 - Request:
   - `curl http://<hostname>.local/`
+
+## HTTP APIs (`/api/v1`)
+
+All `/api/v1/*` endpoints:
+
+- return `application/json; charset=utf-8`
+- include `Cache-Control: no-store`
+- support CORS (see below)
+
+Endpoints:
+
+- `GET /api/v1/health` → `{ "ok": true }`
+- `GET /api/v1/info` → device identity + Wi‑Fi state
+- `GET /api/v1/ports` → dual-port snapshot (`port_a` / `port_c`)
+- `GET /api/v1/ports/{portId}` → single port object
+- `POST /api/v1/ports/{portId}/actions/replug`
+- `POST /api/v1/ports/{portId}/power?enabled={0|1}`
+
+## CORS + Private Network Access (Chrome / Chromium)
+
+Goal: allow the GitHub Pages site (`https://isolapurr.ivanli.cc/`) to call an HTTP device on your LAN.
+
+Notes:
+
+- Target browser: **Chrome / Chromium** (Safari is out of scope).
+- When requesting a private network HTTP device from an HTTPS page, Chrome will run an `OPTIONS` preflight (PNA).
+- The firmware responds with:
+  - `Access-Control-Allow-Origin` (allowlist)
+  - `Access-Control-Allow-Private-Network: true` (when requested)
+  - `Private-Network-Access-ID/Name` for the Chrome permission prompt
+
+### Quick checks (curl)
+
+Basic CORS:
+
+```sh
+curl -i \
+  -H 'Origin: https://isolapurr.ivanli.cc' \
+  http://<hostname>.local/api/v1/health
+```
+
+PNA preflight (simulated):
+
+```sh
+curl -i -X OPTIONS \
+  -H 'Origin: https://isolapurr.ivanli.cc' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Private-Network: true' \
+  http://<hostname>.local/api/v1/ports
+```
 
 ## Known limitations
 

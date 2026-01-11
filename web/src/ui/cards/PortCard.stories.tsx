@@ -8,13 +8,17 @@ const meta: Meta<typeof PortCard> = {
   args: {
     label: "USB-A",
     telemetry: {
+      status: "ok",
       voltage_mv: 5030,
       current_ma: 820,
       power_mw: Math.round((5030 * 820) / 1000),
+      sample_uptime_ms: 123_450,
     },
     state: {
       power_enabled: true,
+      data_connected: true,
       replugging: false,
+      busy: false,
     },
     onTogglePower: () => {},
     onReplug: () => {},
@@ -30,12 +34,16 @@ export const PowerOff: Story = {
   args: {
     state: {
       power_enabled: false,
+      data_connected: false,
       replugging: false,
+      busy: false,
     },
     telemetry: {
+      status: "ok",
       voltage_mv: 0,
       current_ma: 0,
       power_mw: 0,
+      sample_uptime_ms: 123_999,
     },
   },
 };
@@ -44,7 +52,9 @@ export const Replugging: Story = {
   args: {
     state: {
       power_enabled: true,
+      data_connected: false,
       replugging: true,
+      busy: true,
     },
   },
 };

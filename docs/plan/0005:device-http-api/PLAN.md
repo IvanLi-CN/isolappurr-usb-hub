@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 待验收
 - Created: 2026-01-10
-- Last: 2026-01-10
+- Last: 2026-01-11
 
 ## 背景 / 问题陈述
 
@@ -133,10 +133,10 @@
 ## 里程碑（Milestones）
 
 - [x] M1: 冻结接口契约与关键决策（浏览器策略/CORS 策略/Auth 策略）
-- [ ] M2: （impl）固件：HTTP 路由 + `/api/v1` endpoints + CORS/PNA 预检
-- [ ] M3: （impl）固件：对外导出端口状态与动作（replug/power）并与按键状态机一致
-- [ ] M4: （impl）Web：实现 DeviceClient（real mode）并替换 Mock 数据（保留 Mock fallback）
-- [ ] M5: （impl）联调与文档：Chrome 实测流程、常见失败场景提示、README/Networking 补齐
+- [x] M2: （impl）固件：HTTP 路由 + `/api/v1` endpoints + CORS/PNA 预检
+- [x] M3: （impl）固件：对外导出端口状态与动作（replug/power）并与按键状态机一致
+- [x] M4: （impl）Web：实现 DeviceClient（real mode）并替换 Mock 数据（保留 Mock fallback）
+- [x] M5: （impl）联调与文档：Chrome 实测流程、常见失败场景提示、README/Networking 补齐
 
 ## 方案概述（Approach, high-level）
 
