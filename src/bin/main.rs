@@ -65,6 +65,9 @@ use isolapurr_usb_hub::prompt_tone::{
     PromptToneManager, SafetyKind, SoundEvent,
 };
 use isolapurr_usb_hub::telemetry::{Field, NormalUiTelemetrySampler};
+
+#[cfg(feature = "net_http")]
+use isolapurr_usb_hub::telemetry::PortMetrics;
 use {esp_backtrace as _, esp_println as _};
 
 use spi_device::CsSpiDevice;
@@ -285,6 +288,60 @@ fn telemetry_field_to_ui(field: Field<u32>) -> NormalUiField {
     }
 }
 
+#[cfg(feature = "net_http")]
+fn uptime_ms_from_instant(now: Instant) -> u64 {
+    (now.duration_since_epoch().as_micros() / 1_000) as u64
+}
+
+#[cfg(feature = "net_http")]
+fn port_metrics_to_api_telemetry(
+    present: bool,
+    metrics: PortMetrics,
+    sample_uptime_ms: u64,
+) -> net::ApiPortTelemetry {
+    if !present {
+        return net::ApiPortTelemetry {
+            status: net::ApiTelemetryStatus::NotInserted,
+            voltage_mv: None,
+            current_ma: None,
+            power_mw: None,
+            sample_uptime_ms,
+        };
+    }
+
+    let (Field::Ok(voltage_mv), Field::Ok(current_ma), Field::Ok(power_mw)) =
+        (metrics.voltage_mv, metrics.current_ma, metrics.power_mw)
+    else {
+        return net::ApiPortTelemetry {
+            status: net::ApiTelemetryStatus::Error,
+            voltage_mv: None,
+            current_ma: None,
+            power_mw: None,
+            sample_uptime_ms,
+        };
+    };
+
+    // Keep the v1 "overrange" semantics aligned with Plan #0001's `>= 1000.0` threshold:
+    // `1000.0 V/A/W` == `1_000_000 mV/mA/mW`.
+    if voltage_mv >= 1_000_000 || current_ma >= 1_000_000 || power_mw >= 1_000_000 {
+        return net::ApiPortTelemetry {
+            status: net::ApiTelemetryStatus::Overrange,
+            voltage_mv: None,
+            current_ma: None,
+            power_mw: None,
+            sample_uptime_ms,
+        };
+    }
+
+    net::ApiPortTelemetry {
+        status: net::ApiTelemetryStatus::Ok,
+        voltage_mv: Some(voltage_mv),
+        current_ma: Some(current_ma),
+        power_mw: Some(power_mw),
+        sample_uptime_ms,
+    }
+}
+
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -304,7 +361,9 @@ async fn main(_spawner: Spawner) {
 
     // Optional Wi‑Fi STA + mDNS + HTTP stack (Plan #0003).
     #[cfg(feature = "net_http")]
-    let net_handles = net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI);
+    let api_state = net::init_http_api_state();
+    #[cfg(feature = "net_http")]
+    let net_handles = net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state);
 
     let buzzer = LedcBuzzer::new(peripherals.LEDC, peripherals.GPIO21).expect("buzzer LEDC init");
     let mut prompt_tone = PromptToneManager::new(buzzer);
@@ -499,6 +558,17 @@ async fn main(_spawner: Spawner) {
     }
 
     let mut last_tick = Instant::now();
+
+    #[cfg(feature = "net_http")]
+    let mut api_usb_a_present = false;
+    #[cfg(feature = "net_http")]
+    let mut api_usb_c_present = false;
+    #[cfg(feature = "net_http")]
+    let mut api_sample_uptime_ms: u64 = 0;
+    #[cfg(feature = "net_http")]
+    let mut api_usb_a_metrics = PortMetrics::err();
+    #[cfg(feature = "net_http")]
+    let mut api_usb_c_metrics = PortMetrics::err();
 
     prompt_tone.notify(SoundEvent::InitDone);
     {
@@ -708,6 +778,15 @@ async fn main(_spawner: Spawner) {
                     .map(|r| r.negotiated_protocol.is_some() || r.fast_protocol || r.fast_voltage)
                     .unwrap_or(false);
 
+                #[cfg(feature = "net_http")]
+                {
+                    api_usb_a_present = usb_a_present;
+                    api_usb_c_present = usb_c_present;
+                    api_usb_a_metrics = telemetry.usb_a;
+                    api_usb_c_metrics = telemetry.usb_c;
+                    api_sample_uptime_ms = uptime_ms_from_instant(ui_tick_now);
+                }
+
                 let snapshot = NormalUiSnapshot {
                     usb_a: NormalUiPort {
                         present: usb_a_present,
@@ -756,6 +835,146 @@ async fn main(_spawner: Spawner) {
             .is_some_and(|until| ports_now >= until)
         {
             port_usb_c.busy_until = None;
+        }
+
+        #[cfg(feature = "net_http")]
+        {
+            let mut exec_a: Option<net::ApiPortAction> = None;
+            let mut exec_c: Option<net::ApiPortAction> = None;
+
+            {
+                let mut guard = api_state.lock().await;
+
+                if let Some(action) = guard.pending.port_a {
+                    if !port_usb_a.is_busy(ports_now) {
+                        guard.pending.port_a = None;
+                        exec_a = Some(action);
+                    }
+                }
+
+                if let Some(action) = guard.pending.port_c {
+                    if !port_usb_c.is_busy(ports_now) {
+                        guard.pending.port_c = None;
+                        exec_c = Some(action);
+                    }
+                }
+            }
+
+            if let Some(action) = exec_a {
+                match action {
+                    net::ApiPortAction::Replug => {
+                        port_usb_a.power = PowerState::On;
+                        port_usb_a.data = DataState::Pulsing {
+                            until: ports_now + Duration::from_millis(DATA_DISCONNECT_MS),
+                        };
+                        port_usb_a.busy_until =
+                            Some(ports_now + Duration::from_millis(DATA_DISCONNECT_MS));
+                        let _ = p1_en_n.set_low();
+                        let _ = p1_ced.set_high();
+                        let (lines, fg_raw) = toast_spec(ButtonId::Left, ToastId::DataOff);
+                        let _ = ui.show_toast(
+                            ports_now,
+                            lines,
+                            fg_raw,
+                            Duration::from_millis(TOAST_MS),
+                        );
+                        prompt_tone.notify(SoundEvent::ActionOk);
+                    }
+                    net::ApiPortAction::Power { enabled } => match (enabled, port_usb_a.power) {
+                        (true, PowerState::On) | (false, PowerState::Off) => {}
+                        (true, PowerState::Off) => {
+                            port_usb_a.power = PowerState::On;
+                            port_usb_a.data = DataState::Connected;
+                            port_usb_a.busy_until =
+                                Some(ports_now + Duration::from_millis(POWER_SWITCH_GUARD_MS));
+                            let _ = p1_en_n.set_low();
+                            let _ = p1_ced.set_low();
+                            let (lines, fg_raw) = toast_spec(ButtonId::Left, ToastId::PwrOn);
+                            let _ = ui.show_toast(
+                                ports_now,
+                                lines,
+                                fg_raw,
+                                Duration::from_millis(TOAST_MS),
+                            );
+                            prompt_tone.notify(SoundEvent::ActionOk);
+                        }
+                        (false, PowerState::On) => {
+                            port_usb_a.power = PowerState::Off;
+                            port_usb_a.data = DataState::Disconnected;
+                            port_usb_a.busy_until =
+                                Some(ports_now + Duration::from_millis(POWER_SWITCH_GUARD_MS));
+                            let _ = p1_en_n.set_high();
+                            let _ = p1_ced.set_high();
+                            let (lines, fg_raw) = toast_spec(ButtonId::Left, ToastId::PwrOff);
+                            let _ = ui.show_toast(
+                                ports_now,
+                                lines,
+                                fg_raw,
+                                Duration::from_millis(TOAST_MS),
+                            );
+                            prompt_tone.notify(SoundEvent::ActionOk);
+                        }
+                    },
+                }
+            }
+
+            if let Some(action) = exec_c {
+                match action {
+                    net::ApiPortAction::Replug => {
+                        port_usb_c.power = PowerState::On;
+                        port_usb_c.data = DataState::Pulsing {
+                            until: ports_now + Duration::from_millis(DATA_DISCONNECT_MS),
+                        };
+                        port_usb_c.busy_until =
+                            Some(ports_now + Duration::from_millis(DATA_DISCONNECT_MS));
+                        let _ = ce_tps.set_low();
+                        let _ = p2_ced.set_high();
+                        let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOff);
+                        let _ = ui.show_toast(
+                            ports_now,
+                            lines,
+                            fg_raw,
+                            Duration::from_millis(TOAST_MS),
+                        );
+                        prompt_tone.notify(SoundEvent::ActionOk);
+                    }
+                    net::ApiPortAction::Power { enabled } => match (enabled, port_usb_c.power) {
+                        (true, PowerState::On) | (false, PowerState::Off) => {}
+                        (true, PowerState::Off) => {
+                            port_usb_c.power = PowerState::On;
+                            port_usb_c.data = DataState::Connected;
+                            port_usb_c.busy_until =
+                                Some(ports_now + Duration::from_millis(POWER_SWITCH_GUARD_MS));
+                            let _ = ce_tps.set_low();
+                            let _ = p2_ced.set_low();
+                            let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::PwrOn);
+                            let _ = ui.show_toast(
+                                ports_now,
+                                lines,
+                                fg_raw,
+                                Duration::from_millis(TOAST_MS),
+                            );
+                            prompt_tone.notify(SoundEvent::ActionOk);
+                        }
+                        (false, PowerState::On) => {
+                            port_usb_c.power = PowerState::Off;
+                            port_usb_c.data = DataState::Disconnected;
+                            port_usb_c.busy_until =
+                                Some(ports_now + Duration::from_millis(POWER_SWITCH_GUARD_MS));
+                            let _ = ce_tps.set_high();
+                            let _ = p2_ced.set_high();
+                            let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::PwrOff);
+                            let _ = ui.show_toast(
+                                ports_now,
+                                lines,
+                                fg_raw,
+                                Duration::from_millis(TOAST_MS),
+                            );
+                            prompt_tone.notify(SoundEvent::ActionOk);
+                        }
+                    },
+                }
+            }
         }
 
         // USB-A invariants.
@@ -1154,6 +1373,43 @@ async fn main(_spawner: Spawner) {
             combo_pressed_at = None;
             combo_done = false;
             combo_expired = false;
+        }
+
+        #[cfg(feature = "net_http")]
+        {
+            let now = Instant::now();
+
+            let ports = net::ApiPortsSnapshot {
+                port_a: net::ApiPortSnapshot {
+                    telemetry: port_metrics_to_api_telemetry(
+                        api_usb_a_present,
+                        api_usb_a_metrics,
+                        api_sample_uptime_ms,
+                    ),
+                    state: net::ApiPortState {
+                        power_enabled: port_usb_a.power == PowerState::On,
+                        data_connected: matches!(port_usb_a.data, DataState::Connected),
+                        replugging: matches!(port_usb_a.data, DataState::Pulsing { .. }),
+                        busy: port_usb_a.is_busy(now),
+                    },
+                },
+                port_c: net::ApiPortSnapshot {
+                    telemetry: port_metrics_to_api_telemetry(
+                        api_usb_c_present,
+                        api_usb_c_metrics,
+                        api_sample_uptime_ms,
+                    ),
+                    state: net::ApiPortState {
+                        power_enabled: port_usb_c.power == PowerState::On,
+                        data_connected: matches!(port_usb_c.data, DataState::Connected),
+                        replugging: matches!(port_usb_c.data, DataState::Pulsing { .. }),
+                        busy: port_usb_c.is_busy(now),
+                    },
+                },
+            };
+
+            let mut guard = api_state.lock().await;
+            guard.ports = ports;
         }
 
         let now_us = esp_hal::time::Instant::now()

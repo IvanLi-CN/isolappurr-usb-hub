@@ -24,11 +24,18 @@ export function mockPortTelemetry(
   portId: PortId,
   powerEnabled: boolean,
 ): PortTelemetry {
+  const sample_uptime_ms =
+    typeof performance !== "undefined"
+      ? Math.floor(performance.now())
+      : Date.now();
+
   if (!powerEnabled) {
     return {
+      status: "ok",
       voltage_mv: 0,
       current_ma: 0,
       power_mw: 0,
+      sample_uptime_ms,
     };
   }
 
@@ -38,9 +45,11 @@ export function mockPortTelemetry(
   const power_mw = Math.max(0, Math.round((voltage_mv * current_ma) / 1000));
 
   return {
+    status: "ok",
     voltage_mv,
     current_ma,
     power_mw,
+    sample_uptime_ms,
   };
 }
 

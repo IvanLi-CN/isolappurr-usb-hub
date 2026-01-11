@@ -1,17 +1,26 @@
 import type { PortCardProps } from "./types";
 
-function formatMv(value: number): string {
+function formatMv(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
   return `${(value / 1000).toFixed(2)} V`;
 }
 
-function formatMa(value: number): string {
+function formatMa(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
   if (value >= 1000) {
     return `${(value / 1000).toFixed(2)} A`;
   }
   return `${value} mA`;
 }
 
-function formatMw(value: number): string {
+function formatMw(value: number | null): string {
+  if (value === null) {
+    return "—";
+  }
   return `${(value / 1000).toFixed(2)} W`;
 }
 
@@ -23,6 +32,11 @@ export function PortCard({
   onTogglePower,
   onReplug,
 }: PortCardProps) {
+  const statusLabel =
+    telemetry.status === "ok"
+      ? "Live telemetry"
+      : `Telemetry: ${telemetry.status.replaceAll("_", " ")}`;
+
   return (
     <div
       className="card bg-base-100 shadow-sm"
@@ -32,7 +46,7 @@ export function PortCard({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="card-title">{label}</h3>
-            <div className="mt-1 text-xs opacity-70">Mock telemetry</div>
+            <div className="mt-1 text-xs opacity-70">{statusLabel}</div>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <span className="opacity-70">Power</span>
@@ -40,7 +54,7 @@ export function PortCard({
               className="toggle toggle-primary"
               type="checkbox"
               checked={state.power_enabled}
-              disabled={state.replugging}
+              disabled={state.replugging || state.busy}
               onChange={onTogglePower}
             />
           </label>
@@ -71,7 +85,7 @@ export function PortCard({
           <button
             className={`btn btn-secondary btn-sm ${state.replugging ? "btn-disabled" : ""}`}
             type="button"
-            disabled={state.replugging || !state.power_enabled}
+            disabled={state.replugging || state.busy || !state.power_enabled}
             onClick={onReplug}
           >
             {state.replugging ? (
@@ -79,6 +93,8 @@ export function PortCard({
                 <span className="loading loading-spinner loading-xs" />
                 Replugging
               </>
+            ) : state.busy ? (
+              "Busy"
             ) : (
               "USB Replug"
             )}
