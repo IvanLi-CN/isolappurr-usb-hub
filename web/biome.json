@@ -6,7 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!**/dist", "!!src/index.css"]
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!**/playwright-report",
+      "!!**/storybook-static",
+      "!!**/test-results",
+      "!!src/index.css"
+    ]
   },
   "formatter": {
     "enabled": true,

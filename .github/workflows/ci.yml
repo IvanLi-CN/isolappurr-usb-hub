@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   web:
-    name: Web (Biome + build)
+    name: Web (quality gates)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,11 +33,26 @@ jobs:
       - name: Install deps
         run: bun install --frozen-lockfile
 
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+
       - name: Biome check
         run: bun run check
 
       - name: Build
         run: bun run build
+
+      - name: Unit tests
+        run: bun run test:unit
+
+      - name: Build Storybook
+        run: bun run build-storybook
+
+      - name: Storybook tests
+        run: bun run test:storybook
+
+      - name: E2E tests
+        run: bun run test:e2e
 
   rustfmt:
     name: Rust fmt
