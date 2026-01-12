@@ -62,10 +62,10 @@ export function DeviceSummaryCard({
 
   return (
     <div
-      className="iso-card h-[272px] w-full rounded-[18px] border border-[var(--border)] bg-[var(--panel)]"
+      className="iso-card h-[272px] w-full rounded-[18px] bg-[var(--panel)] shadow-[inset_0_0_0_1px_var(--border)]"
       data-testid={`device-summary-${device.id}`}
     >
-      <div className="flex h-full flex-col gap-4 p-6">
+      <div className="flex h-full flex-col gap-4 pb-6 pl-6 pr-4 pt-6">
         <div className="flex items-start justify-between gap-4">
           <div className="text-[16px] font-bold">{device.name}</div>
           <div
@@ -109,7 +109,7 @@ export function DeviceSummaryCard({
         </div>
 
         <button
-          className="flex h-[34px] w-full items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
+          className="flex h-[34px] w-[528px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
           type="button"
           onClick={() => onOpenDetails(device.id)}
         >

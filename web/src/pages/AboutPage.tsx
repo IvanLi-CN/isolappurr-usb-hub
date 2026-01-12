@@ -31,9 +31,9 @@ export function AboutPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="iso-card h-[176px] rounded-[18px] border border-[var(--border)] bg-[var(--panel)] px-6 py-6">
-          <div className="text-[16px] font-bold">Build</div>
-          <div className="mt-4 flex flex-col gap-[10px] leading-4">
+        <div className="iso-card h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+          <div className="text-[16px] font-bold leading-5">Build</div>
+          <div className="mt-3 flex flex-col gap-[10px] leading-4">
             <div className="flex items-center">
               <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
                 build
@@ -59,14 +59,16 @@ export function AboutPage() {
           </div>
         </div>
 
-        <div className="iso-card h-[176px] rounded-[18px] border border-[var(--border)] bg-[var(--panel)] px-6 py-6">
-          <div className="text-[16px] font-bold">Links & defaults</div>
+        <div className="iso-card h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+          <div className="text-[16px] font-bold leading-5">
+            Links & defaults
+          </div>
 
-          <div className="mt-3 text-[12px] font-semibold text-[var(--muted)]">
+          <div className="mt-2 text-[12px] font-semibold leading-4 text-[var(--muted)]">
             Links
           </div>
 
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2">
             <a
               className={[
                 "flex h-9 w-[120px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]",
@@ -102,7 +104,7 @@ export function AboutPage() {
             </a>
           </div>
 
-          <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
+          <div className="mt-2 text-[12px] font-semibold leading-4 text-[var(--muted)]">
             Defaults
           </div>
           <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 leading-4">
@@ -116,7 +118,7 @@ export function AboutPage() {
         </div>
       </div>
 
-      <div className="iso-card h-[288px] rounded-[18px] border border-[var(--border)] bg-[var(--panel)] px-6 py-6">
+      <div className="iso-card h-[288px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
         <div className="text-[16px] font-bold">Quick usage</div>
 
         <div className="mt-4 text-[14px] font-medium">
