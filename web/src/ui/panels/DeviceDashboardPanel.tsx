@@ -110,7 +110,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   return (
     <div className="flex flex-col gap-6" data-testid="device-dashboard">
       <div className="iso-card h-[104px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
-        <div className="grid grid-cols-[204px_1fr] grid-rows-2 gap-y-[22px] leading-4">
+        <div className="grid grid-cols-[204px_1fr] grid-rows-2 gap-y-[10px] leading-4">
           <div className="flex items-center">
             <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
               Status
