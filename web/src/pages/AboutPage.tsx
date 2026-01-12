@@ -27,8 +27,8 @@ export function AboutPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="iso-card h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
+        <div className="iso-card min-h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
           <div className="text-[16px] font-bold leading-5">Build</div>
 
           <div className="mt-3 flex flex-col gap-[10px] leading-4">
@@ -57,7 +57,7 @@ export function AboutPage() {
           </div>
         </div>
 
-        <div className="iso-card h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+        <div className="iso-card min-h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
           <div className="text-[16px] font-bold leading-5">
             Links & defaults
           </div>
@@ -66,7 +66,7 @@ export function AboutPage() {
             Links
           </div>
 
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <a
               className={[
                 "flex h-9 w-[120px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]",
@@ -105,7 +105,7 @@ export function AboutPage() {
           <div className="mt-0 text-[12px] font-semibold leading-4 text-[var(--muted)]">
             Defaults
           </div>
-          <div className="grid grid-cols-[240px_1fr] gap-x-6 gap-y-0 leading-4">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-[6px] leading-4 sm:grid-cols-2">
             <div className="text-[12px] font-semibold">Units: V / A / W</div>
             <div className="text-[12px] font-semibold">Power off: confirm</div>
             <div className="text-[12px] font-semibold">

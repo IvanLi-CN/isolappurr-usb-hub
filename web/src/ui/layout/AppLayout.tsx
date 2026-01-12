@@ -33,11 +33,13 @@ export function AppLayout({
           </div>
         </div>
       </header>
-      <div className="flex min-h-0 flex-1">
-        <aside className="w-[360px] border-r border-[var(--border)] bg-[var(--sidebar-bg)]">
-          {sidebar}
-        </aside>
-        <main className="min-h-0 flex-1 px-8 py-6">{children}</main>
+      <div className="flex min-h-0 flex-1 overflow-x-hidden">
+        <div className="mx-auto flex w-full min-h-0 max-w-[1600px] flex-col xl:flex-row">
+          <aside className="w-full shrink-0 border-b border-[var(--border)] bg-[var(--sidebar-bg)] xl:w-[360px] xl:border-b-0 xl:border-r">
+            {sidebar}
+          </aside>
+          <main className="min-h-0 min-w-0 flex-1 px-8 py-6">{children}</main>
+        </div>
       </div>
     </div>
   );
