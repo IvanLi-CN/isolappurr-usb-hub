@@ -1,12 +1,7 @@
 import type { ReactNode } from "react";
-
-function buildInfo(): { sha: string; date: string } {
-  const rawSha =
-    (import.meta.env.VITE_BUILD_SHA as string | undefined) ?? "dev";
-  const sha = rawSha === "dev" ? rawSha : rawSha.slice(0, 7);
-  const date = (import.meta.env.VITE_BUILD_DATE as string | undefined) ?? "";
-  return { sha, date };
-}
+import { Link, useLocation } from "react-router";
+import { useTheme } from "../../app/theme-ui";
+import { ThemeMenu } from "../nav/ThemeMenu";
 
 export function AppLayout({
   sidebar,
@@ -15,28 +10,34 @@ export function AppLayout({
   sidebar: ReactNode;
   children: ReactNode;
 }) {
-  const { sha, date } = buildInfo();
+  const { theme, setTheme } = useTheme();
+  const location = useLocation();
+
+  const showTheme = location.pathname === "/" || location.pathname === "/about";
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="navbar bg-base-200">
-        <div className="flex-1">
-          <a className="btn btn-ghost text-xl" href={import.meta.env.BASE_URL}>
+    <div className="flex min-h-screen flex-col">
+      <header className="h-16 border-b border-[var(--border)] bg-[var(--panel-2)]">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between px-8">
+          <Link className="text-[16px] font-bold" to="/">
             Isolapurr USB Hub
-          </a>
-        </div>
-        <div className="flex-none">
-          <div className="text-right text-xs opacity-70">
-            <div>build: {sha}</div>
-            {date ? <div>{date}</div> : null}
+          </Link>
+          <div className="flex items-center gap-3">
+            {showTheme ? <ThemeMenu value={theme} onChange={setTheme} /> : null}
+            <Link
+              className="flex h-9 w-[92px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
+              to="/about"
+            >
+              About
+            </Link>
           </div>
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <aside className="border-base-300 bg-base-200/50 lg:w-96 lg:border-r">
+      <div className="flex min-h-0 flex-1">
+        <aside className="w-[360px] border-r border-[var(--border)] bg-[var(--sidebar-bg)]">
           {sidebar}
         </aside>
-        <main className="min-h-0 flex-1 p-4">{children}</main>
+        <main className="min-h-0 flex-1 px-8 py-6">{children}</main>
       </div>
     </div>
   );

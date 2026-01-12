@@ -1,46 +1,84 @@
+import type { ConnectionState } from "../../app/device-runtime";
 import type { StoredDevice } from "../../domain/devices";
+
+function badgeStyles(state: ConnectionState): {
+  bg: string;
+  text: string;
+  width: string;
+} {
+  if (state === "online") {
+    return {
+      bg: "bg-[var(--badge-success-bg)]",
+      text: "text-[var(--badge-success-text)]",
+      width: "w-[96px]",
+    };
+  }
+  if (state === "offline") {
+    return {
+      bg: "bg-[var(--badge-error-bg)]",
+      text: "text-[var(--badge-error-text)]",
+      width: "w-[96px]",
+    };
+  }
+  return {
+    bg: "bg-[var(--badge-warning-bg)]",
+    text: "text-[var(--badge-warning-text)]",
+    width: "w-[96px]",
+  };
+}
 
 export type DeviceCardProps = {
   device: StoredDevice;
   selected?: boolean;
+  status: ConnectionState;
+  unselectedFill: "panel" | "panel-2";
   onSelect: (deviceId: string) => void;
-  onRemove: (deviceId: string) => void;
 };
 
 export function DeviceCard({
   device,
   selected,
+  status,
+  unselectedFill,
   onSelect,
-  onRemove,
 }: DeviceCardProps) {
+  const fill =
+    selected || unselectedFill === "panel"
+      ? "bg-[var(--panel)]"
+      : "bg-[var(--panel-2)]";
+  const badge = badgeStyles(status);
+
   return (
-    <div
+    <button
       data-testid={`device-card-${device.id}`}
       className={[
-        "card card-compact bg-base-100 shadow-sm",
-        selected ? "ring-2 ring-primary" : "",
+        "w-full rounded-[14px] border border-[var(--border)]",
+        "px-5 py-4 text-left",
+        fill,
+        selected ? "iso-card" : "",
       ].join(" ")}
+      type="button"
+      onClick={() => onSelect(device.id)}
     >
-      <div className="card-body">
-        <button
-          className="text-left"
-          type="button"
-          onClick={() => onSelect(device.id)}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[14px] font-medium">{device.name}</div>
+          <div className="mt-1 font-mono text-[12px] font-semibold text-[var(--muted)]">
+            {device.baseUrl}
+          </div>
+        </div>
+        <div
+          className={[
+            "flex h-[22px] items-center justify-center rounded-full",
+            badge.width,
+            badge.bg,
+            badge.text,
+            "text-[12px] font-semibold",
+          ].join(" ")}
         >
-          <div className="font-semibold">{device.name}</div>
-          <div className="text-xs opacity-70">{device.baseUrl}</div>
-          <div className="mt-1 text-xs opacity-60">id: {device.id}</div>
-        </button>
-        <div className="card-actions justify-end">
-          <button
-            className="btn btn-ghost btn-xs"
-            type="button"
-            onClick={() => onRemove(device.id)}
-          >
-            Remove
-          </button>
+          {status}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
