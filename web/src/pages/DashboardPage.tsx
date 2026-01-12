@@ -40,6 +40,9 @@ export function DashboardPage() {
   const { devices } = useDevices();
   const runtime = useDeviceRuntime();
 
+  const addDeviceCardSpan =
+    devices.length % 2 === 0 ? "min-[1600px]:col-span-2" : "";
+
   const items = useMemo(
     () =>
       devices.map((d) => {
@@ -112,6 +115,7 @@ export function DashboardPage() {
             "iso-card flex h-[272px] w-full flex-col items-center justify-center",
             "rounded-[18px] border border-dashed border-[var(--border)]",
             "bg-[var(--add-placeholder-bg)] text-center",
+            addDeviceCardSpan,
           ].join(" ")}
           type="button"
           onClick={openAddDevice}
