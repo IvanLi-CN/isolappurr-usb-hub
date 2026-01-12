@@ -65,24 +65,26 @@ export function DeviceSummaryCard({
       className="iso-card h-[272px] w-full rounded-[18px] bg-[var(--panel)] shadow-[inset_0_0_0_1px_var(--border)]"
       data-testid={`device-summary-${device.id}`}
     >
-      <div className="flex h-full flex-col gap-4 pb-6 pl-6 pr-4 pt-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="text-[16px] font-bold">{device.name}</div>
-          <div
-            className={[
-              "flex h-6 items-center justify-center rounded-full",
-              badge.width,
-              badge.bg,
-              badge.text,
-              "text-[12px] font-semibold",
-            ].join(" ")}
-          >
-            {connection.state}
+      <div className="flex h-full flex-col pb-[18px] pl-6 pr-6 pt-[14px]">
+        <div className="h-[62px]">
+          <div className="flex items-start justify-between gap-4">
+            <div className="text-[16px] font-bold leading-5">{device.name}</div>
+            <div
+              className={[
+                "flex h-6 items-center justify-center rounded-full",
+                badge.width,
+                badge.bg,
+                badge.text,
+                "text-[12px] font-semibold",
+              ].join(" ")}
+            >
+              {connection.state}
+            </div>
           </div>
-        </div>
 
-        <div className="font-mono text-[12px] font-semibold text-[var(--muted)]">
-          id: {shortId} • last ok: {lastOkLabel}
+          <div className="mt-3 font-mono text-[12px] font-semibold leading-[18px] text-[var(--muted)]">
+            id: {shortId} • last ok: {lastOkLabel}
+          </div>
         </div>
 
         <div className="flex items-start gap-6">
@@ -109,7 +111,7 @@ export function DeviceSummaryCard({
         </div>
 
         <button
-          className="flex h-[34px] w-[528px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
+          className="mt-3 flex h-[34px] w-[528px] flex-none items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
           type="button"
           onClick={() => onOpenDetails(device.id)}
         >
