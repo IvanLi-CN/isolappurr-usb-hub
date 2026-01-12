@@ -1,5 +1,3 @@
-import { useTheme } from "../app/theme-ui";
-
 function buildInfo(): { sha: string; date: string } {
   const rawSha =
     (import.meta.env.VITE_BUILD_SHA as string | undefined) ?? "dev";
@@ -14,7 +12,6 @@ function envLink(key: string): string | null {
 }
 
 export function AboutPage() {
-  const { theme } = useTheme();
   const { sha, date } = buildInfo();
 
   const repoUrl = envLink("VITE_REPO_URL");
@@ -30,7 +27,7 @@ export function AboutPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="iso-card h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
           <div className="text-[16px] font-bold leading-5">Build</div>
 
@@ -54,7 +51,7 @@ export function AboutPage() {
                 theme
               </div>
               <div className="text-[12px] font-semibold">
-                isolapurr / isolapurr-dark / system ({theme})
+                isolapurr / isolapurr-dark / system
               </div>
             </div>
           </div>
