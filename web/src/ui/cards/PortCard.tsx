@@ -110,7 +110,7 @@ export function PortCard({
 
   return (
     <div
-      className="iso-card relative h-[226px] rounded-[18px] border border-[var(--border)] bg-[var(--panel)] p-6"
+      className="iso-card relative h-[226px] rounded-[18px] bg-[var(--panel)] p-6 shadow-[inset_0_0_0_1px_var(--border)]"
       data-testid={`port-card-${portId}`}
     >
       <div className="flex items-start justify-between gap-4">

@@ -109,7 +109,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
 
   return (
     <div className="flex flex-col gap-6" data-testid="device-dashboard">
-      <div className="iso-card h-[104px] rounded-[18px] border border-[var(--border)] bg-[var(--panel)] px-6 py-6">
+      <div className="iso-card h-[104px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
         <div className="grid grid-cols-[204px_1fr] grid-rows-2 gap-y-[22px] leading-4">
           <div className="flex items-center">
             <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
@@ -127,11 +127,11 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
               {connectionState}
             </div>
           </div>
-          <div className="flex items-center">
+          <div className="flex min-w-0 items-center">
             <div className="w-12 text-[12px] font-semibold text-[var(--muted)]">
               Build
             </div>
-            <div className="font-mono text-[12px] font-semibold">
+            <div className="min-w-0 truncate font-mono text-[12px] font-semibold">
               {buildSha}
             </div>
           </div>
@@ -143,11 +143,13 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
               {headerLastOk}
             </div>
           </div>
-          <div className="flex items-center">
+          <div className="flex min-w-0 items-center">
             <div className="w-12 text-[12px] font-semibold text-[var(--muted)]">
               Notes
             </div>
-            <div className="text-[12px] font-semibold">{notes}</div>
+            <div className="min-w-0 truncate text-[12px] font-semibold">
+              {notes}
+            </div>
           </div>
         </div>
       </div>
