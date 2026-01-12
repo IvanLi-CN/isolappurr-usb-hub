@@ -122,7 +122,7 @@ export function PortMiniCard({
       <div className="text-[12px] font-semibold text-[var(--muted)]">
         {label}
       </div>
-      <div className="mt-4 flex items-center gap-6">
+      <div className="mt-4 flex items-center justify-between gap-4">
         <div className={valueClass}>
           {formatValue(telemetry.voltage_mv, "V")}
         </div>

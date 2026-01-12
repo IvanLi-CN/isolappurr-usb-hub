@@ -87,9 +87,8 @@ export function DeviceSummaryCard({
           </div>
         </div>
 
-        <div className="flex items-start gap-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <PortMiniCard
-            className="w-[260px]"
             portId="port_a"
             label="USB-A"
             telemetry={ports.port_a.telemetry}
@@ -99,7 +98,6 @@ export function DeviceSummaryCard({
             onReplug={() => onDataReplug(device.id, "port_a")}
           />
           <PortMiniCard
-            className="w-[252px]"
             portId="port_c"
             label="USB-C"
             telemetry={ports.port_c.telemetry}
@@ -111,7 +109,7 @@ export function DeviceSummaryCard({
         </div>
 
         <button
-          className="mt-3 flex h-[34px] w-[528px] flex-none items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
+          className="mt-3 flex h-[34px] w-full flex-none items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
           type="button"
           onClick={() => onOpenDetails(device.id)}
         >
