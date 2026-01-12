@@ -27,8 +27,8 @@ export function AboutPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
-        <div className="iso-card min-h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(480px,1fr))] items-start gap-6">
+        <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
           <div className="text-[16px] font-bold leading-5">Build</div>
 
           <div className="mt-3 flex flex-col gap-[10px] leading-4">
@@ -57,7 +57,7 @@ export function AboutPage() {
           </div>
         </div>
 
-        <div className="iso-card min-h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+        <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
           <div className="text-[16px] font-bold leading-5">
             Links & defaults
           </div>
