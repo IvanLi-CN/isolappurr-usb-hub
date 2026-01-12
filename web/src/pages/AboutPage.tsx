@@ -32,27 +32,24 @@ export function AboutPage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="iso-card h-[176px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
-          <div className="flex h-full flex-col">
-            <div className="text-[16px] font-bold leading-5">Build</div>
+          <div className="text-[16px] font-bold leading-5">Build</div>
 
-            <div className="mt-3 flex flex-col gap-[10px] leading-4">
-              <div className="flex items-center">
-                <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
-                  build
-                </div>
-                <div className="font-mono text-[12px] font-semibold">{sha}</div>
+          <div className="mt-3 flex flex-col gap-[10px] leading-4">
+            <div className="flex items-center">
+              <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
+                build
               </div>
-              <div className="flex items-center">
-                <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
-                  date
-                </div>
-                <div className="font-mono text-[12px] font-semibold">
-                  {date || "unknown"}
-                </div>
+              <div className="font-mono text-[12px] font-semibold">{sha}</div>
+            </div>
+            <div className="flex items-center">
+              <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
+                date
+              </div>
+              <div className="font-mono text-[12px] font-semibold">
+                {date || "unknown"}
               </div>
             </div>
-
-            <div className="mt-auto flex items-center leading-4">
+            <div className="flex items-center">
               <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
                 theme
               </div>
