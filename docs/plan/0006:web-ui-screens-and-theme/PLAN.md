@@ -2,10 +2,10 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Frozen: 2026-01-11
 - Created: 2026-01-11
-- Last: 2026-01-11
+- Last: 2026-01-12
 
 ## 背景 / 问题陈述
 
@@ -174,10 +174,10 @@
 ## 里程碑（Milestones）
 
 - [x] M1: 冻结 IA（路由/导航）与主题规范（tokens + 交互）
-- [ ] M2: （impl）实现 Dashboard：多设备网格 + Summary Card + 状态/空态
-- [ ] M3: （impl）实现 Devices：详情 tabs（Overview/Hardware）与一致化组件
-- [ ] M4: （impl）实现 About：build 信息 + 链接 + 文案
-- [ ] M5: （impl）补齐测试与 Storybook 覆盖（关键状态与交互）
+- [x] M2: （impl）实现 Dashboard：多设备网格 + Summary Card + 状态/空态
+- [x] M3: （impl）实现 Devices：详情 tabs（Overview/Hardware）与一致化组件
+- [x] M4: （impl）实现 About：build 信息 + 链接 + 文案
+- [x] M5: （impl）补齐测试与 Storybook 覆盖（关键状态与交互）
 
 ## 开放问题（需要主人决策）
 

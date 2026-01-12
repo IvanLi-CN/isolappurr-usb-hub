@@ -18,7 +18,7 @@ export function AddDeviceDialog({
   onClose,
   onCreate,
 }: AddDeviceDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [id, setId] = useState("");
@@ -27,19 +27,11 @@ export function AddDeviceDialog({
   const ids = useMemo(() => existingDeviceIds ?? [], [existingDeviceIds]);
 
   useEffect(() => {
-    if (!dialogRef.current) {
+    if (!open) {
       return;
     }
-
-    if (open) {
-      setErrors({});
-      dialogRef.current.showModal();
-      return;
-    }
-
-    if (dialogRef.current.open) {
-      dialogRef.current.close();
-    }
+    setErrors({});
+    window.setTimeout(() => nameRef.current?.focus(), 0);
   }, [open]);
 
   const submit = () => {
@@ -62,81 +54,127 @@ export function AddDeviceDialog({
     onClose();
   };
 
-  return (
-    <dialog ref={dialogRef} className="modal" onClose={onClose}>
-      <div className="modal-box">
-        <h3 className="text-lg font-bold">Add device</h3>
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open]);
 
-        <div className="mt-4 flex flex-col gap-3">
-          <label className="form-control w-full">
-            <div className="label">
-              <span className="label-text">Name</span>
+  if (!open) {
+    return null;
+  }
+
+  const fieldBase = [
+    "h-[52px] w-full rounded-[12px] border border-[var(--border)] bg-[var(--panel-2)] px-5 text-[14px] font-medium text-[var(--text)] outline-none",
+    "placeholder:text-[var(--muted)]",
+  ].join(" ");
+
+  const fieldError = "border-[var(--error)]";
+
+  return (
+    <div className="fixed inset-0 z-[100]">
+      <button
+        className="absolute inset-0 h-full w-full bg-[var(--overlay)]"
+        type="button"
+        aria-label="Close add device dialog"
+        onClick={onClose}
+      />
+
+      <div className="iso-modal fixed left-1/2 top-[172px] flex h-[520px] w-[640px] -translate-x-1/2 flex-col rounded-[22px] border border-[var(--border)] bg-[var(--panel)] px-10 pb-7 pt-6">
+        <div className="text-[24px] font-bold">Add device</div>
+        <div className="mt-2 text-[14px] font-medium text-[var(--muted)]">
+          Store locally; used for Dashboard and device pages.
+        </div>
+
+        <div className="mt-10 flex flex-1 flex-col gap-5">
+          <div>
+            <div className="text-[12px] font-semibold text-[var(--muted)]">
+              Name
             </div>
             <input
-              className={`input input-bordered w-full ${errors.name ? "input-error" : ""}`}
+              ref={nameRef}
+              className={[fieldBase, errors.name ? fieldError : ""].join(" ")}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="My USB hub"
+              placeholder="Desk Hub"
               autoComplete="off"
             />
             {errors.name ? (
-              <div className="label">
-                <span className="label-text-alt text-error">{errors.name}</span>
+              <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
+                {errors.name}
               </div>
             ) : null}
-          </label>
+          </div>
 
-          <label className="form-control w-full">
-            <div className="label">
-              <span className="label-text">Base URL</span>
+          <div>
+            <div className="text-[12px] font-semibold text-[var(--muted)]">
+              Base URL
             </div>
             <input
-              className={`input input-bordered w-full ${errors.baseUrl ? "input-error" : ""}`}
+              className={[
+                fieldBase,
+                "font-mono",
+                errors.baseUrl ? fieldError : "",
+              ].join(" ")}
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="http://192.168.1.23"
+              placeholder="http://hub-a.local"
               autoComplete="off"
             />
             {errors.baseUrl ? (
-              <div className="label">
-                <span className="label-text-alt text-error">
-                  {errors.baseUrl}
-                </span>
+              <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
+                {errors.baseUrl}
               </div>
             ) : null}
-          </label>
+            <div className="mt-4 text-[12px] font-semibold text-[var(--muted)]">
+              Examples: http://&lt;hostname&gt;.local / http://192.168.1.42
+            </div>
+          </div>
 
-          <label className="form-control w-full">
-            <div className="label">
-              <span className="label-text">ID (optional)</span>
+          <div>
+            <div className="text-[12px] font-semibold text-[var(--muted)]">
+              ID (optional)
             </div>
             <input
-              className={`input input-bordered w-full ${errors.id ? "input-error" : ""}`}
+              className={[fieldBase, errors.id ? fieldError : ""].join(" ")}
               value={id}
               onChange={(e) => setId(e.target.value)}
               placeholder="auto-generated if empty"
               autoComplete="off"
             />
             {errors.id ? (
-              <div className="label">
-                <span className="label-text-alt text-error">{errors.id}</span>
+              <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
+                {errors.id}
               </div>
             ) : null}
-          </label>
+          </div>
         </div>
 
-        <div className="modal-action">
-          <button className="btn btn-ghost" type="button" onClick={onClose}>
+        <div className="mt-auto flex items-center justify-end gap-[14px]">
+          <button
+            className="flex h-[44px] w-[132px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] text-[12px] font-bold text-[var(--text)]"
+            type="button"
+            onClick={onClose}
+          >
             Cancel
           </button>
-          <button className="btn btn-primary" type="button" onClick={submit}>
+          <button
+            className="flex h-[44px] w-[148px] items-center justify-center rounded-[10px] bg-[var(--primary)] text-[12px] font-bold text-[var(--primary-text)]"
+            type="button"
+            onClick={submit}
+          >
             Create
           </button>
         </div>
       </div>
-      <form method="dialog" className="modal-backdrop">
-        <button type="submit">close</button>
-      </form>
-    </dialog>
+    </div>
   );
 }

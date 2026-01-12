@@ -1,312 +1,189 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  type DeviceApiError,
-  getPorts,
-  replugPort,
-  setPortPower,
-} from "../../domain/deviceApi";
+import { useMemo } from "react";
+import { useDeviceRuntime } from "../../app/device-runtime";
 import type { StoredDevice } from "../../domain/devices";
-import { mockPortTelemetry } from "../../domain/mock";
-import type {
-  Port,
-  PortId,
-  PortState,
-  PortTelemetry,
-} from "../../domain/ports";
+import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
 import { PortCard } from "../cards/PortCard";
-import { useToast } from "../toast/ToastProvider";
+import { formatTimeHms } from "../format/time";
+
+const fallbackTelemetry: PortTelemetry = {
+  status: "error",
+  voltage_mv: null,
+  current_ma: null,
+  power_mw: null,
+  sample_uptime_ms: 0,
+};
+
+const fallbackState: PortState = {
+  power_enabled: false,
+  data_connected: false,
+  replugging: false,
+  busy: true,
+};
+
+function mergedPortState(
+  state: PortState | undefined,
+  pending: boolean,
+): PortState {
+  return {
+    power_enabled: state?.power_enabled ?? false,
+    data_connected: state?.data_connected ?? false,
+    replugging: state?.replugging ?? false,
+    busy: (state?.busy ?? true) || pending,
+  };
+}
+
+function statusBadge(state: "online" | "offline" | "unknown"): {
+  bg: string;
+  text: string;
+  width: string;
+} {
+  if (state === "online") {
+    return {
+      bg: "bg-[var(--badge-success-bg)]",
+      text: "text-[var(--badge-success-text)]",
+      width: "w-[76px]",
+    };
+  }
+  if (state === "offline") {
+    return {
+      bg: "bg-[var(--badge-error-bg)]",
+      text: "text-[var(--badge-error-text)]",
+      width: "w-[76px]",
+    };
+  }
+  return {
+    bg: "bg-[var(--badge-warning-bg)]",
+    text: "text-[var(--badge-warning-text)]",
+    width: "w-[96px]",
+  };
+}
 
 export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
-  const { pushToast } = useToast();
-  const [mode, setMode] = useState<"real" | "mock">("real");
-  const [ports, setPorts] = useState<Record<PortId, Port> | null>(null);
-  const [lastError, setLastError] = useState<DeviceApiError | null>(null);
-  const [pendingAction, setPendingAction] = useState<Record<PortId, boolean>>({
-    port_a: false,
-    port_c: false,
-  });
+  const runtime = useDeviceRuntime();
 
-  const fallbackTelemetry: PortTelemetry = useMemo(
-    () => ({
-      status: "error",
-      voltage_mv: null,
-      current_ma: null,
-      power_mw: null,
-      sample_uptime_ms: 0,
-    }),
-    [],
-  );
-  const fallbackState: PortState = useMemo(
-    () => ({
-      power_enabled: false,
-      data_connected: false,
-      replugging: false,
-      busy: true,
-    }),
-    [],
-  );
-  const fallbackPorts: Record<PortId, Port> = useMemo(
-    () => ({
+  const connectionState = runtime.connectionState(device.id);
+  const badge = statusBadge(connectionState);
+
+  const lastOkAt = runtime.lastOkAt(device.id);
+  const headerLastOk = lastOkAt === null ? "—" : formatTimeHms(lastOkAt);
+
+  const rawBuildSha =
+    (import.meta.env.VITE_BUILD_SHA as string | undefined) ?? "";
+  const buildSha =
+    rawBuildSha && rawBuildSha !== "dev" ? rawBuildSha.slice(0, 7) : "—";
+
+  const notes =
+    runtime.lastErrorLabel(device.id) ?? "Mock UI; actions show busy states";
+
+  const writeDisabled = connectionState !== "online";
+
+  const items = useMemo(() => {
+    const isOnline = connectionState === "online";
+
+    const port = (portId: PortId) => runtime.port(device.id, portId);
+    const pending = (portId: PortId) => runtime.pending(device.id, portId);
+
+    const telemetry = (portId: PortId): PortTelemetry =>
+      isOnline
+        ? (port(portId)?.telemetry ?? fallbackTelemetry)
+        : fallbackTelemetry;
+
+    const state = (portId: PortId): PortState =>
+      isOnline
+        ? mergedPortState(port(portId)?.state ?? undefined, pending(portId))
+        : fallbackState;
+
+    return {
       port_a: {
-        portId: "port_a",
         label: "USB-A",
-        telemetry: fallbackTelemetry,
-        state: fallbackState,
-        capabilities: { data_replug: true, power_set: true },
+        telemetry: telemetry("port_a"),
+        state: state("port_a"),
       },
       port_c: {
-        portId: "port_c",
         label: "USB-C",
-        telemetry: fallbackTelemetry,
-        state: fallbackState,
-        capabilities: { data_replug: true, power_set: true },
+        telemetry: telemetry("port_c"),
+        state: state("port_c"),
       },
-    }),
-    [fallbackState, fallbackTelemetry],
-  );
-
-  const pollPorts = useCallback(async () => {
-    const res = await getPorts(device.baseUrl);
-    if (res.ok) {
-      const portA = res.value.ports.find((p) => p.portId === "port_a");
-      const portC = res.value.ports.find((p) => p.portId === "port_c");
-      if (!portA || !portC) {
-        setPorts(fallbackPorts);
-        setLastError({
-          kind: "invalid_response",
-          message: "missing port_a or port_c in /api/v1/ports response",
-        });
-        return;
-      }
-
-      setPorts({ port_a: portA, port_c: portC });
-      setLastError(null);
-      return;
-    }
-
-    setLastError(res.error);
-  }, [device.baseUrl, fallbackPorts]);
-
-  useEffect(() => {
-    if (mode !== "real") {
-      return;
-    }
-    let cancelled = false;
-
-    const tick = async () => {
-      if (cancelled) {
-        return;
-      }
-      await pollPorts();
     };
-
-    void tick();
-    const id = window.setInterval(tick, 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [mode, pollPorts]);
-
-  const mockPortA = useMemo(() => {
-    const power_enabled = true;
-    return {
-      portId: "port_a",
-      label: "USB-A",
-      telemetry: mockPortTelemetry(device.id, "port_a", power_enabled),
-      state: {
-        power_enabled,
-        data_connected: power_enabled,
-        replugging: false,
-        busy: false,
-      },
-      capabilities: { data_replug: true, power_set: true },
-    } satisfies Port;
-  }, [device.id]);
-
-  const mockPortC = useMemo(() => {
-    const power_enabled = true;
-    return {
-      portId: "port_c",
-      label: "USB-C",
-      telemetry: mockPortTelemetry(device.id, "port_c", power_enabled),
-      state: {
-        power_enabled,
-        data_connected: power_enabled,
-        replugging: false,
-        busy: false,
-      },
-      capabilities: { data_replug: true, power_set: true },
-    } satisfies Port;
-  }, [device.id]);
-
-  const portA = mode === "real" ? ports?.port_a : mockPortA;
-  const portC = mode === "real" ? ports?.port_c : mockPortC;
-
-  const mergedState = useCallback(
-    (state: PortState | undefined, portId: PortId): PortState => ({
-      power_enabled: state?.power_enabled ?? false,
-      data_connected: state?.data_connected ?? false,
-      replugging: state?.replugging ?? false,
-      busy: (state?.busy ?? true) || pendingAction[portId],
-    }),
-    [pendingAction],
-  );
-
-  const mergedTelemetry = useCallback(
-    (telemetry: PortTelemetry | undefined): PortTelemetry =>
-      telemetry ?? fallbackTelemetry,
-    [fallbackTelemetry],
-  );
-
-  const setPending = (portId: PortId, value: boolean) => {
-    setPendingAction((prev) => ({ ...prev, [portId]: value }));
-  };
-
-  const handleApiErrorToast = (label: string, err: DeviceApiError) => {
-    if (err.kind === "busy") {
-      pushToast({
-        message: `${device.name}: ${label} is busy`,
-        variant: "warning",
-      });
-      return;
-    }
-    pushToast({
-      message: `${device.name}: ${label} error (${err.kind})`,
-      variant: "error",
-    });
-  };
-
-  const handleReplug = async (portId: PortId, label: string) => {
-    if (mode !== "real") {
-      pushToast({
-        message: `${device.name}: ${label} replug (mock)`,
-        variant: "info",
-      });
-      return;
-    }
-
-    setPending(portId, true);
-    try {
-      const res = await replugPort(device.baseUrl, portId);
-      if (res.ok) {
-        pushToast({
-          message: `${device.name}: ${label} replug accepted`,
-          variant: "success",
-        });
-        await pollPorts();
-        return;
-      }
-      handleApiErrorToast(label, res.error);
-    } finally {
-      setPending(portId, false);
-    }
-  };
-
-  const handleTogglePower = async (
-    portId: PortId,
-    label: string,
-    enabled: boolean,
-  ) => {
-    if (mode !== "real") {
-      pushToast({
-        message: `${device.name}: ${label} power toggle (mock)`,
-        variant: "info",
-      });
-      return;
-    }
-
-    setPending(portId, true);
-    try {
-      const res = await setPortPower(device.baseUrl, portId, enabled);
-      if (res.ok) {
-        pushToast({
-          message: `${device.name}: ${label} power set`,
-          variant: "success",
-        });
-        await pollPorts();
-        return;
-      }
-      handleApiErrorToast(label, res.error);
-    } finally {
-      setPending(portId, false);
-    }
-  };
-
-  const statusLine = useMemo(() => {
-    if (mode === "mock") {
-      return "Mode: mock (no device requests)";
-    }
-    if (!lastError) {
-      return "Mode: real (polling /api/v1/ports)";
-    }
-    if (lastError.kind === "preflight_blocked") {
-      return "Blocked: CORS/PNA preflight (Chrome permission prompt)";
-    }
-    if (lastError.kind === "offline") {
-      return "Offline: device unreachable";
-    }
-    return `Error: ${lastError.kind}`;
-  }, [lastError, mode]);
+  }, [connectionState, device.id, runtime]);
 
   return (
-    <div className="flex flex-col gap-4" data-testid="device-dashboard">
-      <div className="rounded-box bg-base-200/60 p-4">
-        <div className="text-sm font-semibold">Device</div>
-        <div className="mt-1 text-sm opacity-80">{device.name}</div>
-        <div className="mt-1 font-mono text-xs opacity-70">
-          {device.baseUrl}
-        </div>
-        <div className="mt-1 font-mono text-xs opacity-60">id: {device.id}</div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs opacity-70">{statusLine}</div>
-          <div className="join">
-            <button
-              className={`btn btn-xs join-item ${mode === "real" ? "btn-active" : ""}`}
-              type="button"
-              onClick={() => setMode("real")}
+    <div className="flex flex-col gap-6" data-testid="device-dashboard">
+      <div className="iso-card h-[104px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+        <div className="grid grid-cols-[204px_1fr] grid-rows-2 gap-y-[10px] leading-4">
+          <div className="flex items-center">
+            <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
+              Status
+            </div>
+            <div
+              className={[
+                "flex h-[26px] items-center justify-center rounded-full",
+                badge.width,
+                badge.bg,
+                badge.text,
+                "text-[12px] font-semibold",
+              ].join(" ")}
             >
-              Real
-            </button>
-            <button
-              className={`btn btn-xs join-item ${mode === "mock" ? "btn-active" : ""}`}
-              type="button"
-              onClick={() => setMode("mock")}
-            >
-              Mock
-            </button>
+              {connectionState}
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center">
+            <div className="w-12 text-[12px] font-semibold text-[var(--muted)]">
+              Build
+            </div>
+            <div className="min-w-0 truncate font-mono text-[12px] font-semibold">
+              {buildSha}
+            </div>
+          </div>
+          <div className="flex items-center">
+            <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
+              Last ok
+            </div>
+            <div className="font-mono text-[12px] font-semibold">
+              {headerLastOk}
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center">
+            <div className="w-12 text-[12px] font-semibold text-[var(--muted)]">
+              Notes
+            </div>
+            <div className="min-w-0 truncate text-[12px] font-semibold">
+              {notes}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(480px,1fr))] gap-6">
         <PortCard
           portId="port_a"
-          label="USB-A"
-          telemetry={mergedTelemetry(portA?.telemetry)}
-          state={mergedState(portA?.state, "port_a")}
+          label={items.port_a.label}
+          telemetry={items.port_a.telemetry}
+          state={items.port_a.state}
+          disabled={writeDisabled}
           onTogglePower={() =>
-            void handleTogglePower(
+            void runtime.setPower(
+              device.id,
               "port_a",
-              "USB-A",
-              !(portA?.state.power_enabled ?? false),
+              !items.port_a.state.power_enabled,
             )
           }
-          onReplug={() => void handleReplug("port_a", "USB-A")}
+          onReplug={() => void runtime.replug(device.id, "port_a")}
         />
         <PortCard
           portId="port_c"
-          label="USB-C"
-          telemetry={mergedTelemetry(portC?.telemetry)}
-          state={mergedState(portC?.state, "port_c")}
+          label={items.port_c.label}
+          telemetry={items.port_c.telemetry}
+          state={items.port_c.state}
+          disabled={writeDisabled}
           onTogglePower={() =>
-            void handleTogglePower(
+            void runtime.setPower(
+              device.id,
               "port_c",
-              "USB-C",
-              !(portC?.state.power_enabled ?? false),
+              !items.port_c.state.power_enabled,
             )
           }
-          onReplug={() => void handleReplug("port_c", "USB-C")}
+          onReplug={() => void runtime.replug(device.id, "port_c")}
         />
       </div>
     </div>

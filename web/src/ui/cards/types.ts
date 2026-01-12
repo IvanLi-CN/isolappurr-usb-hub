@@ -5,6 +5,7 @@ export type PortCardProps = {
   label: string;
   telemetry: PortTelemetry;
   state: PortState;
+  disabled?: boolean;
   onTogglePower: () => void;
   onReplug: () => void;
 };

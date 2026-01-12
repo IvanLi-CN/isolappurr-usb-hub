@@ -2,6 +2,18 @@
 
 React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed to be deployed on GitHub Pages.
 
+## Pages
+
+- `/` — Dashboard (multi-device grid)
+- `/devices/:deviceId` — Device details (Overview)
+- `/devices/:deviceId/info` — Device details (Hardware)
+- `/about` — About
+
+## Theme
+
+- Built-in themes: `isolapurr` (light), `isolapurr-dark` (dark), `system` (follow OS)
+- Preference is persisted in `localStorage` under `isolapurr_usb_hub.theme`
+
 ## Quick start
 
 - Install: `bun install`

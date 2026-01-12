@@ -21,17 +21,31 @@ export function DeviceInfoPage() {
         </div>
         <div>
           <Link className="link" to="/">
-            Back to devices
+            Back to dashboard
           </Link>
         </div>
       </div>
     );
   }
 
+  const shortId = device.id.length > 6 ? device.id.slice(0, 6) : device.id;
+
   return (
-    <div className="flex flex-col gap-4">
-      <DevicePageTabs deviceId={deviceId} />
-      <DeviceInfoPanel device={device} />
+    <div className="flex flex-col" data-testid="device-hardware-page">
+      <div>
+        <div className="text-[24px] font-bold">{device.name}</div>
+        <div className="mt-2 font-mono text-[12px] font-semibold text-[var(--muted)]">
+          id: {shortId} • {device.baseUrl}
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <DevicePageTabs deviceId={deviceId} />
+      </div>
+
+      <div className="mt-[22px]">
+        <DeviceInfoPanel device={device} />
+      </div>
     </div>
   );
 }

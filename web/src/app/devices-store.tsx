@@ -19,9 +19,15 @@ type DevicesContextValue = {
 
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
-export function DevicesProvider({ children }: { children: React.ReactNode }) {
+export function DevicesProvider({
+  children,
+  initialDevices,
+}: {
+  children: React.ReactNode;
+  initialDevices?: StoredDevice[];
+}) {
   const [devices, setDevices] = useState<StoredDevice[]>(() =>
-    loadStoredDevices(),
+    initialDevices ? initialDevices : loadStoredDevices(),
   );
 
   useEffect(() => {

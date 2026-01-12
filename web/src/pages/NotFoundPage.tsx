@@ -9,7 +9,7 @@ export function NotFoundPage() {
       </div>
       <div>
         <Link className="link" to="/">
-          Back to devices
+          Back to dashboard
         </Link>
       </div>
     </div>
