@@ -107,7 +107,7 @@ export function AboutPage() {
           <div className="mt-2 text-[12px] font-semibold leading-4 text-[var(--muted)]">
             Defaults
           </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 leading-4">
+          <div className="grid grid-cols-[240px_1fr] gap-x-6 gap-y-2 leading-4">
             <div className="text-[12px] font-semibold">Units: V / A / W</div>
             <div className="text-[12px] font-semibold">Power off: confirm</div>
             <div className="text-[12px] font-semibold">
