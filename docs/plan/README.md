@@ -54,8 +54,8 @@
 | 0001 | GC9307 正常界面规范（USB‑A + USB‑C/PD 双口电参量） | 已完成 | `0001:gc9307-normal-ui/PLAN.md` | 2026-01-08 | - |
 | 0002 | CH442E 短按重插 / 长按断电（USB‑A 左键，USB‑C 右键） | 待实现 | `0002:usb-replug-power-cut/PLAN.md` | 2026-01-09 | - |
 | 0003 | 固件联网：Wi‑Fi + mDNS + HTTP（Hello World） | 已完成 | `0003:wifi-mdns-http/PLAN.md` | 2026-01-10 | feature: `net_http` |
-| 0004 | GitHub Pages Web：双口遥测与控制台（Mock，多设备） | 待实现 | `0004:github-pages-ports-dashboard/PLAN.md` | 2026-01-14 | Awaiting acceptance; Mock only（暂不连真机；后续用 PNA） |
-| 0005 | 设备 HTTP API：双口遥测 + 端口操作（Web 对接） | 待实现 | `0005:device-http-api/PLAN.md` | 2026-01-14 | Awaiting acceptance; CORS allowlist: `https://isolapurr.ivanli.cc` |
+| 0004 | GitHub Pages Web：双口遥测与控制台（Mock，多设备） | 已完成 | `0004:github-pages-ports-dashboard/PLAN.md` | 2026-01-14 | Mock only（暂不连真机；后续用 PNA） |
+| 0005 | 设备 HTTP API：双口遥测 + 端口操作（Web 对接） | 已完成 | `0005:device-http-api/PLAN.md` | 2026-01-14 | CORS allowlist: `https://isolapurr.ivanli.cc` |
 | 0006 | Web UI：多设备 Dashboard / 设备详情 / About + DaisyUI 主题规范 | 已完成 | `0006:web-ui-screens-and-theme/PLAN.md` | 2026-01-12 | branch: `feat/0006-web-ui-screens-and-theme` |
 | 0007 | Web UI：添加设备（自动发现 + 手动添加） | 待实现 | `0007:add-device-discovery/PLAN.md` | 2026-01-13 | mDNS 自动发现仅 Desktop App（0008）；Web 支持 IP scan（手动 CIDR）+ 手动添加 |
 | 0008 | Desktop：Tauri 客户端（局域网发现 + 本地网络能力） | 待实现 | `0008:tauri-desktop-client/PLAN.md` | 2026-01-14 | 首发 macOS；支撑：0007（Auto discovery）；CI（GitHub Actions）+ ad-hoc signing 口径已冻结 |
