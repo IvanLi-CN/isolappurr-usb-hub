@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-08
-- Last: 2026-01-09
+- Last: 2026-01-14
 
 ## 背景 / 问题陈述
 
@@ -188,8 +188,8 @@
 - [x] M2: 冻结端口硬件映射与电平极性（`P1_CED/P2_CED`、`P1_EN#`、`CE_TPS`）
 - [x] M3: 冻结 UI 文案与显示策略（toast 持续时间与文案规范）
 - [x] M4: 产出界面效果图与 MIDI 试听资源（`images/`、`audio/`）
-- [ ] M5: （impl）固件实现：按键时长识别 + 端口状态机 + CH442E/电源控制 + UI toast + 提示音
-- [ ] M6: （impl）实机验收：Windows/macOS/Linux 至少一种主机侧验证“短按可触发重枚举”；验证断电/恢复与拒绝提示
+- [x] M5: （impl）固件实现：按键时长识别 + 端口状态机 + CH442E/电源控制 + UI toast + 提示音
+- [x] M6: （impl）实机验收：Windows/macOS/Linux 至少一种主机侧验证“短按可触发重枚举”；验证断电/恢复与拒绝提示
 
 ## 风险与开放问题（Risks & Open Questions）
 
