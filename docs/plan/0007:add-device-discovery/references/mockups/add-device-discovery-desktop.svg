@@ -1,0 +1,254 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --panel: #ffffff;
+        --panel-2: #f8fafc;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #5c6ac4;
+        --primary-text: #ffffff;
+        --shadow: rgba(17, 24, 39, 0.08);
+        --overlay: rgba(15, 23, 42, 0.32);
+        --info: #e0e7ff;
+        --success: #dcfce7;
+        --danger: #fee2e2;
+      }
+
+      text {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        fill: var(--text);
+      }
+
+      .muted {
+        fill: var(--muted);
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+
+      .h1 {
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .h2 {
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .body {
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .caption {
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .tiny {
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .card {
+        filter: drop-shadow(0 10px 24px var(--shadow));
+      }
+
+      .btn {
+        rx: 10;
+        ry: 10;
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      .btn-primary {
+        fill: var(--primary);
+        stroke: rgba(0, 0, 0, 0);
+      }
+
+      .btn-primary-text {
+        fill: var(--primary-text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .btn-ghost {
+        fill: var(--panel-2);
+      }
+
+      .btn-ghost-text {
+        fill: var(--text);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .link {
+        fill: var(--primary);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .icon-stroke {
+        fill: none;
+        stroke: var(--primary);
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 2;
+      }
+
+      .btn-action-text {
+        letter-spacing: 0.01em;
+      }
+
+      .btn-disabled {
+        fill: rgba(148, 163, 184, 0.20);
+      }
+
+      .btn-disabled-text {
+        fill: rgba(17, 24, 39, 0.45);
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .field {
+        rx: 12;
+        ry: 12;
+        fill: var(--panel-2);
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      .section {
+        rx: 16;
+        ry: 16;
+        fill: var(--panel-2);
+        stroke: var(--border);
+        stroke-width: 1;
+      }
+
+      .item {
+        rx: 14;
+        ry: 14;
+        fill: var(--panel);
+        stroke: rgba(229, 231, 235, 0.9);
+        stroke-width: 1;
+      }
+
+      .badge {
+        stroke: rgba(0, 0, 0, 0);
+      }
+
+      .badge-info {
+        fill: var(--info);
+      }
+
+      .badge-success {
+        fill: var(--success);
+      }
+
+      .badge-danger {
+        fill: var(--danger);
+      }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="900" fill="var(--bg)" />
+
+  <!-- navbar -->
+  <rect x="0" y="0" width="1600" height="64" fill="var(--panel-2)" stroke="var(--border)" />
+  <text x="32" y="40" class="h2">Isolapurr USB Hub</text>
+
+  <!-- blurred app background (simplified) -->
+  <rect x="0" y="64" width="360" height="836" fill="rgba(248,250,252,0.85)" stroke="var(--border)" />
+  <text x="32" y="112" class="h2 muted">Devices</text>
+  <rect x="252" y="92" width="84" height="28" rx="10" ry="10" fill="rgba(92,106,196,0.18)" />
+  <text x="294" y="106" class="caption" text-anchor="middle" dominant-baseline="middle">+ Add</text>
+  <rect x="392" y="112" width="260" height="18" rx="9" fill="rgba(100,116,139,0.14)" />
+  <rect x="392" y="146" width="420" height="12" rx="6" fill="rgba(100,116,139,0.10)" />
+  <rect x="392" y="176" width="1176" height="260" rx="18" fill="rgba(255,255,255,0.75)" stroke="rgba(229,231,235,0.7)" />
+
+  <!-- modal overlay (covers whole app, including navbar) -->
+  <rect x="0" y="0" width="1600" height="900" fill="var(--overlay)" />
+
+  <!-- modal -->
+  <rect x="280" y="140" width="1040" height="636" rx="22" fill="var(--panel)" stroke="var(--border)" class="card" />
+  <text x="320" y="190" class="h1">Add device</text>
+  <text x="320" y="218" class="body muted">Auto-discover on LAN, or add manually right away.</text>
+
+  <!-- columns -->
+  <rect x="320" y="244" width="468" height="454" class="section" />
+  <rect x="812" y="244" width="468" height="454" class="section" />
+
+  <!-- left header -->
+  <text x="344" y="282" class="h2">Auto discovery</text>
+  <rect x="466" y="265" width="84" height="22" rx="11" ry="11" class="badge badge-info" />
+  <text x="508" y="276" class="tiny" text-anchor="middle" dominant-baseline="middle">Scanning</text>
+  <rect x="700" y="258" width="72" height="30" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="736" y="273" class="btn-ghost-text" text-anchor="middle" dominant-baseline="middle">Refresh</text>
+  <text x="344" y="306" class="caption muted">mDNS (DNS-SD) • verifies by <tspan class="mono">/api/v1/info</tspan></text>
+
+  <!-- discovery filter -->
+  <rect x="344" y="324" width="424" height="44" class="field" />
+  <text x="364" y="352" class="body muted">Filter by hostname / id…</text>
+
+  <!-- discovery item 1 -->
+  <rect x="344" y="386" width="424" height="92" class="item" />
+  <text x="364" y="414" class="body">isolapurr-usb-hub-aabbcc</text>
+  <text x="364" y="438" class="caption muted">ID: <tspan class="mono">aabbcc</tspan> • IPv4: <tspan class="mono">192.168.1.42</tspan></text>
+  <text x="364" y="466" class="caption muted">URL: <tspan class="mono">http://isolapurr-usb-hub-aabbcc.local</tspan></text>
+  <rect x="684" y="408" width="68" height="32" rx="10" ry="10" class="btn btn-primary" />
+  <text x="718" y="424" class="btn-primary-text" text-anchor="middle" dominant-baseline="middle">Use</text>
+  <rect x="668" y="448" width="84" height="20" rx="10" ry="10" class="badge badge-info" />
+  <text x="710" y="458" class="tiny" text-anchor="middle" dominant-baseline="middle">just now</text>
+
+  <!-- discovery item 2 (already added) -->
+  <rect x="344" y="492" width="424" height="92" class="item" />
+  <text x="364" y="520" class="body">Desk Hub (custom name)</text>
+  <text x="364" y="544" class="caption muted">ID: <tspan class="mono">ddeeff</tspan> • FQDN: <tspan class="mono">…ddeeff.local</tspan></text>
+  <text x="364" y="572" class="caption muted">URL: <tspan class="mono">http://192.168.1.77</tspan></text>
+  <rect x="664" y="514" width="88" height="32" rx="10" ry="10" class="btn btn-disabled" />
+  <text x="708" y="530" class="btn-disabled-text" text-anchor="middle" dominant-baseline="middle">Added</text>
+  <rect x="676" y="554" width="76" height="20" rx="10" ry="10" class="badge badge-success" />
+  <text x="714" y="564" class="tiny" text-anchor="middle" dominant-baseline="middle">5s ago</text>
+
+  <!-- left footer: IP scan (advanced, collapsed) -->
+  <rect x="344" y="638" width="424" height="44" rx="14" fill="rgba(92,106,196,0.08)" stroke="rgba(92,106,196,0.22)" />
+  <text x="364" y="660" class="caption muted" dominant-baseline="middle">IP scan (advanced)</text>
+  <text x="732" y="660" class="link" text-anchor="end" dominant-baseline="middle">Show</text>
+  <g transform="translate(738 653) scale(0.5833333)">
+    <path class="icon-stroke" d="m6 9l6 6l6-6" />
+  </g>
+
+  <!-- right header -->
+  <text x="836" y="282" class="h2">Manual add</text>
+  <rect x="1128" y="258" width="136" height="30" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1196" y="273" class="btn-ghost-text" text-anchor="middle" dominant-baseline="middle">Paste from URL</text>
+  <text x="836" y="306" class="caption muted">Use when discovery is unavailable or you know the address.</text>
+
+  <!-- right fields -->
+  <text x="836" y="342" class="caption muted">Name</text>
+  <rect x="836" y="354" width="424" height="48" class="field" />
+  <text x="856" y="384" class="body">isolapurr-usb-hub-aabbcc</text>
+
+  <text x="836" y="438" class="caption muted">Base URL</text>
+  <rect x="836" y="450" width="424" height="48" class="field" />
+  <text x="856" y="480" class="body mono">http://isolapurr-usb-hub-aabbcc.local</text>
+  <text x="836" y="520" class="caption muted">Examples: http://&lt;hostname&gt;.local  /  http://192.168.1.42</text>
+
+  <text x="836" y="566" class="caption muted">ID (optional)</text>
+  <rect x="836" y="578" width="424" height="48" class="field" />
+  <text x="856" y="608" class="body mono">aabbcc</text>
+  <rect x="1156" y="590" width="92" height="22" rx="11" ry="11" class="badge badge-info" />
+  <text x="1202" y="601" class="tiny" text-anchor="middle" dominant-baseline="middle">suggested</text>
+
+  <!-- actions -->
+  <rect x="1036" y="722" width="112" height="42" rx="10" ry="10" class="btn btn-ghost" />
+  <text x="1092" y="743" class="btn-ghost-text btn-action-text" text-anchor="middle" dominant-baseline="middle">Cancel</text>
+  <rect x="1160" y="722" width="120" height="42" rx="10" ry="10" class="btn btn-primary" />
+  <text x="1220" y="743" class="btn-primary-text btn-action-text" text-anchor="middle" dominant-baseline="middle">Create</text>
+</svg>
