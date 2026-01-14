@@ -66,6 +66,7 @@ export function normalizeBaseUrl(
 export function validateAddDeviceInput(
   input: AddDeviceInput,
   existingDeviceIds: Iterable<string> = [],
+  existingBaseUrls: Iterable<string> = [],
 ): AddDeviceValidationResult {
   const errors: AddDeviceValidationErrors = {};
 
@@ -77,6 +78,15 @@ export function validateAddDeviceInput(
   const baseUrlResult = normalizeBaseUrl(input.baseUrl);
   if (!baseUrlResult.ok) {
     errors.baseUrl = baseUrlResult.error;
+  }
+
+  if (baseUrlResult.ok) {
+    const existing = new Set(
+      Array.from(existingBaseUrls, (v) => v.trim()).filter(Boolean),
+    );
+    if (existing.has(baseUrlResult.baseUrl)) {
+      errors.baseUrl = "Base URL already exists";
+    }
   }
 
   const idRaw = input.id;

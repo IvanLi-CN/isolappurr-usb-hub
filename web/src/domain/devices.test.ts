@@ -51,6 +51,19 @@ describe("validateAddDeviceInput", () => {
     expect(res.errors.id).toBe("ID already exists");
   });
 
+  test("rejects duplicate baseUrl", () => {
+    const res = validateAddDeviceInput(
+      { name: "A", baseUrl: "http://example.com" },
+      [],
+      ["http://example.com"],
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      throw new Error("expected errors");
+    }
+    expect(res.errors.baseUrl).toBe("Base URL already exists");
+  });
+
   test("generates id when missing", () => {
     const res = validateAddDeviceInput({
       name: "A",

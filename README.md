@@ -100,6 +100,9 @@ Plan `#0003` 引入了实验性网络能力（feature gate：`net_http`）：
 - 安装依赖：`cd web && bun install`
 - 本地开发：`cd web && bun dev`
 - 默认端口（高位，避免冲突）：Web `http://127.0.0.1:45173`；Storybook `http://127.0.0.1:46006`；Preview `http://127.0.0.1:45175`
+- 发现/添加设备：
+  - 推荐：使用 Desktop App（Plan `#0008`）做 mDNS/DNS‑SD 自动发现；
+  - GitHub Pages / 浏览器：无法使用 mDNS；请使用 “+ Add → IP scan (advanced)” 手动输入 CIDR 扫描，或直接手动填写 Base URL 添加。
 - 质量门槛：`cd web && bun run check`
 - 构建：`cd web && bun run build`
 - Unit tests：`cd web && bun run test:unit`
