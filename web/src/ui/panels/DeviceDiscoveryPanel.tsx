@@ -240,6 +240,16 @@ export function DeviceDiscoveryPanel({
                 className="h-[40px] flex-1 rounded-[12px] border border-[var(--border)] bg-[var(--panel-2)] px-4 text-[13px] font-medium text-[var(--text)] outline-none placeholder:text-[var(--muted)]"
                 value={cidr}
                 onChange={(e) => setCidr(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") {
+                    return;
+                  }
+                  e.preventDefault();
+                  if (scanning) {
+                    return;
+                  }
+                  startScan();
+                }}
                 placeholder="CIDR, e.g. 192.168.1.0/24"
                 autoComplete="off"
                 disabled={scanning}
