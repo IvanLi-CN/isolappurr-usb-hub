@@ -36,11 +36,16 @@ export function DevicesProvider({
 
   const value = useMemo<DevicesContextValue>(() => {
     const existingIds = new Set(devices.map((d) => d.id));
+    const existingBaseUrls = new Set(devices.map((d) => d.baseUrl));
 
     return {
       devices,
       addDevice: (input) => {
-        const result = validateAddDeviceInput(input, existingIds);
+        const result = validateAddDeviceInput(
+          input,
+          existingIds,
+          existingBaseUrls,
+        );
         if (!result.ok) {
           return result;
         }

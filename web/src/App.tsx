@@ -26,6 +26,7 @@ function RootLayout() {
   const navigate = useNavigate();
 
   const existingIds = devices.map((d) => d.id);
+  const existingBaseUrls = devices.map((d) => d.baseUrl);
 
   const onAdd = (input: AddDeviceInput) => {
     const result = addDevice(input);
@@ -36,7 +37,11 @@ function RootLayout() {
   };
 
   return (
-    <AddDeviceUiProvider existingDeviceIds={existingIds} onCreate={onAdd}>
+    <AddDeviceUiProvider
+      existingDeviceIds={existingIds}
+      existingDeviceBaseUrls={existingBaseUrls}
+      onCreate={onAdd}
+    >
       <AppLayout
         sidebar={
           <DeviceListPanel

@@ -10,10 +10,12 @@ const AddDeviceUiContext = createContext<AddDeviceUiContextValue | null>(null);
 
 export function AddDeviceUiProvider({
   existingDeviceIds,
+  existingDeviceBaseUrls,
   onCreate,
   children,
 }: {
   existingDeviceIds: string[];
+  existingDeviceBaseUrls: string[];
   onCreate: (input: AddDeviceInput) => void;
   children: React.ReactNode;
 }) {
@@ -32,6 +34,7 @@ export function AddDeviceUiProvider({
       <AddDeviceDialog
         open={open}
         existingDeviceIds={existingDeviceIds}
+        existingDeviceBaseUrls={existingDeviceBaseUrls}
         onClose={() => setOpen(false)}
         onCreate={onCreate}
       />

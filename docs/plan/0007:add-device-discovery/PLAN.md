@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-12
-- Last: 2026-01-13
+- Last: 2026-01-14
 
 ## 背景 / 问题陈述
 
@@ -199,10 +199,10 @@
 
 ## 里程碑（Milestones）
 
-- [ ] M1: Web：落地 Add device modal（两列布局 + Manual add 不回归）
-- [ ] M2: Web：落地 Auto discovery UI（mDNS Desktop only 提示/列表/去重/带入 + IP scan 高级区块 UI）
-- [ ] M3: Web：补齐 unit/e2e（Modal/带入/去重/mDNS Desktop only + IP scan）
-- [ ] M4: 文档：更新 README（Desktop App 自动发现说明 + Web 手动添加指引）
+- [x] M1: Web：落地 Add device modal（两列布局 + Manual add 不回归）
+- [x] M2: Web：落地 Auto discovery UI（mDNS Desktop only 提示/列表/去重/带入 + IP scan 高级区块 UI）
+- [x] M3: Web：补齐 unit/e2e（Modal/带入/去重/mDNS Desktop only + IP scan）
+- [x] M4: 文档：更新 README（Desktop App 自动发现说明 + Web 手动添加指引）
 
 ## 与其他 Plan 的依赖与推进顺序（Dependencies / Order）
 

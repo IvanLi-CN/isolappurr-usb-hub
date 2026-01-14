@@ -117,10 +117,10 @@ export function PortCard({
         <div className="text-[16px] font-bold">{label}</div>
         <div
           className={[
-            "flex h-6 w-[60px] items-center justify-center rounded-full",
+            "flex h-6 min-w-[60px] items-center justify-center rounded-full px-3",
             badge.bg,
             badge.text,
-            "text-[12px] font-semibold",
+            "whitespace-nowrap text-[12px] font-semibold",
           ].join(" ")}
         >
           {telemetry.status === "not_inserted"

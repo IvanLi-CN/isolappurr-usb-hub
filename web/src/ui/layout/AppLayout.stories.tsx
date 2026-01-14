@@ -30,6 +30,7 @@ const meta: Meta<typeof AppLayout> = {
               <DeviceRuntimeProvider>
                 <AddDeviceUiProvider
                   existingDeviceIds={devices.map((d) => d.id)}
+                  existingDeviceBaseUrls={devices.map((d) => d.baseUrl)}
                   onCreate={() => {}}
                 >
                   <div className="h-screen" data-theme="isolapurr">
