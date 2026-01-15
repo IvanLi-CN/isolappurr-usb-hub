@@ -1,0 +1,16 @@
+{
+  "productName": "isolapurr-desktop",
+  "version": "0.1.0",
+  "identifier": "cc.isolapurr.desktop",
+  "build": {
+    "beforeBuildCommand": "bash -lc 'ROOT=$(git rev-parse --show-toplevel); (cd \"$ROOT/web\" && bun run build); rm -rf \"$ROOT/desktop/dist\"; cp -R \"$ROOT/web/dist\" \"$ROOT/desktop/dist\"'",
+    "beforeDevCommand": "",
+    "devUrl": "http://127.0.0.1:51200/",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "security": { "csp": null },
+    "windows": []
+  },
+  "bundle": {}
+}
