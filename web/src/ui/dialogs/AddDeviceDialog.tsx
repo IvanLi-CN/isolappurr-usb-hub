@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  agentFetch,
+  type DesktopAgent,
+  tryBootstrapDesktopAgent,
+} from "../../domain/desktopAgent";
 import { getDeviceInfo } from "../../domain/deviceApi";
 import type {
   AddDeviceInput,
@@ -12,6 +17,7 @@ import type { DiscoveredDevice } from "../../domain/discovery";
 import {
   applyDiscoveredDeviceToManualForm,
   createInitialDiscoverySnapshot,
+  mergeDiscoveredDevice,
   parseCidr,
   parseDiscoveredDeviceFromApiInfo,
   reduceDiscoverySnapshot,
@@ -58,6 +64,9 @@ export function AddDeviceDialog({
     }),
   );
 
+  const agentRef = useRef<DesktopAgent | null>(null);
+  const agentPollRef = useRef<number | null>(null);
+
   const scanRunIdRef = useRef(0);
 
   useEffect(() => {
@@ -82,9 +91,152 @@ export function AddDeviceDialog({
 
     scanRunIdRef.current += 1;
     dispatch({ type: "scan_cancelled" });
+    agentRef.current = null;
+    if (agentPollRef.current) {
+      window.clearInterval(agentPollRef.current);
+      agentPollRef.current = null;
+    }
     if (el.open) {
       el.close();
     }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    void (async () => {
+      const agent = await tryBootstrapDesktopAgent();
+      agentRef.current = agent;
+      if (!agent) {
+        dispatch({ type: "reset", status: "unavailable" });
+        return;
+      }
+
+      dispatch({ type: "reset", status: "scanning" });
+      await agentFetch(agent, "/api/v1/discovery/refresh", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+
+      if (agentPollRef.current) {
+        window.clearInterval(agentPollRef.current);
+        agentPollRef.current = null;
+      }
+
+      agentPollRef.current = window.setInterval(() => {
+        void (async () => {
+          const current = agentRef.current;
+          if (!current) {
+            return;
+          }
+          const res = await agentFetch(
+            current,
+            "/api/v1/discovery/snapshot",
+            {},
+          );
+          if (!res.ok) {
+            dispatch({
+              type: "set_error",
+              error:
+                res.status === 401 || res.status === 403
+                  ? "Desktop agent authorization failed."
+                  : "Desktop agent unavailable.",
+            });
+            return;
+          }
+          const value = (await res.json()) as unknown;
+          if (!value || typeof value !== "object") {
+            return;
+          }
+          const obj = value as Record<string, unknown>;
+          const devices = Array.isArray(obj.devices) ? obj.devices : null;
+          const mode =
+            obj.mode === "service" || obj.mode === "scan"
+              ? obj.mode
+              : "service";
+          const status =
+            obj.status === "idle" ||
+            obj.status === "scanning" ||
+            obj.status === "ready" ||
+            obj.status === "unavailable"
+              ? obj.status
+              : "unavailable";
+          const error = typeof obj.error === "string" ? obj.error : undefined;
+          const scan =
+            obj.scan && typeof obj.scan === "object"
+              ? (obj.scan as Record<string, unknown>)
+              : undefined;
+
+          const scanShape =
+            scan &&
+            typeof scan.cidr === "string" &&
+            typeof scan.done === "number" &&
+            typeof scan.total === "number"
+              ? { cidr: scan.cidr, done: scan.done, total: scan.total }
+              : undefined;
+
+          const parsedDevices: DiscoveredDevice[] = [];
+          if (devices) {
+            for (const item of devices) {
+              if (!item || typeof item !== "object") {
+                continue;
+              }
+              const d = item as Record<string, unknown>;
+              if (typeof d.baseUrl !== "string") {
+                continue;
+              }
+              parsedDevices.push({
+                baseUrl: d.baseUrl,
+                device_id:
+                  typeof d.device_id === "string" ? d.device_id : undefined,
+                hostname:
+                  typeof d.hostname === "string" ? d.hostname : undefined,
+                fqdn: typeof d.fqdn === "string" ? d.fqdn : undefined,
+                ipv4: typeof d.ipv4 === "string" ? d.ipv4 : undefined,
+                variant: typeof d.variant === "string" ? d.variant : undefined,
+                firmware:
+                  d.firmware &&
+                  typeof d.firmware === "object" &&
+                  typeof (d.firmware as Record<string, unknown>).name ===
+                    "string" &&
+                  typeof (d.firmware as Record<string, unknown>).version ===
+                    "string"
+                    ? {
+                        name: (d.firmware as Record<string, unknown>)
+                          .name as string,
+                        version: (d.firmware as Record<string, unknown>)
+                          .version as string,
+                      }
+                    : undefined,
+                last_seen_at:
+                  typeof d.last_seen_at === "string"
+                    ? d.last_seen_at
+                    : undefined,
+              });
+            }
+          }
+
+          // Preserve local reducer dedup semantics (device_id preferred).
+          let merged: DiscoveredDevice[] = [];
+          for (const d of parsedDevices) {
+            merged = mergeDiscoveredDevice(merged, d);
+          }
+
+          dispatch({
+            type: "set_snapshot",
+            snapshot: {
+              mode,
+              status,
+              devices: merged,
+              error,
+              scan: scanShape,
+            },
+          });
+        })();
+      }, 1000);
+    })();
   }, [open]);
 
   useEffect(() => {
@@ -200,7 +352,16 @@ export function AddDeviceDialog({
             existingDeviceBaseUrls={baseUrls}
             onRefresh={() => {
               scanRunIdRef.current += 1;
-              dispatch({ type: "reset", status: "unavailable" });
+              const agent = agentRef.current;
+              if (agent) {
+                dispatch({ type: "reset", status: "scanning" });
+                void agentFetch(agent, "/api/v1/discovery/refresh", {
+                  method: "POST",
+                  body: JSON.stringify({}),
+                });
+              } else {
+                dispatch({ type: "reset", status: "unavailable" });
+              }
             }}
             onToggleIpScan={(expanded) =>
               dispatch({
@@ -213,6 +374,20 @@ export function AddDeviceDialog({
               const parsed = parseCidr(cidr);
               if (!parsed.ok) {
                 dispatch({ type: "set_error", error: parsed.error });
+                return;
+              }
+
+              const agent = agentRef.current;
+              if (agent) {
+                dispatch({
+                  type: "start_scan",
+                  cidr: parsed.cidr,
+                  total: parsed.hosts.length,
+                });
+                void agentFetch(agent, "/api/v1/discovery/ip-scan", {
+                  method: "POST",
+                  body: JSON.stringify({ cidr: parsed.cidr }),
+                });
                 return;
               }
 
@@ -291,6 +466,13 @@ export function AddDeviceDialog({
             onCancelScan={() => {
               scanRunIdRef.current += 1;
               dispatch({ type: "scan_cancelled" });
+              const agent = agentRef.current;
+              if (agent) {
+                void agentFetch(agent, "/api/v1/discovery/cancel", {
+                  method: "POST",
+                  body: JSON.stringify({}),
+                });
+              }
             }}
             onSelect={(device: DiscoveredDevice) => {
               const next = applyDiscoveredDeviceToManualForm(
