@@ -59,4 +59,5 @@
 | 0006 | Web UI：多设备 Dashboard / 设备详情 / About + DaisyUI 主题规范 | 已完成 | `0006:web-ui-screens-and-theme/PLAN.md` | 2026-01-12 | branch: `feat/0006-web-ui-screens-and-theme` |
 | 0007 | Web UI：添加设备（自动发现 + 手动添加） | 已完成 | `0007:add-device-discovery/PLAN.md` | 2026-01-14 | mDNS 自动发现仅 Desktop App（0008）；Web 支持 IP scan（手动 CIDR）+ 手动添加 |
 | 0008 | Desktop：Tauri 客户端（局域网发现 + 本地网络能力） | 已完成 | `0008:tauri-desktop-client/PLAN.md` | 2026-01-14 | branch: `feat/0008-tauri-desktop-client` |
-| 0009 | Desktop：全平台支持（Windows/Linux） | 部分完成（2/5） | `0009:desktop-cross-platform-support/PLAN.md` | 2026-01-15 | Win/Linux: x86_64+arm64; Windows: msi + portable zip; Linux: deb + portable tar.gz; branch: `feat/0009-desktop-cross-platform-support` |
+| 0009 | Desktop：全平台支持（Windows/Linux） | 部分完成（2/5） | `0009:desktop-cross-platform-support/PLAN.md` | 2026-01-15 | Win/Linux: x86_64+arm64; Windows: msi + portable zip; Linux: deb + portable tar.gz; GitHub Actions CI 口径已冻结; branch: `feat/0009-desktop-cross-platform-support` |
+| 0010 | Web UI：界面布局与滚动问题修复（含 Add device 弹窗） | 待实现 | `0010:web-ui-layout-polish/PLAN.md` | 2026-01-15 | 关联：0006（UI 规范）、0007（Add device）、0008（Desktop 复用 Web UI） |
