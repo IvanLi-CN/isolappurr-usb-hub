@@ -41,6 +41,10 @@ jobs:
       - name: Checkout (windows, sparse)
         if: matrix.name == 'windows'
         uses: actions/checkout@v4
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "core.protectNTFS"
+          GIT_CONFIG_VALUE_0: "false"
         with:
           sparse-checkout: |
             desktop
