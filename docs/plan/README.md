@@ -61,3 +61,4 @@
 | 0008 | Desktop：Tauri 客户端（局域网发现 + 本地网络能力） | 已完成 | `0008:tauri-desktop-client/PLAN.md` | 2026-01-14 | branch: `feat/0008-tauri-desktop-client` |
 | 0009 | Desktop：全平台支持（Windows/Linux） | 待实现 | `0009:desktop-cross-platform-support/PLAN.md` | 2026-01-14 | Win/Linux: x86_64+arm64; Windows: msi + portable zip; Linux: deb + portable tar.gz; GitHub Actions CI 口径已冻结 |
 | 0010 | Web UI：界面布局与滚动问题修复（含 Add device 弹窗） | 待实现 | `0010:web-ui-layout-polish/PLAN.md` | 2026-01-15 | 关联：0006（UI 规范）、0007（Add device）、0008（Desktop 复用 Web UI） |
+| 0011 | Desktop：CI discovery 流程测试（跨平台 smoke） | 待实现 | `0011:desktop-discovery-ci-smoke/PLAN.md` | 2026-01-15 | 关联：0008（discovery 链路）、0009（CI 成本约束/跨平台）；PR gate 先 macOS，后续扩展 Win/Linux |
