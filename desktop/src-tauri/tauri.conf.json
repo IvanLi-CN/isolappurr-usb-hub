@@ -12,5 +12,7 @@
     "security": { "csp": null },
     "windows": []
   },
-  "bundle": {}
+  "bundle": {
+    "icon": ["icons/icon.ico", "icons/icon.png"]
+  }
 }
