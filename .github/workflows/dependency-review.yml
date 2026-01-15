@@ -16,3 +16,7 @@ jobs:
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
+        with:
+          # TODO: remove once Tauri's Linux backend updates its gtk-rs/glib stack to a patched version.
+          # This advisory currently only affects Linux-only dependencies (not part of the macOS first release).
+          allow-ghsas: GHSA-wrw7-89jp-8q8g
