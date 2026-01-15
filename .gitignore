@@ -17,4 +17,7 @@ logs/
 **/dist/
 **/.vite/
 
+# Tauri generated schemas (produced by `cargo tauri` in desktop app builds)
+desktop/src-tauri/gen/
+
 .DS_Store
