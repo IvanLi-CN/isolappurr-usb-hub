@@ -190,6 +190,7 @@
 
 - `docs/plan/0006:web-ui-screens-and-theme/PLAN.md`: 在 Add device 小节标注“Add device 交互已由 Plan #0007 扩展”（仅口径提醒；实现阶段再决定是否更新 #0006 mockup 文件）。
 - `README.md`: 在 Web 使用说明中补充“如何发现设备/何时需要手动添加”的简短指引（实现完成后）。
+- `docs/desktop/macos-first-run.md`: Desktop App 的首次运行放行（Gatekeeper）说明（Plan #0008 实现完成后）。
 
 ## 参考效果（References）
 

@@ -29,6 +29,10 @@ export type DiscoverySnapshot = {
 
 export type DiscoveryAction =
   | { type: "reset"; status: DiscoveryStatus; error?: string }
+  | {
+      type: "set_snapshot";
+      snapshot: Omit<DiscoverySnapshot, "ipScan">;
+    }
   | { type: "set_devices"; devices: DiscoveredDevice[] }
   | { type: "set_error"; error: string }
   | { type: "toggle_ip_scan"; expanded: boolean; expandedBy: "user" | "auto" }
@@ -97,6 +101,12 @@ export function reduceDiscoverySnapshot(
         devices: [],
         error: action.error,
         scan: undefined,
+      };
+    }
+    case "set_snapshot": {
+      return {
+        ...action.snapshot,
+        ipScan: snapshot.ipScan ?? { expanded: false },
       };
     }
     case "set_devices": {

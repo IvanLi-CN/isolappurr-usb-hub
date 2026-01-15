@@ -58,5 +58,5 @@
 | 0005 | 设备 HTTP API：双口遥测 + 端口操作（Web 对接） | 已完成 | `0005:device-http-api/PLAN.md` | 2026-01-14 | CORS allowlist: `https://isolapurr.ivanli.cc` |
 | 0006 | Web UI：多设备 Dashboard / 设备详情 / About + DaisyUI 主题规范 | 已完成 | `0006:web-ui-screens-and-theme/PLAN.md` | 2026-01-12 | branch: `feat/0006-web-ui-screens-and-theme` |
 | 0007 | Web UI：添加设备（自动发现 + 手动添加） | 已完成 | `0007:add-device-discovery/PLAN.md` | 2026-01-14 | mDNS 自动发现仅 Desktop App（0008）；Web 支持 IP scan（手动 CIDR）+ 手动添加 |
-| 0008 | Desktop：Tauri 客户端（局域网发现 + 本地网络能力） | 待实现 | `0008:tauri-desktop-client/PLAN.md` | 2026-01-14 | 首发 macOS；支撑：0007（Auto discovery）；CI（GitHub Actions）+ ad-hoc signing 口径已冻结 |
+| 0008 | Desktop：Tauri 客户端（局域网发现 + 本地网络能力） | 已完成 | `0008:tauri-desktop-client/PLAN.md` | 2026-01-14 | branch: `feat/0008-tauri-desktop-client` |
 | 0009 | Desktop：全平台支持（Windows/Linux） | 待实现 | `0009:desktop-cross-platform-support/PLAN.md` | 2026-01-14 | Win/Linux: x86_64+arm64; Windows: msi + portable zip; Linux: deb + portable tar.gz; GitHub Actions CI 口径已冻结 |

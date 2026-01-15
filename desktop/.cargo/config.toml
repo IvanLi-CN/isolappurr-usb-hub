@@ -1,0 +1,5 @@
+[build]
+# The repo root config pins the firmware target (`xtensa-esp32s3-none-elf`).
+# Desktop crates must compile for the host target instead.
+target = "aarch64-apple-darwin"
+
