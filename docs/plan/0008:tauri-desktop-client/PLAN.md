@@ -2,7 +2,7 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-13
 - Last: 2026-01-14
 
@@ -178,11 +178,11 @@
 
 ## 里程碑（Milestones）
 
-- [ ] M1: 冻结交付形态（CLI/Tray/GUI）、平台范围、分发/安全边界与 RPC 契约
-- [ ] M2: 搭建 Tauri app 骨架并复用 `web/` UI
-- [ ] M3: 实现 mDNS/DNS‑SD discovery（含 `GET /api/v1/info` 验证）并通过 IPC 输出
-- [ ] M4: 接入 Plan #0007 的 UI 状态机 + 基本冒烟验证 + 使用说明
-- [ ] M5: GitHub Actions CI：macOS build + 门槛校验（不上传大体积 artifacts）
+- [x] M1: 冻结交付形态（CLI/Tray/GUI）、平台范围、分发/安全边界与 RPC 契约
+- [x] M2: 搭建 Tauri app 骨架并复用 `web/` UI
+- [x] M3: 实现 mDNS/DNS‑SD discovery（含 `GET /api/v1/info` 验证）并通过 localhost API 输出（可选 RPC）
+- [x] M4: 接入 Plan #0007 的 UI 状态机 + 基本冒烟验证 + 使用说明
+- [x] M5: GitHub Actions CI：macOS build + 门槛校验（不上传大体积 artifacts）
 
 ## 与 Plan #0007 的关系（Dependency）
 

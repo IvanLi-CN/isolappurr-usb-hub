@@ -110,6 +110,14 @@ Plan `#0003` 引入了实验性网络能力（feature gate：`net_http`）：
 - Storybook（CI）：`cd web && bun run build-storybook && bun run test:storybook`
 - E2E（Playwright）：`cd web && bun run build && bun run test:e2e`
 
+### Desktop（Tauri / macOS 首发）
+
+Plan `#0008` 引入 Desktop App，用于在本机提供 mDNS/DNS‑SD 自动发现（浏览器 Web 环境不支持）。
+
+- 构建（生成 `.app`）：`cd desktop && cargo tauri build --ci --bundles app --no-sign`
+- macOS 首次运行放行（Gatekeeper）：见 `docs/desktop/macos-first-run.md`
+- 详细开发/CLI 用法：见 `desktop/README.md`
+
 ### GitHub Pages
 
 - 推送到 `main` 后，GitHub Actions 会构建 `web/` 并发布到 GitHub Pages（工作流：`.github/workflows/pages.yml`）。
