@@ -78,10 +78,8 @@ jobs:
         working-directory: desktop
 
       - name: Desktop build
-        run: cargo tauri build ${{ matrix.tauri_args }}
+        run: cargo tauri build --target ${{ matrix.tauri_target }} ${{ matrix.tauri_args }}
         working-directory: desktop
-        env:
-          CARGO_BUILD_TARGET: ${{ matrix.tauri_target }}
 
       - name: Ad-hoc sign and verify
         if: startsWith(matrix.os, 'macos')
