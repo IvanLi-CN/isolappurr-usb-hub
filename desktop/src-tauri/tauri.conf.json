@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "identifier": "cc.isolapurr.desktop",
   "build": {
-    "beforeBuildCommand": "bun run --cwd ../web build",
+    "beforeBuildCommand": "bun scripts/tauri-before-build.ts",
     "beforeDevCommand": "",
     "devUrl": "http://127.0.0.1:51200/",
     "frontendDist": "../dist"

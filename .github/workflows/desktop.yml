@@ -34,7 +34,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout (macos/linux)
+        if: matrix.name != 'windows'
+        uses: actions/checkout@v4
+
+      - name: Checkout (windows, sparse)
+        if: matrix.name == 'windows'
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            desktop
+            web
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
