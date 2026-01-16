@@ -16,6 +16,11 @@ const skipWebBuild = ["1", "true", "yes"].includes(
   (process.env.ISOLAPURR_SKIP_WEB_BUILD ?? "").toLowerCase(),
 );
 
+const webDistOverride = process.env.ISOLAPURR_WEB_DIST_DIR;
+const effectiveWebDistDir = webDistOverride
+  ? resolve(repoRoot, webDistOverride)
+  : webDistDir;
+
 function runOrThrow(cmd: string[], cwd: string) {
   const result = Bun.spawnSync({
     cmd,
@@ -29,20 +34,19 @@ function runOrThrow(cmd: string[], cwd: string) {
   }
 }
 
-if (skipWebBuild) {
-  console.log("[tauri] ISOLAPURR_SKIP_WEB_BUILD=1; using existing desktop/dist");
-  await access(desktopIndexHtml);
-  console.log("[tauri] OK:", desktopIndexHtml);
-  process.exit(0);
+if (webDistOverride) {
+  console.log("[tauri] Using prebuilt web dist:", effectiveWebDistDir);
+} else if (skipWebBuild) {
+  console.log("[tauri] ISOLAPURR_SKIP_WEB_BUILD=1; skipping web build");
+} else {
+  console.log("[tauri] Building web UI...");
+  runOrThrow(["bun", "run", "build"], webDir);
 }
-
-console.log("[tauri] Building web UI...");
-runOrThrow(["bun", "run", "build"], webDir);
 
 console.log("[tauri] Syncing desktop/dist from web/dist...");
 await rm(desktopDistDir, { recursive: true, force: true });
 await mkdir(desktopDistDir, { recursive: true });
-await cp(webDistDir, desktopDistDir, { recursive: true });
+await cp(effectiveWebDistDir, desktopDistDir, { recursive: true });
 await access(desktopIndexHtml);
 
 console.log("[tauri] OK:", desktopIndexHtml);

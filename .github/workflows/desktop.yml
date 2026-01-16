@@ -13,6 +13,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  web-build:
+    name: web build (dist)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - name: Web install
+        run: bun install --frozen-lockfile
+        working-directory: web
+
+      - name: Web build
+        run: bun run build
+        working-directory: web
+
+      - name: Upload web dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 7
+
   build:
     strategy:
       fail-fast: false
@@ -231,6 +260,7 @@ jobs:
 
   build-arm64:
     if: github.event.repository.private == false
+    needs: web-build
     strategy:
       fail-fast: false
       matrix:
@@ -272,6 +302,13 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: web
 
+      - name: Download web dist (prebuilt)
+        if: matrix.name == 'windows-arm64'
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
       - name: Linux deps (Tauri)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
@@ -297,6 +334,7 @@ jobs:
         working-directory: desktop
         env:
           ISOLAPURR_SKIP_WEB_BUILD: ${{ matrix.name == 'windows-arm64' && '1' || '' }}
+          ISOLAPURR_WEB_DIST_DIR: ${{ matrix.name == 'windows-arm64' && 'web/dist' || '' }}
 
       - name: Desktop smoke test (serve + health)
         if: matrix.name == 'linux-arm64'
