@@ -114,7 +114,7 @@ jobs:
 
       - name: Desktop discovery smoke tests
         run: cargo test
-        working-directory: desktop
+        working-directory: desktop/src-tauri
 
       - name: Desktop smoke test (serve + health)
         if: matrix.name == 'macos'
