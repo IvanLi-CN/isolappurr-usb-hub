@@ -154,7 +154,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(480px,1fr))] gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <PortCard
           portId="port_a"
           label={items.port_a.label}

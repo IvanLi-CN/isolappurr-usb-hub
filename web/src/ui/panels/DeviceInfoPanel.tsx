@@ -71,7 +71,7 @@ export function DeviceInfoPanel({ device }: { device: StoredDevice }) {
     <div className="flex flex-col gap-6" data-testid="device-info">
       <div className="iso-card h-[168px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
         <div className="text-[16px] font-bold leading-5">Identity</div>
-        <div className="mt-[14px] grid grid-cols-[minmax(0,564px)_minmax(0,1fr)] gap-6">
+        <div className="mt-[14px] grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,564px)_minmax(0,1fr)]">
           <div className="flex flex-col gap-[10px]">
             <div className="flex min-w-0 items-center leading-[14px]">
               <div className="w-[84px] text-[12px] font-semibold leading-[14px] text-[var(--muted)]">
@@ -128,7 +128,7 @@ export function DeviceInfoPanel({ device }: { device: StoredDevice }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(480px,1fr))] gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="iso-card h-[152px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
           <div className="text-[16px] font-bold leading-5">Firmware</div>
           <div className="mt-[14px] flex flex-col gap-[10px] leading-[14px]">

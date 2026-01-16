@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-15
-- Last: 2026-01-15
+- Last: 2026-01-16
 
 ## 背景 / 问题陈述
 
@@ -155,9 +155,9 @@
 
 - [x] M1: 写并冻结 UI 规范文档（visual + interaction）
 - [x] M2: UI audit：对照规范补齐并冻结 Issue Inventory（本计划）
-- [ ] M3: 修复 Add device 弹窗布局与滚动（对齐 Issue Inventory）
-- [ ] M4: 补齐 Storybook 用例与视口（含小高度场景）
-- [ ] M5: 完成回归验证（Web + Desktop 复用场景）
+- [x] M3: 修复 Add device 弹窗布局与滚动（对齐 Issue Inventory）
+- [x] M4: 补齐 Storybook 用例与视口（含小高度场景）
+- [x] M5: 完成回归验证（Web + Desktop 复用场景）
 
 ## 方案概述（Approach, high-level）
 

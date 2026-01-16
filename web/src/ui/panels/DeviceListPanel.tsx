@@ -18,11 +18,14 @@ export function DeviceListPanel({
   const { connectionState } = useDeviceRuntime();
 
   return (
-    <div className="flex flex-col px-6 pt-6" data-testid="device-list">
+    <div
+      className="flex h-full min-h-0 flex-col px-6 py-6"
+      data-testid="device-list"
+    >
       <div className="ml-2 flex items-center justify-between">
         <h2 className="text-[16px] font-bold">Devices</h2>
         <button
-          className="flex h-[34px] w-[78px] items-center justify-center rounded-[10px] bg-[var(--primary)] text-[12px] font-bold text-[var(--primary-text)]"
+          className="flex h-9 items-center justify-center rounded-[10px] bg-[var(--primary)] px-3 text-[12px] font-bold text-[var(--primary-text)]"
           type="button"
           onClick={openAddDevice}
         >
@@ -35,17 +38,19 @@ export function DeviceListPanel({
           No devices yet.
         </div>
       ) : (
-        <div className="mt-4 flex flex-col gap-[14px]">
-          {devices.map((d) => (
-            <DeviceCard
-              key={d.id}
-              device={d}
-              selected={d.id === selectedDeviceId}
-              status={connectionState(d.id)}
-              unselectedFill={selectedDeviceId ? "panel-2" : "panel"}
-              onSelect={onSelect}
-            />
-          ))}
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
+          <div className="flex flex-col gap-[14px] pr-1">
+            {devices.map((d) => (
+              <DeviceCard
+                key={d.id}
+                device={d}
+                selected={d.id === selectedDeviceId}
+                status={connectionState(d.id)}
+                unselectedFill={selectedDeviceId ? "panel-2" : "panel"}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
