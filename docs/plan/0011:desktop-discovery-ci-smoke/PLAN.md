@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-15
-- Last: 2026-01-15
+- Last: 2026-01-16
 
 ## 背景 / 问题陈述
 
@@ -129,10 +129,10 @@
 
 ## 里程碑（Milestones）
 
-- [ ] M1: 冻结 smoke 测试策略（注入形状、断言口径）与契约增量
-- [ ] M2: 补齐可注入 discovery 后端 + 假设备 HTTP server（loopback）+ 核心用例（1–3）
-- [ ] M3: 补齐“超时收敛/降级可诊断”用例（4–5）并稳定化日志
-- [ ] M4: GitHub Actions：PR gate 先 macOS；Win/Linux 构建可用后扩展到三平台 +（可选）非阻断真实 mDNS 补强工作流
+- [x] M1: 冻结 smoke 测试策略（注入形状、断言口径）与契约增量
+- [x] M2: 补齐可注入 discovery 后端 + 假设备 HTTP server（loopback）+ 核心用例（1–3）
+- [x] M3: 补齐“超时收敛/降级可诊断”用例（4–5）并稳定化日志
+- [x] M4: GitHub Actions：PR gate 先 macOS；Win/Linux 构建可用后扩展到三平台 +（可选）非阻断真实 mDNS 补强工作流
 
 ## 方案概述（Approach, high-level）
 
@@ -154,7 +154,7 @@
 
 ## 假设（Assumptions）
 
-- PR gate 分阶段：先在 macOS 上落地并作为 gate；待 Plan #0009 使 Win/Linux build 通过后，再扩展到 Win/Linux（同一套测试与断言）。
+- PR gate 覆盖 macOS/Windows/Linux（同一套测试与断言）。
 - headless 入口固定为 `cargo test`（确定性更强、依赖更少）。
 - “超时收敛”以测试用的 discovery 驱动函数返回为准：在超时内返回（允许空结果），不要求 agent snapshot 一定进入 `ready`。
 - 去重合并断言冻结到“字段级最小集合”：key 规则（`device_id` 优先，否则 `baseUrl`）+ 结果数量为 1 + `baseUrl/last_seen_at` 取最新一次通过 `GET /api/v1/info` 校验的候选。

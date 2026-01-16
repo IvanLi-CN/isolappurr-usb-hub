@@ -26,6 +26,13 @@ cargo tauri build --ci --bundles app --no-sign
 ./src-tauri/target/aarch64-apple-darwin/release/isolapurr-desktop --port 51234 serve
 ```
 
+Discovery smoke tests（Plan `#0011`）：
+
+```bash
+cd desktop
+cargo test
+```
+
 本机 ad-hoc signing（macOS）：
 
 ```bash
