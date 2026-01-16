@@ -10,7 +10,9 @@
 
 - 除非特别说明，所有接口：
   - Auth: `Authorization: Bearer <token>`
-  - Origin: 必须通过现有 `origin` allowlist（`127.0.0.1` / `localhost` / `::1` + 同端口）校验
+  - Origin:
+    - 若请求**不包含** `Origin` header：按通过处理（兼容非浏览器/非跨站请求）。
+    - 若请求**包含** `Origin` header：必须通过现有 `origin` allowlist（`127.0.0.1` / `localhost` / `::1` + 同端口）校验，否则拒绝（403）。
 
 ### Error envelope
 
