@@ -12,6 +12,10 @@ const webDistDir = resolve(webDir, "dist");
 const desktopDistDir = resolve(desktopDir, "dist");
 const desktopIndexHtml = resolve(desktopDistDir, "index.html");
 
+const skipWebBuild = ["1", "true", "yes"].includes(
+  (process.env.ISOLAPURR_SKIP_WEB_BUILD ?? "").toLowerCase(),
+);
+
 function runOrThrow(cmd: string[], cwd: string) {
   const result = Bun.spawnSync({
     cmd,
@@ -23,6 +27,13 @@ function runOrThrow(cmd: string[], cwd: string) {
   if (result.exitCode !== 0) {
     throw new Error(`Command failed (exit ${result.exitCode}): ${cmd.join(" ")}`);
   }
+}
+
+if (skipWebBuild) {
+  console.log("[tauri] ISOLAPURR_SKIP_WEB_BUILD=1; using existing desktop/dist");
+  await access(desktopIndexHtml);
+  console.log("[tauri] OK:", desktopIndexHtml);
+  process.exit(0);
 }
 
 console.log("[tauri] Building web UI...");
