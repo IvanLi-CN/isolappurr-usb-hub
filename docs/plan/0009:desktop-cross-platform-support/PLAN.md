@@ -88,6 +88,29 @@
     - 若有 Developer ID：优先补齐 Developer ID signing + notarization，减少用户摩擦
   - Linux：`deb` + portable `tar.gz`（已确认）；是否额外提供其它形式见开放问题
 
+## M1 需要主人确认的交付口径
+
+### 平台 / 架构
+
+- macOS：`aarch64-apple-darwin`（与 Plan #0008 一致）
+- Windows：`x86_64-pc-windows-msvc` 为主交付；`aarch64-pc-windows-msvc` 作为“代码可编译”的门槛（CI compile-check）
+- Linux：`x86_64-unknown-linux-gnu` 为主交付；`aarch64-unknown-linux-gnu` 作为“代码可编译”的门槛（CI compile-check）
+
+### 分发产物（bundles）
+
+- macOS：`.app`（CI：`--bundles app --no-sign`），必要时再补 `.dmg`
+- Windows：`.msi`（仅在 Windows runner 生成）+ portable `.zip`（仅包含可执行文件）
+- Linux：`.deb`（在 Ubuntu runner 生成）+ portable `.tar.gz`（仅包含可执行文件）
+
+### 签名 / 公证策略（默认）
+
+- macOS：
+  - CI：不签名（`--no-sign`），仅做 build + headless smoke
+  - Release（无 Developer ID）：ad-hoc signing（减少 “damaged/cannot be opened”）+ 首次运行放行指引（见 `docs/desktop/macos-first-run.md`）
+  - Release（有 Developer ID）：Developer ID signing + notarization（另开 plan / 单独里程碑）
+- Windows：默认不做代码签名（存在 SmartScreen 风险）；如后续要“对外可分发”体验更顺滑，再单独补齐代码签名策略
+- Linux：默认不做签名；按发行版差异提供安装/运行说明
+
 ## 验收标准（Acceptance Criteria）
 
 ### 构建与产物
