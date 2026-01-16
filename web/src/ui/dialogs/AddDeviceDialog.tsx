@@ -339,238 +339,248 @@ export function AddDeviceDialog({
         }
       }}
     >
-      <div className="modal-box iso-modal h-[680px] w-[1040px] max-w-[calc(100vw-32px)] rounded-[22px] border border-[var(--border)] bg-[var(--panel)] px-8 pb-7 pt-6">
+      <div className="modal-box iso-modal flex max-h-[calc(100vh-32px)] w-[1040px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--panel)] px-8 pb-7 pt-6">
         <div className="text-[24px] font-bold">Add device</div>
         <div className="mt-2 text-[14px] font-medium text-[var(--muted)]">
           Store locally; used for Dashboard and device pages.
         </div>
 
-        <div className="mt-6 grid min-h-0 flex-1 grid-cols-1 gap-6 min-[980px]:grid-cols-2">
-          <DeviceDiscoveryPanel
-            snapshot={snapshot}
-            existingDeviceIds={ids}
-            existingDeviceBaseUrls={baseUrls}
-            onRefresh={() => {
-              scanRunIdRef.current += 1;
-              const agent = agentRef.current;
-              if (agent) {
-                dispatch({ type: "reset", status: "scanning" });
-                void agentFetch(agent, "/api/v1/discovery/refresh", {
-                  method: "POST",
-                  body: JSON.stringify({}),
-                });
-              } else {
-                dispatch({ type: "reset", status: "unavailable" });
+        <div className="mt-6 flex min-h-0 flex-1 flex-col gap-6 min-[980px]:flex-row">
+          <div className="min-h-0 min-w-0 flex-1">
+            <DeviceDiscoveryPanel
+              snapshot={snapshot}
+              existingDeviceIds={ids}
+              existingDeviceBaseUrls={baseUrls}
+              onRefresh={() => {
+                scanRunIdRef.current += 1;
+                const agent = agentRef.current;
+                if (agent) {
+                  dispatch({ type: "reset", status: "scanning" });
+                  void agentFetch(agent, "/api/v1/discovery/refresh", {
+                    method: "POST",
+                    body: JSON.stringify({}),
+                  });
+                } else {
+                  dispatch({ type: "reset", status: "unavailable" });
+                }
+              }}
+              onToggleIpScan={(expanded) =>
+                dispatch({
+                  type: "toggle_ip_scan",
+                  expanded,
+                  expandedBy: "user",
+                })
               }
-            }}
-            onToggleIpScan={(expanded) =>
-              dispatch({
-                type: "toggle_ip_scan",
-                expanded,
-                expandedBy: "user",
-              })
-            }
-            onStartScan={(cidr) => {
-              const parsed = parseCidr(cidr);
-              if (!parsed.ok) {
-                dispatch({ type: "set_error", error: parsed.error });
-                return;
-              }
+              onStartScan={(cidr) => {
+                const parsed = parseCidr(cidr);
+                if (!parsed.ok) {
+                  dispatch({ type: "set_error", error: parsed.error });
+                  return;
+                }
 
-              const agent = agentRef.current;
-              if (agent) {
+                const agent = agentRef.current;
+                if (agent) {
+                  dispatch({
+                    type: "start_scan",
+                    cidr: parsed.cidr,
+                    total: parsed.hosts.length,
+                  });
+                  void agentFetch(agent, "/api/v1/discovery/ip-scan", {
+                    method: "POST",
+                    body: JSON.stringify({ cidr: parsed.cidr }),
+                  });
+                  return;
+                }
+
+                scanRunIdRef.current += 1;
+                const runId = scanRunIdRef.current;
+
                 dispatch({
                   type: "start_scan",
                   cidr: parsed.cidr,
                   total: parsed.hosts.length,
                 });
-                void agentFetch(agent, "/api/v1/discovery/ip-scan", {
-                  method: "POST",
-                  body: JSON.stringify({ cidr: parsed.cidr }),
-                });
-                return;
-              }
 
-              scanRunIdRef.current += 1;
-              const runId = scanRunIdRef.current;
+                const concurrency = 12;
+                let nextIndex = 0;
+                let done = 0;
+                let preflightBlocked = false;
 
-              dispatch({
-                type: "start_scan",
-                cidr: parsed.cidr,
-                total: parsed.hosts.length,
-              });
-
-              const concurrency = 12;
-              let nextIndex = 0;
-              let done = 0;
-              let preflightBlocked = false;
-
-              const worker = async () => {
-                for (;;) {
-                  if (scanRunIdRef.current !== runId) {
-                    return;
-                  }
-                  const idx = nextIndex;
-                  nextIndex += 1;
-                  if (idx >= parsed.hosts.length) {
-                    return;
-                  }
-
-                  const ip = parsed.hosts[idx];
-                  const baseUrlByIp = `http://${ip}`;
-                  const res = await getDeviceInfo(baseUrlByIp);
-                  if (scanRunIdRef.current !== runId) {
-                    return;
-                  }
-                  done += 1;
-                  dispatch({ type: "scan_progress", done });
-
-                  if (!res.ok) {
-                    if (res.error.kind === "preflight_blocked") {
-                      preflightBlocked = true;
+                const worker = async () => {
+                  for (;;) {
+                    if (scanRunIdRef.current !== runId) {
+                      return;
                     }
-                    continue;
-                  }
+                    const idx = nextIndex;
+                    nextIndex += 1;
+                    if (idx >= parsed.hosts.length) {
+                      return;
+                    }
 
-                  const nowIso = new Date().toISOString();
-                  const device = parseDiscoveredDeviceFromApiInfo(
-                    baseUrlByIp,
-                    res.value as unknown,
-                    ip,
-                    nowIso,
+                    const ip = parsed.hosts[idx];
+                    const baseUrlByIp = `http://${ip}`;
+                    const res = await getDeviceInfo(baseUrlByIp);
+                    if (scanRunIdRef.current !== runId) {
+                      return;
+                    }
+                    done += 1;
+                    dispatch({ type: "scan_progress", done });
+
+                    if (!res.ok) {
+                      if (res.error.kind === "preflight_blocked") {
+                        preflightBlocked = true;
+                      }
+                      continue;
+                    }
+
+                    const nowIso = new Date().toISOString();
+                    const device = parseDiscoveredDeviceFromApiInfo(
+                      baseUrlByIp,
+                      res.value as unknown,
+                      ip,
+                      nowIso,
+                    );
+                    if (!device) {
+                      continue;
+                    }
+                    dispatch({ type: "scan_device", device });
+                  }
+                };
+
+                void (async () => {
+                  await Promise.all(
+                    Array.from({ length: concurrency }, () => worker()),
                   );
-                  if (!device) {
-                    continue;
+                  if (scanRunIdRef.current !== runId) {
+                    return;
                   }
-                  dispatch({ type: "scan_device", device });
-                }
-              };
-
-              void (async () => {
-                await Promise.all(
-                  Array.from({ length: concurrency }, () => worker()),
-                );
-                if (scanRunIdRef.current !== runId) {
-                  return;
-                }
-                if (preflightBlocked) {
-                  dispatch({
-                    type: "set_error",
-                    error:
-                      "Local network access blocked (PNA/CORS preflight). Try allowing private network access, or use Manual add.",
+                  if (preflightBlocked) {
+                    dispatch({
+                      type: "set_error",
+                      error:
+                        "Local network access blocked (PNA/CORS preflight). Try allowing private network access, or use Manual add.",
+                    });
+                  }
+                  dispatch({ type: "scan_done" });
+                })();
+              }}
+              onCancelScan={() => {
+                scanRunIdRef.current += 1;
+                dispatch({ type: "scan_cancelled" });
+                const agent = agentRef.current;
+                if (agent) {
+                  void agentFetch(agent, "/api/v1/discovery/cancel", {
+                    method: "POST",
+                    body: JSON.stringify({}),
                   });
                 }
-                dispatch({ type: "scan_done" });
-              })();
-            }}
-            onCancelScan={() => {
-              scanRunIdRef.current += 1;
-              dispatch({ type: "scan_cancelled" });
-              const agent = agentRef.current;
-              if (agent) {
-                void agentFetch(agent, "/api/v1/discovery/cancel", {
-                  method: "POST",
-                  body: JSON.stringify({}),
-                });
-              }
-            }}
-            onSelect={(device: DiscoveredDevice) => {
-              const next = applyDiscoveredDeviceToManualForm(
-                { name, baseUrl, id },
-                device,
-              );
-              setName(next.name);
-              setBaseUrl(next.baseUrl);
-              setId(next.id);
-              setErrors({});
-            }}
-          />
+              }}
+              onSelect={(device: DiscoveredDevice) => {
+                const next = applyDiscoveredDeviceToManualForm(
+                  { name, baseUrl, id },
+                  device,
+                );
+                setName(next.name);
+                setBaseUrl(next.baseUrl);
+                setId(next.id);
+                setErrors({});
+              }}
+            />
+          </div>
 
-          <div className="flex h-full min-h-0 flex-col">
-            <div>
-              <div className="text-[16px] font-bold">Manual add</div>
-              <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
-                Always available; requires Name and Base URL.
-              </div>
-            </div>
-
-            <div className="mt-6 flex min-h-0 flex-1 flex-col gap-5">
+          <div className="min-h-0 min-w-0 flex-1">
+            <div className="flex h-full min-h-0 flex-col">
               <div>
-                <div className="text-[12px] font-semibold text-[var(--muted)]">
-                  Name
-                </div>
-                <input
-                  ref={nameRef}
-                  className={[fieldBase, errors.name ? fieldError : ""].join(
-                    " ",
-                  )}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Desk Hub"
-                  autoComplete="off"
-                />
-                {errors.name ? (
-                  <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
-                    {errors.name}
-                  </div>
-                ) : null}
-              </div>
-
-              <div>
-                <div className="text-[12px] font-semibold text-[var(--muted)]">
-                  Base URL
-                </div>
-                <input
-                  className={[
-                    fieldBase,
-                    "font-mono",
-                    errors.baseUrl ? fieldError : "",
-                  ].join(" ")}
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="http://hub-a.local"
-                  autoComplete="off"
-                />
-                {errors.baseUrl ? (
-                  <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
-                    {errors.baseUrl}
-                  </div>
-                ) : null}
-                <div className="mt-4 text-[12px] font-semibold text-[var(--muted)]">
-                  Examples: http://&lt;hostname&gt;.local / http://192.168.1.42
+                <div className="text-[16px] font-bold">Manual add</div>
+                <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
+                  Always available; requires Name and Base URL.
                 </div>
               </div>
 
-              <div>
-                <div className="text-[12px] font-semibold text-[var(--muted)]">
-                  ID (optional)
-                </div>
-                <input
-                  className={[fieldBase, errors.id ? fieldError : ""].join(" ")}
-                  value={id}
-                  onChange={(e) => setId(e.target.value)}
-                  placeholder="auto-generated if empty"
-                  autoComplete="off"
-                />
-                {errors.id ? (
-                  <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
-                    {errors.id}
+              <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+                <div className="flex flex-col gap-5 pr-1">
+                  <div>
+                    <div className="text-[12px] font-semibold text-[var(--muted)]">
+                      Name
+                    </div>
+                    <input
+                      ref={nameRef}
+                      className={[
+                        fieldBase,
+                        errors.name ? fieldError : "",
+                      ].join(" ")}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Desk Hub"
+                      autoComplete="off"
+                    />
+                    {errors.name ? (
+                      <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
+                        {errors.name}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
-            </div>
 
-            <div className="mt-6 flex items-center justify-end gap-[14px]">
-              <button className="btn" type="button" onClick={onClose}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                type="button"
-                onClick={submit}
-              >
-                Create
-              </button>
+                  <div>
+                    <div className="text-[12px] font-semibold text-[var(--muted)]">
+                      Base URL
+                    </div>
+                    <input
+                      className={[
+                        fieldBase,
+                        "font-mono",
+                        errors.baseUrl ? fieldError : "",
+                      ].join(" ")}
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder="http://hub-a.local"
+                      autoComplete="off"
+                    />
+                    {errors.baseUrl ? (
+                      <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
+                        {errors.baseUrl}
+                      </div>
+                    ) : null}
+                    <div className="mt-4 text-[12px] font-semibold text-[var(--muted)]">
+                      Examples: http://&lt;hostname&gt;.local /
+                      http://192.168.1.42
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[12px] font-semibold text-[var(--muted)]">
+                      ID (optional)
+                    </div>
+                    <input
+                      className={[fieldBase, errors.id ? fieldError : ""].join(
+                        " ",
+                      )}
+                      value={id}
+                      onChange={(e) => setId(e.target.value)}
+                      placeholder="auto-generated if empty"
+                      autoComplete="off"
+                    />
+                    {errors.id ? (
+                      <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
+                        {errors.id}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-[14px]">
+                <button className="btn" type="button" onClick={onClose}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={submit}
+                >
+                  Create
+                </button>
+              </div>
             </div>
           </div>
         </div>

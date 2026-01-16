@@ -34,7 +34,7 @@ export function DeviceInfoPage() {
     <div className="flex flex-col" data-testid="device-hardware-page">
       <div>
         <div className="text-[24px] font-bold">{device.name}</div>
-        <div className="mt-2 font-mono text-[12px] font-semibold text-[var(--muted)]">
+        <div className="mt-2 truncate font-mono text-[12px] font-semibold text-[var(--muted)]">
           id: {shortId} • {device.baseUrl}
         </div>
       </div>

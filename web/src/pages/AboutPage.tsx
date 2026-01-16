@@ -27,7 +27,7 @@ export function AboutPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(480px,1fr))] items-start gap-6">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
           <div className="text-[16px] font-bold leading-5">Build</div>
 
@@ -116,7 +116,7 @@ export function AboutPage() {
         </div>
       </div>
 
-      <div className="iso-card h-[288px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+      <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
         <div className="text-[16px] font-bold">Quick usage</div>
 
         <div className="mt-4 text-[14px] font-medium">
