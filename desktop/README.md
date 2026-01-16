@@ -20,6 +20,12 @@ cd desktop
 cargo tauri build --ci --bundles app --no-sign
 ```
 
+最小冒烟（CLI 启动 agent + health 检查）：
+
+```bash
+./src-tauri/target/aarch64-apple-darwin/release/isolapurr-desktop --port 51234 serve
+```
+
 本机 ad-hoc signing（macOS）：
 
 ```bash
@@ -45,3 +51,7 @@ isolapurr-desktop
 - `serve`：仅启动 localhost agent（进程保持运行）
 - `discover --json`：一次性发现并输出
 
+## Cross-platform notes (Plan `#0009`)
+
+- CI builds: `.github/workflows/desktop.yml` builds Windows (`.msi`) + Linux (`.deb`) + macOS (`.app`) and runs a headless `serve + /api/v1/health` smoke check.
+- arm64: CI does a compile-check for Windows/Linux arm64 targets (no bundling).

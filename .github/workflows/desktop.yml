@@ -73,12 +73,149 @@ jobs:
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Add Rust target (arm64)
+        if: matrix.name == 'windows'
+        run: rustup target add aarch64-pc-windows-msvc
+
+      - name: Add Rust target (arm64)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: rustup target add aarch64-unknown-linux-gnu
+
       - name: Install tauri-cli
         run: cargo install tauri-cli --version 2.9.6 --locked
         working-directory: desktop
 
+      - name: Desktop compile-check (arm64)
+        if: matrix.name == 'windows'
+        run: cargo check --locked --target aarch64-pc-windows-msvc
+        working-directory: desktop/src-tauri
+
+      - name: Desktop compile-check (arm64)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: cargo check --locked --target aarch64-unknown-linux-gnu
+        working-directory: desktop/src-tauri
+
       - name: Desktop build
         run: cargo tauri build --target ${{ matrix.tauri_target }} ${{ matrix.tauri_args }}
+        working-directory: desktop
+
+      - name: Desktop smoke test (serve + health)
+        if: matrix.name == 'macos'
+        run: |
+          BIN="src-tauri/target/aarch64-apple-darwin/release/isolapurr-desktop"
+          PORT=51234
+          "$BIN" --port "$PORT" serve >/tmp/isolapurr-desktop.log 2>&1 &
+          PID=$!
+
+          for i in {1..50}; do
+            if curl -sf "http://127.0.0.1:${PORT}/api/v1/bootstrap" >/tmp/bootstrap.json; then
+              break
+            fi
+            sleep 0.2
+          done
+
+          if [ ! -s /tmp/bootstrap.json ]; then
+            cat /tmp/isolapurr-desktop.log || true
+            echo "bootstrap did not respond"
+            exit 1
+          fi
+
+          TOKEN="$(python3 -c 'import json;print(json.load(open("/tmp/bootstrap.json"))["token"])')"
+          curl -sf \
+            -H "Origin: http://127.0.0.1:${PORT}" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "http://127.0.0.1:${PORT}/api/v1/health" >/dev/null
+
+          kill -INT "$PID"
+          wait "$PID" || true
+        working-directory: desktop
+
+      - name: Desktop smoke test (serve + health)
+        if: matrix.name == 'linux'
+        run: |
+          BIN="src-tauri/target/x86_64-unknown-linux-gnu/release/isolapurr-desktop"
+          PORT=51234
+          "$BIN" --port "$PORT" serve >/tmp/isolapurr-desktop.log 2>&1 &
+          PID=$!
+
+          for i in {1..50}; do
+            if curl -sf "http://127.0.0.1:${PORT}/api/v1/bootstrap" >/tmp/bootstrap.json; then
+              break
+            fi
+            sleep 0.2
+          done
+
+          if [ ! -s /tmp/bootstrap.json ]; then
+            cat /tmp/isolapurr-desktop.log || true
+            echo "bootstrap did not respond"
+            exit 1
+          fi
+
+          TOKEN="$(python3 -c 'import json;print(json.load(open("/tmp/bootstrap.json"))["token"])')"
+          curl -sf \
+            -H "Origin: http://127.0.0.1:${PORT}" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "http://127.0.0.1:${PORT}/api/v1/health" >/dev/null
+
+          kill -INT "$PID"
+          wait "$PID" || true
+        working-directory: desktop
+
+      - name: Desktop smoke test (serve + health)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          $port = 51234
+          $bin = "src-tauri/target/x86_64-pc-windows-msvc/release/isolapurr-desktop.exe"
+          if (!(Test-Path $bin)) { throw "Missing binary: $bin" }
+
+          $p = Start-Process -FilePath $bin -ArgumentList @("--port", "$port", "serve") -PassThru -NoNewWindow
+          try {
+            $bootstrap = $null
+            for ($i = 0; $i -lt 50; $i++) {
+              try {
+                $bootstrap = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/v1/bootstrap" -TimeoutSec 1
+                break
+              } catch {
+                Start-Sleep -Milliseconds 200
+              }
+            }
+            if ($null -eq $bootstrap) { throw "bootstrap did not respond" }
+
+            $token = $bootstrap.token
+            $headers = @{
+              Origin = "http://127.0.0.1:$port"
+              Authorization = "Bearer $token"
+            }
+
+            $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/v1/health" -Headers $headers -TimeoutSec 2
+            if ($health.ok -ne $true) { throw "health check failed" }
+          } finally {
+            if (!$p.HasExited) { Stop-Process -Id $p.Id -Force }
+          }
+        working-directory: desktop
+
+      - name: Create portable bundle (zip)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          $bin = "src-tauri/target/x86_64-pc-windows-msvc/release/isolapurr-desktop.exe"
+          $outDir = "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/portable"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $zip = Join-Path $outDir "isolapurr-desktop-portable-x86_64.zip"
+          if (Test-Path $zip) { Remove-Item -Force $zip }
+          Compress-Archive -Path $bin -DestinationPath $zip
+          Get-Item $zip | Format-List Name,Length,FullName
+        working-directory: desktop
+
+      - name: Create portable bundle (tar.gz)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          BIN="src-tauri/target/x86_64-unknown-linux-gnu/release/isolapurr-desktop"
+          OUT_DIR="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/portable"
+          mkdir -p "$OUT_DIR"
+          tar -C "$(dirname "$BIN")" -czf "$OUT_DIR/isolapurr-desktop-portable-x86_64.tar.gz" "$(basename "$BIN")"
+          ls -lh "$OUT_DIR/isolapurr-desktop-portable-x86_64.tar.gz"
         working-directory: desktop
 
       - name: Ad-hoc sign and verify
