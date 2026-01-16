@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "identifier": "cc.isolapurr.desktop",
   "build": {
-    "beforeBuildCommand": "bash -lc 'ROOT=$(git rev-parse --show-toplevel); (cd \"$ROOT/web\" && bun run build); rm -rf \"$ROOT/desktop/dist\"; cp -R \"$ROOT/web/dist\" \"$ROOT/desktop/dist\"'",
+    "beforeBuildCommand": "bun scripts/tauri-before-build.ts",
     "beforeDevCommand": "",
     "devUrl": "http://127.0.0.1:51200/",
     "frontendDist": "../dist"
@@ -12,5 +12,13 @@
     "security": { "csp": null },
     "windows": []
   },
-  "bundle": {}
+  "bundle": {
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
 }

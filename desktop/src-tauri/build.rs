@@ -12,14 +12,28 @@ fn ensure_desktop_dist() {
     let manifest_dir = PathBuf::from(manifest_dir);
 
     let desktop_dist = manifest_dir.join("../dist");
-    if desktop_dist.join("index.html").exists() {
+    let desktop_index = desktop_dist.join("index.html");
+
+    // Best-effort: if `web/dist` exists (built by `bun run --cwd web build`),
+    // sync it into `desktop/dist` so the app can embed and serve the UI.
+    let web_dist = manifest_dir.join("../../web/dist");
+    let web_index = web_dist.join("index.html");
+    if !web_index.exists() {
         return;
     }
 
-    // Best-effort: if `web/dist` exists (built by `bun --cwd web run build`), copy it into `desktop/dist`
-    // so `cargo check` / `cargo build` works without requiring `cargo tauri`.
-    let web_dist = manifest_dir.join("../../web/dist");
-    if !web_dist.join("index.html").exists() {
+    let should_sync = if !desktop_index.exists() {
+        true
+    } else {
+        let web_mtime = std::fs::metadata(&web_index).and_then(|m| m.modified());
+        let desktop_mtime = std::fs::metadata(&desktop_index).and_then(|m| m.modified());
+        match (web_mtime, desktop_mtime) {
+            (Ok(web_mtime), Ok(desktop_mtime)) => web_mtime > desktop_mtime,
+            _ => true,
+        }
+    };
+
+    if !should_sync {
         return;
     }
 

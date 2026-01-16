@@ -155,7 +155,8 @@ struct AppState {
 struct DiscoveryController {
     snapshot: RwLock<DiscoverySnapshot>,
     ip_scan_cancel: RwLock<CancellationToken>,
-    mdns: ServiceDaemon,
+    mdns: Option<ServiceDaemon>,
+    mdns_error: Option<String>,
     http: reqwest::Client,
 }
 
@@ -394,13 +395,16 @@ async fn start_agent_server(
 
     persist_last_port_if_needed(port_override, port)?;
 
-    let mdns = ServiceDaemon::new().context("mdns daemon")?;
+    let (mdns, mdns_error) = match ServiceDaemon::new() {
+        Ok(mdns) => (Some(mdns), None),
+        Err(err) => (None, Some(mdns_unavailable_message(&format!("{err}")))),
+    };
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(800))
         .build()
         .context("http client")?;
 
-    let discovery = Arc::new(DiscoveryController::new(mdns, http));
+    let discovery = Arc::new(DiscoveryController::new(mdns, mdns_error, http));
 
     let state = AppState {
         token: token.clone(),
@@ -409,7 +413,7 @@ async fn start_agent_server(
         discovery: discovery.clone(),
     };
 
-    discovery.start_mdns_background().await?;
+    discovery.start_mdns_background().await;
 
     let router = Router::new()
         .route("/api/v1/bootstrap", get(api_bootstrap))
@@ -437,6 +441,29 @@ async fn start_agent_server(
         agent_base_url,
         shutdown,
     })
+}
+
+fn mdns_unavailable_message(details: &str) -> String {
+    let hint = if cfg!(target_os = "windows") {
+        "On Windows: ensure your network is set to Private; allow this app through Windows Defender Firewall; disable VPN/virtual adapters."
+    } else if cfg!(target_os = "linux") {
+        "On Linux: ensure avahi-daemon is running; firewall allows multicast (UDP 5353); disable VPN if needed."
+    } else if cfg!(target_os = "macos") {
+        "On macOS: ensure local network access is allowed; disable VPN if needed."
+    } else {
+        "Check firewall/VPN settings."
+    };
+
+    let details = details.trim();
+    if details.is_empty() {
+        format!(
+            "mDNS/DNS-SD discovery is unavailable. {hint} You can still use IP scan (advanced) or Manual add."
+        )
+    } else {
+        format!(
+            "mDNS/DNS-SD discovery is unavailable ({details}). {hint} You can still use IP scan (advanced) or Manual add."
+        )
+    }
 }
 
 async fn bind_agent_port(port_override: Option<u16>) -> anyhow::Result<(TcpListener, u16)> {
@@ -710,26 +737,41 @@ async fn ui_asset(Path(path): Path<String>) -> Response {
 }
 
 impl DiscoveryController {
-    fn new(mdns: ServiceDaemon, http: reqwest::Client) -> Self {
+    fn new(mdns: Option<ServiceDaemon>, mdns_error: Option<String>, http: reqwest::Client) -> Self {
         Self {
             snapshot: RwLock::new(DiscoverySnapshot {
                 mode: DiscoveryMode::Service,
-                status: DiscoveryStatus::Unavailable,
+                status: if mdns.is_some() {
+                    DiscoveryStatus::Scanning
+                } else {
+                    DiscoveryStatus::Idle
+                },
                 devices: Vec::new(),
-                error: None,
+                error: mdns_error.clone(),
                 scan: None,
             }),
             ip_scan_cancel: RwLock::new(CancellationToken::new()),
             mdns,
+            mdns_error,
             http,
         }
     }
 
-    async fn start_mdns_background(self: &Arc<Self>) -> anyhow::Result<()> {
-        let receiver = self
-            .mdns
-            .browse("_http._tcp.local.")
-            .context("mdns browse _http._tcp.local.")?;
+    async fn start_mdns_background(self: &Arc<Self>) {
+        let Some(mdns) = self.mdns.as_ref() else {
+            return;
+        };
+
+        let receiver = match mdns.browse("_http._tcp.local.") {
+            Ok(receiver) => receiver,
+            Err(err) => {
+                let message = mdns_unavailable_message(&format!("browse failed: {err}"));
+                let mut snapshot = self.snapshot.write().await;
+                snapshot.status = DiscoveryStatus::Idle;
+                snapshot.error = Some(message);
+                return;
+            }
+        };
 
         let this = Arc::clone(self);
         tokio::spawn(async move {
@@ -743,8 +785,6 @@ impl DiscoveryController {
                 }
             }
         });
-
-        Ok(())
     }
 
     async fn handle_mdns_event(&self, event: ServiceEvent) -> anyhow::Result<()> {
@@ -813,10 +853,7 @@ impl DiscoveryController {
 
     async fn merge_device(&self, device: DiscoveredDevice) {
         let mut snapshot = self.snapshot.write().await;
-        if snapshot.status == DiscoveryStatus::Unavailable {
-            snapshot.status = DiscoveryStatus::Scanning;
-            snapshot.error = None;
-        }
+        snapshot.error = None;
 
         let key = device_dedup_key(&device);
         let mut map: HashMap<String, DiscoveredDevice> = snapshot
@@ -848,6 +885,19 @@ impl DiscoveryController {
     }
 
     async fn refresh_services(&self) -> anyhow::Result<()> {
+        if self.mdns.is_none() {
+            let message = self
+                .mdns_error
+                .clone()
+                .unwrap_or_else(|| mdns_unavailable_message("mdns unavailable"));
+            let mut snapshot = self.snapshot.write().await;
+            snapshot.mode = DiscoveryMode::Service;
+            snapshot.status = DiscoveryStatus::Idle;
+            snapshot.error = Some(message);
+            snapshot.scan = None;
+            return Err(anyhow!("mdns unavailable"));
+        }
+
         let mut snapshot = self.snapshot.write().await;
         snapshot.mode = DiscoveryMode::Service;
         snapshot.status = DiscoveryStatus::Scanning;

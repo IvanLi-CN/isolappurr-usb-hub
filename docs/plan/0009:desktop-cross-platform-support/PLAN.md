@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 部分完成（2/5）
 - Created: 2026-01-13
-- Last: 2026-01-14
+- Last: 2026-01-15
 
 ## 背景 / 问题陈述
 
@@ -115,8 +115,8 @@
 - [ ] M1: 冻结平台/架构与分发策略（打包格式、签名、公证）
 - [ ] M2: Windows：可构建 + GUI/HTTP server/CLI 基础可运行
 - [ ] M3: Linux：可构建 + GUI/HTTP server/CLI 基础可运行
-- [ ] M4: 跨平台 discovery 稳定性与诊断口径补齐（多网卡/防火墙/权限）
-- [ ] M5: GitHub Actions CI：全平台构建与最小冒烟门槛（不上传大体积 artifacts）
+- [x] M4: 跨平台 discovery 稳定性与诊断口径补齐（多网卡/防火墙/权限）
+- [x] M5: GitHub Actions CI：全平台构建与最小冒烟门槛（不上传大体积 artifacts）
 
 ## 开放问题（需要主人决策）
 
