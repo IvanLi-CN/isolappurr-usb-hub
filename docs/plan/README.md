@@ -63,3 +63,4 @@
 | 0010 | Web UI：界面布局与滚动问题修复（含 Add device 弹窗） | 已完成 | `0010:web-ui-layout-polish/PLAN.md` | 2026-01-16 | 关联：0006（UI 规范）、0007（Add device）、0008（Desktop 复用 Web UI） |
 | 0011 | Desktop：CI discovery 流程测试（跨平台 smoke） | 待实现 | `0011:desktop-discovery-ci-smoke/PLAN.md` | 2026-01-15 | 关联：0008（discovery 链路）、0009（CI 成本约束/跨平台）；PR gate 先 macOS，后续扩展 Win/Linux |
 | 0012 | Desktop：本地持久化记忆（不依赖浏览器存储） | 待实现 | `0012:desktop-persistent-storage/PLAN.md` | 2026-01-16 | 关联：0008（Desktop local agent）、0004/0006（localStorage 既有格式）、0009（跨平台目录/权限）、0010（UI 交互不变） |
+| 0013 | Desktop：IP scan 输入默认本机局域网信息 | 待实现 | `0013:ip-scan-lan-autofill/PLAN.md` | 2026-01-16 | 关联：0007（Add device）、0008（Desktop discovery） |

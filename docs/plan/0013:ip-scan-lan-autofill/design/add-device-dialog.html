@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Add device dialog — hi-fi</title>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --panel: #ffffff;
+        --panel-2: #f8fafc;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #5c6ac4;
+        --primary-2: #6b78d6;
+        --primary-text: #ffffff;
+        --error: #dc2626;
+        --shadow: rgba(17, 24, 39, 0.08);
+        --overlay: rgba(15, 23, 42, 0.32);
+        --card-filter: drop-shadow(0 8px 18px var(--shadow));
+        --modal-filter: drop-shadow(0 10px 24px var(--shadow));
+        --popover-filter: drop-shadow(0 8px 18px var(--shadow));
+        --badge-success-bg: rgba(22, 163, 74, 0.12);
+        --badge-success-text: #16a34a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue",
+          Arial, "Noto Sans", "Liberation Sans", sans-serif;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      .screen {
+        position: relative;
+        width: 1280px;
+        height: 820px;
+        margin: 0;
+        background: var(--bg);
+      }
+
+      .backdrop {
+        position: absolute;
+        inset: 0;
+        background: var(--overlay);
+      }
+
+      .modal {
+        position: absolute;
+        inset: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .modal-box {
+        width: 1040px;
+        max-width: 1040px;
+        border-radius: 22px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        padding: 24px 32px 28px;
+        filter: var(--modal-filter);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .title {
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .subtitle {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--muted);
+      }
+
+      .columns {
+        margin-top: 24px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        align-items: stretch;
+      }
+
+      .col {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .section-title {
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .section-help {
+        margin-top: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      .btn {
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: transparent;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .btn-primary {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: var(--primary-text);
+      }
+
+      .btn-sm {
+        height: 32px;
+        padding: 0 12px;
+        font-size: 12px;
+      }
+
+      .input {
+        height: 40px;
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        padding: 0 14px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+      }
+
+      .input::placeholder {
+        color: var(--muted);
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 14px;
+        padding: 12px 16px;
+      }
+
+      .card-muted {
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        border-radius: 14px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: auto;
+      }
+
+      .list {
+        margin-top: 16px;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+      }
+
+      .list-item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+      }
+
+      .list-item + .list-item {
+        border-top: 1px solid var(--border);
+      }
+
+      .device-title {
+        font-size: 13px;
+        font-weight: 700;
+        min-width: 0;
+      }
+
+      .device-sub {
+        margin-top: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        background: var(--badge-success-bg);
+        color: var(--badge-success-text);
+      }
+
+      .ip-scan {
+        margin-top: 16px;
+      }
+
+      .ip-scan .card {
+        overflow: visible;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .ip-input {
+        flex: 1;
+        height: 40px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        padding: 0 14px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+      }
+
+      .ip-input-wrap {
+        position: relative;
+        flex: 1;
+      }
+
+      .dropdown {
+        position: absolute;
+        top: 46px;
+        left: 0;
+        right: 0;
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        filter: var(--popover-filter);
+        max-height: 180px;
+        overflow: auto;
+        z-index: 2;
+      }
+
+      .drop-item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 10px;
+      }
+
+      .drop-item.active {
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+      }
+
+      .drop-title {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .drop-meta {
+        margin-top: 2px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      .drop-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        background: var(--panel-2);
+      }
+
+      .manual-field {
+        height: 52px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        padding: 0 20px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text);
+      }
+
+      .field-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      .field-group {
+        margin-top: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .manual-body {
+        margin-top: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .manual-footer {
+        margin-top: 18px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="screen" role="group" aria-label="add-device-dialog">
+      <div class="backdrop"></div>
+      <div class="modal">
+        <div class="modal-box">
+          <div class="title">Add device</div>
+          <div class="subtitle">Store locally; used for Dashboard and device pages.</div>
+
+          <div class="columns">
+            <div class="col">
+              <div class="row" style="justify-content: space-between;">
+                <div>
+                  <div class="section-title">Auto discovery</div>
+                  <div class="section-help">
+                    Find hubs on your local network; pick one to fill Manual add.
+                  </div>
+                </div>
+                <button class="btn btn-sm" type="button">Refresh</button>
+              </div>
+
+              <div class="field-group" style="margin-top: 12px;">
+                <input class="input" placeholder="Filter by hostname / device_id" />
+              </div>
+
+              <div class="list">
+                <div class="card-muted">
+                  <div class="list-item">
+                    <div>
+                      <div class="row" style="gap: 8px;">
+                        <div class="device-title">isolapurr-hub.local</div>
+                        <div class="badge">Added</div>
+                      </div>
+                      <div class="device-sub">ipv4: 192.168.1.23 • device_id: hub-a</div>
+                      <div class="device-sub" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;">
+                        baseUrl: http://hub-a.local
+                      </div>
+                      <div class="device-sub">fw: 0.2.7</div>
+                    </div>
+                    <button class="btn btn-sm" type="button" disabled>Use</button>
+                  </div>
+                  <div class="list-item">
+                    <div>
+                      <div class="device-title">isolapurr-hub-2.local</div>
+                      <div class="device-sub">ipv4: 192.168.1.42 • device_id: hub-b</div>
+                      <div class="device-sub" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;">
+                        baseUrl: http://192.168.1.42
+                      </div>
+                      <div class="device-sub">fw: 0.2.7</div>
+                    </div>
+                    <button class="btn btn-sm" type="button">Use</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ip-scan">
+                <div class="card">
+                  <div class="row" style="justify-content: space-between;">
+                    <div class="device-title">IP scan (advanced)</div>
+                    <div class="row" style="gap: 6px; font-size: 12px; font-weight: 700;">
+                      Hide
+                      <span style="display: inline-block; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-135deg);"></span>
+                    </div>
+                  </div>
+
+                  <div class="row" style="margin-top: 12px;">
+                    <div class="ip-input-wrap">
+                      <input class="ip-input" value="192.168.1.0/24" />
+                      <div class="dropdown">
+                        <div class="drop-item active">
+                          <div>
+                            <div class="drop-title">Wi-Fi (en0)</div>
+                            <div class="drop-meta">192.168.1.0/24 · 192.168.1.23</div>
+                          </div>
+                          <div class="drop-badge">Default</div>
+                        </div>
+                        <div style="height: 8px;"></div>
+                        <div class="drop-item">
+                          <div>
+                            <div class="drop-title">Ethernet (en7)</div>
+                            <div class="drop-meta">10.0.0.0/24 · 10.0.0.12</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <button class="btn" type="button">Scan</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div>
+                <div class="section-title">Manual add</div>
+                <div class="section-help">Always available; requires Name and Base URL.</div>
+              </div>
+
+              <div class="manual-body">
+                <div class="field-group">
+                  <div class="field-label">Name</div>
+                  <input class="manual-field" placeholder="Desk Hub" />
+                </div>
+                <div class="field-group">
+                  <div class="field-label">Base URL</div>
+                  <input class="manual-field" placeholder="http://hub-a.local" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;" />
+                  <div class="section-help">Examples: http://&lt;hostname&gt;.local / http://192.168.1.42</div>
+                </div>
+                <div class="field-group">
+                  <div class="field-label">ID (optional)</div>
+                  <input class="manual-field" placeholder="auto-generated if empty" />
+                </div>
+              </div>
+
+              <div class="manual-footer">
+                <button class="btn" type="button">Cancel</button>
+                <button class="btn btn-primary" type="button">Create</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>
