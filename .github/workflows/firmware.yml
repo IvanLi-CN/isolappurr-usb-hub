@@ -2,13 +2,6 @@ name: Firmware (ESP32-S3)
 
 on:
   pull_request:
-    paths:
-      - ".cargo/**"
-      - "src/**"
-      - "tools/**"
-      - "build.rs"
-      - "Cargo.toml"
-      - "Cargo.lock"
   push:
     branches:
       - main
@@ -37,7 +30,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Decide whether to build
+        id: gate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          if git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- \
+            .cargo src tools build.rs Cargo.toml Cargo.lock | grep -q .; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip build (no firmware changes)
+        if: steps.gate.outputs.run_build != 'true'
+        run: echo "No firmware-related changes in this PR; skipping build."
+
       - name: Install Rust toolchain (Xtensa)
+        if: steps.gate.outputs.run_build == 'true'
         uses: esp-rs/xtensa-toolchain@v1.6.0
         with:
           default: true
@@ -45,12 +60,14 @@ jobs:
           ldproxy: false
 
       - name: Checkout tps55288-rs
+        if: steps.gate.outputs.run_build == 'true'
         uses: actions/checkout@v4
         with:
           repository: IvanLi-CN/tps55288-rs
           path: tps55288-rs
 
       - name: Link ../tps55288-rs (Cargo.toml path dependency)
+        if: steps.gate.outputs.run_build == 'true'
         run: |
           if [ -e ../tps55288-rs ]; then
             exit 0
@@ -58,12 +75,14 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/tps55288-rs" ../tps55288-rs
 
       - name: Checkout sw2303-rs
+        if: steps.gate.outputs.run_build == 'true'
         uses: actions/checkout@v4
         with:
           repository: IvanLi-CN/sw2303-rs
           path: sw2303-rs
 
       - name: Link ../sw2303-rs (Cargo.toml path dependency)
+        if: steps.gate.outputs.run_build == 'true'
         run: |
           if [ -e ../sw2303-rs ]; then
             exit 0
@@ -71,4 +90,5 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/sw2303-rs" ../sw2303-rs
 
       - name: cargo build
+        if: steps.gate.outputs.run_build == 'true'
         run: cargo build
