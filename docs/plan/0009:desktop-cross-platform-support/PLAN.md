@@ -2,7 +2,7 @@
 
 ## 状态
 
-- Status: 部分完成（4/5）
+- Status: 已完成
 - Created: 2026-01-13
 - Last: 2026-01-16
 
@@ -88,13 +88,13 @@
     - 若有 Developer ID：优先补齐 Developer ID signing + notarization，减少用户摩擦
   - Linux：`deb` + portable `tar.gz`（已确认）；是否额外提供其它形式见开放问题
 
-## M1 需要主人确认的交付口径
+## M1 交付口径（已确认）
 
 ### 平台 / 架构
 
 - macOS：`aarch64-apple-darwin`（与 Plan #0008 一致）
-- Windows：`x86_64-pc-windows-msvc` 为主交付；`aarch64-pc-windows-msvc` 作为“代码可编译”的门槛（CI compile-check）
-- Linux：`x86_64-unknown-linux-gnu` 为主交付；`aarch64-unknown-linux-gnu` 作为“代码可编译”的门槛（CI compile-check）
+- Windows：`x86_64-pc-windows-msvc` + `aarch64-pc-windows-msvc`（CI 必须可构建对应产物）
+- Linux：`x86_64-unknown-linux-gnu` + `aarch64-unknown-linux-gnu`（CI 必须可构建对应产物）
 
 ### 分发产物（bundles）
 
@@ -135,7 +135,7 @@
 
 ## 里程碑（Milestones）
 
-- [ ] M1: 冻结平台/架构与分发策略（打包格式、签名、公证）
+- [x] M1: 冻结平台/架构与分发策略（打包格式、签名、公证）
 - [x] M2: Windows：可构建 + GUI/HTTP server/CLI 基础可运行
 - [x] M3: Linux：可构建 + GUI/HTTP server/CLI 基础可运行
 - [x] M4: 跨平台 discovery 稳定性与诊断口径补齐（多网卡/防火墙/权限）
