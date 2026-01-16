@@ -68,7 +68,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            xvfb
 
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -116,13 +117,31 @@ jobs:
         if: matrix.name == 'linux'
         run: |
           BIN="src-tauri/target/x86_64-unknown-linux-gnu/release/isolapurr-desktop"
-          PORT=51234
+          PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+
+          export DISPLAY=:99
+          export GDK_BACKEND=x11
+          Xvfb "$DISPLAY" -screen 0 1280x720x24 -ac +extension GLX +render -noreset &
+          XVFB_PID=$!
+
           "$BIN" --port "$PORT" serve >/tmp/isolapurr-desktop.log 2>&1 &
           PID=$!
+
+          cleanup() {
+            kill -INT "$PID" 2>/dev/null || true
+            wait "$PID" 2>/dev/null || true
+            kill "$XVFB_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
 
           for i in {1..50}; do
             if curl -sf "http://127.0.0.1:${PORT}/api/v1/bootstrap" >/tmp/bootstrap.json; then
               break
+            fi
+            if ! kill -0 "$PID" 2>/dev/null; then
+              cat /tmp/isolapurr-desktop.log || true
+              echo "server exited before bootstrap"
+              exit 1
             fi
             sleep 0.2
           done
@@ -139,7 +158,7 @@ jobs:
             -H "Authorization: Bearer ${TOKEN}" \
             "http://127.0.0.1:${PORT}/api/v1/health" >/dev/null
 
-          kill -INT "$PID"
+          kill -INT "$PID" 2>/dev/null || true
           wait "$PID" || true
         working-directory: desktop
 
@@ -260,7 +279,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            xvfb
 
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -277,13 +297,31 @@ jobs:
         if: matrix.name == 'linux-arm64'
         run: |
           BIN="src-tauri/target/aarch64-unknown-linux-gnu/release/isolapurr-desktop"
-          PORT=51234
+          PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+
+          export DISPLAY=:99
+          export GDK_BACKEND=x11
+          Xvfb "$DISPLAY" -screen 0 1280x720x24 -ac +extension GLX +render -noreset &
+          XVFB_PID=$!
+
           "$BIN" --port "$PORT" serve >/tmp/isolapurr-desktop.log 2>&1 &
           PID=$!
+
+          cleanup() {
+            kill -INT "$PID" 2>/dev/null || true
+            wait "$PID" 2>/dev/null || true
+            kill "$XVFB_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
 
           for i in {1..50}; do
             if curl -sf "http://127.0.0.1:${PORT}/api/v1/bootstrap" >/tmp/bootstrap.json; then
               break
+            fi
+            if ! kill -0 "$PID" 2>/dev/null; then
+              cat /tmp/isolapurr-desktop.log || true
+              echo "server exited before bootstrap"
+              exit 1
             fi
             sleep 0.2
           done
@@ -300,7 +338,7 @@ jobs:
             -H "Authorization: Bearer ${TOKEN}" \
             "http://127.0.0.1:${PORT}/api/v1/health" >/dev/null
 
-          kill -INT "$PID"
+          kill -INT "$PID" 2>/dev/null || true
           wait "$PID" || true
         working-directory: desktop
 
