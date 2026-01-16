@@ -61,9 +61,9 @@ export function DeviceCard({
       onClick={() => onSelect(device.id)}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[14px] font-medium">{device.name}</div>
-          <div className="mt-1 font-mono text-[12px] font-semibold text-[var(--muted)]">
+        <div className="min-w-0">
+          <div className="truncate text-[14px] font-medium">{device.name}</div>
+          <div className="mt-1 min-w-0 truncate font-mono text-[12px] font-semibold text-[var(--muted)]">
             {device.baseUrl}
           </div>
         </div>

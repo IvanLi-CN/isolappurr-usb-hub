@@ -184,7 +184,7 @@ export function DeviceDiscoveryPanel({
                       ipv4: {unknown(d.ipv4)} • device_id:{" "}
                       {unknown(d.device_id)}
                     </div>
-                    <div className="mt-1 font-mono text-[12px] font-semibold text-[var(--muted)]">
+                    <div className="mt-1 min-w-0 truncate font-mono text-[12px] font-semibold text-[var(--muted)]">
                       baseUrl: {unknown(d.baseUrl)}
                     </div>
                     <div className="mt-1 text-[12px] font-semibold text-[var(--muted)]">
