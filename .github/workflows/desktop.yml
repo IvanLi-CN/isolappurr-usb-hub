@@ -113,7 +113,7 @@ jobs:
         working-directory: desktop
 
       - name: Desktop discovery smoke tests
-        run: cargo test
+        run: cargo test --target ${{ matrix.tauri_target }}
         working-directory: desktop/src-tauri
 
       - name: Desktop smoke test (serve + health)
