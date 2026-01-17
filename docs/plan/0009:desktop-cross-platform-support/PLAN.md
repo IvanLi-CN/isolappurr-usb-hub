@@ -56,6 +56,7 @@
   - Windows/Linux 上对“防火墙/网络权限/多网卡”导致的失败要有可读诊断信息（至少在 UI 的 alert 中展示原因与建议）。
 - CI（GitHub Actions, MUST）：
   - 必须使用 GitHub Actions 实现跨平台 CI build（覆盖 macOS/Windows/Linux），用于验证“可构建性 + 最小冒烟”。
+  - discovery smoke tests（Plan #0011）作为 PR gate：`cargo test` 在三平台执行（不依赖 multicast）。
   - 默认不得上传 installer/app bundle 等大体积文件到 Actions artifacts（CI 只做构建验证，不做分发）。
   - 如确需上传调试材料：仅允许小体积文本（log/summary），并在工作流内自动清理，确保保留时间 ≤ 1 小时（避免占用成本）。
 

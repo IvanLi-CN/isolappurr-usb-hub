@@ -1,7 +1,10 @@
 use std::{
     collections::HashMap,
     net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use anyhow::{Context as _, anyhow};
@@ -138,6 +141,13 @@ struct DiscoveredDevice {
     last_seen_at: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+struct ResolvedService {
+    hostname: String,
+    port: u16,
+    ipv4: Option<Ipv4Addr>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct FirmwareInfo {
     name: String,
@@ -157,6 +167,7 @@ struct DiscoveryController {
     ip_scan_cancel: RwLock<CancellationToken>,
     mdns: Option<ServiceDaemon>,
     mdns_error: Option<String>,
+    mdns_unavailable: AtomicBool,
     http: reqwest::Client,
 }
 
@@ -738,21 +749,33 @@ async fn ui_asset(Path(path): Path<String>) -> Response {
 
 impl DiscoveryController {
     fn new(mdns: Option<ServiceDaemon>, mdns_error: Option<String>, http: reqwest::Client) -> Self {
+        let mdns_unavailable = mdns.is_none();
+        let error = if mdns_unavailable {
+            Some(
+                mdns_error
+                    .clone()
+                    .unwrap_or_else(|| mdns_unavailable_message("mdns unavailable")),
+            )
+        } else {
+            mdns_error.clone()
+        };
+
         Self {
             snapshot: RwLock::new(DiscoverySnapshot {
                 mode: DiscoveryMode::Service,
                 status: if mdns.is_some() {
                     DiscoveryStatus::Scanning
                 } else {
-                    DiscoveryStatus::Idle
+                    DiscoveryStatus::Unavailable
                 },
                 devices: Vec::new(),
-                error: mdns_error.clone(),
+                error,
                 scan: None,
             }),
             ip_scan_cancel: RwLock::new(CancellationToken::new()),
             mdns,
             mdns_error,
+            mdns_unavailable: AtomicBool::new(mdns_unavailable),
             http,
         }
     }
@@ -767,8 +790,10 @@ impl DiscoveryController {
             Err(err) => {
                 let message = mdns_unavailable_message(&format!("browse failed: {err}"));
                 let mut snapshot = self.snapshot.write().await;
-                snapshot.status = DiscoveryStatus::Idle;
+                snapshot.mode = DiscoveryMode::Service;
+                snapshot.status = DiscoveryStatus::Unavailable;
                 snapshot.error = Some(message);
+                self.mdns_unavailable.store(true, Ordering::Relaxed);
                 return;
             }
         };
@@ -788,7 +813,7 @@ impl DiscoveryController {
     }
 
     async fn handle_mdns_event(&self, event: ServiceEvent) -> anyhow::Result<()> {
-        let (host, port, ipv4) = match event {
+        let resolved = match event {
             ServiceEvent::ServiceResolved(service) => {
                 if !service.is_valid() {
                     return Ok(());
@@ -796,28 +821,43 @@ impl DiscoveryController {
                 let host = service.get_hostname().trim_end_matches('.').to_string();
                 let port = service.get_port();
                 let ipv4 = service.get_addresses_v4().into_iter().next();
-                (host, port, ipv4)
+                ResolvedService {
+                    hostname: host,
+                    port,
+                    ipv4,
+                }
             }
             _ => return Ok(()),
         };
 
+        self.handle_resolved(resolved).await
+    }
+
+    async fn handle_resolved(&self, resolved: ResolvedService) -> anyhow::Result<()> {
         let now = time::OffsetDateTime::now_utc()
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
-
-        let ip = ipv4.map(|v| v.to_string());
+        let ip = resolved.ipv4.map(|v| v.to_string());
         // Prefer verifying via IPv4 (works even when the OS resolver can't resolve `.local`).
         let candidate_base = if let Some(ip) = ip.as_deref() {
-            if port == 80 {
+            if resolved.port == 80 {
                 format!("http://{ip}")
             } else {
-                format!("http://{ip}:{port}")
+                format!("http://{ip}:{}", resolved.port)
             }
-        } else if port == 80 {
-            format!("http://{host}")
+        } else if resolved.port == 80 {
+            format!("http://{}", resolved.hostname.as_str())
         } else {
-            format!("http://{host}:{port}")
+            format!("http://{}:{}", resolved.hostname.as_str(), resolved.port)
         };
+
+        tracing::debug!(
+            hostname = resolved.hostname.as_str(),
+            port = resolved.port,
+            ipv4 = ?resolved.ipv4,
+            base_url = candidate_base.as_str(),
+            "discovery candidate resolved"
+        );
 
         if let Some(device) = self
             .validate_device(&candidate_base, ip.as_deref(), &now)
@@ -836,18 +876,49 @@ impl DiscoveryController {
         now_rfc3339: &str,
     ) -> anyhow::Result<Option<DiscoveredDevice>> {
         let url = format!("{base_url}/api/v1/info");
-        let res = self.http.get(url).send().await;
-        let Ok(res) = res else {
-            return Ok(None);
+        let res = match self.http.get(&url).send().await {
+            Ok(res) => res,
+            Err(err) => {
+                tracing::debug!(
+                    base_url,
+                    error = %err,
+                    "discovery candidate request failed"
+                );
+                return Ok(None);
+            }
         };
         if !res.status().is_success() {
+            tracing::debug!(
+                base_url,
+                status = %res.status(),
+                "discovery candidate rejected (non-2xx)"
+            );
             return Ok(None);
         }
-        let value: serde_json::Value = res.json().await.unwrap_or(serde_json::Value::Null);
+        let value: serde_json::Value = match res.json().await {
+            Ok(value) => value,
+            Err(err) => {
+                tracing::debug!(
+                    base_url,
+                    error = %err,
+                    "discovery candidate rejected (invalid json)"
+                );
+                return Ok(None);
+            }
+        };
         let Some(device) = parse_device_from_api_info(base_url, value, scanned_ipv4, now_rfc3339)
         else {
+            tracing::debug!(
+                base_url,
+                "discovery candidate rejected (schema/firmware mismatch)"
+            );
             return Ok(None);
         };
+        tracing::debug!(
+            base_url,
+            device_id = ?device.device_id,
+            "discovery candidate accepted"
+        );
         Ok(Some(device))
     }
 
@@ -885,14 +956,14 @@ impl DiscoveryController {
     }
 
     async fn refresh_services(&self) -> anyhow::Result<()> {
-        if self.mdns.is_none() {
+        if self.mdns.is_none() || self.mdns_unavailable.load(Ordering::Relaxed) {
             let message = self
                 .mdns_error
                 .clone()
                 .unwrap_or_else(|| mdns_unavailable_message("mdns unavailable"));
             let mut snapshot = self.snapshot.write().await;
             snapshot.mode = DiscoveryMode::Service;
-            snapshot.status = DiscoveryStatus::Idle;
+            snapshot.status = DiscoveryStatus::Unavailable;
             snapshot.error = Some(message);
             snapshot.scan = None;
             return Err(anyhow!("mdns unavailable"));
@@ -1089,4 +1160,291 @@ fn parse_device_from_api_info(
         }),
         last_seen_at: Some(now_rfc3339.to_string()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        Json, Router,
+        response::{IntoResponse, Response},
+        routing::get,
+    };
+    use std::{
+        sync::{Arc, Once},
+        time::Duration,
+    };
+    use tokio::net::TcpListener;
+
+    #[derive(Clone, Debug)]
+    enum InfoResponse {
+        Valid { device_id: Option<String> },
+        WrongFirmware,
+        InvalidJson,
+        Status(StatusCode),
+    }
+
+    struct TestServer {
+        base_url: String,
+        ipv4: Ipv4Addr,
+        port: u16,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for TestServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    fn init_tracing() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(tracing_subscriber::EnvFilter::new("debug"))
+                .with_test_writer()
+                .try_init();
+        });
+    }
+
+    async fn spawn_info_server(response: InfoResponse) -> TestServer {
+        let response = Arc::new(response);
+        let app = Router::new().route(
+            "/api/v1/info",
+            get({
+                let response = Arc::clone(&response);
+                move || async move { info_response(&response).into_response() }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let task = tokio::spawn(async move {
+            if let Err(err) = axum::serve(listener, app).await {
+                eprintln!("test server error: {err}");
+            }
+        });
+
+        TestServer {
+            base_url: format!("http://127.0.0.1:{}", addr.port()),
+            ipv4: Ipv4Addr::LOCALHOST,
+            port: addr.port(),
+            task,
+        }
+    }
+
+    fn info_response(response: &InfoResponse) -> Response {
+        match response {
+            InfoResponse::Valid { device_id } => {
+                let body = serde_json::json!({
+                    "device": {
+                        "device_id": device_id,
+                        "hostname": "isolapurr-test",
+                        "fqdn": "isolapurr-test.local",
+                        "variant": "test",
+                        "firmware": {
+                            "name": "isolapurr-usb-hub",
+                            "version": "0.0.0-test"
+                        },
+                        "wifi": { "ipv4": "127.0.0.1" }
+                    }
+                });
+                (StatusCode::OK, Json(body)).into_response()
+            }
+            InfoResponse::WrongFirmware => {
+                let body = serde_json::json!({
+                    "device": {
+                        "firmware": { "name": "not-isolapurr", "version": "0.0.0-test" }
+                    }
+                });
+                (StatusCode::OK, Json(body)).into_response()
+            }
+            InfoResponse::InvalidJson => (StatusCode::OK, "not-json").into_response(),
+            InfoResponse::Status(code) => (*code, "error").into_response(),
+        }
+    }
+
+    fn make_controller(timeout_ms: u64, mdns_error: Option<String>) -> DiscoveryController {
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_millis(timeout_ms))
+            .build()
+            .expect("http client");
+        DiscoveryController::new(None, mdns_error, http)
+    }
+
+    fn resolved_for(server: &TestServer) -> ResolvedService {
+        ResolvedService {
+            hostname: "isolapurr-test".to_string(),
+            port: server.port,
+            ipv4: Some(server.ipv4),
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_accepts_valid_device() {
+        init_tracing();
+        let server = spawn_info_server(InfoResponse::Valid {
+            device_id: Some("dev-1".to_string()),
+        })
+        .await;
+        let controller = make_controller(400, Some("mdns unavailable".to_string()));
+        controller
+            .handle_resolved(resolved_for(&server))
+            .await
+            .expect("handle resolved");
+
+        let snapshot = controller.snapshot().await;
+        assert_eq!(
+            snapshot.devices.len(),
+            1,
+            "expected 1 device, got {:?}",
+            snapshot.devices
+        );
+        let device = snapshot.devices.first().expect("device entry");
+        assert_eq!(device.device_id.as_deref(), Some("dev-1"));
+        assert_eq!(device.base_url, server.base_url);
+        assert_eq!(snapshot.status, DiscoveryStatus::Ready);
+    }
+
+    #[tokio::test]
+    async fn discovery_filters_non_device() {
+        init_tracing();
+        let server = spawn_info_server(InfoResponse::WrongFirmware).await;
+        let controller = make_controller(300, Some("mdns unavailable".to_string()));
+        controller
+            .handle_resolved(resolved_for(&server))
+            .await
+            .expect("handle resolved");
+
+        let snapshot = controller.snapshot().await;
+        assert!(
+            snapshot.devices.is_empty(),
+            "expected filtered device, got {:?}",
+            snapshot.devices
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_filters_invalid_json_and_non_2xx() {
+        init_tracing();
+        let controller = make_controller(300, Some("mdns unavailable".to_string()));
+
+        let bad_json = spawn_info_server(InfoResponse::InvalidJson).await;
+        controller
+            .handle_resolved(resolved_for(&bad_json))
+            .await
+            .expect("handle resolved bad json");
+
+        let bad_status = spawn_info_server(InfoResponse::Status(StatusCode::BAD_GATEWAY)).await;
+        controller
+            .handle_resolved(resolved_for(&bad_status))
+            .await
+            .expect("handle resolved bad status");
+
+        let snapshot = controller.snapshot().await;
+        assert!(
+            snapshot.devices.is_empty(),
+            "expected no devices after invalid responses, got {:?}",
+            snapshot.devices
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_dedups_by_device_id() {
+        init_tracing();
+        let server_a = spawn_info_server(InfoResponse::Valid {
+            device_id: Some("dev-1".to_string()),
+        })
+        .await;
+        let server_b = spawn_info_server(InfoResponse::Valid {
+            device_id: Some("dev-1".to_string()),
+        })
+        .await;
+        let controller = make_controller(400, Some("mdns unavailable".to_string()));
+
+        controller
+            .handle_resolved(resolved_for(&server_a))
+            .await
+            .expect("handle resolved a");
+        controller
+            .handle_resolved(resolved_for(&server_b))
+            .await
+            .expect("handle resolved b");
+
+        let snapshot = controller.snapshot().await;
+        assert_eq!(
+            snapshot.devices.len(),
+            1,
+            "expected 1 device after dedup, got {:?}",
+            snapshot.devices
+        );
+        let device = snapshot.devices.first().expect("device entry");
+        assert_eq!(device.device_id.as_deref(), Some("dev-1"));
+        assert_eq!(
+            device.base_url, server_b.base_url,
+            "expected latest base_url to win"
+        );
+        assert!(
+            device
+                .last_seen_at
+                .as_ref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false),
+            "expected last_seen_at to be set"
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_unreachable_candidate_times_out() {
+        init_tracing();
+        let controller = make_controller(200, Some("mdns unavailable".to_string()));
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind unused port");
+            let port = listener.local_addr().expect("listener addr").port();
+            drop(listener);
+            port
+        };
+        let resolved = ResolvedService {
+            hostname: "isolapurr-unused".to_string(),
+            port,
+            ipv4: Some(Ipv4Addr::LOCALHOST),
+        };
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(600),
+            controller.handle_resolved(resolved),
+        )
+        .await;
+        assert!(result.is_ok(), "handle_resolved timed out");
+
+        let snapshot = controller.snapshot().await;
+        assert!(
+            snapshot.devices.is_empty(),
+            "expected no devices after timeout, got {:?}",
+            snapshot.devices
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_reports_mdns_unavailable() {
+        init_tracing();
+        let controller = make_controller(200, Some("mdns unavailable".to_string()));
+        let snapshot = controller.snapshot().await;
+        assert_eq!(snapshot.status, DiscoveryStatus::Unavailable);
+        assert!(
+            snapshot
+                .error
+                .as_ref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false),
+            "expected non-empty error message"
+        );
+
+        let result = controller.refresh_services().await;
+        assert!(result.is_err(), "expected refresh to fail");
+        let snapshot = controller.snapshot().await;
+        assert_eq!(snapshot.status, DiscoveryStatus::Unavailable);
+    }
 }

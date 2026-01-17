@@ -1714,6 +1714,7 @@ dependencies = [
 [[package]]
 name = "sw2303"
 version = "0.0.0"
+source = "git+https://github.com/IvanLi-CN/sw2303-rs?rev=9b0d8cbd6e47d8cf90fd3c83b0e844f4b54e907f#9b0d8cbd6e47d8cf90fd3c83b0e844f4b54e907f"
 dependencies = [
  "bitflags 2.10.0",
  "embedded-hal 1.0.0",
@@ -1804,6 +1805,7 @@ dependencies = [
 [[package]]
 name = "tps55288-rs"
 version = "0.1.0"
+source = "git+https://github.com/IvanLi-CN/tps55288-rs?rev=e451aa816ef97fb08ae162ed2baca414d0b22823#e451aa816ef97fb08ae162ed2baca414d0b22823"
 dependencies = [
  "bitflags 2.10.0",
  "embedded-hal 1.0.0",
