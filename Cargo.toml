@@ -22,8 +22,8 @@ esp-backtrace = { version = "0.18", features = ["defmt", "esp32s3", "panic-handl
 esp-bootloader-esp-idf = { version = "0.4", features = ["defmt", "esp32s3"] }
 esp-println = { version = "0.16", default-features = false, features = ["esp32s3", "uart", "defmt-espflash"] }
 esp-rtos = { version = "0.2.0", features = ["defmt", "embassy", "esp32s3"] }
-sw2303 = { path = "../sw2303-rs" }
-tps55288 = { package = "tps55288-rs", path = "../tps55288-rs" }
+sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "9b0d8cbd6e47d8cf90fd3c83b0e844f4b54e907f" }
+tps55288 = { package = "tps55288-rs", git = "https://github.com/IvanLi-CN/tps55288-rs", rev = "e451aa816ef97fb08ae162ed2baca414d0b22823" }
 
 # Async runtime (used by Plan #0003 networking + future tasks)
 embassy-executor = { version = "0.9", features = ["defmt"] }
