@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-16
-- Last: 2026-01-16
+- Last: 2026-01-17
 
 ## 背景 / 问题陈述
 
@@ -150,11 +150,11 @@
 
 ## Milestones
 
-- [ ] M1: 定义 on-disk 存储格式（含 `schema_version`、devices、settings）与损坏回退策略
-- [ ] M2: Desktop agent 实现 `/api/v1/storage/*`（CRUD + export/import + migrate + reset）
-- [ ] M3: Web UI 引入存储适配层（Desktop → agent storage；Web → localStorage），并完成一次性迁移
-- [ ] M4: UX：错误提示与“重置本地数据”入口；日志口径冻结（不泄露 token）
-- [ ] M5: 补齐 tests/quality gates 覆盖关键边界（尤其迁移与损坏场景）
+- [x] M1: 定义 on-disk 存储格式（含 `schema_version`、devices、settings）与损坏回退策略
+- [x] M2: Desktop agent 实现 `/api/v1/storage/*`（CRUD + export/import + migrate + reset）
+- [x] M3: Web UI 引入存储适配层（Desktop → agent storage；Web → localStorage），并完成一次性迁移
+- [x] M4: UX：错误提示与“重置本地数据”入口；日志口径冻结（不泄露 token）
+- [x] M5: 补齐 tests/quality gates 覆盖关键边界（尤其迁移与损坏场景）
 
 ## 约束与风险（Constraints & Risks）
 

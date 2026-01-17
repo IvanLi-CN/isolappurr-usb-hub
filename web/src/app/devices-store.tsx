@@ -1,4 +1,18 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  deleteStoredDevice,
+  exportStorage,
+  fetchStoredDevices,
+  migrateFromLocalStorage,
+  upsertStoredDevice,
+} from "../domain/desktopStorage";
 import type {
   AddDeviceInput,
   AddDeviceValidationResult,
@@ -9,11 +23,14 @@ import {
   saveStoredDevices,
   validateAddDeviceInput,
 } from "../domain/devices";
+import { useToast } from "../ui/toast/ToastProvider";
+import { useDesktopAgent } from "./desktop-agent-ui";
+import { readMigrationPayload } from "./storage-migration";
 
 type DevicesContextValue = {
   devices: StoredDevice[];
-  addDevice: (input: AddDeviceInput) => AddDeviceValidationResult;
-  removeDevice: (deviceId: string) => void;
+  addDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
+  removeDevice: (deviceId: string) => Promise<void>;
   getDevice: (deviceId: string) => StoredDevice | undefined;
 };
 
@@ -26,13 +43,99 @@ export function DevicesProvider({
   children: React.ReactNode;
   initialDevices?: StoredDevice[];
 }) {
+  const { agent, status } = useDesktopAgent();
+  const { pushToast } = useToast();
+  const warnedRef = useRef(false);
   const [devices, setDevices] = useState<StoredDevice[]>(() =>
     initialDevices ? initialDevices : loadStoredDevices(),
   );
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    if (agent) {
+      return;
+    }
     saveStoredDevices(devices);
-  }, [devices]);
+  }, [devices, agent, ready]);
+
+  useEffect(() => {
+    if (status !== "ready") {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      if (agent) {
+        const res = await fetchStoredDevices(agent);
+        if (cancelled) {
+          return;
+        }
+        if (!res.ok) {
+          pushToast({
+            variant: "error",
+            message: `Desktop storage unavailable: ${res.error.message}`,
+          });
+        } else {
+          setDevices(res.value);
+        }
+      } else if (!initialDevices) {
+        setDevices(loadStoredDevices());
+      }
+      setReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agent, status, pushToast, initialDevices]);
+
+  useEffect(() => {
+    if (status !== "ready" || !agent) {
+      return;
+    }
+    void (async () => {
+      const payload = readMigrationPayload();
+      if (!payload) {
+        return;
+      }
+      const res = await migrateFromLocalStorage(agent, payload);
+      if (!res.ok) {
+        return;
+      }
+      if (res.value.migrated) {
+        pushToast({
+          variant: "success",
+          message: "Imported devices/settings from browser storage.",
+        });
+        window.dispatchEvent(new CustomEvent("isolapurr-storage-migrated"));
+        const refreshed = await fetchStoredDevices(agent);
+        if (refreshed.ok) {
+          setDevices(refreshed.value);
+        }
+      }
+    })();
+  }, [agent, status, pushToast]);
+
+  useEffect(() => {
+    if (status !== "ready" || !agent || warnedRef.current) {
+      return;
+    }
+    void (async () => {
+      const res = await exportStorage(agent);
+      if (!res.ok) {
+        return;
+      }
+      const meta = res.value.meta;
+      if (meta?.last_corrupt_at) {
+        warnedRef.current = true;
+        pushToast({
+          variant: "warning",
+          message: "Local storage was reset after a corruption.",
+        });
+      }
+    })();
+  }, [agent, status, pushToast]);
 
   const value = useMemo<DevicesContextValue>(() => {
     const existingIds = new Set(devices.map((d) => d.id));
@@ -40,7 +143,7 @@ export function DevicesProvider({
 
     return {
       devices,
-      addDevice: (input) => {
+      addDevice: async (input) => {
         const result = validateAddDeviceInput(
           input,
           existingIds,
@@ -49,16 +152,52 @@ export function DevicesProvider({
         if (!result.ok) {
           return result;
         }
-
-        setDevices((prev) => [...prev, result.device]);
-        return result;
+        if (!agent) {
+          setDevices((prev) => [...prev, result.device]);
+          return result;
+        }
+        const res = await upsertStoredDevice(agent, result.device);
+        if (!res.ok) {
+          if (res.error.code === "conflict") {
+            return {
+              ok: false,
+              errors: {
+                baseUrl: res.error.message,
+              },
+            };
+          }
+          pushToast({
+            variant: "error",
+            message: `Desktop storage error: ${res.error.message}`,
+          });
+          return {
+            ok: false,
+            errors: { baseUrl: "Desktop storage unavailable" },
+          };
+        }
+        setDevices((prev) => {
+          const next = prev.filter(
+            (d) => d.id !== res.value.id && d.baseUrl !== res.value.baseUrl,
+          );
+          return [...next, res.value];
+        });
+        return { ok: true, device: res.value };
       },
-      removeDevice: (deviceId) => {
+      removeDevice: async (deviceId) => {
+        if (agent) {
+          const res = await deleteStoredDevice(agent, deviceId);
+          if (!res.ok) {
+            pushToast({
+              variant: "error",
+              message: `Desktop storage error: ${res.error.message}`,
+            });
+          }
+        }
         setDevices((prev) => prev.filter((d) => d.id !== deviceId));
       },
       getDevice: (deviceId) => devices.find((d) => d.id === deviceId),
     };
-  }, [devices]);
+  }, [devices, agent, pushToast]);
 
   return (
     <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>

@@ -97,7 +97,10 @@ const meta: Meta<typeof AddDeviceDialog> = {
     existingDeviceIds: ["isolapurr-hub-1"],
     existingDeviceBaseUrls: ["http://hub-1.local"],
     onClose: () => {},
-    onCreate: () => {},
+    onCreate: async () => ({
+      ok: true,
+      device: { id: "demo", name: "Demo", baseUrl: "http://192.168.1.10" },
+    }),
   },
 };
 

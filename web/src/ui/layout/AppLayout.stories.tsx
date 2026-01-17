@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { MemoryRouter } from "react-router";
 
 import { AddDeviceUiProvider } from "../../app/add-device-ui";
+import { DesktopAgentProvider } from "../../app/desktop-agent-ui";
 import { DeviceRuntimeProvider } from "../../app/device-runtime";
 import { DevicesProvider } from "../../app/devices-store";
 import { ThemeProvider } from "../../app/theme-ui";
@@ -24,23 +25,28 @@ const meta: Meta<typeof AppLayout> = {
   decorators: [
     (Story) => (
       <MemoryRouter>
-        <ThemeProvider>
-          <ToastProvider>
-            <DevicesProvider initialDevices={devices}>
-              <DeviceRuntimeProvider>
-                <AddDeviceUiProvider
-                  existingDeviceIds={devices.map((d) => d.id)}
-                  existingDeviceBaseUrls={devices.map((d) => d.baseUrl)}
-                  onCreate={() => {}}
-                >
-                  <div className="h-screen" data-theme="isolapurr">
-                    <Story />
-                  </div>
-                </AddDeviceUiProvider>
-              </DeviceRuntimeProvider>
-            </DevicesProvider>
-          </ToastProvider>
-        </ThemeProvider>
+        <DesktopAgentProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <DevicesProvider initialDevices={devices}>
+                <DeviceRuntimeProvider>
+                  <AddDeviceUiProvider
+                    existingDeviceIds={devices.map((d) => d.id)}
+                    existingDeviceBaseUrls={devices.map((d) => d.baseUrl)}
+                    onCreate={async () => ({
+                      ok: true,
+                      device: devices[0],
+                    })}
+                  >
+                    <div className="h-screen" data-theme="isolapurr">
+                      <Story />
+                    </div>
+                  </AddDeviceUiProvider>
+                </DeviceRuntimeProvider>
+              </DevicesProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </DesktopAgentProvider>
       </MemoryRouter>
     ),
   ],

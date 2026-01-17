@@ -1,5 +1,8 @@
 import { createContext, useContext, useMemo, useState } from "react";
-import type { AddDeviceInput } from "../domain/devices";
+import type {
+  AddDeviceInput,
+  AddDeviceValidationResult,
+} from "../domain/devices";
 import { AddDeviceDialog } from "../ui/dialogs/AddDeviceDialog";
 
 type AddDeviceUiContextValue = {
@@ -16,7 +19,7 @@ export function AddDeviceUiProvider({
 }: {
   existingDeviceIds: string[];
   existingDeviceBaseUrls: string[];
-  onCreate: (input: AddDeviceInput) => void;
+  onCreate: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
