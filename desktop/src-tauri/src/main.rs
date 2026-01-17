@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -13,7 +14,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use clap::{Parser, Subcommand};
 use directories::ProjectDirs;
@@ -28,6 +29,8 @@ use url::Url;
 
 const DEFAULT_PORT_RANGE_START: u16 = 51200;
 const DEFAULT_PORT_RANGE_END: u16 = 51299;
+const STORAGE_SCHEMA_VERSION: u8 = 1;
+const STORAGE_FILE_NAME: &str = "storage.json";
 
 const EXIT_BAD_ARGS: i32 = 2;
 const EXIT_SERVER_FAILED: i32 = 10;
@@ -160,6 +163,7 @@ struct AppState {
     agent_base_url: Url,
     mode: &'static str,
     discovery: Arc<DiscoveryController>,
+    storage: Arc<StorageManager>,
 }
 
 struct DiscoveryController {
@@ -169,6 +173,244 @@ struct DiscoveryController {
     mdns_error: Option<String>,
     mdns_unavailable: AtomicBool,
     http: reqwest::Client,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum ThemeId {
+    Isolapurr,
+    IsolapurrDark,
+    System,
+}
+
+impl ThemeId {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "isolapurr" => Some(Self::Isolapurr),
+            "isolapurr-dark" => Some(Self::IsolapurrDark),
+            "system" => Some(Self::System),
+            _ => None,
+        }
+    }
+}
+
+impl Default for ThemeId {
+    fn default() -> Self {
+        Self::Isolapurr
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredDevice {
+    id: String,
+    name: String,
+    base_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_seen_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    theme: Option<ThemeId>,
+}
+
+impl DesktopSettings {
+    fn resolved_theme(&self) -> ThemeId {
+        self.theme.clone().unwrap_or_default()
+    }
+}
+
+impl Default for DesktopSettings {
+    fn default() -> Self {
+        Self {
+            theme: Some(ThemeId::default()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    migrated_from_localstorage_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_corrupt_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_corrupt_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopStorage {
+    schema_version: u8,
+    #[serde(default)]
+    devices: Vec<StoredDevice>,
+    #[serde(default)]
+    settings: DesktopSettings,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    meta: Option<StorageMeta>,
+}
+
+impl Default for DesktopStorage {
+    fn default() -> Self {
+        Self {
+            schema_version: STORAGE_SCHEMA_VERSION,
+            devices: Vec::new(),
+            settings: DesktopSettings {
+                theme: Some(ThemeId::default()),
+            },
+            meta: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct StorageManager {
+    path: PathBuf,
+    inner: RwLock<DesktopStorage>,
+}
+
+#[derive(Clone, Debug)]
+enum StorageError {
+    BadRequest(String),
+    Conflict(String),
+    NotFound(String),
+    Internal(String),
+}
+
+impl StorageError {
+    fn response(self) -> Response {
+        match self {
+            Self::BadRequest(message) => bad_request(&message),
+            Self::Conflict(message) => conflict(&message),
+            Self::NotFound(message) => not_found(&message),
+            Self::Internal(message) => internal_error(&message),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpsertDeviceRequest {
+    device: UpsertDeviceInput,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpsertDeviceInput {
+    id: Option<String>,
+    name: String,
+    base_url: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpsertDeviceResponse {
+    device: StoredDevice,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DevicesResponse {
+    devices: Vec<StoredDevice>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateSettingsRequest {
+    settings: UpdateSettingsInput,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateSettingsInput {
+    theme: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsResponse {
+    settings: ResolvedSettings,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolvedSettings {
+    theme: ThemeId,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrateRequest {
+    source: String,
+    devices: Option<Vec<MigrateDeviceInput>>,
+    settings: Option<MigrateSettingsInput>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrateDeviceInput {
+    id: Option<String>,
+    name: Option<String>,
+    base_url: Option<String>,
+    last_seen_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrateSettingsInput {
+    theme: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrateResponse {
+    migrated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    imported: Option<MigrateImported>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrateImported {
+    devices: usize,
+    settings: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportRequest {
+    storage: ImportStorageInput,
+    mode: Option<ImportMode>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ImportMode {
+    Merge,
+    Replace,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportStorageInput {
+    schema_version: u8,
+    devices: Option<Vec<MigrateDeviceInput>>,
+    settings: Option<MigrateSettingsInput>,
+    meta: Option<StorageMetaInput>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageMetaInput {
+    migrated_from_localstorage_at: Option<String>,
+    last_corrupt_at: Option<String>,
+    last_corrupt_reason: Option<String>,
 }
 
 #[derive(RustEmbed)]
@@ -416,12 +658,14 @@ async fn start_agent_server(
         .context("http client")?;
 
     let discovery = Arc::new(DiscoveryController::new(mdns, mdns_error, http));
+    let storage = Arc::new(StorageManager::load_or_init()?);
 
     let state = AppState {
         token: token.clone(),
         agent_base_url: agent_base_url.clone(),
         mode,
         discovery: discovery.clone(),
+        storage: storage.clone(),
     };
 
     discovery.start_mdns_background().await;
@@ -433,6 +677,25 @@ async fn start_agent_server(
         .route("/api/v1/discovery/refresh", post(api_discovery_refresh))
         .route("/api/v1/discovery/ip-scan", post(api_discovery_ip_scan))
         .route("/api/v1/discovery/cancel", post(api_discovery_cancel))
+        .route(
+            "/api/v1/storage/devices",
+            get(api_storage_list_devices).post(api_storage_upsert_device),
+        )
+        .route(
+            "/api/v1/storage/devices/:id",
+            delete(api_storage_delete_device),
+        )
+        .route(
+            "/api/v1/storage/settings",
+            get(api_storage_get_settings).put(api_storage_update_settings),
+        )
+        .route(
+            "/api/v1/storage/migrate/localstorage",
+            post(api_storage_migrate_localstorage),
+        )
+        .route("/api/v1/storage/export", get(api_storage_export))
+        .route("/api/v1/storage/import", post(api_storage_import))
+        .route("/api/v1/storage/reset", post(api_storage_reset))
         .route("/", get(ui_index))
         .route("/*path", get(ui_asset))
         .with_state(state);
@@ -536,6 +799,508 @@ fn project_dirs() -> anyhow::Result<ProjectDirs> {
         .ok_or_else(|| anyhow!("project dirs unavailable"))
 }
 
+fn now_rfc3339() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+fn storage_path() -> anyhow::Result<PathBuf> {
+    let dirs = project_dirs()?;
+    std::fs::create_dir_all(dirs.config_dir()).context("create config dir")?;
+    Ok(dirs.config_dir().join(STORAGE_FILE_NAME))
+}
+
+fn normalize_base_url(raw: &str) -> Result<String, StorageError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(StorageError::BadRequest("Base URL is required".to_string()));
+    }
+    let url = Url::parse(trimmed)
+        .map_err(|_| StorageError::BadRequest("Base URL must be a valid URL".to_string()))?;
+    let scheme = url.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err(StorageError::BadRequest(
+            "Base URL must start with http:// or https://".to_string(),
+        ));
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
+fn generate_device_id() -> String {
+    use rand::{Rng as _, distributions::Alphanumeric};
+    let mut rng = rand::thread_rng();
+    std::iter::repeat_with(|| rng.sample(Alphanumeric))
+        .take(8)
+        .map(char::from)
+        .collect()
+}
+
+impl StorageManager {
+    fn load_or_init() -> anyhow::Result<Self> {
+        let path = storage_path()?;
+        Self::load_at(path)
+    }
+
+    fn load_at(path: PathBuf) -> anyhow::Result<Self> {
+        let mut storage = DesktopStorage::default();
+        let mut should_persist = false;
+
+        match std::fs::read_to_string(&path) {
+            Ok(raw) => match serde_json::from_str::<DesktopStorage>(&raw) {
+                Ok(parsed) => {
+                    if parsed.schema_version != STORAGE_SCHEMA_VERSION {
+                        let backup =
+                            backup_storage_file(&path, "unsupported_schema").unwrap_or(None);
+                        storage.meta = Some(StorageMeta {
+                            migrated_from_localstorage_at: None,
+                            last_corrupt_at: Some(now_rfc3339()),
+                            last_corrupt_reason: Some(format!(
+                                "unsupported_schema:{}",
+                                parsed.schema_version
+                            )),
+                        });
+                        if let Some(backup) = backup {
+                            tracing::warn!(
+                                path = %path.display(),
+                                backup = %backup.display(),
+                                "storage schema unsupported; reset to default"
+                            );
+                        }
+                        should_persist = true;
+                    } else {
+                        storage = parsed;
+                    }
+                }
+                Err(err) => {
+                    let backup = backup_storage_file(&path, "corrupt").unwrap_or(None);
+                    storage.meta = Some(StorageMeta {
+                        migrated_from_localstorage_at: None,
+                        last_corrupt_at: Some(now_rfc3339()),
+                        last_corrupt_reason: Some("parse_error".to_string()),
+                    });
+                    if let Some(backup) = backup {
+                        tracing::warn!(
+                            path = %path.display(),
+                            backup = %backup.display(),
+                            error = %err,
+                            "storage corrupted; reset to default"
+                        );
+                    } else {
+                        tracing::warn!(
+                            path = %path.display(),
+                            error = %err,
+                            "storage corrupted; reset to default"
+                        );
+                    }
+                    should_persist = true;
+                }
+            },
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                storage.meta = Some(StorageMeta {
+                    migrated_from_localstorage_at: None,
+                    last_corrupt_at: Some(now_rfc3339()),
+                    last_corrupt_reason: Some(format!("io_error:{err}")),
+                });
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %err,
+                    "storage read failed; using defaults"
+                );
+                should_persist = true;
+            }
+        }
+
+        if should_persist {
+            if let Err(err) = persist_storage(&path, &storage) {
+                tracing::warn!(path = %path.display(), error = %err, "storage init persist failed");
+            }
+        }
+
+        Ok(Self {
+            path,
+            inner: RwLock::new(storage),
+        })
+    }
+
+    async fn list_devices(&self) -> Vec<StoredDevice> {
+        let guard = self.inner.read().await;
+        guard.devices.clone()
+    }
+
+    async fn export(&self) -> DesktopStorage {
+        let guard = self.inner.read().await;
+        guard.clone()
+    }
+
+    async fn get_settings(&self) -> ResolvedSettings {
+        let guard = self.inner.read().await;
+        ResolvedSettings {
+            theme: guard.settings.resolved_theme(),
+        }
+    }
+
+    async fn upsert_device(&self, input: UpsertDeviceInput) -> Result<StoredDevice, StorageError> {
+        let name = input.name.trim();
+        if name.is_empty() {
+            return Err(StorageError::BadRequest("Name is required".to_string()));
+        }
+        let base_url = normalize_base_url(&input.base_url)?;
+        let id = input.id.map(|v| v.trim().to_string());
+        if let Some(id) = &id {
+            if id.is_empty() {
+                return Err(StorageError::BadRequest("ID cannot be blank".to_string()));
+            }
+        }
+
+        let mut guard = self.inner.write().await;
+        let mut conflict = None;
+        if let Some(id) = &id {
+            let existing_index = guard.devices.iter().position(|d| &d.id == id);
+            let base_conflict = guard
+                .devices
+                .iter()
+                .any(|d| d.base_url == base_url && d.id != id.as_str());
+            if base_conflict {
+                conflict = Some("Base URL already exists".to_string());
+            } else if let Some(index) = existing_index {
+                guard.devices[index].name = name.to_string();
+                guard.devices[index].base_url = base_url.clone();
+                let stored = guard.devices[index].clone();
+                persist_storage(&self.path, &guard)
+                    .map_err(|err| StorageError::Internal(err.to_string()))?;
+                return Ok(stored);
+            } else if guard.devices.iter().any(|d| d.base_url == base_url) {
+                conflict = Some("Base URL already exists".to_string());
+            }
+        } else if let Some(index) = guard.devices.iter().position(|d| d.base_url == base_url) {
+            guard.devices[index].name = name.to_string();
+            let stored = guard.devices[index].clone();
+            persist_storage(&self.path, &guard)
+                .map_err(|err| StorageError::Internal(err.to_string()))?;
+            return Ok(stored);
+        }
+
+        if let Some(message) = conflict {
+            return Err(StorageError::Conflict(message));
+        }
+
+        let new_id = id.unwrap_or_else(generate_device_id);
+        if guard.devices.iter().any(|d| d.id == new_id) {
+            return Err(StorageError::Conflict("ID already exists".to_string()));
+        }
+
+        let stored = StoredDevice {
+            id: new_id,
+            name: name.to_string(),
+            base_url,
+            last_seen_at: None,
+        };
+        guard.devices.push(stored.clone());
+        persist_storage(&self.path, &guard)
+            .map_err(|err| StorageError::Internal(err.to_string()))?;
+        Ok(stored)
+    }
+
+    async fn delete_device(&self, device_id: &str) -> Result<(), StorageError> {
+        let mut guard = self.inner.write().await;
+        let before = guard.devices.len();
+        guard.devices.retain(|d| d.id != device_id);
+        if guard.devices.len() == before {
+            return Err(StorageError::NotFound("device not found".to_string()));
+        }
+        persist_storage(&self.path, &guard)
+            .map_err(|err| StorageError::Internal(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn update_settings(&self, theme: ThemeId) -> Result<ResolvedSettings, StorageError> {
+        let mut guard = self.inner.write().await;
+        guard.settings.theme = Some(theme.clone());
+        persist_storage(&self.path, &guard)
+            .map_err(|err| StorageError::Internal(err.to_string()))?;
+        Ok(ResolvedSettings { theme })
+    }
+
+    async fn migrate_from_localstorage(
+        &self,
+        request: MigrateRequest,
+    ) -> Result<MigrateResponse, StorageError> {
+        if request.source != "localStorage" {
+            return Err(StorageError::BadRequest(
+                "invalid migration source".to_string(),
+            ));
+        }
+
+        let mut guard = self.inner.write().await;
+        let empty = guard.devices.is_empty()
+            && guard.settings.resolved_theme() == ThemeId::default()
+            && guard
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.migrated_from_localstorage_at.as_ref())
+                .is_none();
+        if !empty {
+            return Ok(MigrateResponse {
+                migrated: false,
+                imported: None,
+                reason: Some("already_initialized".to_string()),
+            });
+        }
+
+        let mut imported_devices = 0usize;
+        if let Some(devices) = request.devices {
+            for item in devices {
+                let Some(name) = item.name.as_ref() else {
+                    continue;
+                };
+                let Some(base_url_raw) = item.base_url.as_ref() else {
+                    continue;
+                };
+                let id = item.id.as_ref().map(|v| v.trim().to_string());
+                let input = UpsertDeviceInput {
+                    id,
+                    name: name.clone(),
+                    base_url: base_url_raw.clone(),
+                };
+                if self
+                    .upsert_device_for_import(&mut guard, input, item.last_seen_at.clone())
+                    .is_ok()
+                {
+                    imported_devices += 1;
+                }
+            }
+        }
+
+        let mut imported_settings = false;
+        if let Some(settings) = request.settings {
+            if let Some(theme_raw) = settings.theme {
+                if let Some(theme) = ThemeId::parse(theme_raw.trim()) {
+                    guard.settings.theme = Some(theme);
+                    imported_settings = true;
+                }
+            }
+        }
+
+        let last_corrupt_at = guard
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.last_corrupt_at.clone());
+        let last_corrupt_reason = guard
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.last_corrupt_reason.clone());
+
+        guard.meta = Some(StorageMeta {
+            migrated_from_localstorage_at: Some(now_rfc3339()),
+            last_corrupt_at,
+            last_corrupt_reason,
+        });
+
+        persist_storage(&self.path, &guard)
+            .map_err(|err| StorageError::Internal(err.to_string()))?;
+
+        Ok(MigrateResponse {
+            migrated: true,
+            imported: Some(MigrateImported {
+                devices: imported_devices,
+                settings: imported_settings,
+            }),
+            reason: None,
+        })
+    }
+
+    async fn reset(&self) -> Result<(), StorageError> {
+        let mut guard = self.inner.write().await;
+        let last_corrupt_at = guard
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.last_corrupt_at.clone());
+        let last_corrupt_reason = guard
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.last_corrupt_reason.clone());
+        *guard = DesktopStorage {
+            schema_version: STORAGE_SCHEMA_VERSION,
+            devices: Vec::new(),
+            settings: DesktopSettings::default(),
+            meta: if last_corrupt_at.is_some() || last_corrupt_reason.is_some() {
+                Some(StorageMeta {
+                    migrated_from_localstorage_at: None,
+                    last_corrupt_at,
+                    last_corrupt_reason,
+                })
+            } else {
+                None
+            },
+        };
+        persist_storage(&self.path, &guard)
+            .map_err(|err| StorageError::Internal(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn import_storage(
+        &self,
+        storage: ImportStorageInput,
+        mode: ImportMode,
+    ) -> Result<(), StorageError> {
+        if storage.schema_version != STORAGE_SCHEMA_VERSION {
+            return Err(StorageError::BadRequest(
+                "unsupported schema_version".to_string(),
+            ));
+        }
+
+        let mut guard = self.inner.write().await;
+
+        let mut next = if matches!(mode, ImportMode::Replace) {
+            DesktopStorage::default()
+        } else {
+            guard.clone()
+        };
+
+        if let Some(devices) = storage.devices {
+            for item in devices {
+                let Some(name) = item.name.as_ref() else {
+                    continue;
+                };
+                let Some(base_url_raw) = item.base_url.as_ref() else {
+                    continue;
+                };
+                let id = item.id.as_ref().map(|v| v.trim().to_string());
+                let input = UpsertDeviceInput {
+                    id,
+                    name: name.clone(),
+                    base_url: base_url_raw.clone(),
+                };
+                let _ = self.upsert_device_for_import(&mut next, input, None);
+            }
+        }
+
+        if let Some(settings) = storage.settings {
+            if let Some(theme_raw) = settings.theme {
+                if let Some(theme) = ThemeId::parse(theme_raw.trim()) {
+                    next.settings.theme = Some(theme);
+                }
+            }
+        }
+
+        if let Some(meta) = storage.meta {
+            next.meta = Some(StorageMeta {
+                migrated_from_localstorage_at: meta.migrated_from_localstorage_at,
+                last_corrupt_at: meta.last_corrupt_at,
+                last_corrupt_reason: meta.last_corrupt_reason,
+            });
+        }
+
+        *guard = next;
+        persist_storage(&self.path, &guard)
+            .map_err(|err| StorageError::Internal(err.to_string()))?;
+        Ok(())
+    }
+
+    fn upsert_device_for_import(
+        &self,
+        storage: &mut DesktopStorage,
+        input: UpsertDeviceInput,
+        last_seen_at: Option<String>,
+    ) -> Result<(), StorageError> {
+        let name = input.name.trim();
+        if name.is_empty() {
+            return Err(StorageError::BadRequest("Name is required".to_string()));
+        }
+        let base_url = normalize_base_url(&input.base_url)?;
+        let id = input.id.map(|v| v.trim().to_string());
+        if let Some(id) = &id {
+            if id.is_empty() {
+                return Err(StorageError::BadRequest("ID cannot be blank".to_string()));
+            }
+        }
+
+        if let Some(id) = id {
+            let existing_index = storage.devices.iter().position(|d| d.id == id);
+            let base_conflict = storage
+                .devices
+                .iter()
+                .any(|d| d.base_url == base_url && d.id != id.as_str());
+            if base_conflict {
+                return Err(StorageError::Conflict(
+                    "Base URL already exists".to_string(),
+                ));
+            }
+            if let Some(index) = existing_index {
+                storage.devices[index].name = name.to_string();
+                storage.devices[index].base_url = base_url;
+                if let Some(last_seen_at) = last_seen_at.clone() {
+                    if !last_seen_at.trim().is_empty() {
+                        storage.devices[index].last_seen_at = Some(last_seen_at);
+                    }
+                }
+                return Ok(());
+            }
+            if storage.devices.iter().any(|d| d.base_url == base_url) {
+                return Err(StorageError::Conflict(
+                    "Base URL already exists".to_string(),
+                ));
+            }
+            storage.devices.push(StoredDevice {
+                id,
+                name: name.to_string(),
+                base_url,
+                last_seen_at: last_seen_at.filter(|value| !value.trim().is_empty()),
+            });
+            return Ok(());
+        }
+
+        if let Some(existing) = storage.devices.iter_mut().find(|d| d.base_url == base_url) {
+            existing.name = name.to_string();
+            if let Some(last_seen_at) = last_seen_at.clone() {
+                if !last_seen_at.trim().is_empty() {
+                    existing.last_seen_at = Some(last_seen_at);
+                }
+            }
+            return Ok(());
+        }
+
+        storage.devices.push(StoredDevice {
+            id: generate_device_id(),
+            name: name.to_string(),
+            base_url,
+            last_seen_at: last_seen_at.filter(|value| !value.trim().is_empty()),
+        });
+        Ok(())
+    }
+}
+
+fn backup_storage_file(path: &PathBuf, reason: &str) -> anyhow::Result<Option<PathBuf>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
+    let file_name = format!("storage.{reason}.{timestamp}.json");
+    let backup = path
+        .parent()
+        .map(|dir| dir.join(&file_name))
+        .unwrap_or_else(|| PathBuf::from(file_name.clone()));
+    std::fs::rename(path, &backup).context("backup storage file")?;
+    Ok(Some(backup))
+}
+
+fn persist_storage(path: &PathBuf, storage: &DesktopStorage) -> anyhow::Result<()> {
+    let json = serde_json::to_vec_pretty(storage).context("encode storage")?;
+    let tmp_path = PathBuf::from(format!("{}.tmp", path.display()));
+    std::fs::write(&tmp_path, json).context("write storage tmp")?;
+    if let Err(err) = std::fs::rename(&tmp_path, path) {
+        if err.kind() == std::io::ErrorKind::AlreadyExists || cfg!(target_os = "windows") {
+            let _ = std::fs::remove_file(path);
+            std::fs::rename(&tmp_path, path).context("rename storage tmp")?;
+        } else {
+            return Err(err).context("rename storage tmp");
+        }
+    }
+    Ok(())
+}
+
 fn generate_token() -> String {
     use rand::{Rng as _, distributions::Alphanumeric};
     let mut rng = rand::thread_rng();
@@ -605,6 +1370,48 @@ fn bad_request(message: &str) -> Response {
         Json(ErrorEnvelope {
             error: ErrorInfo {
                 code: "bad_request",
+                message: message.to_string(),
+                retryable: false,
+            },
+        }),
+    )
+        .into_response()
+}
+
+fn conflict(message: &str) -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(ErrorEnvelope {
+            error: ErrorInfo {
+                code: "conflict",
+                message: message.to_string(),
+                retryable: false,
+            },
+        }),
+    )
+        .into_response()
+}
+
+fn not_found(message: &str) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ErrorEnvelope {
+            error: ErrorInfo {
+                code: "not_found",
+                message: message.to_string(),
+                retryable: false,
+            },
+        }),
+    )
+        .into_response()
+}
+
+fn internal_error(message: &str) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ErrorEnvelope {
+            error: ErrorInfo {
+                code: "internal_error",
                 message: message.to_string(),
                 retryable: false,
             },
@@ -722,6 +1529,144 @@ async fn api_discovery_cancel(State(state): State<AppState>, headers: HeaderMap)
         Json(serde_json::json!({ "accepted": true })),
     )
         .into_response()
+}
+
+async fn api_storage_list_devices(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    let devices = state.storage.list_devices().await;
+    Json(DevicesResponse { devices }).into_response()
+}
+
+async fn api_storage_upsert_device(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<UpsertDeviceRequest>,
+) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    match state.storage.upsert_device(req.device).await {
+        Ok(device) => Json(UpsertDeviceResponse { device }).into_response(),
+        Err(err) => err.response(),
+    }
+}
+
+async fn api_storage_delete_device(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(device_id): Path<String>,
+) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    match state.storage.delete_device(device_id.trim()).await {
+        Ok(()) => Json(serde_json::json!({ "deleted": true })).into_response(),
+        Err(err) => err.response(),
+    }
+}
+
+async fn api_storage_get_settings(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    let settings = state.storage.get_settings().await;
+    Json(SettingsResponse { settings }).into_response()
+}
+
+async fn api_storage_update_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<UpdateSettingsRequest>,
+) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    let theme = match ThemeId::parse(req.settings.theme.trim()) {
+        Some(theme) => theme,
+        None => {
+            return bad_request("invalid theme");
+        }
+    };
+    match state.storage.update_settings(theme).await {
+        Ok(settings) => Json(SettingsResponse { settings }).into_response(),
+        Err(err) => err.response(),
+    }
+}
+
+async fn api_storage_migrate_localstorage(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<MigrateRequest>,
+) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    match state.storage.migrate_from_localstorage(req).await {
+        Ok(response) => Json(response).into_response(),
+        Err(err) => err.response(),
+    }
+}
+
+async fn api_storage_export(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    let storage = state.storage.export().await;
+    Json(storage).into_response()
+}
+
+async fn api_storage_import(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ImportRequest>,
+) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    let mode = req.mode.unwrap_or(ImportMode::Merge);
+    match state.storage.import_storage(req.storage, mode).await {
+        Ok(()) => Json(serde_json::json!({ "imported": true })).into_response(),
+        Err(err) => err.response(),
+    }
+}
+
+async fn api_storage_reset(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    match state.storage.reset().await {
+        Ok(()) => Json(serde_json::json!({ "reset": true })).into_response(),
+        Err(err) => err.response(),
+    }
 }
 
 async fn ui_index() -> Response {
@@ -1170,7 +2115,10 @@ mod tests {
         response::{IntoResponse, Response},
         routing::get,
     };
+    use http_body_util::BodyExt;
     use std::{
+        env, fs,
+        path::PathBuf,
         sync::{Arc, Once},
         time::Duration,
     };
@@ -1446,5 +2394,131 @@ mod tests {
         assert!(result.is_err(), "expected refresh to fail");
         let snapshot = controller.snapshot().await;
         assert_eq!(snapshot.status, DiscoveryStatus::Unavailable);
+    }
+
+    fn temp_storage_path(label: &str) -> PathBuf {
+        let mut dir = env::temp_dir();
+        let suffix = generate_device_id();
+        dir.push(format!("isolapurr-storage-{label}-{suffix}"));
+        let _ = fs::create_dir_all(&dir);
+        dir.join("storage.json")
+    }
+
+    #[tokio::test]
+    async fn storage_roundtrip_devices() {
+        let path = temp_storage_path("roundtrip");
+        let manager = StorageManager::load_at(path.clone()).expect("load storage");
+        let device = manager
+            .upsert_device(UpsertDeviceInput {
+                id: Some("dev-1".to_string()),
+                name: "Desk Hub".to_string(),
+                base_url: "http://127.0.0.1:1234".to_string(),
+            })
+            .await
+            .expect("upsert");
+        let list = manager.list_devices().await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, device.id);
+
+        let manager = StorageManager::load_at(path).expect("reload storage");
+        let list = manager.list_devices().await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].base_url, "http://127.0.0.1:1234");
+    }
+
+    #[tokio::test]
+    async fn storage_recovers_from_corrupt_file() {
+        let path = temp_storage_path("corrupt");
+        fs::write(&path, "not-json").expect("write corrupt");
+        let manager = StorageManager::load_at(path.clone()).expect("load storage");
+        let exported = manager.export().await;
+        assert!(exported.devices.is_empty());
+        assert!(
+            exported
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.last_corrupt_at.as_ref())
+                .is_some(),
+            "expected last_corrupt_at metadata"
+        );
+        assert!(path.exists(), "storage should be recreated");
+        let parent = path.parent().expect("parent dir");
+        let mut found_backup = false;
+        for entry in fs::read_dir(parent).expect("read dir") {
+            let entry = entry.expect("dir entry");
+            if let Some(name) = entry.file_name().to_str() {
+                if name.starts_with("storage.corrupt.") {
+                    found_backup = true;
+                    break;
+                }
+            }
+        }
+        assert!(found_backup, "expected corrupt backup file");
+    }
+
+    #[tokio::test]
+    async fn storage_migrates_once() {
+        let path = temp_storage_path("migrate");
+        let manager = StorageManager::load_at(path).expect("load storage");
+        let res = manager
+            .migrate_from_localstorage(MigrateRequest {
+                source: "localStorage".to_string(),
+                devices: Some(vec![MigrateDeviceInput {
+                    id: Some("demo".to_string()),
+                    name: Some("Demo".to_string()),
+                    base_url: Some("http://127.0.0.1:8080".to_string()),
+                    last_seen_at: None,
+                }]),
+                settings: Some(MigrateSettingsInput {
+                    theme: Some("system".to_string()),
+                }),
+            })
+            .await
+            .expect("migrate");
+        assert!(res.migrated);
+
+        let res = manager
+            .migrate_from_localstorage(MigrateRequest {
+                source: "localStorage".to_string(),
+                devices: None,
+                settings: None,
+            })
+            .await
+            .expect("migrate");
+        assert!(!res.migrated);
+        assert_eq!(res.reason.as_deref(), Some("already_initialized"));
+    }
+
+    #[tokio::test]
+    async fn storage_handler_lists_devices() {
+        let path = temp_storage_path("handler");
+        let manager = StorageManager::load_at(path).expect("load storage");
+        manager
+            .upsert_device(UpsertDeviceInput {
+                id: Some("dev-1".to_string()),
+                name: "Desk Hub".to_string(),
+                base_url: "http://127.0.0.1:1234".to_string(),
+            })
+            .await
+            .expect("upsert");
+        let state = AppState {
+            token: "token".to_string(),
+            agent_base_url: Url::parse("http://127.0.0.1:1234").unwrap(),
+            mode: "test",
+            discovery: Arc::new(make_controller(200, None)),
+            storage: Arc::new(manager),
+        };
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str("Bearer token").unwrap(),
+        );
+        let response = api_storage_list_devices(State(state), headers).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let parsed: DevicesResponse = serde_json::from_slice(&body).expect("parse response");
+        assert_eq!(parsed.devices.len(), 1);
+        assert_eq!(parsed.devices[0].id, "dev-1");
     }
 }

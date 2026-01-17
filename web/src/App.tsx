@@ -7,6 +7,7 @@ import {
   useParams,
 } from "react-router";
 import { AddDeviceUiProvider } from "./app/add-device-ui";
+import { DesktopAgentProvider } from "./app/desktop-agent-ui";
 import { DeviceRuntimeProvider } from "./app/device-runtime";
 import { DevicesProvider, useDevices } from "./app/devices-store";
 import { ThemeProvider } from "./app/theme-ui";
@@ -28,12 +29,13 @@ function RootLayout() {
   const existingIds = devices.map((d) => d.id);
   const existingBaseUrls = devices.map((d) => d.baseUrl);
 
-  const onAdd = (input: AddDeviceInput) => {
-    const result = addDevice(input);
+  const onAdd = async (input: AddDeviceInput) => {
+    const result = await addDevice(input);
     if (!result.ok) {
-      return;
+      return result;
     }
     navigate(`/devices/${result.device.id}`);
+    return result;
   };
 
   return (
@@ -60,29 +62,31 @@ function RootLayout() {
 export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <ThemeProvider>
-        <ToastProvider>
-          <DevicesProvider>
-            <DeviceRuntimeProvider>
-              <Routes>
-                <Route path="/" element={<RootLayout />}>
-                  <Route index element={<DashboardPage />} />
-                  <Route
-                    path="devices/:deviceId"
-                    element={<DeviceDashboardPage />}
-                  />
-                  <Route
-                    path="devices/:deviceId/info"
-                    element={<DeviceInfoPage />}
-                  />
-                  <Route path="about" element={<AboutPage />} />
-                  <Route path="*" element={<NotFoundPage />} />
-                </Route>
-              </Routes>
-            </DeviceRuntimeProvider>
-          </DevicesProvider>
-        </ToastProvider>
-      </ThemeProvider>
+      <DesktopAgentProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <DevicesProvider>
+              <DeviceRuntimeProvider>
+                <Routes>
+                  <Route path="/" element={<RootLayout />}>
+                    <Route index element={<DashboardPage />} />
+                    <Route
+                      path="devices/:deviceId"
+                      element={<DeviceDashboardPage />}
+                    />
+                    <Route
+                      path="devices/:deviceId/info"
+                      element={<DeviceInfoPage />}
+                    />
+                    <Route path="about" element={<AboutPage />} />
+                    <Route path="*" element={<NotFoundPage />} />
+                  </Route>
+                </Routes>
+              </DeviceRuntimeProvider>
+            </DevicesProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </DesktopAgentProvider>
     </BrowserRouter>
   );
 }

@@ -8,6 +8,7 @@ import { getDeviceInfo } from "../../domain/deviceApi";
 import type {
   AddDeviceInput,
   AddDeviceValidationErrors,
+  AddDeviceValidationResult,
 } from "../../domain/devices";
 import {
   loadStoredDevices,
@@ -29,7 +30,7 @@ export type AddDeviceDialogProps = {
   existingDeviceIds?: string[];
   existingDeviceBaseUrls?: string[];
   onClose: () => void;
-  onCreate: (input: AddDeviceInput) => void;
+  onCreate: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
 };
 
 export function AddDeviceDialog({
@@ -276,7 +277,7 @@ export function AddDeviceDialog({
     return () => window.clearTimeout(timer);
   }, [open, snapshot.ipScan, snapshot.mode, snapshot.status]);
 
-  const submit = () => {
+  const submit = async () => {
     const input: AddDeviceInput = {
       name,
       baseUrl,
@@ -287,8 +288,11 @@ export function AddDeviceDialog({
       setErrors(result.errors);
       return;
     }
-
-    onCreate(input);
+    const saved = await onCreate(input);
+    if (!saved.ok) {
+      setErrors(saved.errors);
+      return;
+    }
     setName("");
     setBaseUrl("");
     setId("");

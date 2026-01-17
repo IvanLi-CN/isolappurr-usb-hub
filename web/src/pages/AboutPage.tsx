@@ -1,3 +1,8 @@
+import { useState } from "react";
+import { useDesktopAgent } from "../app/desktop-agent-ui";
+import { resetStorage } from "../domain/desktopStorage";
+import { useToast } from "../ui/toast/ToastProvider";
+
 function buildInfo(): { sha: string; date: string } {
   const rawSha =
     (import.meta.env.VITE_BUILD_SHA as string | undefined) ?? "dev";
@@ -13,10 +18,36 @@ function envLink(key: string): string | null {
 
 export function AboutPage() {
   const { sha, date } = buildInfo();
+  const { agent, status } = useDesktopAgent();
+  const { pushToast } = useToast();
+  const [resetting, setResetting] = useState(false);
 
   const repoUrl = envLink("VITE_REPO_URL");
   const docsUrl = envLink("VITE_DOCS_URL");
   const issuesUrl = envLink("VITE_ISSUES_URL");
+
+  const onResetStorage = async () => {
+    if (!agent || status !== "ready" || resetting) {
+      return;
+    }
+    const confirmed = window.confirm(
+      "Reset local data? This clears saved devices and theme on this desktop.",
+    );
+    if (!confirmed) {
+      return;
+    }
+    setResetting(true);
+    const res = await resetStorage(agent);
+    setResetting(false);
+    if (res.ok) {
+      pushToast({ variant: "success", message: "Local data reset." });
+      return;
+    }
+    pushToast({
+      variant: "error",
+      message: `Reset failed: ${res.error.message}`,
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6" data-testid="about">
@@ -114,6 +145,28 @@ export function AboutPage() {
             <div className="text-[12px] font-semibold">Replug: one-shot</div>
           </div>
         </div>
+
+        {agent ? (
+          <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+            <div className="text-[16px] font-bold leading-5">
+              Desktop storage
+            </div>
+            <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
+              Devices + theme are stored in the desktop app data directory.
+            </div>
+            <button
+              className={[
+                "mt-4 h-9 rounded-[10px] border border-[var(--border)] px-4 text-[12px] font-bold",
+                "hover:bg-[var(--panel-2)]",
+              ].join(" ")}
+              type="button"
+              disabled={resetting || status !== "ready"}
+              onClick={onResetStorage}
+            >
+              {resetting ? "Resetting..." : "Reset local data"}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">

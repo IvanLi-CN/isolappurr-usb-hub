@@ -1,4 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
+import { fetchStoredTheme, updateStoredTheme } from "../domain/desktopStorage";
+import { useDesktopAgent } from "./desktop-agent-ui";
 import {
   applyThemePreference,
   loadThemePreference,
@@ -14,20 +16,68 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<ThemeId>(() => loadThemePreference());
+  const { agent, status } = useDesktopAgent();
+  const [theme, setTheme] = useState<ThemeId>("isolapurr");
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (status !== "ready") {
+      return;
+    }
+    let cancelled = false;
+    const loadTheme = async () => {
+      if (agent) {
+        const res = await fetchStoredTheme(agent);
+        if (!cancelled && res.ok) {
+          setTheme(res.value);
+        }
+      } else {
+        setTheme(loadThemePreference());
+      }
+      if (!cancelled) {
+        setReady(true);
+      }
+    };
+    void loadTheme();
+    return () => {
+      cancelled = true;
+    };
+  }, [agent, status]);
+
+  useEffect(() => {
+    if (!agent) {
+      return;
+    }
+    const onMigrated = () => {
+      void (async () => {
+        const res = await fetchStoredTheme(agent);
+        if (res.ok) {
+          setTheme(res.value);
+        }
+      })();
+    };
+    window.addEventListener("isolapurr-storage-migrated", onMigrated);
+    return () => {
+      window.removeEventListener("isolapurr-storage-migrated", onMigrated);
+    };
+  }, [agent]);
 
   useEffect(() => {
     applyThemePreference(theme);
+    if (!ready) {
+      return;
+    }
+    if (agent) {
+      void updateStoredTheme(agent, theme);
+      return;
+    }
     saveThemePreference(theme);
-  }, [theme]);
-
-  const value = useMemo<ThemeContextValue>(
-    () => ({ theme, setTheme }),
-    [theme],
-  );
+  }, [theme, agent, ready]);
 
   return (
-    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
   );
 }
 

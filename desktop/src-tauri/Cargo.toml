@@ -32,3 +32,6 @@ tokio-util = "0.7.13"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
 url = "2.5.4"
+
+[dev-dependencies]
+http-body-util = "0.1.2"
