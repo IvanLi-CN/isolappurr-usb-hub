@@ -43,7 +43,7 @@ jobs:
           name: web-dist
           path: web/dist
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   build:
     needs: web-build
@@ -301,6 +301,9 @@ jobs:
     name: build arm64 (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    env:
+      ISOLAPURR_SKIP_WEB_BUILD: "1"
+      ISOLAPURR_WEB_DIST_DIR: "web/dist"
     steps:
       - name: Checkout (linux)
         if: startsWith(matrix.os, 'ubuntu')
@@ -323,16 +326,23 @@ jobs:
         with:
           bun-version: 1.3.5
 
-      - name: Web install
-        run: bun install --frozen-lockfile
-        working-directory: web
-
-      - name: Download web dist (prebuilt)
-        if: matrix.name == 'windows-arm64'
+      - name: Download web dist
         uses: actions/download-artifact@v4
         with:
           name: web-dist
           path: web/dist
+
+      - name: Cache cargo (registry/git/bin/target)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Linux deps (Tauri)
         if: startsWith(matrix.os, 'ubuntu')
@@ -357,9 +367,6 @@ jobs:
       - name: Desktop build
         run: cargo tauri build --target ${{ matrix.tauri_target }} ${{ matrix.tauri_args }}
         working-directory: desktop
-        env:
-          ISOLAPURR_SKIP_WEB_BUILD: ${{ matrix.name == 'windows-arm64' && '1' || '' }}
-          ISOLAPURR_WEB_DIST_DIR: ${{ matrix.name == 'windows-arm64' && 'web/dist' || '' }}
 
       - name: Desktop smoke test (serve + health)
         if: matrix.name == 'linux-arm64'
@@ -467,3 +474,35 @@ jobs:
           tar -C "$(dirname "$BIN")" -czf "$OUT_DIR/isolapurr-desktop-portable-arm64.tar.gz" "$(basename "$BIN")"
           ls -lh "$OUT_DIR/isolapurr-desktop-portable-arm64.tar.gz"
         working-directory: desktop
+
+  cleanup-artifacts:
+    name: cleanup artifacts (always)
+    needs:
+      - web-build
+      - build
+      - build-arm64
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete workflow artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run_id = context.runId;
+            const artifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              { owner, repo, run_id }
+            );
+            core.info(`Found ${artifacts.length} artifacts to delete.`);
+            for (const artifact of artifacts) {
+              await github.rest.actions.deleteArtifact({
+                owner,
+                repo,
+                artifact_id: artifact.id,
+              });
+              core.info(`Deleted artifact ${artifact.name} (${artifact.id}).`);
+            }
