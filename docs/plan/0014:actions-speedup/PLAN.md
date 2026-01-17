@@ -53,6 +53,7 @@
 
 - 记录并复核当前 workflow 的基线耗时与主要瓶颈步骤。
 - 在 PR 场景对 desktop workflow 做可控减负（路径过滤或条件运行）。
+- 仅文档变更（`docs/**`、`README.md`）的 PR 必须跳过 desktop workflow。
 - 保持 main 合并前的质量门槛（lint/build/smoke 不降级）。
 - 提供可验证的优化目标与回退策略。
 - desktop 版本的 web 前端构建必须共享同一份 `web-dist`（每次 workflow 仅构建一次）。

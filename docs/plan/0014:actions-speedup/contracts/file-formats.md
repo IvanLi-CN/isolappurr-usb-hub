@@ -17,6 +17,7 @@
 ### Proposed (default; pending confirmation)
 
 - 在 `pull_request` 上增加 `paths` 或 `paths-ignore`，仅当变更影响 desktop/web/自身 workflow 时触发。
+- 仅文档变更（`docs/**`、`README.md`）不触发 desktop workflow。
 - PR 场景保留完整矩阵：`build` + `build-arm64`（仓库为 public 时）。
 - `web-build` 继续生成 `web-dist`，其余 build job 复用该 artifact 并跳过重复 web build。
 - 引入缓存策略以降低 `tauri-cli` 安装与 Rust 依赖构建耗时（具体缓存 key/路径在实施阶段确定）。
