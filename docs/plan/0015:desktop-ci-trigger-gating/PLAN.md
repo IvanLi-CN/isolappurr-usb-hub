@@ -1,8 +1,8 @@
-# Desktop：CI 触发去重（#0015）
+# Desktop：CI 触发去重（Plan 0015）
 
 ## 状态
 
-- Status: 部分完成（2/3）
+- Status: 已完成
 - Created: 2026-01-18
 - Last: 2026-01-18
 
@@ -100,7 +100,7 @@
 
 - [x] M1: 调整 `desktop.yml` 的 `push` 触发范围（仅 `main` / `release/*` / tags）
 - [x] M2: `pull_request` 场景加入 fork PR 跳过规则
-- [ ] M3: 回归验证触发行为（非主分支 push/PR/main push/release push/tag push）
+- [x] M3: 回归验证触发行为（非主分支 push/PR/main push/release push/tag push）
 
 ## 假设（Assumptions）
 
