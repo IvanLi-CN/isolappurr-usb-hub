@@ -2,10 +2,16 @@ name: desktop
 
 on:
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "README.md"
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
   push:
+    branches:
+      - main
+    paths:
+      - "desktop/**"
+      - "web/**"
+      - ".github/workflows/desktop.yml"
   workflow_dispatch:
 
 permissions:
@@ -100,11 +106,6 @@ jobs:
           name: web-dist
           path: web/dist
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.5
-
       - name: Cache cargo (registry/git/target)
         uses: actions/cache@v4
         with:
@@ -115,6 +116,14 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-
+
+      - name: Cache tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-${{ runner.arch }}-tauri-cli-2.9.6
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-tauri-cli-
 
       - name: Linux deps (Tauri)
         if: startsWith(matrix.os, 'ubuntu')
@@ -328,11 +337,6 @@ jobs:
             desktop
             web
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.5
-
       - name: Download web dist
         uses: actions/download-artifact@v4
         with:
@@ -349,6 +353,14 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-
+
+      - name: Cache tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-${{ runner.arch }}-tauri-cli-2.9.6
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-tauri-cli-
 
       - name: Linux deps (Tauri)
         if: startsWith(matrix.os, 'ubuntu')

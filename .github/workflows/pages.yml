@@ -2,6 +2,9 @@ name: Deploy web to GitHub Pages
 
 on:
   pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/pages.yml"
   push:
     branches:
       - main
