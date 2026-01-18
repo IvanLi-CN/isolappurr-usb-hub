@@ -147,7 +147,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --version 2.9.6 --locked
+        run: cargo install tauri-cli --version 2.9.6 --locked --force
         working-directory: desktop
 
       - name: Desktop build
@@ -389,7 +389,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install tauri-cli
-        run: cargo install tauri-cli --version 2.9.6 --locked
+        run: cargo install tauri-cli --version 2.9.6 --locked --force
         working-directory: desktop
 
       - name: Desktop build
