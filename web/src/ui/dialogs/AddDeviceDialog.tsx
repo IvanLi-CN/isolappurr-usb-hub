@@ -14,7 +14,7 @@ import {
   loadStoredDevices,
   validateAddDeviceInput,
 } from "../../domain/devices";
-import type { DiscoveredDevice } from "../../domain/discovery";
+import type { DiscoveredDevice, LanCandidate } from "../../domain/discovery";
 import {
   applyDiscoveredDeviceToManualForm,
   createInitialDiscoverySnapshot,
@@ -48,6 +48,7 @@ export function AddDeviceDialog({
   const [baseUrl, setBaseUrl] = useState("");
   const [id, setId] = useState("");
   const [errors, setErrors] = useState<AddDeviceValidationErrors>({});
+  const [discoveryPanelKey, setDiscoveryPanelKey] = useState(0);
 
   const ids = useMemo(() => existingDeviceIds ?? [], [existingDeviceIds]);
   const baseUrls = useMemo(
@@ -85,6 +86,7 @@ export function AddDeviceDialog({
         el.showModal();
       }
       setErrors({});
+      setDiscoveryPanelKey((v) => v + 1);
       dispatch({ type: "reset", status: "unavailable" });
       window.setTimeout(() => nameRef.current?.focus(), 0);
       return;
@@ -169,6 +171,10 @@ export function AddDeviceDialog({
             obj.scan && typeof obj.scan === "object"
               ? (obj.scan as Record<string, unknown>)
               : undefined;
+          const ipScan =
+            obj.ipScan && typeof obj.ipScan === "object"
+              ? (obj.ipScan as Record<string, unknown>)
+              : undefined;
 
           const scanShape =
             scan &&
@@ -177,6 +183,42 @@ export function AddDeviceDialog({
             typeof scan.total === "number"
               ? { cidr: scan.cidr, done: scan.done, total: scan.total }
               : undefined;
+
+          const defaultCidr =
+            ipScan && typeof ipScan.defaultCidr === "string"
+              ? ipScan.defaultCidr
+              : undefined;
+          const candidatesRaw =
+            ipScan && Array.isArray(ipScan.candidates)
+              ? ipScan.candidates
+              : null;
+          const candidates = candidatesRaw
+            ? candidatesRaw.reduce<LanCandidate[]>((acc, item) => {
+                if (!item || typeof item !== "object") {
+                  return acc;
+                }
+                const c = item as Record<string, unknown>;
+                if (typeof c.cidr !== "string") {
+                  return acc;
+                }
+
+                const parsed: LanCandidate = { cidr: c.cidr };
+                if (typeof c.label === "string") {
+                  parsed.label = c.label;
+                }
+                if (typeof c.interface === "string") {
+                  parsed.interface = c.interface;
+                }
+                if (typeof c.ipv4 === "string") {
+                  parsed.ipv4 = c.ipv4;
+                }
+                if (typeof c.primary === "boolean") {
+                  parsed.primary = c.primary;
+                }
+                acc.push(parsed);
+                return acc;
+              }, [])
+            : undefined;
 
           const parsedDevices: DiscoveredDevice[] = [];
           if (devices) {
@@ -233,6 +275,9 @@ export function AddDeviceDialog({
               devices: merged,
               error,
               scan: scanShape,
+              ipScan: ipScan
+                ? { expanded: false, defaultCidr, candidates }
+                : undefined,
             },
           });
         })();
@@ -352,6 +397,7 @@ export function AddDeviceDialog({
         <div className="mt-6 flex min-h-0 flex-1 flex-col gap-6 min-[980px]:flex-row">
           <div className="min-h-0 min-w-0 flex-1">
             <DeviceDiscoveryPanel
+              key={discoveryPanelKey}
               snapshot={snapshot}
               existingDeviceIds={ids}
               existingDeviceBaseUrls={baseUrls}

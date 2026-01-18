@@ -2,6 +2,7 @@ downloads/
 .venv/
 tmp/
 logs/
+.tmp/
 .env
 .serena/
 

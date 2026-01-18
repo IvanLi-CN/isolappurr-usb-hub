@@ -17,6 +17,7 @@ use axum::{
     routing::{delete, get, post},
 };
 use clap::{Parser, Subcommand};
+use default_net::interface::InterfaceType;
 use directories::ProjectDirs;
 use futures::{StreamExt as _, stream};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
@@ -97,6 +98,43 @@ struct DiscoverySnapshot {
     error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     scan: Option<ScanState>,
+    #[serde(rename = "ipScan")]
+    ip_scan: IpScanSnapshot,
+}
+
+#[derive(Clone, Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct IpScanSnapshot {
+    expanded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expanded_by: Option<IpScanExpandedBy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auto_expand_after_ms: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_cidr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidates: Option<Vec<LanCandidate>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum IpScanExpandedBy {
+    User,
+    Auto,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanCandidate {
+    cidr: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    r#interface: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ipv4: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    primary: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -485,7 +523,10 @@ async fn run_gui(cli: Cli) -> anyhow::Result<()> {
         Err(err) => exit_server_failed(err),
     };
     let url = agent.agent_base_url.clone();
+    let state = agent.state.clone();
     tauri::Builder::default()
+        .manage(state)
+        .invoke_handler(tauri::generate_handler![discovery_snapshot])
         .setup(move |app| {
             let url = tauri::WebviewUrl::External(url.clone());
             tauri::WebviewWindowBuilder::new(app, "main", url)
@@ -509,8 +550,11 @@ async fn run_tray(cli: Cli) -> anyhow::Result<()> {
         Err(err) => exit_server_failed(err),
     };
     let agent_url = agent.agent_base_url.clone();
+    let state = agent.state.clone();
 
     tauri::Builder::default()
+        .manage(state)
+        .invoke_handler(tauri::generate_handler![discovery_snapshot])
         .setup(move |app| {
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::TrayIconBuilder;
@@ -636,6 +680,7 @@ fn exit_server_failed(err: anyhow::Error) -> ! {
 struct RunningAgent {
     agent_base_url: Url,
     shutdown: CancellationToken,
+    state: AppState,
 }
 
 async fn start_agent_server(
@@ -698,7 +743,7 @@ async fn start_agent_server(
         .route("/api/v1/storage/reset", post(api_storage_reset))
         .route("/", get(ui_index))
         .route("/*path", get(ui_asset))
-        .with_state(state);
+        .with_state(state.clone());
 
     let shutdown = CancellationToken::new();
     let shutdown_clone = shutdown.clone();
@@ -714,6 +759,7 @@ async fn start_agent_server(
     Ok(RunningAgent {
         agent_base_url,
         shutdown,
+        state,
     })
 }
 
@@ -1716,6 +1762,7 @@ impl DiscoveryController {
                 devices: Vec::new(),
                 error,
                 scan: None,
+                ip_scan: IpScanSnapshot::default(),
             }),
             ip_scan_cancel: RwLock::new(CancellationToken::new()),
             mdns,
@@ -1897,7 +1944,9 @@ impl DiscoveryController {
     }
 
     async fn snapshot(&self) -> DiscoverySnapshot {
-        self.snapshot.read().await.clone()
+        let mut snapshot = self.snapshot.read().await.clone();
+        snapshot.ip_scan = build_ip_scan_snapshot();
+        snapshot
     }
 
     async fn refresh_services(&self) -> anyhow::Result<()> {
@@ -2009,6 +2058,150 @@ impl DiscoveryController {
         let mut snapshot = self.snapshot.write().await;
         snapshot.status = DiscoveryStatus::Idle;
         snapshot.scan = None;
+    }
+}
+
+#[tauri::command]
+async fn discovery_snapshot(
+    state: tauri::State<'_, AppState>,
+) -> Result<DiscoverySnapshot, String> {
+    Ok(state.discovery.snapshot().await)
+}
+
+#[derive(Clone, Debug)]
+struct LanIface {
+    name: String,
+    friendly_name: Option<String>,
+    if_type: InterfaceType,
+    is_up: bool,
+    is_loopback: bool,
+    is_tun: bool,
+    ipv4: Vec<LanIpv4Net>,
+}
+
+#[derive(Clone, Debug)]
+struct LanIpv4Net {
+    addr: Ipv4Addr,
+    prefix_len: u8,
+    network: Ipv4Addr,
+}
+
+fn build_ip_scan_snapshot() -> IpScanSnapshot {
+    let interfaces = default_net::get_interfaces();
+    let default_iface_name = default_net::get_default_interface().ok().map(|i| i.name);
+    let ifaces: Vec<LanIface> = interfaces
+        .iter()
+        .map(|iface| LanIface {
+            name: iface.name.clone(),
+            friendly_name: iface.friendly_name.clone(),
+            if_type: iface.if_type,
+            is_up: iface.is_up(),
+            is_loopback: iface.is_loopback(),
+            is_tun: iface.is_tun(),
+            ipv4: iface
+                .ipv4
+                .iter()
+                .map(|net| LanIpv4Net {
+                    addr: net.addr,
+                    prefix_len: net.prefix_len,
+                    network: net.network(),
+                })
+                .collect(),
+        })
+        .collect();
+    let (default_cidr, candidates) = compute_lan_candidates(&ifaces, default_iface_name.as_deref());
+    IpScanSnapshot {
+        expanded: false,
+        expanded_by: None,
+        auto_expand_after_ms: None,
+        default_cidr,
+        candidates: Some(candidates),
+    }
+}
+
+fn compute_lan_candidates(
+    interfaces: &[LanIface],
+    default_iface_name: Option<&str>,
+) -> (Option<String>, Vec<LanCandidate>) {
+    let mut out: Vec<LanCandidate> = Vec::new();
+
+    for iface in interfaces {
+        if !iface.is_up || iface.is_loopback || iface.is_tun {
+            continue;
+        }
+        if matches!(
+            iface.if_type,
+            InterfaceType::Loopback | InterfaceType::Tunnel | InterfaceType::Ppp
+        ) {
+            continue;
+        }
+
+        let kind = iface
+            .friendly_name
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| Some(short_iface_kind(&iface.if_type)));
+
+        let label = kind.and_then(|kind| {
+            let name = iface.name.trim();
+            let kind = kind.trim();
+            if kind.is_empty() {
+                return None;
+            }
+            if name.is_empty() || kind.eq_ignore_ascii_case(name) {
+                return Some(kind.to_string());
+            }
+            Some(format!("{kind} ({name})"))
+        });
+
+        for net in &iface.ipv4 {
+            let ipv4 = net.addr;
+            if !ipv4.is_private() || ipv4.is_loopback() || ipv4.is_link_local() {
+                continue;
+            }
+            let cidr = format!("{}/{}", net.network, net.prefix_len);
+            let primary = default_iface_name
+                .map(|name| name == iface.name)
+                .unwrap_or(false);
+
+            out.push(LanCandidate {
+                cidr,
+                label: label.clone(),
+                r#interface: Some(iface.name.clone()),
+                ipv4: Some(ipv4.to_string()),
+                primary: Some(primary),
+            });
+        }
+    }
+
+    out.sort_by(|a, b| {
+        let ap = a.primary.unwrap_or(false);
+        let bp = b.primary.unwrap_or(false);
+        bp.cmp(&ap)
+            .then_with(|| a.label.cmp(&b.label))
+            .then_with(|| a.cidr.cmp(&b.cidr))
+    });
+
+    let primary_default = out
+        .iter()
+        .find(|c| c.primary.unwrap_or(false))
+        .map(|c| c.cidr.clone());
+    let default_cidr = if primary_default.is_some() {
+        primary_default
+    } else if out.len() == 1 {
+        out.first().map(|c| c.cidr.clone())
+    } else {
+        None
+    };
+
+    (default_cidr, out)
+}
+
+fn short_iface_kind(ty: &InterfaceType) -> String {
+    match ty {
+        InterfaceType::Wireless80211 => "Wi-Fi".to_string(),
+        InterfaceType::Ethernet => "Ethernet".to_string(),
+        _ => ty.name(),
     }
 }
 
@@ -2520,5 +2713,100 @@ mod tests {
         let parsed: DevicesResponse = serde_json::from_slice(&body).expect("parse response");
         assert_eq!(parsed.devices.len(), 1);
         assert_eq!(parsed.devices[0].id, "dev-1");
+    }
+
+    fn test_iface(
+        name: &str,
+        friendly: Option<&str>,
+        if_type: InterfaceType,
+        ipv4: Vec<LanIpv4Net>,
+    ) -> LanIface {
+        LanIface {
+            name: name.to_string(),
+            friendly_name: friendly.map(|s| s.to_string()),
+            if_type,
+            is_up: true,
+            is_loopback: false,
+            is_tun: false,
+            ipv4,
+        }
+    }
+
+    #[test]
+    fn lan_candidates_picks_primary_default_cidr() {
+        let interfaces = vec![
+            test_iface(
+                "en0",
+                Some("Wi-Fi"),
+                InterfaceType::Wireless80211,
+                vec![LanIpv4Net {
+                    addr: Ipv4Addr::new(192, 168, 1, 23),
+                    prefix_len: 24,
+                    network: Ipv4Addr::new(192, 168, 1, 0),
+                }],
+            ),
+            test_iface(
+                "en5",
+                Some("Ethernet"),
+                InterfaceType::Ethernet,
+                vec![LanIpv4Net {
+                    addr: Ipv4Addr::new(10, 0, 0, 5),
+                    prefix_len: 24,
+                    network: Ipv4Addr::new(10, 0, 0, 0),
+                }],
+            ),
+        ];
+
+        let (default_cidr, candidates) = compute_lan_candidates(&interfaces, Some("en5"));
+
+        assert_eq!(default_cidr.as_deref(), Some("10.0.0.0/24"));
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].cidr, "10.0.0.0/24");
+        assert_eq!(candidates[0].r#interface.as_deref(), Some("en5"));
+        assert_eq!(candidates[0].primary, Some(true));
+        assert_eq!(candidates[1].cidr, "192.168.1.0/24");
+        assert_eq!(candidates[1].primary, Some(false));
+    }
+
+    #[test]
+    fn lan_candidates_filters_link_local_and_loopback() {
+        let mut loopback = test_iface(
+            "lo0",
+            Some("Loopback"),
+            InterfaceType::Loopback,
+            vec![LanIpv4Net {
+                addr: Ipv4Addr::new(127, 0, 0, 1),
+                prefix_len: 8,
+                network: Ipv4Addr::new(127, 0, 0, 0),
+            }],
+        );
+        loopback.is_loopback = true;
+
+        let interfaces = vec![
+            loopback,
+            test_iface(
+                "en0",
+                Some("Wi-Fi"),
+                InterfaceType::Wireless80211,
+                vec![
+                    LanIpv4Net {
+                        addr: Ipv4Addr::new(169, 254, 10, 1),
+                        prefix_len: 16,
+                        network: Ipv4Addr::new(169, 254, 0, 0),
+                    },
+                    LanIpv4Net {
+                        addr: Ipv4Addr::new(192, 168, 0, 2),
+                        prefix_len: 24,
+                        network: Ipv4Addr::new(192, 168, 0, 0),
+                    },
+                ],
+            ),
+        ];
+
+        let (default_cidr, candidates) = compute_lan_candidates(&interfaces, Some("en0"));
+
+        assert_eq!(default_cidr.as_deref(), Some("192.168.0.0/24"));
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].cidr, "192.168.0.0/24");
     }
 }

@@ -14,6 +14,14 @@ export type DiscoveredDevice = {
 export type DiscoveryStatus = "idle" | "scanning" | "ready" | "unavailable";
 export type DiscoveryMode = "service" | "scan";
 
+export type LanCandidate = {
+  cidr: string;
+  label?: string;
+  interface?: string;
+  ipv4?: string;
+  primary?: boolean;
+};
+
 export type DiscoverySnapshot = {
   mode: DiscoveryMode;
   status: DiscoveryStatus;
@@ -24,6 +32,8 @@ export type DiscoverySnapshot = {
     expanded: boolean;
     expandedBy?: "user" | "auto";
     autoExpandAfterMs?: number;
+    defaultCidr?: string;
+    candidates?: LanCandidate[];
   };
 };
 
@@ -31,7 +41,7 @@ export type DiscoveryAction =
   | { type: "reset"; status: DiscoveryStatus; error?: string }
   | {
       type: "set_snapshot";
-      snapshot: Omit<DiscoverySnapshot, "ipScan">;
+      snapshot: DiscoverySnapshot;
     }
   | { type: "set_devices"; devices: DiscoveredDevice[] }
   | { type: "set_error"; error: string }
@@ -104,9 +114,17 @@ export function reduceDiscoverySnapshot(
       };
     }
     case "set_snapshot": {
+      const prevIpScan = snapshot.ipScan ?? { expanded: false };
+      const nextIpScan = action.snapshot.ipScan;
       return {
         ...action.snapshot,
-        ipScan: snapshot.ipScan ?? { expanded: false },
+        ipScan: {
+          expanded: prevIpScan.expanded,
+          expandedBy: prevIpScan.expandedBy,
+          autoExpandAfterMs: prevIpScan.autoExpandAfterMs,
+          defaultCidr: nextIpScan?.defaultCidr,
+          candidates: nextIpScan?.candidates,
+        },
       };
     }
     case "set_devices": {

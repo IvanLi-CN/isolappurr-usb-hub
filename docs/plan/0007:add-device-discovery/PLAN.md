@@ -4,7 +4,7 @@
 
 - Status: 已完成
 - Created: 2026-01-12
-- Last: 2026-01-14
+- Last: 2026-01-18
 
 ## 背景 / 问题陈述
 
@@ -27,9 +27,11 @@
 - 不在本计划中引入新的 UI 库/依赖（沿用 `web/` 现有 React + Tailwind + DaisyUI）。
 - 不在本计划中为**远程 Web（GitHub Pages）**实现“服务发现（mDNS/DNS‑SD）”（浏览器缺少 UDP/multicast 能力）；服务发现由 Plan #0008 负责。
 - IP scan（advanced）规则（远程 Web / Desktop 通用）：
-  - CIDR 必须用户显式输入并触发扫描；范围**不做自动猜测/预填**（避免误扫与隐私风险）。
+  - CIDR 必须用户显式触发扫描（点击 `Scan`）；**不自动开始扫描**。
+  - 远程 Web：CIDR 输入默认空值，范围不做自动猜测/预填（避免误扫与隐私风险）。
+  - Desktop App：可提供“本机局域网候选 CIDR”并预填默认值作为输入辅助（Plan #0013），但仍要求用户点击 `Scan` 才开始。
   - 远程 Web 依赖 Plan #0005 的 CORS + PNA 预检与权限提示；用户拒绝时应给出可读提示与排障建议。
-  - Desktop App 可额外提供“建议网段”作为输入辅助，但必须要求用户显式确认（见 Plan #0008）。
+  - Desktop App 的候选/默认值生成规则见 Plan #0013。
 
 ## 用户与场景（Users & Scenarios）
 
@@ -64,7 +66,8 @@
     - 展开时机：
       - 用户点击 `Show`（手动展开）
       - Desktop App：服务发现开启后 **30 秒内没有发现任何新设备**（device 列表无新增）时自动展开（并提示用户可尝试 IP scan）
-    - CIDR 输入默认空；UI 可给出示例与校验错误，但不得“默认帮用户填一个看起来像局域网的范围”。
+    - 远程 Web：CIDR 输入默认空；UI 可给出示例与校验错误。
+    - Desktop App：CIDR 可预填 `defaultCidr`（Plan #0013），但不得自动开始扫描。
     - 扫描过程中展示明确进度与可取消（不要求实现层细节，但 UI 必须有状态位）。
   - Discovery 列表项必须至少展示：`hostname/fqdn`、`ipv4`（如有）、`device_id`、`firmware.version`（如有）、以及用于添加的 `baseUrl`（优先 `http://<hostname>.local`，必要时回退 `http://<ipv4>`）。
 - Discovery 列表为**可滚动区域**：当结果较多时，仅列表区域滚动；`Auto discovery` 的 header（标题/状态/Refresh）、Filter 输入框、以及底部 `IP scan (advanced)`（默认折叠）保持可见（sticky/pinned）。
