@@ -8,10 +8,9 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "desktop/**"
-      - "web/**"
-      - ".github/workflows/desktop.yml"
+      - "release/*"
+    tags:
+      - "*"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +22,7 @@ concurrency:
 
 jobs:
   web-build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     name: web build (dist)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -60,6 +60,7 @@ jobs:
           retention-days: 1
 
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     needs: web-build
     strategy:
       fail-fast: false
@@ -305,7 +306,7 @@ jobs:
         working-directory: desktop
 
   build-arm64:
-    if: github.event.repository.private == false
+    if: github.event.repository.private == false && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
     needs: web-build
     strategy:
       fail-fast: false
@@ -509,7 +510,7 @@ jobs:
       - web-build
       - build
       - build-arm64
-    if: always()
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && always()
     runs-on: ubuntu-latest
     permissions:
       actions: write

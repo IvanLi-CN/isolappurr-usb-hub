@@ -2,7 +2,7 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 部分完成（2/3）
 - Created: 2026-01-18
 - Last: 2026-01-18
 
@@ -98,11 +98,10 @@
 
 ## 实现里程碑（Milestones）
 
-- [ ] M1: 调整 `desktop.yml` 的 `push` 触发范围（仅 `main` / `release/*` / tags）
-- [ ] M2: `pull_request` 场景加入 fork PR 跳过规则
+- [x] M1: 调整 `desktop.yml` 的 `push` 触发范围（仅 `main` / `release/*` / tags）
+- [x] M2: `pull_request` 场景加入 fork PR 跳过规则
 - [ ] M3: 回归验证触发行为（非主分支 push/PR/main push/release push/tag push）
 
 ## 假设（Assumptions）
 
 - 仓库当前不依赖“fork PR 必须跑 desktop”的协作模式；fork PR 跳过不会影响主流程。
-
