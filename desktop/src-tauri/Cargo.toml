@@ -13,6 +13,7 @@ tauri-build = { version = "2.5.3", features = [] }
 anyhow = "1.0.95"
 axum = "0.7.9"
 clap = { version = "4.5.27", features = ["derive"] }
+default-net = "0.22.0"
 directories = "5.0.1"
 futures = "0.3.31"
 http = "1.2.0"

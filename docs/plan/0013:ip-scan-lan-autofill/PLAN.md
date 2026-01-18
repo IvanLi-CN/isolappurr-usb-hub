@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-16
-- Last: 2026-01-16
+- Last: 2026-01-18
 
 ## 问题陈述（Problem Statement）
 
@@ -139,9 +139,9 @@
 
 ## 里程碑（Milestones）
 
-- [ ] M1: 冻结 `LanCandidate` / `DiscoverySnapshot.ipScan` 形状与契约文档
-- [ ] M2: Desktop 后端输出候选网段（HTTP + RPC）
-- [ ] M3: UI 默认值 + 自动完成 + 测试覆盖
+- [x] M1: 冻结 `LanCandidate` / `DiscoverySnapshot.ipScan` 形状与契约文档
+- [x] M2: Desktop 后端输出候选网段（HTTP + RPC）
+- [x] M3: UI 默认值 + 自动完成 + 测试覆盖
 
 ## 方案概述（Approach, high-level）
 

@@ -54,6 +54,7 @@ export function DeviceDiscoveryPanel({
 }: DeviceDiscoveryPanelProps) {
   const [filter, setFilter] = useState("");
   const [cidr, setCidr] = useState("");
+  const [cidrTouched, setCidrTouched] = useState(false);
   const [cidrError, setCidrError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,6 +62,16 @@ export function DeviceDiscoveryPanel({
       setCidrError(null);
     }
   }, [snapshot.status]);
+
+  useEffect(() => {
+    if (cidrTouched || cidr.trim().length > 0) {
+      return;
+    }
+    const next = snapshot.ipScan?.defaultCidr;
+    if (next && next.trim().length > 0) {
+      setCidr(next);
+    }
+  }, [cidr, cidrTouched, snapshot.ipScan?.defaultCidr]);
 
   const filteredDevices = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -77,6 +88,8 @@ export function DeviceDiscoveryPanel({
   }, [filter, snapshot.devices]);
 
   const ipScanExpanded = snapshot.ipScan?.expanded ?? false;
+  const ipScanCandidates = snapshot.ipScan?.candidates;
+  const ipScanCandidatesList = ipScanCandidates ?? [];
   const scanning = snapshot.status === "scanning" && snapshot.mode === "scan";
   const emptyLabel =
     snapshot.status === "scanning"
@@ -239,7 +252,10 @@ export function DeviceDiscoveryPanel({
               <input
                 className="h-[40px] flex-1 rounded-[12px] border border-[var(--border)] bg-[var(--panel-2)] px-4 text-[13px] font-medium text-[var(--text)] outline-none placeholder:text-[var(--muted)]"
                 value={cidr}
-                onChange={(e) => setCidr(e.target.value)}
+                onChange={(e) => {
+                  setCidrTouched(true);
+                  setCidr(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") {
                     return;
@@ -252,8 +268,33 @@ export function DeviceDiscoveryPanel({
                 }}
                 placeholder="CIDR, e.g. 192.168.1.0/24"
                 autoComplete="off"
+                list={
+                  ipScanCandidatesList.length > 1
+                    ? "ip-scan-candidates"
+                    : undefined
+                }
                 disabled={scanning}
               />
+              {ipScanCandidatesList.length > 1 ? (
+                <datalist id="ip-scan-candidates">
+                  {ipScanCandidatesList.map((c) => {
+                    const meta = [
+                      c.label ?? c.interface,
+                      c.ipv4 ? `${c.cidr} · ${c.ipv4}` : c.cidr,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ");
+                    return (
+                      <option
+                        key={`${c.interface ?? "if"}:${c.cidr}`}
+                        value={c.cidr}
+                      >
+                        {meta}
+                      </option>
+                    );
+                  })}
+                </datalist>
+              ) : null}
               <button
                 className="btn btn-sm h-[40px]"
                 type="button"
@@ -263,6 +304,14 @@ export function DeviceDiscoveryPanel({
                 Scan
               </button>
             </div>
+
+            {ipScanCandidates &&
+            ipScanCandidates.length === 0 &&
+            cidr.trim().length === 0 ? (
+              <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
+                No local network candidates. Enter CIDR manually.
+              </div>
+            ) : null}
 
             {cidrError ? (
               <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">

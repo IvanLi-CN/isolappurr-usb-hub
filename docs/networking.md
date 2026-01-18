@@ -135,3 +135,22 @@ curl -i -X OPTIONS \
 
 - IPv4 only (no IPv6 / mDNS over IPv6 yet).
 - No provisioning flow (SSID/PSK are compile-time injected via `.env` or environment variables).
+
+## Desktop App: IP scan LAN candidates (Plan #0013)
+
+The Desktop local agent can help users fill the `CIDR` for **IP scan (advanced)** without starting a scan automatically.
+
+Where it shows up:
+
+- `GET /api/v1/discovery/snapshot` (Desktop local agent) includes:
+  - `ipScan.defaultCidr` (string)
+  - `ipScan.candidates[]` (list)
+
+Rules (high-level):
+
+- IPv4 only.
+- Candidates are derived from the host network interfaces (via the `default-net` crate).
+- Filters out loopback and link-local (`169.254.0.0/16`), and only keeps private IPv4 (RFC1918).
+- Filters out TUN / tunnel / PPP-like interfaces to avoid VPN/virtual adapters.
+- `defaultCidr` is the candidate corresponding to the default interface (best-effort); if there is only one candidate, that one is used.
+- The UI never auto-starts a scan; a scan only begins after the user clicks `Scan`.

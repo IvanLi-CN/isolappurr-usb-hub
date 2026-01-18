@@ -4,7 +4,7 @@
 
 - Status: 已完成
 - Created: 2026-01-13
-- Last: 2026-01-14
+- Last: 2026-01-18
 
 ## 背景 / 问题陈述
 
@@ -19,7 +19,7 @@
 
 - 交付一个可实现、可测试的“桌面本机能力”方案（以同一套 discovery core 支撑多个前端形态）：
   - 复用现有 `web/` UI（包含 Plan #0006 的主题规范与 Plan #0007 的 Add device modal 交互）。
-  - 在 Rust 侧实现局域网服务发现（mDNS/DNS‑SD）与可选 IP scan（fallback），并把结果提供给前端（Tauri IPC 为主）。
+- 在 Rust 侧实现局域网服务发现（mDNS/DNS‑SD）与可选 IP scan（fallback），并把结果提供给前端（Tauri IPC 为主）。
 - Desktop App 中的 Add device 体验与 Plan #0007 的高保真稿一致（布局、状态机、空态/错误态、IP scan 折叠/30s 自动展开等）。
 - Discovery 结果仍以 `GET /api/v1/info`（Plan #0005）进行验证与字段补全，避免误识别局域网内其它 HTTP 服务。
 
@@ -82,7 +82,8 @@
   - 对候选执行 `GET http://<host>/api/v1/info`（Plan #0005）验证并补全字段后，才输出给 UI。
   - UI 使用 Plan #0007 的 `Auto discovery` 交互（含去重与“带入”规则）。
 - IP scan（fallback）：
-  - 仍遵守 Plan #0007 的原则：**不猜测网段**；CIDR 必须用户显式输入并触发扫描。
+  - 仍遵守 Plan #0007 的原则：**不自动开始扫描**；仅在用户点击 `Scan` 后发起 IP scan。
+  - Desktop App 可基于本机网卡信息提供候选 CIDR 并预填默认值（Plan #0013），但不触发扫描。
   - Desktop App 允许提供“基于本机网卡推导的建议范围”作为输入辅助，但必须要求用户显式确认（见开放问题）。
 - 安全边界（最小暴露）：
   - Desktop App 不对外暴露“任意网站可调用的 HTTP API”，默认仅限 app 内 IPC。
@@ -229,7 +230,7 @@
     - 可选增强：未来固件额外发布专用 service type（更干净，但需要改固件；如要做建议另开 plan），Desktop 可同时支持双策略
   - IPC 形态：轮询（简单）vs Channel 推送（更顺滑）。
 - 体验策略：
-  - 是否允许“从本机网卡推导 CIDR 作为建议值”（但仍要求用户确认）？
+  - 已实现：从本机网卡推导 CIDR 作为候选，并预填默认值（Plan #0013；仍要求用户点击 `Scan` 才开始）。
   - IP scan 的 CIDR 校验与防误用策略（已确认：允许任意 CIDR，但避免误扫/大范围扫描）：
     - 允许任意 CIDR 输入（不以 RFC1918 范围限制）
     - 当预计扫描目标数较大时，必须二次确认并提示风险；并发/超时要有上限（实现阶段确定默认值）
