@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 已完成
 - Created: 2026-01-17
-- Last: 2026-01-17
+- Last: 2026-01-18
 
 ## 背景 / 问题陈述
 
@@ -135,9 +135,9 @@
 
 ## 里程碑（Milestones）
 
-- [ ] M1: 复核近期 workflow 基线耗时并确认目标与触发规则
-- [ ] M2: 设计 workflow 拆分/缓存/路径过滤方案与契约
-- [ ] M3: 冻结验收标准与回退策略
+- [x] M1: 复核近期 workflow 基线耗时并确认目标与触发规则
+- [x] M2: 设计 workflow 拆分/缓存/路径过滤方案与契约
+- [x] M3: 冻结验收标准与回退策略
 
 ## 方案概述（Approach, high-level）
 
@@ -177,3 +177,15 @@ None.
 - Desktop workflow recent run: 21088739838 (2026-01-17)
 - Desktop job bottleneck steps: `Install tauri-cli`, `Desktop build` (各平台耗时占比最高)
 - CI / Pages workflows recent runs: 21088739860, 21088739881 (2026-01-17)
+
+## 实施说明（Implementation Notes）
+
+- PR 触发减负：`desktop.yml` 在 `pull_request` 仅对 `desktop/**` 与 `.github/workflows/desktop.yml` 触发；web-only / docs-only PR 跳过 desktop workflow。
+- main 合并前质量门槛：`desktop.yml` 在 `push` 仅对 `main` 触发，并覆盖 `desktop/**`、`web/**` 与自身 workflow 变更。
+- 单次 workflow 仅构建一次 `web-dist`：仍由 `web-build` 产出，其余 job 仅下载复用（通过环境变量禁止重复 web build）。
+- 加速：为 `cargo` 依赖与 `tauri-cli` 增加独立缓存（见契约文档）。
+
+## 回退策略（Rollback）
+
+- 若路径过滤导致遗漏：放宽 `desktop.yml` 的 `pull_request.paths`（例如加入必要的额外路径），或临时移除 `paths` 限制恢复“全触发”。
+- 若缓存导致不稳定：删除 `Cache tauri-cli`（或 `Cache cargo`）步骤即可回到无缓存的保守路径。

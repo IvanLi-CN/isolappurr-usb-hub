@@ -64,5 +64,5 @@
 | 0011 | Desktop：CI discovery 流程测试（跨平台 smoke） | 已完成 | `0011:desktop-discovery-ci-smoke/PLAN.md` | 2026-01-16 | 关联：0008（discovery 链路）、0009（CI 成本约束/跨平台）；PR gate 覆盖 macOS/Windows/Linux |
 | 0012 | Desktop：本地持久化记忆（不依赖浏览器存储） | 已完成 | `0012:desktop-persistent-storage/PLAN.md` | 2026-01-17 | 关联：0008（Desktop local agent）、0004/0006（localStorage 既有格式）、0009（跨平台目录/权限）、0010（UI 交互不变）；branch: `feat/0012-desktop-persistent-storage` |
 | 0013 | Desktop：IP scan 输入默认本机局域网信息 | 已完成 | `0013:ip-scan-lan-autofill/PLAN.md` | 2026-01-18 | 关联：0007（Add device）、0008（Desktop discovery）；branch: `feat/0013-ip-scan-lan-autofill` |
-| 0014 | GitHub Actions：构建提速与分拆 | 待实现 | `0014:actions-speedup/PLAN.md` | 2026-01-17 | - |
+| 0014 | GitHub Actions：构建提速与分拆 | 已完成 | `0014:actions-speedup/PLAN.md` | 2026-01-18 | branch: `feat/0014-actions-speedup` |
 | 0015 | Desktop：CI 触发去重（避免 push 与 PR 重复） | 待实现 | `0015:desktop-ci-trigger-gating/PLAN.md` | 2026-01-18 | 非主分支 push 不构建 desktop；main/release/tags push 仍构建；fork PR 跳过 |
