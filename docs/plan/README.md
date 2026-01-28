@@ -4,7 +4,7 @@
 
 ## 快速新增一个计划
 
-1. 分配一个新的四位编号 `ID`（查看下方 Index，取未使用的最小或递增编号）。
+1. 生成一个新的计划 `ID`（推荐 5 个字符的 nanoId 风格，降低并行建计划时的冲突概率）。
 2. 新建目录：`docs/plan/<id>:<title>/`（`<title>` 用简短 slug，建议 kebab-case）。
 3. 在该目录下创建 `PLAN.md`（模板见下方“PLAN.md 写法（简要）”）。
 4. 在下方 Index 表新增一行，并把 `Status` 设为 `待设计` 或 `待实现`（取决于是否已冻结验收标准），并填入 `Last`（通常为当天）。
@@ -12,7 +12,10 @@
 ## 目录与命名规则
 
 - 每个计划一个目录：`docs/plan/<id>:<title>/`
-- `<id>`：四位数字（`0001`–`9999`），一经分配不要变更。
+- `<id>`：推荐 5 个字符的 nanoId 风格，一经分配不要变更。
+  - 推荐字符集（小写 + 避免易混淆字符）：`23456789abcdefghjkmnpqrstuvwxyz`
+  - 正则：`[23456789abcdefghjkmnpqrstuvwxyz]{5}`
+  - 兼容：若仓库历史已使用四位数字 `0001`–`9999`，允许继续共存。
 - `<title>`：短标题 slug（建议 kebab-case，避免空格与特殊字符）；目录名尽量稳定。
 - 人类可读标题写在 Index 的 `Title` 列；标题变更优先改 `Title`，不强制改目录名。
 
@@ -22,6 +25,7 @@
 
 - `待设计`：范围/约束/验收标准尚未冻结，仍在补齐信息与决策。
 - `待实现`：计划已冻结，允许进入实现阶段（或进入 PM/DEV 交付流程）。
+- `跳过`：计划已冻结或部分完成，但当前明确不应自动开工；需要实现时再改回 `待实现`（或由主人显式点名）。
 - `部分完成（x/y）`：实现进行中；`y` 为该计划里定义的里程碑数，`x` 为已完成里程碑数（见该计划 `PLAN.md` 的 Milestones）。
 - `已完成`：该计划已完成（通常已合并到主分支或已确认不再需要变更）。
 - `作废`：不再推进（取消/价值不足/外部条件变化）。
@@ -66,3 +70,4 @@
 | 0013 | Desktop：IP scan 输入默认本机局域网信息 | 已完成 | `0013:ip-scan-lan-autofill/PLAN.md` | 2026-01-18 | 关联：0007（Add device）、0008（Desktop discovery）；branch: `feat/0013-ip-scan-lan-autofill` |
 | 0014 | GitHub Actions：构建提速与分拆 | 已完成 | `0014:actions-speedup/PLAN.md` | 2026-01-18 | branch: `feat/0014-actions-speedup` |
 | 0015 | Desktop：CI 触发去重（避免 push 与 PR 重复） | 已完成 | `0015:desktop-ci-trigger-gating/PLAN.md` | 2026-01-18 | 非主分支 push 不构建 desktop；main/release/tags push 仍构建；fork PR 跳过；merged PR #42 |
+| 6xrna | CH318T LEDD 原始电平采集（作为 USB 链路指示输入） | 待实现 | `6xrna:ch318-ledd-raw-signal/PLAN.md` | 2026-01-28 | - |
