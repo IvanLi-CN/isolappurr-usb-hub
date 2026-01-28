@@ -2,7 +2,7 @@
 
 ## 状态
 
-- Status: 待实现
+- Status: 部分完成（2/3）
 - Created: 2026-01-28
 - Last: 2026-01-28
 
@@ -111,8 +111,8 @@ None
 
 ## 实现里程碑（Milestones）
 
-- [ ] M1: 锁定 GPIO、实现 `LEDD` 原始电平采集（含滤波）与调试可观测性
-- [ ] M2: 将目标端口的 `data_connected` 改为由该输入驱动（不改 API schema）
+- [x] M1: 锁定 GPIO、实现 `LEDD` 原始电平采集（含滤波）与调试可观测性
+- [x] M2: 将目标端口的 `data_connected` 改为由该输入驱动（不改 API schema）
 - [ ] M3: 实机验证（断开/重连/噪声场景）并补齐文档说明
 
 ## 方案概述（Approach, high-level）
@@ -131,3 +131,4 @@ None
 ## 变更记录（Change log）
 
 - 2026-01-28: 创建计划
+- 2026-01-28: 完成 M1/M2（固件采集 LEDD 原始电平并驱动 `port_a.state.data_connected`）
