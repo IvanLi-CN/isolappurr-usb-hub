@@ -653,7 +653,7 @@ async fn main(_spawner: Spawner) {
         let ui_was_in_error = ui_error_latched;
 
         #[cfg(feature = "net_http")]
-        let api_usb_a_data_connected = {
+        let api_upstream_connected = {
             let now = Instant::now();
             let raw_low = ledd_usb_a.is_low();
             if let Some(stable_low) = ledd_usb_a_state.update(now, raw_low, ledd_debounce) {
@@ -1466,9 +1466,7 @@ async fn main(_spawner: Spawner) {
                     ),
                     state: net::ApiPortState {
                         power_enabled: port_usb_a.power == PowerState::On,
-                        // Drive "data_connected" from CH318T LEDD raw indicator (Plan 6xrna),
-                        // rather than the internal connect/disconnect control state.
-                        data_connected: api_usb_a_data_connected,
+                        data_connected: matches!(port_usb_a.data, DataState::Connected),
                         replugging: matches!(port_usb_a.data, DataState::Pulsing { .. }),
                         busy: port_usb_a.is_busy(now),
                     },
@@ -1489,6 +1487,9 @@ async fn main(_spawner: Spawner) {
             };
 
             let mut guard = api_state.lock().await;
+            guard.hub = net::ApiHubSnapshot {
+                upstream_connected: api_upstream_connected,
+            };
             guard.ports = ports;
         }
 

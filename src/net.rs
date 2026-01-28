@@ -151,6 +151,19 @@ pub struct ApiPortState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiHubSnapshot {
+    pub upstream_connected: bool,
+}
+
+impl ApiHubSnapshot {
+    pub const fn unknown() -> Self {
+        Self {
+            upstream_connected: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ApiPortSnapshot {
     pub telemetry: ApiPortTelemetry,
     pub state: ApiPortState,
@@ -208,6 +221,7 @@ impl ApiPendingActions {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ApiSharedState {
+    pub hub: ApiHubSnapshot,
     pub ports: ApiPortsSnapshot,
     pub pending: ApiPendingActions,
 }
@@ -215,6 +229,7 @@ pub struct ApiSharedState {
 impl ApiSharedState {
     pub const fn new() -> Self {
         Self {
+            hub: ApiHubSnapshot::unknown(),
             ports: ApiPortsSnapshot::unknown(),
             pending: ApiPendingActions::empty(),
         }
@@ -697,12 +712,18 @@ async fn handle_api_request(
             return Ok(());
         }
         ("GET", "/api/v1/ports") => {
-            let ports = { api_state.lock().await.ports };
+            let state = { *api_state.lock().await };
             let mut body = String::new();
-            let _ = body.push_str("{\"ports\":[");
-            write_port_json(&mut body, ApiPortId::PortA, "USB-A", &ports.port_a);
+            let _ = body.push_str("{\"hub\":{\"upstream_connected\":");
+            let _ = body.push_str(if state.hub.upstream_connected {
+                "true"
+            } else {
+                "false"
+            });
+            let _ = body.push_str("},\"ports\":[");
+            write_port_json(&mut body, ApiPortId::PortA, "USB-A", &state.ports.port_a);
             let _ = body.push(',');
-            write_port_json(&mut body, ApiPortId::PortC, "USB-C", &ports.port_c);
+            write_port_json(&mut body, ApiPortId::PortC, "USB-C", &state.ports.port_c);
             let _ = body.push_str("]}");
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
