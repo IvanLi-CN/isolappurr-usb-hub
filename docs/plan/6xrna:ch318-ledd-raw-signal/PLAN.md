@@ -2,7 +2,7 @@
 
 ## 状态
 
-- Status: 部分完成（2/3）
+- Status: 部分完成（3/4）
 - Created: 2026-01-28
 - Last: 2026-01-28
 
@@ -27,6 +27,7 @@
 - 以 **不干扰现有 LED 与模式配置** 为前提，读取 `LEDD` 节点的原始电平/边沿变化。
 - 提供稳定的“连接指示输入”信号（带必要的毛刺过滤/去抖），供固件内部状态机使用。
 - 让 `net_http` 的 `state.data_connected` 能基于该输入反映链路变化（不新增 API 字段）。
+- Web UI 显示端口 USB 状态（基于 `state.data_connected`）。
 
 ### Non-goals
 
@@ -41,6 +42,7 @@
 - 固件：将 `LEDD` 所连 GPIO 配置为高阻输入（禁用内部上下拉），并采集原始电平/边沿。
 - 固件：实现基础滤波（去抖/毛刺过滤）与节流更新，提供稳定的 `connected_hint` 输入给端口状态。
 - 固件（`net_http`）：`state.data_connected` 改为由该输入驱动（或至少在目标端口上由其驱动）。
+- Web UI：在端口卡片中显示 `USB link/no link/replugging`（基于 `state.data_connected/replugging`）。
 - 文档：补充一份“信号来源/极性/刷新率/限制”的说明，避免后续误用。
 
 ### Out of scope
@@ -55,6 +57,7 @@
 - GPIO 必须保持高阻输入：不输出、不上拉、不下拉，避免影响 `LEDD` 的电路电平与 LED 行为。
 - 采集逻辑必须能抵抗短毛刺：对外输出的 `connected_hint` 不应因瞬时抖动频繁翻转。
 - `net_http` 开启时：`state.data_connected` 在物理链路变化后应在可接受延迟内更新（目标：< 500ms）。
+- Web UI 必须显示 USB 状态（基于 `state.data_connected`），并在 `replugging` 时显示中间态。
 - 不引入新依赖；不修改现有“端口选择/扫描”等安全约束。
 
 ### SHOULD
@@ -78,6 +81,10 @@ None（不改变既有 `/api/v1` schema；仅改变 `data_connected` 的输入�
 - Given `net_http` 已开启  
   When `LEDD` 的稳定电平发生翻转（经本计划滤波后）  
   Then `GET /api/v1/ports` 中 `port_a.state.data_connected` 应在 500ms 内随之变化。
+
+- Given Web UI 已连接到设备且能获取 ports 状态  
+  When `state.data_connected/replugging` 发生变化  
+  Then 端口卡片中的 USB 状态徽标应在下一次刷新后更新为对应状态。
 
 - Given 系统处于噪声/抖动环境  
   When `LEDD` 节点出现短毛刺  
@@ -114,6 +121,7 @@ None
 - [x] M1: 锁定 GPIO、实现 `LEDD` 原始电平采集（含滤波）与调试可观测性
 - [x] M2: 将目标端口的 `data_connected` 改为由该输入驱动（不改 API schema）
 - [ ] M3: 实机验证（断开/重连/噪声场景）并补齐文档说明
+- [x] M4: Web UI 显示端口 USB 状态（不改 API schema）
 
 ## 方案概述（Approach, high-level）
 
@@ -132,3 +140,4 @@ None
 
 - 2026-01-28: 创建计划
 - 2026-01-28: 完成 M1/M2（固件采集 LEDD 原始电平并驱动 `port_a.state.data_connected`）
+- 2026-01-28: 追加并完成 M4（Web UI 显示端口 USB 状态徽标）

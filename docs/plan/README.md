@@ -70,4 +70,4 @@
 | 0013 | Desktop：IP scan 输入默认本机局域网信息 | 已完成 | `0013:ip-scan-lan-autofill/PLAN.md` | 2026-01-18 | 关联：0007（Add device）、0008（Desktop discovery）；branch: `feat/0013-ip-scan-lan-autofill` |
 | 0014 | GitHub Actions：构建提速与分拆 | 已完成 | `0014:actions-speedup/PLAN.md` | 2026-01-18 | branch: `feat/0014-actions-speedup` |
 | 0015 | Desktop：CI 触发去重（避免 push 与 PR 重复） | 已完成 | `0015:desktop-ci-trigger-gating/PLAN.md` | 2026-01-18 | 非主分支 push 不构建 desktop；main/release/tags push 仍构建；fork PR 跳过；merged PR #42 |
-| 6xrna | CH318T LEDD 原始电平采集（作为 USB 链路指示输入） | 部分完成（2/3） | `6xrna:ch318-ledd-raw-signal/PLAN.md` | 2026-01-28 | - |
+| 6xrna | CH318T LEDD 原始电平采集（作为 USB 链路指示输入） | 部分完成（3/4） | `6xrna:ch318-ledd-raw-signal/PLAN.md` | 2026-01-28 | - |
