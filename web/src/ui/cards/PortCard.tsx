@@ -20,6 +20,31 @@ function statusBadgeStyles(status: string): { bg: string; text: string } {
   };
 }
 
+function usbLinkBadgeStyles(state: {
+  data_connected: boolean;
+  replugging: boolean;
+}): { bg: string; text: string; label: string } {
+  if (state.replugging) {
+    return {
+      bg: "bg-[var(--badge-warning-bg)]",
+      text: "text-[var(--badge-warning-text)]",
+      label: "USB replugging",
+    };
+  }
+  if (state.data_connected) {
+    return {
+      bg: "bg-[var(--badge-success-bg)]",
+      text: "text-[var(--badge-success-text)]",
+      label: "USB link",
+    };
+  }
+  return {
+    bg: "bg-[var(--badge-error-bg)]",
+    text: "text-[var(--badge-error-text)]",
+    label: "USB no link",
+  };
+}
+
 function formatValue(value: number | null, unit: "V" | "A" | "W"): string {
   if (value === null) {
     return `--.-${unit}`;
@@ -107,6 +132,7 @@ export function PortCard({
   const busy = state.busy;
   const actionDisabled = !!disabled || busy;
   const badge = statusBadgeStyles(telemetry.status);
+  const usbBadge = usbLinkBadgeStyles(state);
 
   return (
     <div
@@ -114,7 +140,21 @@ export function PortCard({
       data-testid={`port-card-${portId}`}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="text-[16px] font-bold">{label}</div>
+        <div className="flex flex-col">
+          <div className="text-[16px] font-bold">{label}</div>
+          <div className="mt-2">
+            <div
+              className={[
+                "flex h-6 w-fit items-center justify-center rounded-full px-3",
+                usbBadge.bg,
+                usbBadge.text,
+                "whitespace-nowrap text-[12px] font-semibold",
+              ].join(" ")}
+            >
+              {usbBadge.label}
+            </div>
+          </div>
+        </div>
         <div
           className={[
             "flex h-6 min-w-[60px] items-center justify-center rounded-full px-3",
