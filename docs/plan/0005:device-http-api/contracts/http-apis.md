@@ -126,6 +126,7 @@ Web 端建议：
 
 ```json
 {
+  "hub": { "upstream_connected": true },
   "ports": [
     {
       "portId": "port_a",
@@ -148,6 +149,10 @@ Web 端建议：
   ]
 }
 ```
+
+字段说明：
+
+- `hub.upstream_connected`：Hub 侧的“上游链路指示”状态位（是否检测到与上游主机的连接）。其具体电气来源由硬件版本决定（例如来自隔离侧指示脚/LED 节点的采样），固件保证该字段为稳定化后的 1-bit 状态输入。
 
 #### Telemetry status
 

@@ -8,9 +8,9 @@
 
 ## 背景 / 问题陈述
 
-- 设备当前需要一个“USB 通信是否建立”的可观测信号，用于固件逻辑与对外状态（`data_connected`）。
+- 设备当前需要一个“隔离型 USB Hub 的上游链路是否建立”的可观测信号，用于固件逻辑与对外状态展示。
 - 硬件上已将 `CH318T.LED/MODE(LEDD)` 通过电阻连接到 MCU GPIO，且板载 LED 工作正常。
-- 本计划不关心 LED 语义的“解释”，而是要读取该节点的原始电平/波形，并将其作为上层状态的输入源。
+- 本计划不关心 LED 语义的“解释”，而是要读取该节点的原始电平/波形，并将其作为 Hub 上游状态的输入源。
 
 ## 已确认的事实（Repo reconnaissance）
 
@@ -18,7 +18,7 @@
 - 板载 LED 网络：`LED1 pin2 → 3V3`，`LED1 pin1 → R8(1k) → LEDD`；因此该脚为灌电流驱动，一般可认为 **`LEDD=0` 对应 LED 亮**（active-low）。
 - MCU 连接：`R39`（标注 `n.c.` 的可选电阻）把 `LEDD` 接到 `U19 pin11`（net：`$1N241`）。
 - GPIO 映射（基于仓库既有 pin→GPIO 记录）：`U19 pin13→GPIO8`、`pin14→GPIO9`、`pin15→GPIO10` 等（见 `docs/gc9307-telemetry-design.md`），因此 `U19 pin11` 对应 `GPIO6`。
-- 端口归属：该 `CH318T` 隔离链路服务于 USB‑A 侧的数据路径；本计划把该信号用于 `port_a.state.data_connected`。
+- 信号归属：该 `CH318T` 隔离链路服务于 Hub↔Host 的数据通路；本计划把该信号用于 Hub 级 `hub.upstream_connected`。
 
 ## 目标 / 非目标
 
@@ -26,8 +26,8 @@
 
 - 以 **不干扰现有 LED 与模式配置** 为前提，读取 `LEDD` 节点的原始电平/边沿变化。
 - 提供稳定的“连接指示输入”信号（带必要的毛刺过滤/去抖），供固件内部状态机使用。
-- 让 `net_http` 的 `state.data_connected` 能基于该输入反映链路变化（不新增 API 字段）。
-- Web UI 显示端口 USB 状态（基于 `state.data_connected`）。
+- 让 `net_http` 的 `GET /api/v1/ports` 新增 Hub 级字段 `hub.upstream_connected`，并随该输入反映链路变化。
+- Web UI 显示 Hub 上游 USB 状态（基于 `hub.upstream_connected`）。
 
 ### Non-goals
 
@@ -41,8 +41,8 @@
 
 - 固件：将 `LEDD` 所连 GPIO 配置为高阻输入（禁用内部上下拉），并采集原始电平/边沿。
 - 固件：实现基础滤波（去抖/毛刺过滤）与节流更新，提供稳定的 `connected_hint` 输入给端口状态。
-- 固件（`net_http`）：`state.data_connected` 改为由该输入驱动（或至少在目标端口上由其驱动）。
-- Web UI：在端口卡片中显示 `USB link/no link/replugging`（基于 `state.data_connected/replugging`）。
+- 固件（`net_http`）：`GET /api/v1/ports` 返回新增 `hub.upstream_connected`，由该输入驱动。
+- Web UI：显示 `hub.upstream_connected` 的上游 USB 状态徽标。
 - 文档：补充一份“信号来源/极性/刷新率/限制”的说明，避免后续误用。
 
 ### Out of scope
@@ -70,7 +70,9 @@
 
 ## 接口契约（Interfaces & Contracts）
 
-None（不改变既有 `/api/v1` schema；仅改变 `data_connected` 的输入来源以更贴近既有字段语义）。
+| 接口（Name） | 类型（Kind） | 范围（Scope） | 变更（Change） | 契约文档（Contract Doc） | 负责人（Owner） | 使用方（Consumers） | 备注（Notes） |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `GET /api/v1/ports` | HTTP API | external | Modify | `./contracts/http-apis.md` | firmware | web | 新增 `hub.upstream_connected` |
 
 ## 验收标准（Acceptance Criteria）
 
@@ -80,11 +82,11 @@ None（不改变既有 `/api/v1` schema；仅改变 `data_connected` 的输入�
 
 - Given `net_http` 已开启  
   When `LEDD` 的稳定电平发生翻转（经本计划滤波后）  
-  Then `GET /api/v1/ports` 中 `port_a.state.data_connected` 应在 500ms 内随之变化。
+  Then `GET /api/v1/ports` 中 `hub.upstream_connected` 应在 500ms 内随之变化。
 
 - Given Web UI 已连接到设备且能获取 ports 状态  
-  When `state.data_connected/replugging` 发生变化  
-  Then 端口卡片中的 USB 状态徽标应在下一次刷新后更新为对应状态。
+  When `hub.upstream_connected` 发生变化  
+  Then Web UI 中的 Host/Upstream 状态徽标应在下一次刷新后更新为对应状态。
 
 - Given 系统处于噪声/抖动环境  
   When `LEDD` 节点出现短毛刺  
@@ -93,7 +95,6 @@ None（不改变既有 `/api/v1` schema；仅改变 `data_connected` 的输入�
 ## 实现前置条件（Definition of Ready / Preconditions）
 
 - 采集引脚已冻结：`LEDD` → `GPIO6`（`U19 pin11`）。
-- 端口映射已冻结：`LEDD` 驱动 `port_a.state.data_connected`。
 - 采集策略与参数已冻结：边沿中断优先；去抖窗口 `5–20ms`（实现阶段微调）。
 
 ## 非功能性验收 / 质量门槛（Quality Gates）
@@ -110,7 +111,7 @@ None（不改变既有 `/api/v1` schema；仅改变 `data_connected` 的输入�
 ## 文档更新（Docs to Update）
 
 - `docs/netlist/tps-sw-checklist.md`: 补充 `R39`（LEDD→MCU）作为“读取 LED 原始电平”的用途说明与注意事项（高阻输入、不要驱动）。
-- `docs/plan/0005:device-http-api/contracts/http-apis.md`: 不改 schema；如需补充 `data_connected` 的来源说明，以“Clarification”形式增量补充（可选，需主人确认是否要写入契约）。
+- `docs/plan/0005:device-http-api/contracts/http-apis.md`: 增量补充 `hub.upstream_connected` 字段说明。
 
 ## 资产晋升（Asset promotion）
 
@@ -119,14 +120,14 @@ None
 ## 实现里程碑（Milestones）
 
 - [x] M1: 锁定 GPIO、实现 `LEDD` 原始电平采集（含滤波）与调试可观测性
-- [x] M2: 将目标端口的 `data_connected` 改为由该输入驱动（不改 API schema）
+- [x] M2: 将 `hub.upstream_connected` 改为由该输入驱动（API schema 增量变更）
 - [ ] M3: 实机验证（断开/重连/噪声场景）并补齐文档说明
-- [x] M4: Web UI 显示端口 USB 状态（不改 API schema）
+- [x] M4: Web UI 显示 Hub 上游 USB 状态（对接 `hub.upstream_connected`）
 
 ## 方案概述（Approach, high-level）
 
 - 将 `LEDD` 视作“外部提供的 1-bit 状态源”，固件只做采集与稳定化（滤波），不在本计划内承诺其业务语义。
-- `data_connected` 作为对外状态字段，仅使用“稳定化后的电平”作为输入；若未来需要更强语义（枚举成功/端口设备存在），另开计划扩展数据源。
+- `hub.upstream_connected` 作为对外 Hub 状态字段，仅使用“稳定化后的电平”作为输入；若未来需要更强语义（枚举完成/速率/错误原因），另开计划扩展数据源。
 
 ## 风险 / 开放问题 / 假设（Risks, Open Questions, Assumptions）
 
@@ -142,3 +143,4 @@ None
 - 2026-01-28: 完成 M1/M2（固件采集 LEDD 原始电平并驱动 `port_a.state.data_connected`）
 - 2026-01-28: 追加并完成 M4（Web UI 显示端口 USB 状态徽标）
 - 2026-01-28: 修复 Web UI：USB 状态徽标不再依赖 `telemetry.status`（即使遥测为 `not_inserted` 也显示 `USB link/no link`）
+- 2026-01-28: 变更口径：新增 Hub 级 `hub.upstream_connected`；不再用 `port_a.state.data_connected` 表达上游链路
