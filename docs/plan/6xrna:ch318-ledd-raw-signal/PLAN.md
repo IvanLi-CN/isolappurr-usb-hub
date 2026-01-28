@@ -141,3 +141,4 @@ None
 - 2026-01-28: 创建计划
 - 2026-01-28: 完成 M1/M2（固件采集 LEDD 原始电平并驱动 `port_a.state.data_connected`）
 - 2026-01-28: 追加并完成 M4（Web UI 显示端口 USB 状态徽标）
+- 2026-01-28: 修复 Web UI：USB 状态徽标不再依赖 `telemetry.status`（即使遥测为 `not_inserted` 也显示 `USB link/no link`）
