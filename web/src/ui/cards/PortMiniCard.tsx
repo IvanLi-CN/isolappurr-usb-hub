@@ -101,25 +101,34 @@ export function PortMiniCard({
 
   const busy = state.busy;
   const powerEnabled = state.power_enabled;
-  const usbLinkLabel = state.replugging
-    ? "USB replugging"
-    : state.data_connected
-      ? "USB link"
-      : "USB no link";
-  const usbLinkBadgeStyles = state.replugging
-    ? {
-        bg: "bg-[var(--badge-warning-bg)]",
-        text: "text-[var(--badge-warning-text)]",
-      }
-    : state.data_connected
+  const usbLinkLabel =
+    telemetry.status === "not_inserted"
+      ? "USB n/a"
+      : state.replugging
+        ? "USB replugging"
+        : state.data_connected
+          ? "USB link"
+          : "USB no link";
+  const usbLinkBadgeStyles =
+    telemetry.status === "not_inserted"
       ? {
-          bg: "bg-[var(--badge-success-bg)]",
-          text: "text-[var(--badge-success-text)]",
+          bg: "bg-[var(--badge-warning-bg)]",
+          text: "text-[var(--badge-warning-text)]",
         }
-      : {
-          bg: "bg-[var(--badge-error-bg)]",
-          text: "text-[var(--badge-error-text)]",
-        };
+      : state.replugging
+        ? {
+            bg: "bg-[var(--badge-warning-bg)]",
+            text: "text-[var(--badge-warning-text)]",
+          }
+        : state.data_connected
+          ? {
+              bg: "bg-[var(--badge-success-bg)]",
+              text: "text-[var(--badge-success-text)]",
+            }
+          : {
+              bg: "bg-[var(--badge-error-bg)]",
+              text: "text-[var(--badge-error-text)]",
+            };
   const actionDisabled = disabled || busy;
 
   const powerWidth = "w-[100px]";

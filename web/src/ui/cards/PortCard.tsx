@@ -20,10 +20,17 @@ function statusBadgeStyles(status: string): { bg: string; text: string } {
   };
 }
 
-function usbLinkBadgeStyles(state: {
-  data_connected: boolean;
-  replugging: boolean;
-}): { bg: string; text: string; label: string } {
+function usbLinkBadgeStyles(
+  telemetryStatus: string,
+  state: { data_connected: boolean; replugging: boolean },
+): { bg: string; text: string; label: string } {
+  if (telemetryStatus === "not_inserted") {
+    return {
+      bg: "bg-[var(--badge-warning-bg)]",
+      text: "text-[var(--badge-warning-text)]",
+      label: "USB n/a",
+    };
+  }
   if (state.replugging) {
     return {
       bg: "bg-[var(--badge-warning-bg)]",
@@ -132,7 +139,7 @@ export function PortCard({
   const busy = state.busy;
   const actionDisabled = !!disabled || busy;
   const badge = statusBadgeStyles(telemetry.status);
-  const usbBadge = usbLinkBadgeStyles(state);
+  const usbBadge = usbLinkBadgeStyles(telemetry.status, state);
 
   return (
     <div
