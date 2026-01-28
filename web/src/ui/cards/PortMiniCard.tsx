@@ -102,10 +102,10 @@ export function PortMiniCard({
   const busy = state.busy;
   const powerEnabled = state.power_enabled;
   const usbLinkLabel = state.replugging
-    ? "USB replugging"
+    ? "DATA replugging"
     : state.data_connected
-      ? "USB link"
-      : "USB no link";
+      ? "DATA on"
+      : "DATA off";
   const usbLinkBadgeStyles = state.replugging
     ? {
         bg: "bg-[var(--badge-warning-bg)]",

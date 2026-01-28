@@ -35,6 +35,7 @@ const mockDeviceApi = async (
 
   if (url.pathname === "/api/v1/ports") {
     return jsonResponse({
+      hub: { upstream_connected: true },
       ports: [
         {
           portId: "port_a",

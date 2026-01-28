@@ -14,7 +14,7 @@ import {
   replugPort,
   setPortPower,
 } from "../domain/deviceApi";
-import type { Port, PortId } from "../domain/ports";
+import type { HubState, Port, PortId } from "../domain/ports";
 import { useToast } from "../ui/toast/ToastProvider";
 import { useDevices } from "./devices-store";
 
@@ -23,6 +23,7 @@ export type ConnectionState = "online" | "offline" | "unknown";
 type DeviceRuntime = {
   lastOkAt: number | null;
   lastError: DeviceApiError | null;
+  hub: HubState | null;
   ports: Record<PortId, Port> | null;
   pending: Record<PortId, boolean>;
 };
@@ -33,6 +34,7 @@ type DeviceRuntimeContextValue = {
   connectionState: (deviceId: string) => ConnectionState;
   lastOkAt: (deviceId: string) => number | null;
   lastErrorLabel: (deviceId: string) => string | null;
+  hub: (deviceId: string) => HubState | null;
   port: (deviceId: string, portId: PortId) => Port | null;
   pending: (deviceId: string, portId: PortId) => boolean;
   refreshDevice: (deviceId: string) => Promise<void>;
@@ -93,6 +95,7 @@ export function DeviceRuntimeProvider({
           next[d.id] = {
             lastOkAt: null,
             lastError: null,
+            hub: null,
             ports: null,
             pending: { port_a: false, port_c: false },
           };
@@ -115,16 +118,18 @@ export function DeviceRuntimeProvider({
           return prev;
         }
         if (res.ok) {
+          const hub = res.value.hub;
           const portA = res.value.ports.find((p) => p.portId === "port_a");
           const portC = res.value.ports.find((p) => p.portId === "port_c");
-          if (!portA || !portC) {
+          if (!hub || !portA || !portC) {
             return {
               ...prev,
               [deviceId]: {
                 ...current,
                 lastError: {
                   kind: "invalid_response",
-                  message: "missing port_a or port_c in /api/v1/ports response",
+                  message:
+                    "missing hub, port_a, or port_c in /api/v1/ports response",
                 },
               },
             };
@@ -135,6 +140,7 @@ export function DeviceRuntimeProvider({
               ...current,
               lastOkAt: Date.now(),
               lastError: null,
+              hub,
               ports: { port_a: portA, port_c: portC },
             },
           };
@@ -292,6 +298,9 @@ export function DeviceRuntimeProvider({
       return shortApiError(rt.lastError);
     };
 
+    const hub = (deviceId: string): HubState | null =>
+      runtimeById[deviceId]?.hub ?? null;
+
     const port = (deviceId: string, portId: PortId): Port | null =>
       runtimeById[deviceId]?.ports?.[portId] ?? null;
 
@@ -304,6 +313,7 @@ export function DeviceRuntimeProvider({
       connectionState,
       lastOkAt,
       lastErrorLabel,
+      hub,
       port,
       pending,
       refreshDevice,

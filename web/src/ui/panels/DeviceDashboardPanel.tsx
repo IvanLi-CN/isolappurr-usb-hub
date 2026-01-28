@@ -58,11 +58,46 @@ function statusBadge(state: "online" | "offline" | "unknown"): {
   };
 }
 
+function upstreamBadge(upstreamConnected: boolean | null): {
+  bg: string;
+  text: string;
+  width: string;
+  label: string;
+} {
+  if (upstreamConnected === null) {
+    return {
+      bg: "bg-[var(--badge-warning-bg)]",
+      text: "text-[var(--badge-warning-text)]",
+      width: "w-[92px]",
+      label: "host —",
+    };
+  }
+  if (upstreamConnected) {
+    return {
+      bg: "bg-[var(--badge-success-bg)]",
+      text: "text-[var(--badge-success-text)]",
+      width: "w-[92px]",
+      label: "host link",
+    };
+  }
+  return {
+    bg: "bg-[var(--badge-error-bg)]",
+    text: "text-[var(--badge-error-text)]",
+    width: "w-[108px]",
+    label: "host no link",
+  };
+}
+
 export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const runtime = useDeviceRuntime();
 
   const connectionState = runtime.connectionState(device.id);
   const badge = statusBadge(connectionState);
+  const upstream = upstreamBadge(
+    connectionState === "online"
+      ? (runtime.hub(device.id)?.upstream_connected ?? null)
+      : null,
+  );
 
   const lastOkAt = runtime.lastOkAt(device.id);
   const headerLastOk = lastOkAt === null ? "—" : formatTimeHms(lastOkAt);
@@ -115,16 +150,29 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
             <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
               Status
             </div>
-            <div
-              className={[
-                "flex h-[26px] items-center justify-center rounded-full",
-                badge.width,
-                badge.bg,
-                badge.text,
-                "text-[12px] font-semibold",
-              ].join(" ")}
-            >
-              {connectionState}
+            <div className="flex items-center gap-2">
+              <div
+                className={[
+                  "flex h-[26px] items-center justify-center rounded-full",
+                  badge.width,
+                  badge.bg,
+                  badge.text,
+                  "text-[12px] font-semibold",
+                ].join(" ")}
+              >
+                {connectionState}
+              </div>
+              <div
+                className={[
+                  "flex h-[26px] items-center justify-center rounded-full",
+                  upstream.width,
+                  upstream.bg,
+                  upstream.text,
+                  "text-[12px] font-semibold",
+                ].join(" ")}
+              >
+                {upstream.label}
+              </div>
             </div>
           </div>
           <div className="flex min-w-0 items-center">

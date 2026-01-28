@@ -28,20 +28,20 @@ function usbLinkBadgeStyles(state: {
     return {
       bg: "bg-[var(--badge-warning-bg)]",
       text: "text-[var(--badge-warning-text)]",
-      label: "USB replugging",
+      label: "DATA replugging",
     };
   }
   if (state.data_connected) {
     return {
       bg: "bg-[var(--badge-success-bg)]",
       text: "text-[var(--badge-success-text)]",
-      label: "USB link",
+      label: "DATA on",
     };
   }
   return {
     bg: "bg-[var(--badge-error-bg)]",
     text: "text-[var(--badge-error-text)]",
-    label: "USB no link",
+    label: "DATA off",
   };
 }
 
