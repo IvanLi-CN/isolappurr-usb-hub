@@ -122,7 +122,7 @@
   - `RES`：U19 pin19 → GPIO14
   - `BLK`：U19 pin21（pin name 为 `XTAL_32K_P`，v1 默认作为背光控制 GPIO 使用；若未来启用 32k 晶振需调整策略）
 
-> `BLK` 通过 Q8（BSS84，P 沟道 MOSFET）控制 FPC1 pin1（`$1N116`，通常为背光 LEDA）从 `3V3` 取电，实现背光开关（必要时可做 PWM 调光，非本次必需）。
+> `BLK` 通过 Q8（BSS84，P 沟道 MOSFET）控制 FPC1 pin1（通常为背光 LEDA）从 `3V3` 取电，实现背光开关（必要时可做 PWM 调光，非本次必需）。
 
 ---
 
