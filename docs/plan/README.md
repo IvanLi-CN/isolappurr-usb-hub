@@ -4,7 +4,7 @@
 
 ## 快速新增一个计划
 
-1. 分配一个新的四位编号 `ID`（查看下方 Index，取未使用的最小或递增编号）。
+1. 分配一个新的 `ID`（推荐 5 字符 nanoId 风格；兼容四位数字 `0001`–`9999`）。
 2. 新建目录：`docs/plan/<id>:<title>/`（`<title>` 用简短 slug，建议 kebab-case）。
 3. 在该目录下创建 `PLAN.md`（模板见下方“PLAN.md 写法（简要）”）。
 4. 在下方 Index 表新增一行，并把 `Status` 设为 `待设计` 或 `待实现`（取决于是否已冻结验收标准），并填入 `Last`（通常为当天）。
@@ -12,7 +12,7 @@
 ## 目录与命名规则
 
 - 每个计划一个目录：`docs/plan/<id>:<title>/`
-- `<id>`：四位数字（`0001`–`9999`），一经分配不要变更。
+- `<id>`：推荐 5 字符 nanoId 风格；兼容四位数字（`0001`–`9999`），一经分配不要变更。
 - `<title>`：短标题 slug（建议 kebab-case，避免空格与特殊字符）；目录名尽量稳定。
 - 人类可读标题写在 Index 的 `Title` 列；标题变更优先改 `Title`，不强制改目录名。
 
@@ -66,3 +66,4 @@
 | 0013 | Desktop：IP scan 输入默认本机局域网信息 | 已完成 | `0013:ip-scan-lan-autofill/PLAN.md` | 2026-01-18 | 关联：0007（Add device）、0008（Desktop discovery）；branch: `feat/0013-ip-scan-lan-autofill` |
 | 0014 | GitHub Actions：构建提速与分拆 | 已完成 | `0014:actions-speedup/PLAN.md` | 2026-01-18 | branch: `feat/0014-actions-speedup` |
 | 0015 | Desktop：CI 触发去重（避免 push 与 PR 重复） | 已完成 | `0015:desktop-ci-trigger-gating/PLAN.md` | 2026-01-18 | 非主分支 push 不构建 desktop；main/release/tags push 仍构建；fork PR 跳过；merged PR #42 |
+| vqp6v | PCB v1.2：背光 MOS 极性修复 + SW2303/TPS55288 外部 +5V 供电（tps-sw） | 已完成 | `vqp6v:pcb-v1-2-5v-backlight/PLAN.md` | 2026-01-28 | - |
