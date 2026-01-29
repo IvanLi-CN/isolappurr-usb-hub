@@ -20,31 +20,6 @@ function statusBadgeStyles(status: string): { bg: string; text: string } {
   };
 }
 
-function usbLinkBadgeStyles(state: {
-  data_connected: boolean;
-  replugging: boolean;
-}): { bg: string; text: string; label: string } {
-  if (state.replugging) {
-    return {
-      bg: "bg-[var(--badge-warning-bg)]",
-      text: "text-[var(--badge-warning-text)]",
-      label: "DATA replugging",
-    };
-  }
-  if (state.data_connected) {
-    return {
-      bg: "bg-[var(--badge-success-bg)]",
-      text: "text-[var(--badge-success-text)]",
-      label: "DATA on",
-    };
-  }
-  return {
-    bg: "bg-[var(--badge-error-bg)]",
-    text: "text-[var(--badge-error-text)]",
-    label: "DATA off",
-  };
-}
-
 function formatValue(value: number | null, unit: "V" | "A" | "W"): string {
   if (value === null) {
     return `--.-${unit}`;
@@ -132,28 +107,15 @@ export function PortCard({
   const busy = state.busy;
   const actionDisabled = !!disabled || busy;
   const badge = statusBadgeStyles(telemetry.status);
-  const usbBadge = usbLinkBadgeStyles(state);
 
   return (
     <div
-      className="iso-card relative h-[226px] rounded-[18px] bg-[var(--panel)] p-6 shadow-[inset_0_0_0_1px_var(--border)]"
+      className="iso-card relative flex min-h-[226px] flex-col rounded-[18px] bg-[var(--panel)] p-6 shadow-[inset_0_0_0_1px_var(--border)]"
       data-testid={`port-card-${portId}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col">
           <div className="text-[16px] font-bold">{label}</div>
-          <div className="mt-2">
-            <div
-              className={[
-                "flex h-6 w-fit items-center justify-center rounded-full px-3",
-                usbBadge.bg,
-                usbBadge.text,
-                "whitespace-nowrap text-[12px] font-semibold",
-              ].join(" ")}
-            >
-              {usbBadge.label}
-            </div>
-          </div>
         </div>
         <div
           className={[
@@ -196,11 +158,11 @@ export function PortCard({
         </div>
       </div>
 
-      <div className="mt-5 flex items-center gap-3">
+      <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
         <div className="relative">
           <button
             className={[
-              "flex h-10 w-[132px] items-center justify-center rounded-[10px] text-[12px] font-bold",
+              "flex h-10 w-full items-center justify-center rounded-[10px] text-[12px] font-bold sm:w-[132px]",
               actionDisabled
                 ? "bg-[var(--btn-disabled-fill)] text-[var(--btn-disabled-text)]"
                 : "bg-[var(--primary)] text-[var(--primary-text)]",
@@ -228,7 +190,7 @@ export function PortCard({
         </div>
         <button
           className={[
-            "flex h-10 w-[140px] items-center justify-center rounded-[10px] border border-[var(--border)] text-[12px] font-bold",
+            "flex h-10 w-full items-center justify-center rounded-[10px] border border-[var(--border)] text-[12px] font-bold sm:w-[140px]",
             actionDisabled
               ? "bg-[var(--btn-disabled-fill-soft)] text-[var(--btn-disabled-text)]"
               : "bg-transparent text-[var(--text)]",

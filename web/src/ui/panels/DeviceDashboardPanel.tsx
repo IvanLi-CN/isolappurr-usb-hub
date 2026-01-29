@@ -107,8 +107,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const buildSha =
     rawBuildSha && rawBuildSha !== "dev" ? rawBuildSha.slice(0, 7) : "—";
 
-  const notes =
-    runtime.lastErrorLabel(device.id) ?? "Mock UI; actions show busy states";
+  const notes = runtime.lastErrorLabel(device.id) ?? "—";
 
   const writeDisabled = connectionState !== "online";
 
@@ -145,12 +144,12 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   return (
     <div className="flex flex-col gap-6" data-testid="device-dashboard">
       <div className="iso-card h-[104px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
-        <div className="grid grid-cols-[204px_1fr] grid-rows-2 gap-y-[10px] leading-4">
-          <div className="flex items-center">
+        <div className="grid grid-cols-[minmax(248px,1fr)_minmax(0,1fr)] grid-rows-2 gap-x-6 gap-y-[10px] leading-4">
+          <div className="flex min-w-0 items-center">
             <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
               Status
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div
                 className={[
                   "flex h-[26px] items-center justify-center rounded-full",

@@ -101,25 +101,6 @@ export function PortMiniCard({
 
   const busy = state.busy;
   const powerEnabled = state.power_enabled;
-  const usbLinkLabel = state.replugging
-    ? "DATA replugging"
-    : state.data_connected
-      ? "DATA on"
-      : "DATA off";
-  const usbLinkBadgeStyles = state.replugging
-    ? {
-        bg: "bg-[var(--badge-warning-bg)]",
-        text: "text-[var(--badge-warning-text)]",
-      }
-    : state.data_connected
-      ? {
-          bg: "bg-[var(--badge-success-bg)]",
-          text: "text-[var(--badge-success-text)]",
-        }
-      : {
-          bg: "bg-[var(--badge-error-bg)]",
-          text: "text-[var(--badge-error-text)]",
-        };
   const actionDisabled = disabled || busy;
 
   const powerWidth = "w-[100px]";
@@ -138,19 +119,9 @@ export function PortMiniCard({
         className ?? "",
       ].join(" ")}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <div className="text-[12px] font-semibold text-[var(--muted)]">
           {label}
-        </div>
-        <div
-          className={[
-            "flex h-5 items-center justify-center rounded-full px-2",
-            usbLinkBadgeStyles.bg,
-            usbLinkBadgeStyles.text,
-            "whitespace-nowrap text-[11px] font-semibold",
-          ].join(" ")}
-        >
-          {usbLinkLabel}
         </div>
       </div>
       <div className="mt-4 flex items-center justify-between gap-4">
