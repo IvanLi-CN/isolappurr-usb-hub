@@ -2,9 +2,9 @@
 
 ## 状态
 
-- Status: 部分完成（3/4）
+- Status: 已完成
 - Created: 2026-01-28
-- Last: 2026-01-28
+- Last: 2026-01-29
 
 ## 背景 / 问题陈述
 
@@ -121,7 +121,7 @@ None
 
 - [x] M1: 锁定 GPIO、实现 `LEDD` 原始电平采集（含滤波）与调试可观测性
 - [x] M2: 将 `hub.upstream_connected` 改为由该输入驱动（API schema 增量变更）
-- [ ] M3: 实机验证（断开/重连/噪声场景）并补齐文档说明
+- [x] M3: 实机验证（断开/重连/噪声场景）并补齐文档说明
 - [x] M4: Web UI 显示 Hub 上游 USB 状态（对接 `hub.upstream_connected`）
 
 ## 方案概述（Approach, high-level）
@@ -144,3 +144,4 @@ None
 - 2026-01-28: 追加并完成 M4（Web UI 显示端口 USB 状态徽标）
 - 2026-01-28: 修复 Web UI：USB 状态徽标不再依赖 `telemetry.status`（即使遥测为 `not_inserted` 也显示 `USB link/no link`）
 - 2026-01-28: 变更口径：新增 Hub 级 `hub.upstream_connected`；不再用 `port_a.state.data_connected` 表达上游链路
+- 2026-01-29: 完成 M3 实机验收：上游断开/重连与噪声场景下 `hub.upstream_connected` 行为符合预期
