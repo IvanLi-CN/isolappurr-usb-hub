@@ -118,18 +118,17 @@ export function DeviceRuntimeProvider({
           return prev;
         }
         if (res.ok) {
-          const hub = res.value.hub;
+          const hub = res.value.hub ?? null;
           const portA = res.value.ports.find((p) => p.portId === "port_a");
           const portC = res.value.ports.find((p) => p.portId === "port_c");
-          if (!hub || !portA || !portC) {
+          if (!portA || !portC) {
             return {
               ...prev,
               [deviceId]: {
                 ...current,
                 lastError: {
                   kind: "invalid_response",
-                  message:
-                    "missing hub, port_a, or port_c in /api/v1/ports response",
+                  message: "missing port_a or port_c in /api/v1/ports response",
                 },
               },
             };

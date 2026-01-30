@@ -35,6 +35,7 @@ export type Port = {
 };
 
 export type PortsResponse = {
-  hub: HubState;
+  // Backward-compat: older firmware may omit `hub` entirely.
+  hub?: HubState;
   ports: Port[];
 };
