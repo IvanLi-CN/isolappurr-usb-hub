@@ -657,7 +657,7 @@ async fn main(_spawner: Spawner) {
             let now = Instant::now();
             let raw_low = ledd_usb_a.is_low();
             if let Some(stable_low) = ledd_usb_a_state.update(now, raw_low, ledd_debounce) {
-                info!("usb-a ledd: stable_raw_low={}", stable_low);
+                debug!("usb-a ledd: stable_raw_low={}", stable_low);
             }
             ledd_usb_a_state.stable()
         };
