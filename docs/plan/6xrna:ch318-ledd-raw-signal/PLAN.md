@@ -16,9 +16,10 @@
 
 - 信号源：`CH318T U2 pin13`（net：`LEDD`，即 `LED/MODE`）。
 - 板载 LED 网络：`LED1 pin2 → 3V3`，`LED1 pin1 → R8(1k) → LEDD`；因此该脚为灌电流驱动，一般可认为 **`LEDD=0` 对应 LED 亮**（active-low）。
-- MCU 连接：`R39`（标注 `n.c.` 的可选电阻）把 `LEDD` 接到 `U19 pin11`（net：`$1N241`）。
+- MCU 连接：tps-sw 网表中 `LEDD` 直接连接到 MCU `GPIO6`（无串联电阻）。
 - GPIO 映射（基于仓库既有 pin→GPIO 记录）：`U19 pin13→GPIO8`、`pin14→GPIO9`、`pin15→GPIO10` 等（见 `docs/gc9307-telemetry-design.md`），因此 `U19 pin11` 对应 `GPIO6`。
 - 信号归属：该 `CH318T` 隔离链路服务于 Hub↔Host 的数据通路；本计划把该信号用于 Hub 级 `hub.upstream_connected`。
+  - 澄清：tps-sw 上 `U2.LEDD` 同时存在 `R9=5.1kΩ → GND` 的模式下拉，但该节点在本设计中仍会被 CH318 主动驱动；`5.1k@3.3V` 仅约 `0.65mA` 负载，不会把电平“钳死”在低电平。
 
 ## 目标 / 非目标
 
@@ -110,7 +111,7 @@
 
 ## 文档更新（Docs to Update）
 
-- `docs/netlist/tps-sw-checklist.md`: 补充 `R39`（LEDD→MCU）作为“读取 LED 原始电平”的用途说明与注意事项（高阻输入、不要驱动）。
+- `docs/netlist/tps-sw-checklist.md`: 澄清 tps-sw 的 `LEDD` 连接（`R9=5.1kΩ` 模式下拉 + `R8=1kΩ` LED 网络 + `LEDD→GPIO6` 采样）与固件读取约束（高阻输入、不要驱动）。
 - `docs/plan/0005:device-http-api/contracts/http-apis.md`: 增量补充 `hub.upstream_connected` 字段说明。
 
 ## 资产晋升（Asset promotion）
@@ -135,7 +136,7 @@ None
   - `LEDD` 同时承担模式配置/LED 驱动，外部负载复杂；采集必须保持高阻且需要滤波，否则易误判。
   - `LEDD` 语义可能随 CH318T OTP 版本/工作模式变化；本计划只读取原始信号，不保证语义稳定。
 - 假设（需主人确认）：
-  - `R39` 在你的实物上为“已焊接/可用”，并且 `GPIO6` 在固件中未被其它外设占用。
+  - `GPIO6` 在固件中未被其它外设占用，且 MCU 仅以高阻输入方式读取 `LEDD`（无内部上下拉/无输出驱动）。
 
 ## 变更记录（Change log）
 

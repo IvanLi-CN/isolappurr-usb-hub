@@ -40,5 +40,6 @@
 
 ### Semantics
 
-- `hub.upstream_connected`：Hub 级“上游连接指示”状态位（1-bit）。固件保证该字段为稳定化后的输入，不承诺更强语义（例如“枚举完成/协议细节”）。
-
+- `hub.upstream_connected`：Hub 级“上游连接指示”状态位（1-bit）。
+  - tps-sw：该字段由 `CH318T U2 LED/MODE(LEDD)` 节点提供（MCU `GPIO6` 高阻采样，active-low），固件对输入做稳定化（去抖）后输出。
+  - 固件保证该字段为稳定化后的输入，不承诺更强语义（例如“枚举完成/协议细节”）。

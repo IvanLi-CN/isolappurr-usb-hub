@@ -440,7 +440,7 @@ async fn main(_spawner: Spawner) {
     );
 
     // CH318T LEDD raw indicator (Plan 6xrna):
-    // - netlist: CH318T U2 pin13 (LEDD/LED-MODE) → R39 → MCU GPIO6
+    // - netlist (tps-sw): CH318T U2 pin13 (LEDD/LED-MODE) → MCU GPIO6 (direct net tie)
     // - external pull-ups/downs exist (mode + LED load), so MCU must be hi-Z input (no pull).
     #[cfg(feature = "net_http")]
     let ledd_cfg = InputConfig::default().with_pull(Pull::None);
