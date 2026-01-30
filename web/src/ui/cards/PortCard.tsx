@@ -127,7 +127,9 @@ export function PortCard({
         >
           {telemetry.status === "not_inserted"
             ? "not inserted"
-            : telemetry.status}
+            : telemetry.status === "ok"
+              ? "OK"
+              : telemetry.status}
         </div>
       </div>
 
