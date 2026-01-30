@@ -48,6 +48,10 @@ export function DashboardPage() {
       devices.map((d) => {
         const state = runtime.connectionState(d.id);
         const lastOkAt = runtime.lastOkAt(d.id) ?? undefined;
+        const hostConnected =
+          state === "online"
+            ? (runtime.hub(d.id)?.upstream_connected ?? null)
+            : null;
 
         const port = (portId: PortId) => runtime.port(d.id, portId);
         const pending = (portId: PortId) => runtime.pending(d.id, portId);
@@ -55,6 +59,7 @@ export function DashboardPage() {
         return {
           device: d,
           connection: { state, lastOkAt },
+          hostConnected,
           ports: {
             port_a: {
               label: "USB-A",
@@ -99,6 +104,7 @@ export function DashboardPage() {
             key={item.device.id}
             device={item.device}
             connection={item.connection}
+            hostConnected={item.hostConnected}
             ports={item.ports}
             onOpenDetails={(id) => navigate(`/devices/${id}`)}
             onSetPower={(deviceId, portId, enabled) =>

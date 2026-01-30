@@ -126,6 +126,7 @@ Web 端建议：
 
 ```json
 {
+  "hub": { "upstream_connected": true },
   "ports": [
     {
       "portId": "port_a",
@@ -148,6 +149,12 @@ Web 端建议：
   ]
 }
 ```
+
+字段说明：
+
+- `hub.upstream_connected`：Hub 侧的“上游链路指示”状态位（是否检测到与上游主机的连接）。
+  - tps-sw：该字段来自 `CH318T U2 LED/MODE(LEDD)` 节点（MCU `GPIO6` 高阻采样，active-low），固件对输入做稳定化（去抖）后输出 1-bit 状态。
+  - 说明：tps-sw 上 `LEDD` 同时承担模式下拉（`R9=5.1kΩ→GND`）与板载 LED 网络（`R8=1kΩ→LED1→3V3`），但该节点仍会被 CH318 主动驱动；固件只读取，不加载、不驱动。
 
 #### Telemetry status
 

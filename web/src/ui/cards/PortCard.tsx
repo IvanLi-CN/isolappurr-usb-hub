@@ -110,11 +110,13 @@ export function PortCard({
 
   return (
     <div
-      className="iso-card relative h-[226px] rounded-[18px] bg-[var(--panel)] p-6 shadow-[inset_0_0_0_1px_var(--border)]"
+      className="iso-card relative flex min-h-[226px] flex-col rounded-[18px] bg-[var(--panel)] p-6 shadow-[inset_0_0_0_1px_var(--border)]"
       data-testid={`port-card-${portId}`}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="text-[16px] font-bold">{label}</div>
+        <div className="flex flex-col">
+          <div className="text-[16px] font-bold">{label}</div>
+        </div>
         <div
           className={[
             "flex h-6 min-w-[60px] items-center justify-center rounded-full px-3",
@@ -125,11 +127,13 @@ export function PortCard({
         >
           {telemetry.status === "not_inserted"
             ? "not inserted"
-            : telemetry.status}
+            : telemetry.status === "ok"
+              ? "OK"
+              : telemetry.status}
         </div>
       </div>
 
-      <div className="mt-8 grid grid-cols-3 gap-10">
+      <div className="mt-8 grid grid-cols-3 gap-6 sm:gap-10">
         <div>
           <div className="text-[12px] font-semibold text-[var(--muted)]">
             Voltage
@@ -156,11 +160,11 @@ export function PortCard({
         </div>
       </div>
 
-      <div className="mt-5 flex items-center gap-3">
-        <div className="relative">
+      <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
+        <div className="relative w-full sm:w-auto">
           <button
             className={[
-              "flex h-10 w-[132px] items-center justify-center rounded-[10px] text-[12px] font-bold",
+              "flex h-10 w-full items-center justify-center rounded-[10px] text-[12px] font-bold sm:w-[132px]",
               actionDisabled
                 ? "bg-[var(--btn-disabled-fill)] text-[var(--btn-disabled-text)]"
                 : "bg-[var(--primary)] text-[var(--primary-text)]",
@@ -188,7 +192,7 @@ export function PortCard({
         </div>
         <button
           className={[
-            "flex h-10 w-[140px] items-center justify-center rounded-[10px] border border-[var(--border)] text-[12px] font-bold",
+            "flex h-10 w-full items-center justify-center rounded-[10px] border border-[var(--border)] text-[12px] font-bold sm:w-[140px]",
             actionDisabled
               ? "bg-[var(--btn-disabled-fill-soft)] text-[var(--btn-disabled-text)]"
               : "bg-transparent text-[var(--text)]",

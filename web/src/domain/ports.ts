@@ -2,6 +2,10 @@ export type PortId = "port_a" | "port_c";
 
 export type TelemetryStatus = "ok" | "not_inserted" | "error" | "overrange";
 
+export type HubState = {
+  upstream_connected: boolean;
+};
+
 export type PortTelemetry = {
   status: TelemetryStatus;
   voltage_mv: number | null;
@@ -31,5 +35,7 @@ export type Port = {
 };
 
 export type PortsResponse = {
+  // Backward-compat: older firmware may omit `hub` entirely.
+  hub?: HubState;
   ports: Port[];
 };

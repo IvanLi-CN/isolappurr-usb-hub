@@ -119,8 +119,10 @@ export function PortMiniCard({
         className ?? "",
       ].join(" ")}
     >
-      <div className="text-[12px] font-semibold text-[var(--muted)]">
-        {label}
+      <div className="flex items-center gap-2">
+        <div className="text-[12px] font-semibold text-[var(--muted)]">
+          {label}
+        </div>
       </div>
       <div className="mt-4 flex items-center justify-between gap-4">
         <div className={valueClass}>

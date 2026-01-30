@@ -10,6 +10,7 @@ export type DeviceSummaryCardProps = {
     state: ConnectionState;
     lastOkAt?: number;
   };
+  hostConnected: boolean | null;
   ports: Record<
     PortId,
     { label: string; telemetry: PortTelemetry; state: PortState }
@@ -48,6 +49,7 @@ function connectionBadge(state: ConnectionState): {
 export function DeviceSummaryCard({
   device,
   connection,
+  hostConnected,
   ports,
   onOpenDetails,
   onSetPower,
@@ -57,6 +59,8 @@ export function DeviceSummaryCard({
   const lastOkLabel = connection.lastOkAt
     ? formatTimeHms(connection.lastOkAt)
     : "—";
+  const hostLabel =
+    hostConnected === null ? "—" : hostConnected ? "link" : "no link";
   const writeDisabled = connection.state !== "online";
   const badge = connectionBadge(connection.state);
 
@@ -83,7 +87,7 @@ export function DeviceSummaryCard({
           </div>
 
           <div className="mt-3 font-mono text-[12px] font-semibold leading-[18px] text-[var(--muted)]">
-            id: {shortId} • last ok: {lastOkLabel}
+            id: {shortId} • last ok: {lastOkLabel} • host: {hostLabel}
           </div>
         </div>
 

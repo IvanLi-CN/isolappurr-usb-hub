@@ -41,14 +41,14 @@ function statusBadge(state: "online" | "offline" | "unknown"): {
     return {
       bg: "bg-[var(--badge-success-bg)]",
       text: "text-[var(--badge-success-text)]",
-      width: "w-[76px]",
+      width: "w-[96px]",
     };
   }
   if (state === "offline") {
     return {
       bg: "bg-[var(--badge-error-bg)]",
       text: "text-[var(--badge-error-text)]",
-      width: "w-[76px]",
+      width: "w-[96px]",
     };
   }
   return {
@@ -58,11 +58,46 @@ function statusBadge(state: "online" | "offline" | "unknown"): {
   };
 }
 
+function upstreamBadge(upstreamConnected: boolean | null): {
+  bg: string;
+  text: string;
+  width: string;
+  label: string;
+} {
+  if (upstreamConnected === null) {
+    return {
+      bg: "bg-[var(--badge-warning-bg)]",
+      text: "text-[var(--badge-warning-text)]",
+      width: "w-[96px]",
+      label: "HOST —",
+    };
+  }
+  if (upstreamConnected) {
+    return {
+      bg: "bg-[var(--badge-success-bg)]",
+      text: "text-[var(--badge-success-text)]",
+      width: "w-[96px]",
+      label: "HOST LINK",
+    };
+  }
+  return {
+    bg: "bg-[var(--badge-error-bg)]",
+    text: "text-[var(--badge-error-text)]",
+    width: "w-[96px]",
+    label: "NO HOST",
+  };
+}
+
 export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const runtime = useDeviceRuntime();
 
   const connectionState = runtime.connectionState(device.id);
   const badge = statusBadge(connectionState);
+  const upstream = upstreamBadge(
+    connectionState === "online"
+      ? (runtime.hub(device.id)?.upstream_connected ?? null)
+      : null,
+  );
 
   const lastOkAt = runtime.lastOkAt(device.id);
   const headerLastOk = lastOkAt === null ? "—" : formatTimeHms(lastOkAt);
@@ -72,8 +107,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const buildSha =
     rawBuildSha && rawBuildSha !== "dev" ? rawBuildSha.slice(0, 7) : "—";
 
-  const notes =
-    runtime.lastErrorLabel(device.id) ?? "Mock UI; actions show busy states";
+  const notes = runtime.lastErrorLabel(device.id) ?? "—";
 
   const writeDisabled = connectionState !== "online";
 
@@ -109,22 +143,35 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
 
   return (
     <div className="flex flex-col gap-6" data-testid="device-dashboard">
-      <div className="iso-card h-[104px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
-        <div className="grid grid-cols-[204px_1fr] grid-rows-2 gap-y-[10px] leading-4">
-          <div className="flex items-center">
+      <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)] sm:h-[104px]">
+        <div className="grid grid-cols-1 gap-y-[10px] leading-4 sm:grid-cols-2 sm:gap-x-6">
+          <div className="flex min-w-0 items-center">
             <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
               Status
             </div>
-            <div
-              className={[
-                "flex h-[26px] items-center justify-center rounded-full",
-                badge.width,
-                badge.bg,
-                badge.text,
-                "text-[12px] font-semibold",
-              ].join(" ")}
-            >
-              {connectionState}
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                className={[
+                  "flex h-[26px] items-center justify-center rounded-full",
+                  badge.width,
+                  badge.bg,
+                  badge.text,
+                  "text-[12px] font-semibold",
+                ].join(" ")}
+              >
+                {connectionState.toUpperCase()}
+              </div>
+              <div
+                className={[
+                  "flex h-[26px] items-center justify-center rounded-full",
+                  upstream.width,
+                  upstream.bg,
+                  upstream.text,
+                  "text-[12px] font-semibold",
+                ].join(" ")}
+              >
+                {upstream.label}
+              </div>
             </div>
           </div>
           <div className="flex min-w-0 items-center">

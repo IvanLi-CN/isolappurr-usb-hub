@@ -38,6 +38,8 @@ pub const WIFI_GATEWAY: Option<&str> = option_env!("USB_HUB_WIFI_GATEWAY");
 #[cfg(feature = "net_http")]
 pub const WIFI_DNS: Option<&str> = option_env!("USB_HUB_WIFI_DNS");
 
+#[cfg(feature = "net_http")]
+use defmt::debug;
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
@@ -265,6 +267,57 @@ impl DebouncedButton {
     }
 }
 
+#[cfg(feature = "net_http")]
+#[derive(Debug)]
+struct DebouncedLevel {
+    stable: bool,
+    candidate: bool,
+    candidate_since: Option<Instant>,
+}
+
+#[cfg(feature = "net_http")]
+impl DebouncedLevel {
+    fn new(initial: bool) -> Self {
+        Self {
+            stable: initial,
+            candidate: initial,
+            candidate_since: None,
+        }
+    }
+
+    fn stable(&self) -> bool {
+        self.stable
+    }
+
+    fn update(&mut self, now: Instant, level: bool, debounce: Duration) -> Option<bool> {
+        if level == self.stable {
+            self.candidate = level;
+            self.candidate_since = None;
+            return None;
+        }
+
+        let Some(since) = self.candidate_since else {
+            self.candidate = level;
+            self.candidate_since = Some(now);
+            return None;
+        };
+
+        if self.candidate != level {
+            self.candidate = level;
+            self.candidate_since = Some(now);
+            return None;
+        }
+
+        if now - since < debounce {
+            return None;
+        }
+
+        self.stable = level;
+        self.candidate_since = None;
+        Some(level)
+    }
+}
+
 fn classify_press(duration: Duration) -> PressClass {
     if duration < PRESS_SHORT_MIN {
         return PressClass::Invalid;
@@ -386,6 +439,23 @@ async fn main(_spawner: Spawner) {
     info!(
         "buttons: initial raw left_pressed={} right_pressed={}",
         btn_raw_left_pressed, btn_raw_right_pressed
+    );
+
+    // CH318T LEDD raw indicator (Plan 6xrna):
+    // - netlist (tps-sw): CH318T U2 pin13 (LEDD/LED-MODE) → MCU GPIO6 (direct net tie)
+    // - external pull-ups/downs exist (mode + LED load), so MCU must be hi-Z input (no pull).
+    #[cfg(feature = "net_http")]
+    let ledd_cfg = InputConfig::default().with_pull(Pull::None);
+    #[cfg(feature = "net_http")]
+    let ledd_usb_a = Input::new(peripherals.GPIO6, ledd_cfg);
+    #[cfg(feature = "net_http")]
+    let ledd_debounce = Duration::from_millis(20);
+    #[cfg(feature = "net_http")]
+    let mut ledd_usb_a_state = DebouncedLevel::new(ledd_usb_a.is_low());
+    #[cfg(feature = "net_http")]
+    info!(
+        "usb-a ledd: GPIO6 initial raw_low={} (active-low, hi-z input; no pull)",
+        ledd_usb_a.is_low()
     );
 
     let mut btn_left_pressed_at: Option<Instant> = None;
@@ -583,6 +653,16 @@ async fn main(_spawner: Spawner) {
         let sw2303_was_in_error = sw2303_error_latched;
         let tps_was_in_error = tps_error_latched;
         let ui_was_in_error = ui_error_latched;
+
+        #[cfg(feature = "net_http")]
+        let api_upstream_connected = {
+            let now = Instant::now();
+            let raw_low = ledd_usb_a.is_low();
+            if let Some(stable_low) = ledd_usb_a_state.update(now, raw_low, ledd_debounce) {
+                debug!("usb-a ledd: stable_raw_low={}", stable_low);
+            }
+            ledd_usb_a_state.stable()
+        };
 
         let (request, setpoint) = match read_power_request(&mut i2c) {
             Ok(request) => {
@@ -1409,6 +1489,9 @@ async fn main(_spawner: Spawner) {
             };
 
             let mut guard = api_state.lock().await;
+            guard.hub = net::ApiHubSnapshot {
+                upstream_connected: api_upstream_connected,
+            };
             guard.ports = ports;
         }
 
