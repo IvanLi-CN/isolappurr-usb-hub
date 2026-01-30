@@ -2,7 +2,7 @@
 
 ## 状态
 
-- Status: 已完成
+- Status: 部分完成（3/4）
 - Created: 2026-01-28
 - Last: 2026-01-29
 
@@ -47,7 +47,7 @@
 
 ### Out of scope
 
-- 变更 `GET /api/v1/ports` 的 JSON schema（不新增字段、不破坏兼容性）。
+- 通过该信号推断 USB 速率/枚举状态/带宽等更细粒度信息。
 - 将 `docs/plan/` 下的任何资产作为运行/交付依赖。
 
 ## 需求（Requirements）
@@ -56,8 +56,8 @@
 
 - GPIO 必须保持高阻输入：不输出、不上拉、不下拉，避免影响 `LEDD` 的电路电平与 LED 行为。
 - 采集逻辑必须能抵抗短毛刺：对外输出的 `connected_hint` 不应因瞬时抖动频繁翻转。
-- `net_http` 开启时：`state.data_connected` 在物理链路变化后应在可接受延迟内更新（目标：< 500ms）。
-- Web UI 必须显示 USB 状态（基于 `state.data_connected`），并在 `replugging` 时显示中间态。
+- `net_http` 开启时：`hub.upstream_connected` 在物理链路变化后应在可接受延迟内更新（目标：< 500ms）。
+- Web UI 必须显示 Hub 上游状态（基于 `hub.upstream_connected`）。
 - 不引入新依赖；不修改现有“端口选择/扫描”等安全约束。
 
 ### SHOULD
@@ -90,7 +90,7 @@
 
 - Given 系统处于噪声/抖动环境  
   When `LEDD` 节点出现短毛刺  
-  Then `state.data_connected` 不应在 1s 内反复抖动（抖动阈值以本计划确认的滤波参数为准）。
+  Then `hub.upstream_connected` 不应在 1s 内反复抖动（抖动阈值以本计划确认的滤波参数为准）。
 
 ## 实现前置条件（Definition of Ready / Preconditions）
 
@@ -121,7 +121,7 @@ None
 
 - [x] M1: 锁定 GPIO、实现 `LEDD` 原始电平采集（含滤波）与调试可观测性
 - [x] M2: 将 `hub.upstream_connected` 改为由该输入驱动（API schema 增量变更）
-- [x] M3: 实机验证（断开/重连/噪声场景）并补齐文档说明
+- [ ] M3: 主人验收：实机验证（断开/重连/噪声场景）并补齐文档说明
 - [x] M4: Web UI 显示 Hub 上游 USB 状态（对接 `hub.upstream_connected`）
 
 ## 方案概述（Approach, high-level）
@@ -144,4 +144,4 @@ None
 - 2026-01-28: 追加并完成 M4（Web UI 显示端口 USB 状态徽标）
 - 2026-01-28: 修复 Web UI：USB 状态徽标不再依赖 `telemetry.status`（即使遥测为 `not_inserted` 也显示 `USB link/no link`）
 - 2026-01-28: 变更口径：新增 Hub 级 `hub.upstream_connected`；不再用 `port_a.state.data_connected` 表达上游链路
-- 2026-01-29: 完成 M3 实机验收：上游断开/重连与噪声场景下 `hub.upstream_connected` 行为符合预期
+- 2026-01-29: 验收进行中：修复 Web 窄屏（360×640）布局问题、删除误导 UI；等待主人复验后勾选 M3 并将 Status 更新为 `已完成`
