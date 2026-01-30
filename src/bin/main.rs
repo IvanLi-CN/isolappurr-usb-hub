@@ -38,6 +38,8 @@ pub const WIFI_GATEWAY: Option<&str> = option_env!("USB_HUB_WIFI_GATEWAY");
 #[cfg(feature = "net_http")]
 pub const WIFI_DNS: Option<&str> = option_env!("USB_HUB_WIFI_DNS");
 
+#[cfg(feature = "net_http")]
+use defmt::debug;
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
