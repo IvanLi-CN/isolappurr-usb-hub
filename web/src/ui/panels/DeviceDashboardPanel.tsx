@@ -41,14 +41,14 @@ function statusBadge(state: "online" | "offline" | "unknown"): {
     return {
       bg: "bg-[var(--badge-success-bg)]",
       text: "text-[var(--badge-success-text)]",
-      width: "w-[76px]",
+      width: "w-[96px]",
     };
   }
   if (state === "offline") {
     return {
       bg: "bg-[var(--badge-error-bg)]",
       text: "text-[var(--badge-error-text)]",
-      width: "w-[76px]",
+      width: "w-[96px]",
     };
   }
   return {
@@ -68,23 +68,23 @@ function upstreamBadge(upstreamConnected: boolean | null): {
     return {
       bg: "bg-[var(--badge-warning-bg)]",
       text: "text-[var(--badge-warning-text)]",
-      width: "w-[92px]",
-      label: "host —",
+      width: "w-[96px]",
+      label: "HOST —",
     };
   }
   if (upstreamConnected) {
     return {
       bg: "bg-[var(--badge-success-bg)]",
       text: "text-[var(--badge-success-text)]",
-      width: "w-[92px]",
-      label: "host link",
+      width: "w-[96px]",
+      label: "HOST LINK",
     };
   }
   return {
     bg: "bg-[var(--badge-error-bg)]",
     text: "text-[var(--badge-error-text)]",
-    width: "w-[108px]",
-    label: "host no link",
+    width: "w-[96px]",
+    label: "NO HOST",
   };
 }
 
@@ -159,7 +159,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
                   "text-[12px] font-semibold",
                 ].join(" ")}
               >
-                {connectionState}
+                {connectionState.toUpperCase()}
               </div>
               <div
                 className={[
