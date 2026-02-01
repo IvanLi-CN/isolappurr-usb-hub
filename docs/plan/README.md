@@ -71,3 +71,4 @@
 | 0015 | Desktop：CI 触发去重（避免 push 与 PR 重复） | 已完成 | `0015:desktop-ci-trigger-gating/PLAN.md` | 2026-01-18 | 非主分支 push 不构建 desktop；main/release/tags push 仍构建；fork PR 跳过；merged PR #42 |
 | 6xrna | CH318T LEDD 原始电平采集（作为 USB 链路指示输入） | 部分完成（3/4） | `6xrna:ch318-ledd-raw-signal/PLAN.md` | 2026-01-29 | 等待验收 |
 | vqp6v | PCB v1.2：背光 MOS 极性修复 + SW2303/TPS55288 外部 +5V 供电（tps-sw） | 已完成 | `vqp6v:pcb-v1-2-5v-backlight/PLAN.md` | 2026-01-28 | - |
+| 9psha | TPS55288 故障中断（INT_TPS）：仅在异常变化时打印 | 待实现 | `9psha:tps-int-fault-log/PLAN.md` | 2026-02-01 | - |
