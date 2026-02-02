@@ -38,18 +38,22 @@ pub const WIFI_GATEWAY: Option<&str> = option_env!("USB_HUB_WIFI_GATEWAY");
 #[cfg(feature = "net_http")]
 pub const WIFI_DNS: Option<&str> = option_env!("USB_HUB_WIFI_DNS");
 
+use core::cell::RefCell;
+use core::sync::atomic::{AtomicBool, Ordering};
+use critical_section::Mutex;
 #[cfg(feature = "net_http")]
 use defmt::debug;
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_hal::clock::CpuClock;
-use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
+use esp_hal::gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull};
 use esp_hal::i2c::master::{Config as I2cConfig, I2c, SoftwareTimeout};
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::{Duration, Instant, Rate};
 use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{handler, ram};
 use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{
     ActiveLowBacklight, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort, NormalUiSnapshot,
@@ -79,6 +83,23 @@ use spi_device::CsSpiDevice;
 esp_bootloader_esp_idf::esp_app_desc!();
 
 static mut DISPLAY_WORKBUF: [u8; WORKBUF_SIZE] = [0; WORKBUF_SIZE];
+
+static INT_TPS: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
+static INT_TPS_DIRTY: AtomicBool = AtomicBool::new(false);
+
+#[handler]
+#[ram]
+fn gpio_interrupt_handler() {
+    critical_section::with(|cs| {
+        let mut pin = INT_TPS.borrow_ref_mut(cs);
+        if let Some(pin) = pin.as_mut() {
+            if pin.is_interrupt_set() {
+                INT_TPS_DIRTY.store(true, Ordering::Release);
+                pin.clear_interrupt();
+            }
+        }
+    });
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ButtonId {
@@ -488,6 +509,27 @@ async fn main(_spawner: Spawner) {
     let mut port_usb_a = PortState::new(PowerState::On);
     let mut port_usb_c = PortState::new(PowerState::On);
 
+    // TPS55288 FB/INT fault indication (tps-sw netlist):
+    // - INT_TPS = GPIO38
+    // - active-low, external 4.7k pull-up to 3V3
+    // - keep hi-Z (no internal pull)
+    let mut io = Io::new(peripherals.IO_MUX);
+    io.set_interrupt_handler(gpio_interrupt_handler);
+    let int_tps_cfg = InputConfig::default().with_pull(Pull::None);
+    let mut int_tps = Input::new(peripherals.GPIO38, int_tps_cfg);
+    let mut last_int_tps_low = int_tps.is_low();
+    info!(
+        "tps int: GPIO38 initial raw_low={} (active-low, hi-z input; no pull)",
+        last_int_tps_low
+    );
+    critical_section::with(|cs| {
+        int_tps.listen(Event::AnyEdge);
+        INT_TPS.borrow_ref_mut(cs).replace(int_tps);
+    });
+    if last_int_tps_low {
+        INT_TPS_DIRTY.store(true, Ordering::Release);
+    }
+
     // Shared PD I2C bus (no scanning; strictly allowlisted).
     // SDA = GPIO39 (SDA_TPS), SCL = GPIO40 (SCL_TPS).
     //
@@ -578,7 +620,10 @@ async fn main(_spawner: Spawner) {
     let mut tps_error_latched = false;
     let mut ui_error_latched = false;
     let mut last_sw2303_profile_attempt: Option<Instant> = None;
-    let mut last_diag_tick = Instant::now();
+    let mut last_tps_status: Option<(
+        tps55288::data_types::OperatingStatus,
+        tps55288::data_types::FaultStatus,
+    )> = None;
     let mut button_fast_loop_until: Option<Instant> = None;
 
     let boot_sp = boot_supply_setpoint();
@@ -789,50 +834,53 @@ async fn main(_spawner: Spawner) {
             prompt_tone.notify(SoundEvent::ExitSafety(SafetyKind::TpsApply));
         }
 
-        // 1 Hz diagnostics (never gate on `online` bit):
-        // - requested vs applied setpoint
-        // - measured VBUS/IBUS (INA226)
-        // - TPS operating mode + fault flags
-        if last_diag_tick.elapsed() >= Duration::from_secs(1) {
-            last_diag_tick = Instant::now();
+        // TPS55288 fault change logging via INT_TPS (GPIO38).
+        // Note: `STATUS` is read-to-clear, so only read/print on interrupt-driven changes.
+        if INT_TPS_DIRTY.swap(false, Ordering::AcqRel) {
+            let int_tps_low = critical_section::with(|cs| {
+                INT_TPS
+                    .borrow_ref_mut(cs)
+                    .as_ref()
+                    .map(|pin| pin.is_low())
+                    .unwrap_or(false)
+            });
 
-            let (tps_operating, tps_faults) = {
+            let status = {
                 let mut dev = tps55288::Tps55288::with_address(&mut i2c, TPS55288_ADDR_7BIT);
-                match dev.read_status() {
-                    Ok(v) => v,
-                    Err(_) => (
-                        tps55288::data_types::OperatingStatus::Reserved,
-                        tps55288::data_types::FaultStatus::default(),
-                    ),
-                }
+                dev.read_status()
             };
 
-            let (online_bit, fast_proto, fast_v, proto, v_req_mv, i_req_ma) = match request {
-                Some(r) => (
-                    r.online,
-                    r.fast_protocol,
-                    r.fast_voltage,
-                    r.negotiated_protocol,
-                    r.v_req_mv,
-                    r.i_req_ma,
-                ),
-                None => (false, false, false, None, 0, 0),
-            };
-            let snapshot = telemetry_sampler.sample();
-            info!(
-                "diag: req_online_bit={} req_fast_proto={} req_fast_v={} req_proto={:?} req_v_mv={} req_i_ma={} set={:?} meas_usb_a={:?} meas_usb_c={:?} tps={:?} faults={:?}",
-                online_bit,
-                fast_proto,
-                fast_v,
-                defmt::Debug2Format(&proto),
-                v_req_mv,
-                i_req_ma,
-                defmt::Debug2Format(&setpoint),
-                defmt::Debug2Format(&snapshot.usb_a),
-                defmt::Debug2Format(&snapshot.usb_c),
-                defmt::Debug2Format(&tps_operating),
-                defmt::Debug2Format(&tps_faults),
-            );
+            match status {
+                Ok((operating, faults)) => {
+                    let changed = int_tps_low != last_int_tps_low
+                        || last_tps_status != Some((operating, faults));
+                    if changed {
+                        info!(
+                            "tps fault: int_low={} tps={:?} faults={:?}",
+                            int_tps_low,
+                            defmt::Debug2Format(&operating),
+                            defmt::Debug2Format(&faults),
+                        );
+                        last_int_tps_low = int_tps_low;
+                        last_tps_status = Some((operating, faults));
+                    } else {
+                        last_int_tps_low = int_tps_low;
+                    }
+                }
+                Err(err) => {
+                    if int_tps_low != last_int_tps_low || last_tps_status.is_some() {
+                        defmt::warn!(
+                            "tps fault: int_low={} read_status error: {:?}",
+                            int_tps_low,
+                            defmt::Debug2Format(&err)
+                        );
+                        last_int_tps_low = int_tps_low;
+                        last_tps_status = None;
+                    } else {
+                        last_int_tps_low = int_tps_low;
+                    }
+                }
+            }
         }
 
         // 2 Hz (500ms) UI tick. Keep PD loop behavior intact outside this path.
