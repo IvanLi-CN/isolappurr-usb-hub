@@ -557,7 +557,9 @@ async fn main(_spawner: Spawner) {
     .unwrap()
     .with_sda(peripherals.GPIO8)
     .with_scl(peripherals.GPIO9);
-    info!("telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 addr=[0x40,0x41] (no scan)");
+    info!(
+        "telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 primary=[0x40,0x41] fallback=[0x44,0x45] (no scan)"
+    );
 
     let mut telemetry_sampler = NormalUiTelemetrySampler::new(i2c_telemetry);
     if let Err(err) = telemetry_sampler.init() {

@@ -166,6 +166,25 @@ where
     }
 
     pub fn sample(&mut self) -> NormalUiTelemetrySnapshot {
+        if self.usb_a_address.is_none() {
+            self.usb_a_address = self
+                .resolve_port_address(
+                    INA226_U13_ADDR_7BIT,
+                    INA226_U13_FALLBACK_ADDR_7BIT,
+                    U13_CALIBRATION,
+                )
+                .ok();
+        }
+        if self.usb_c_address.is_none() {
+            self.usb_c_address = self
+                .resolve_port_address(
+                    INA226_U17_ADDR_7BIT,
+                    INA226_U17_FALLBACK_ADDR_7BIT,
+                    U17_CALIBRATION,
+                )
+                .ok();
+        }
+
         let usb_a = match self.usb_a_address {
             Some(address) => self.sample_port(address, U13_CURRENT_LSB_UA_PER_BIT),
             None => PortMetrics::err(),
