@@ -567,6 +567,11 @@ async fn main(_spawner: Spawner) {
         );
         prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::Ina226Init));
     }
+    info!(
+        "telemetry: resolved ina226 addr usb_a={} usb_c={}",
+        telemetry_sampler.usb_a_address(),
+        telemetry_sampler.usb_c_address()
+    );
 
     // GC9307 display (landscape) + backlight control.
     // SPI: MOSI=GPIO11, SCLK=GPIO12. CS=GPIO13, DC=GPIO10, RES=GPIO14.

@@ -3,7 +3,10 @@ use embedded_hal::i2c::I2c;
 use ina226::{AVG, Config, INA226, MODE, VBUSCT, VSHCT};
 
 use super::contract::Field;
-use super::hardware::{INA226_U13_ADDR_7BIT, INA226_U17_ADDR_7BIT};
+use super::hardware::{
+    INA226_U13_ADDR_7BIT, INA226_U13_FALLBACK_ADDR_7BIT, INA226_U17_ADDR_7BIT,
+    INA226_U17_FALLBACK_ADDR_7BIT,
+};
 use super::i2c_allowlist::{TelemetryI2cAllowlist, TelemetryI2cError};
 
 // Plan: docs/plan/0001:gc9307-normal-ui/PLAN.md (INA226 calibration + power source rules).
@@ -104,10 +107,12 @@ where
 /// Normal UI sampler (GC9307): two ports × (V/I/P) from dedicated INA226s.
 ///
 /// - USB-A: INA226 U13 @ `0x40`
-/// - USB-C/PD: INA226 U17 @ `0x41`
+/// - USB-C/PD: INA226 U17 @ `0x41` (fallback `0x45` for counterfeit/clone chips)
 /// - Power is sourced from INA226 Power register (not V×I).
 pub struct NormalUiTelemetrySampler<I2C> {
     i2c: TelemetryI2cAllowlist<I2C>,
+    usb_a_address: u8,
+    usb_c_address: u8,
 }
 
 impl<I2C> NormalUiTelemetrySampler<I2C>
@@ -119,36 +124,72 @@ where
     }
 
     pub const fn new_with_allowlist(i2c: TelemetryI2cAllowlist<I2C>) -> Self {
-        Self { i2c }
+        Self {
+            i2c,
+            usb_a_address: INA226_U13_ADDR_7BIT,
+            usb_c_address: INA226_U17_ADDR_7BIT,
+        }
     }
 
     pub fn into_i2c(self) -> TelemetryI2cAllowlist<I2C> {
         self.i2c
     }
 
+    pub const fn usb_a_address(&self) -> u8 {
+        self.usb_a_address
+    }
+
+    pub const fn usb_c_address(&self) -> u8 {
+        self.usb_c_address
+    }
+
     pub fn init(&mut self) -> Result<(), TelemetryI2cError<I2C::Error>> {
-        let config = ina226_config_for_continuous_sampling();
-
-        {
-            let mut u13 = INA226::new(TelemetryI2cBorrow::new(&mut self.i2c), INA226_U13_ADDR_7BIT);
-            u13.set_configuration(&config)?;
-            u13.set_callibration_raw(U13_CALIBRATION)?;
-        }
-
-        {
-            let mut u17 = INA226::new(TelemetryI2cBorrow::new(&mut self.i2c), INA226_U17_ADDR_7BIT);
-            u17.set_configuration(&config)?;
-            u17.set_callibration_raw(U17_CALIBRATION)?;
-        }
+        self.usb_a_address = self.resolve_port_address(
+            INA226_U13_ADDR_7BIT,
+            INA226_U13_FALLBACK_ADDR_7BIT,
+            U13_CALIBRATION,
+        )?;
+        self.usb_c_address = self.resolve_port_address(
+            INA226_U17_ADDR_7BIT,
+            INA226_U17_FALLBACK_ADDR_7BIT,
+            U17_CALIBRATION,
+        )?;
 
         Ok(())
     }
 
     pub fn sample(&mut self) -> NormalUiTelemetrySnapshot {
-        let usb_a = self.sample_port(INA226_U13_ADDR_7BIT, U13_CURRENT_LSB_UA_PER_BIT);
-        let usb_c = self.sample_port(INA226_U17_ADDR_7BIT, U17_CURRENT_LSB_UA_PER_BIT);
+        let usb_a = self.sample_port(self.usb_a_address, U13_CURRENT_LSB_UA_PER_BIT);
+        let usb_c = self.sample_port(self.usb_c_address, U17_CURRENT_LSB_UA_PER_BIT);
 
         NormalUiTelemetrySnapshot { usb_a, usb_c }
+    }
+
+    fn resolve_port_address(
+        &mut self,
+        primary: u8,
+        fallback: u8,
+        calibration: u16,
+    ) -> Result<u8, TelemetryI2cError<I2C::Error>> {
+        match self.configure_port(primary, calibration) {
+            Ok(()) => Ok(primary),
+            Err(_) => {
+                self.configure_port(fallback, calibration)?;
+                Ok(fallback)
+            }
+        }
+    }
+
+    fn configure_port(
+        &mut self,
+        address: u8,
+        calibration: u16,
+    ) -> Result<(), TelemetryI2cError<I2C::Error>> {
+        let config = ina226_config_for_continuous_sampling();
+        let mut ina226 = INA226::new(TelemetryI2cBorrow::new(&mut self.i2c), address);
+        ina226.set_configuration(&config)?;
+        ina226.set_callibration_raw(calibration)?;
+        Ok(())
     }
 
     fn sample_port(&mut self, address: u8, current_lsb_ua_per_bit: u32) -> PortMetrics {
