@@ -47,6 +47,7 @@
 
 - 每次刷新输出 3 行 × 2 列内容；每行严格为 `left_cell(6) + ' ' + right_cell(6)`。
 - 单元宽度固定为 6 字符，支持 `OK` / `未插入` / `ERROR ` / `OVER  ` 四种显示状态。
+- 未插入显示使用按单位展开的占位符：`--.--V` / `--.--A` / `--.--W`；旧 plan 中的 `--.--U` 仅表示“单位随行固定”的简写口径。
 - 数值显示采用定宽 half-up 舍入：
   - `0.000 ≤ x < 10.000` -> `D.ddd`
   - `10.00 ≤ x < 100.00` -> `DD.dd`
@@ -54,14 +55,16 @@
 - 状态优先级为 `未插入 > ERROR > OVER > OK`，对每个端口、每个指标独立判定。
 - 功率必须读取 INA226 Power 寄存器，不得由 `V × I` 推导。
 - 屏幕刷新周期为 500ms。
-- USB-A present 判定：电压有效且 `< 1.0V` 视为未插入。
+- USB-A present 判定：电压有效且 `< 1.0V` 视为未插入；否则视为已插入（包含读数错误）。
 - USB-C present 判定：依据 SW2303 协议激活状态，不使用 `online` bit，也不以 5V keep-alive 代替协议状态。
 - 硬件映射（tps-sw）：
-  - U13：INA226，地址 `0x40`，分流 `R22=10mΩ`
-  - U17：INA226，地址 `0x41`，分流 `R29=10mΩ`
+  - U13：INA226，I2C 7-bit 地址 `0x40`，分流 `R22=10mΩ`（`P1_SNP ↔ P1_VBUS`）
+  - U17：INA226，I2C 7-bit 地址 `0x41`，分流 `R29=10mΩ`（`ISP_TPS ↔ VOUT_TPS`）
+  - `VOUT_TPS` 通过 `Q7` 连接到 `VBUS_TPS`
 - INA226 固定校准参数：
-  - U13：`Current_LSB=62µA/bit`，`Calibration=8258`
-  - U17：`Current_LSB=107µA/bit`，`Calibration=4785`
+  - U13：`Current_LSB=62µA/bit`，`Calibration=8258`（目标 `I_MAX=2.000A`）
+  - U17：`Current_LSB=107µA/bit`，`Calibration=4785`（目标 `I_MAX=3.500A`）
+- 功率换算：`Power_LSB = 25 × Current_LSB`；读取失败视为 `ERROR`。
 - 颜色（RGB565）：背景 `0x0000`；电压 `0xFE45`；电流 `0xF206`；功率 `0x4D6A`；未插入 `0x8410`；错误 `0xF800`；超量程 `0xFCC0`
 
 ### SHOULD
@@ -93,12 +96,15 @@ None。
 - Given：进入正常界面
   When：每 500ms 触发一次刷新
   Then：显示 3 行 × 2 列的 V/A/W 内容，且每行严格满足 13 字符布局。
-- Given：USB-A 电压 `< 1.0V`
+- Given：USB-A 电压有效且 `< 1.0V`
   When：界面刷新
-  Then：USB-A 三行均显示 `--.--U`。
+  Then：USB-A 三行均显示 `--.--V` / `--.--A` / `--.--W`。
+- Given：USB-A 电压读取失败
+  When：界面刷新
+  Then：该口仍视为已插入，并仅让对应失败字段显示 `ERROR `。
 - Given：USB-C 协议未激活
   When：界面刷新
-  Then：USB-C 三行均显示 `--.--U`。
+  Then：USB-C 三行均显示 `--.--V` / `--.--A` / `--.--W`。
 - Given：任一项读取失败或超量程
   When：界面刷新
   Then：对应项分别显示 `ERROR ` 或 `OVER  `。
