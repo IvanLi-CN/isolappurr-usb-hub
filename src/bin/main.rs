@@ -557,7 +557,9 @@ async fn main(_spawner: Spawner) {
     .unwrap()
     .with_sda(peripherals.GPIO8)
     .with_scl(peripherals.GPIO9);
-    info!("telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 addr=[0x40,0x41] (no scan)");
+    info!(
+        "telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 primary=[0x40,0x41] fallback=[0x44,0x45] (no scan)"
+    );
 
     let mut telemetry_sampler = NormalUiTelemetrySampler::new(i2c_telemetry);
     if let Err(err) = telemetry_sampler.init() {
@@ -566,6 +568,16 @@ async fn main(_spawner: Spawner) {
             defmt::Debug2Format(&err)
         );
         prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::Ina226Init));
+    }
+    if let Some(usb_a_address) = telemetry_sampler.usb_a_address() {
+        info!("telemetry: resolved ina226 addr usb_a={}", usb_a_address);
+    } else {
+        defmt::warn!("telemetry: resolved ina226 addr usb_a=unresolved");
+    }
+    if let Some(usb_c_address) = telemetry_sampler.usb_c_address() {
+        info!("telemetry: resolved ina226 addr usb_c={}", usb_c_address);
+    } else {
+        defmt::warn!("telemetry: resolved ina226 addr usb_c=unresolved");
     }
 
     // GC9307 display (landscape) + backlight control.
