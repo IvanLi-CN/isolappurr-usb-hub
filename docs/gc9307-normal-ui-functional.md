@@ -1,7 +1,7 @@
 # GC9307 正常界面（功能说明）
 
 适用硬件：`tps-sw`。  
-规范基线：`docs/plan/0001:gc9307-normal-ui/PLAN.md`（本文为面向使用者的解释，不替代规范基线）。
+规范基线：`docs/specs/j9twf-gc9307-normal-ui/SPEC.md`（本文为面向使用者的解释，不替代规格基线）。
 
 ---
 
