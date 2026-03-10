@@ -108,6 +108,12 @@ None。
 - Given：任一项读取失败或超量程
   When：界面刷新
   Then：对应项分别显示 `ERROR ` 或 `OVER  `。
+- Given：任意正常数值接近量级阈值
+  When：执行 half-up 舍入并格式化
+  Then：必须允许跨阈值进位（例如 `9.9996V -> 10.00V`）。
+- Given：任一项 `x >= 1000.0`
+  When：界面刷新
+  Then：该项显示 `OVER  `。
 
 ## 实现前置条件（Definition of Ready / Preconditions）
 
