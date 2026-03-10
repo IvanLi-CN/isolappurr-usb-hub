@@ -567,11 +567,16 @@ async fn main(_spawner: Spawner) {
         );
         prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::Ina226Init));
     }
-    info!(
-        "telemetry: resolved ina226 addr usb_a={} usb_c={}",
-        telemetry_sampler.usb_a_address(),
-        telemetry_sampler.usb_c_address()
-    );
+    if let Some(usb_a_address) = telemetry_sampler.usb_a_address() {
+        info!("telemetry: resolved ina226 addr usb_a={}", usb_a_address);
+    } else {
+        defmt::warn!("telemetry: resolved ina226 addr usb_a=unresolved");
+    }
+    if let Some(usb_c_address) = telemetry_sampler.usb_c_address() {
+        info!("telemetry: resolved ina226 addr usb_c={}", usb_c_address);
+    } else {
+        defmt::warn!("telemetry: resolved ina226 addr usb_c=unresolved");
+    }
 
     // GC9307 display (landscape) + backlight control.
     // SPI: MOSI=GPIO11, SCLK=GPIO12. CS=GPIO13, DC=GPIO10, RES=GPIO14.

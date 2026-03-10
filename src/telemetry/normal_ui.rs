@@ -1,4 +1,4 @@
-use embedded_hal::i2c::I2c;
+use embedded_hal::i2c::{Error as _, ErrorKind, I2c, NoAcknowledgeSource};
 
 use ina226::{AVG, Config, INA226, MODE, VBUSCT, VSHCT};
 
@@ -111,8 +111,8 @@ where
 /// - Power is sourced from INA226 Power register (not V×I).
 pub struct NormalUiTelemetrySampler<I2C> {
     i2c: TelemetryI2cAllowlist<I2C>,
-    usb_a_address: u8,
-    usb_c_address: u8,
+    usb_a_address: Option<u8>,
+    usb_c_address: Option<u8>,
 }
 
 impl<I2C> NormalUiTelemetrySampler<I2C>
@@ -126,8 +126,8 @@ where
     pub const fn new_with_allowlist(i2c: TelemetryI2cAllowlist<I2C>) -> Self {
         Self {
             i2c,
-            usb_a_address: INA226_U13_ADDR_7BIT,
-            usb_c_address: INA226_U17_ADDR_7BIT,
+            usb_a_address: None,
+            usb_c_address: None,
         }
     }
 
@@ -135,32 +135,45 @@ where
         self.i2c
     }
 
-    pub const fn usb_a_address(&self) -> u8 {
+    pub const fn usb_a_address(&self) -> Option<u8> {
         self.usb_a_address
     }
 
-    pub const fn usb_c_address(&self) -> u8 {
+    pub const fn usb_c_address(&self) -> Option<u8> {
         self.usb_c_address
     }
 
     pub fn init(&mut self) -> Result<(), TelemetryI2cError<I2C::Error>> {
-        self.usb_a_address = self.resolve_port_address(
+        let usb_a = self.resolve_port_address(
             INA226_U13_ADDR_7BIT,
             INA226_U13_FALLBACK_ADDR_7BIT,
             U13_CALIBRATION,
-        )?;
-        self.usb_c_address = self.resolve_port_address(
+        );
+        let usb_c = self.resolve_port_address(
             INA226_U17_ADDR_7BIT,
             INA226_U17_FALLBACK_ADDR_7BIT,
             U17_CALIBRATION,
-        )?;
+        );
 
-        Ok(())
+        self.usb_a_address = usb_a.as_ref().copied().ok();
+        self.usb_c_address = usb_c.as_ref().copied().ok();
+
+        match (usb_a, usb_c) {
+            (Ok(_), Ok(_)) => Ok(()),
+            (Err(err), _) => Err(err),
+            (Ok(_), Err(err)) => Err(err),
+        }
     }
 
     pub fn sample(&mut self) -> NormalUiTelemetrySnapshot {
-        let usb_a = self.sample_port(self.usb_a_address, U13_CURRENT_LSB_UA_PER_BIT);
-        let usb_c = self.sample_port(self.usb_c_address, U17_CURRENT_LSB_UA_PER_BIT);
+        let usb_a = match self.usb_a_address {
+            Some(address) => self.sample_port(address, U13_CURRENT_LSB_UA_PER_BIT),
+            None => PortMetrics::err(),
+        };
+        let usb_c = match self.usb_c_address {
+            Some(address) => self.sample_port(address, U17_CURRENT_LSB_UA_PER_BIT),
+            None => PortMetrics::err(),
+        };
 
         NormalUiTelemetrySnapshot { usb_a, usb_c }
     }
@@ -173,10 +186,16 @@ where
     ) -> Result<u8, TelemetryI2cError<I2C::Error>> {
         match self.configure_port(primary, calibration) {
             Ok(()) => Ok(primary),
-            Err(_) => {
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    ErrorKind::NoAcknowledge(NoAcknowledgeSource::Address)
+                ) =>
+            {
                 self.configure_port(fallback, calibration)?;
                 Ok(fallback)
             }
+            Err(err) => Err(err),
         }
     }
 
