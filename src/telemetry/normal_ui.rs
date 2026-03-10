@@ -53,6 +53,13 @@ fn power_raw_to_mw(raw: u16, current_lsb_ua_per_bit: u32) -> u32 {
     ((numerator + 500) / 1_000) as u32
 }
 
+fn is_address_nak<E: embedded_hal::i2c::Error>(err: &TelemetryI2cError<E>) -> bool {
+    matches!(
+        err.kind(),
+        ErrorKind::NoAcknowledge(NoAcknowledgeSource::Address)
+    )
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PortMetrics {
     pub voltage_mv: Field<u32>,
@@ -203,19 +210,23 @@ where
         fallback: u8,
         calibration: u16,
     ) -> Result<u8, TelemetryI2cError<I2C::Error>> {
-        match self.configure_port(primary, calibration) {
-            Ok(()) => Ok(primary),
-            Err(err)
-                if matches!(
-                    err.kind(),
-                    ErrorKind::NoAcknowledge(NoAcknowledgeSource::Address)
-                ) =>
-            {
-                self.configure_port(fallback, calibration)?;
-                Ok(fallback)
+        let resolved = match self.probe_port(primary) {
+            Ok(()) => primary,
+            Err(err) if is_address_nak(&err) => {
+                self.probe_port(fallback)?;
+                fallback
             }
-            Err(err) => Err(err),
-        }
+            Err(err) => return Err(err),
+        };
+
+        self.configure_port(resolved, calibration)?;
+        Ok(resolved)
+    }
+
+    fn probe_port(&mut self, address: u8) -> Result<(), TelemetryI2cError<I2C::Error>> {
+        let mut ina226 = INA226::new(TelemetryI2cBorrow::new(&mut self.i2c), address);
+        let _ = ina226.configuration_raw()?;
+        Ok(())
     }
 
     fn configure_port(
@@ -253,5 +264,179 @@ where
             current_ma,
             power_mw,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+
+    use super::*;
+    use embedded_hal::i2c::{ErrorType, Operation, SevenBitAddress};
+    use std::collections::BTreeMap;
+
+    const CONFIG_REGISTER: u8 = 0x00;
+    const BUS_VOLTAGE_REGISTER: u8 = 0x02;
+    const POWER_REGISTER: u8 = 0x03;
+    const CURRENT_REGISTER: u8 = 0x04;
+    const CALIBRATION_REGISTER: u8 = 0x05;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct FakeError(ErrorKind);
+
+    impl embedded_hal::i2c::Error for FakeError {
+        fn kind(&self) -> ErrorKind {
+            self.0
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeDevice {
+        registers: BTreeMap<u8, u16>,
+        selected_register: u8,
+        calibration_address_nak_remaining: usize,
+    }
+
+    impl FakeDevice {
+        fn new(bus_voltage_raw: u16, current_raw: i16, power_raw: u16) -> Self {
+            let mut registers = BTreeMap::new();
+            registers.insert(CONFIG_REGISTER, 0x4527);
+            registers.insert(BUS_VOLTAGE_REGISTER, bus_voltage_raw);
+            registers.insert(POWER_REGISTER, power_raw);
+            registers.insert(CURRENT_REGISTER, current_raw as u16);
+            registers.insert(CALIBRATION_REGISTER, 0);
+            Self {
+                registers,
+                selected_register: CONFIG_REGISTER,
+                calibration_address_nak_remaining: 0,
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeI2c {
+        devices: BTreeMap<u8, FakeDevice>,
+    }
+
+    impl FakeI2c {
+        fn new() -> Self {
+            Self {
+                devices: BTreeMap::new(),
+            }
+        }
+
+        fn with_device(mut self, address: u8) -> Self {
+            self.devices
+                .insert(address, FakeDevice::new(3_200, 100, 50));
+            self
+        }
+
+        fn with_calibration_address_nak(mut self, address: u8, remaining: usize) -> Self {
+            self.devices
+                .entry(address)
+                .or_insert_with(|| FakeDevice::new(3_200, 100, 50))
+                .calibration_address_nak_remaining = remaining;
+            self
+        }
+    }
+
+    impl ErrorType for FakeI2c {
+        type Error = FakeError;
+    }
+
+    impl embedded_hal::i2c::I2c for FakeI2c {
+        fn transaction(
+            &mut self,
+            address: SevenBitAddress,
+            operations: &mut [Operation<'_>],
+        ) -> Result<(), Self::Error> {
+            let device =
+                self.devices
+                    .get_mut(&address)
+                    .ok_or(FakeError(ErrorKind::NoAcknowledge(
+                        NoAcknowledgeSource::Address,
+                    )))?;
+
+            for operation in operations {
+                match operation {
+                    Operation::Write(write) => match write.len() {
+                        1 => device.selected_register = write[0],
+                        3 => {
+                            let register = write[0];
+                            if register == CALIBRATION_REGISTER
+                                && device.calibration_address_nak_remaining > 0
+                            {
+                                device.calibration_address_nak_remaining -= 1;
+                                return Err(FakeError(ErrorKind::NoAcknowledge(
+                                    NoAcknowledgeSource::Address,
+                                )));
+                            }
+                            let value = u16::from_be_bytes([write[1], write[2]]);
+                            device.registers.insert(register, value);
+                        }
+                        _ => unreachable!(),
+                    },
+                    Operation::Read(read) => {
+                        let value = *device
+                            .registers
+                            .get(&device.selected_register)
+                            .unwrap_or(&0);
+                        let bytes = value.to_be_bytes();
+                        read.copy_from_slice(&bytes[..read.len()]);
+                    }
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn prefers_primary_addresses() {
+        let mut sampler =
+            NormalUiTelemetrySampler::new(FakeI2c::new().with_device(0x40).with_device(0x41));
+        sampler.init().unwrap();
+
+        assert_eq!(sampler.usb_a_address(), Some(0x40));
+        assert_eq!(sampler.usb_c_address(), Some(0x41));
+    }
+
+    #[test]
+    fn falls_back_on_primary_address_nak() {
+        let mut sampler =
+            NormalUiTelemetrySampler::new(FakeI2c::new().with_device(0x40).with_device(0x45));
+        sampler.init().unwrap();
+
+        assert_eq!(sampler.usb_a_address(), Some(0x40));
+        assert_eq!(sampler.usb_c_address(), Some(0x45));
+    }
+
+    #[test]
+    fn usb_c_still_resolves_when_usb_a_missing() {
+        let mut sampler = NormalUiTelemetrySampler::new(FakeI2c::new().with_device(0x45));
+        assert!(sampler.init().is_err());
+
+        assert_eq!(sampler.usb_a_address(), None);
+        assert_eq!(sampler.usb_c_address(), Some(0x45));
+
+        let snapshot = sampler.sample();
+        assert_eq!(snapshot.usb_a, PortMetrics::err());
+        assert!(matches!(snapshot.usb_c.voltage_mv, Field::Ok(v) if v > 0));
+    }
+
+    #[test]
+    fn sample_retries_unresolved_primary_without_switching_to_fallback() {
+        let fake = FakeI2c::new()
+            .with_device(0x41)
+            .with_device(0x45)
+            .with_calibration_address_nak(0x41, 1);
+        let mut sampler = NormalUiTelemetrySampler::new(fake);
+
+        assert!(sampler.init().is_err());
+        assert_eq!(sampler.usb_c_address(), None);
+
+        let snapshot = sampler.sample();
+        assert_eq!(sampler.usb_c_address(), Some(0x41));
+        assert!(matches!(snapshot.usb_c.voltage_mv, Field::Ok(v) if v > 0));
     }
 }
