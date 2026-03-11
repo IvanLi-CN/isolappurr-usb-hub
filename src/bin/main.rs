@@ -557,15 +557,26 @@ async fn main(_spawner: Spawner) {
     .unwrap()
     .with_sda(peripherals.GPIO8)
     .with_scl(peripherals.GPIO9);
-    info!("telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 addr=[0x40,0x41] (no scan)");
+    info!("telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 addr=[0x40/0x44,0x41/0x45] (no scan)");
 
     let mut telemetry_sampler = NormalUiTelemetrySampler::new(i2c_telemetry);
-    if let Err(err) = telemetry_sampler.init() {
-        defmt::warn!(
-            "telemetry: INA226 init error (PD loop continues; fields may show ERR): {:?}",
-            defmt::Debug2Format(&err)
-        );
-        prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::Ina226Init));
+    match telemetry_sampler.init() {
+        Ok(()) => {
+            info!(
+                "telemetry: INA226 init ok usb_a_addr={:?} usb_c_addr={:?}",
+                defmt::Debug2Format(&telemetry_sampler.usb_a_address()),
+                defmt::Debug2Format(&telemetry_sampler.usb_c_address())
+            );
+        }
+        Err(err) => {
+            defmt::warn!(
+                "telemetry: INA226 init error (PD loop continues; fields may show ERR): {:?}; usb_a_addr={:?} usb_c_addr={:?}",
+                defmt::Debug2Format(&err),
+                defmt::Debug2Format(&telemetry_sampler.usb_a_address()),
+                defmt::Debug2Format(&telemetry_sampler.usb_c_address())
+            );
+            prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::Ina226Init));
+        }
     }
 
     // GC9307 display (landscape) + backlight control.
