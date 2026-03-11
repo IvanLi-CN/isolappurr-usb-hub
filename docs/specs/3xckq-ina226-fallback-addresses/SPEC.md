@@ -95,7 +95,6 @@ None。
 - Given：主地址探测阶段返回 `Unknown`
   When：遥测初始化或重试执行
   Then：不触发 fallback，并按错误处理。
-  Then：不触发 fallback，并按错误处理。
 - Given：仅一口解析失败
   When：另一口地址可正常应答
   Then：可应答端口继续采样与显示，不被阻断。
