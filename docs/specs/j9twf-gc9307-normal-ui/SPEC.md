@@ -69,7 +69,7 @@
 
 ### SHOULD
 
-- 插入状态下任一项读取失败仅影响该项显示，不影响同口其它项与另一口显示。
+- 每次刷新使用当前可用的最新测量值；插入状态下任一项读取失败仅影响该项显示，不影响同口其它项与另一口显示。
 
 ### COULD
 
@@ -125,7 +125,7 @@ None。
 
 ### Quality checks
 
-- Changes that alter the normal UI behavior defined here must update this spec and the linked user-facing docs together.
+- Changes that alter the normal UI behavior defined here must update this spec, the linked user-facing docs, and any preview/code references that still mention the legacy plan path.
 
 ## 文档更新（Docs to Update）
 
@@ -133,6 +133,9 @@ None。
 - `docs/specs/j9twf-gc9307-normal-ui/SPEC.md`
 - `docs/gc9307-normal-ui-functional.md`
 - `docs/gc9307-normal-ui-ui-design.md`
+- `docs/plan/0001:gc9307-normal-ui/tools/gc9307_render_preview.py`
+- `src/telemetry/normal_ui.rs`
+- `src/bin/main.rs`
 
 ## 实现里程碑（Milestones / Delivery checklist）
 
