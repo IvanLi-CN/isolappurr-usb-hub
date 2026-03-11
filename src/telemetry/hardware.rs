@@ -9,9 +9,13 @@ pub const TELEMETRY_I2C1_INT_GPIO: u8 = 7;
 
 /// INA226 (U13, USB-A) 7-bit I2C address.
 pub const INA226_U13_ADDR_7BIT: SevenBitAddress = 0x40;
+/// Counterfeit/clone fallback observed in the field for U13.
+pub const INA226_U13_FALLBACK_ADDR_7BIT: SevenBitAddress = 0x44;
 
-/// INA226 (U17) 7-bit I2C address.
+/// INA226 (U17, USB-C) 7-bit I2C address.
 pub const INA226_U17_ADDR_7BIT: SevenBitAddress = 0x41;
+/// Counterfeit/clone fallback observed in the field for U17.
+pub const INA226_U17_FALLBACK_ADDR_7BIT: SevenBitAddress = 0x45;
 
 /// USB-A shunt resistor: R22 = 10 mΩ.
 pub const U13_R22_SHUNT_RESISTANCE_UOHMS: u32 = 10_000;
