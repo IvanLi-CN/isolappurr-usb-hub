@@ -22,7 +22,7 @@
 
 ### 2.2 单元与整行宽度
 
-- 单元宽度：6 字符（参见 Spec 的 `dddd.dU` / `--.--U` / `ERROR ` / `OVER  `）
+- 单元宽度：6 字符（参见 Spec 的 `dddd.dU` / `--.--V` / `--.--A` / `--.--W` / `ERROR ` / `OVER  `）
 - 行宽：13 字符 = `左(6) + 空格(1) + 右(6)`
 
 ---
@@ -61,15 +61,15 @@
 
 > 预览图文件仍保留在 legacy `docs/plan/0001:gc9307-normal-ui/images/` 路径；显示口径与颜色规则以 `docs/specs/j9twf-gc9307-normal-ui/SPEC.md` 为准。
 
-![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-normal.png)
+![](specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-normal.png)
 
 未插入：
 
-![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-not-present.png)
+![](specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-not-present.png)
 
 错误/超量程：
 
-![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-error-over.png)
+![](specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-error-over.png)
 
 ---
 
