@@ -18,7 +18,7 @@
 
 - 为 U13 增加 `0x40 -> 0x44` fallback。
 - 为 U17 增加 `0x41 -> 0x45` fallback。
-- 将 fallback 限制在主地址阶段的 `NoAcknowledge` 场景（包括 `Address NAK` 与 `Data NAK`）。
+- 将 fallback 限制在主地址探测阶段的 `NoAcknowledge` 场景（仅包括 `Address NAK` 与 `Data NAK`）。
 - 确保两口地址解析彼此独立，单口失败不阻断另一口继续工作。
 
 ### Non-goals
@@ -33,7 +33,7 @@
 
 - `src/telemetry/hardware.rs` 中的兼容地址常量。
 - `src/telemetry/i2c_allowlist.rs` 中的 allowlist 扩展。
-- `src/telemetry/normal_ui.rs` 中的主地址优先、主地址阶段 `NoAcknowledge` 才回退、单口独立解析与后续重试。
+- `src/telemetry/normal_ui.rs` 中的主地址优先、主地址探测阶段 `NoAcknowledge` 才回退、单口独立解析与后续重试。
 
 ### Out of scope
 
@@ -45,10 +45,10 @@
 
 ### MUST
 
-- U13 先尝试 `0x40`，仅当主地址阶段返回 `NoAcknowledge` 时允许回退到 `0x44`。
-- U17 先尝试 `0x41`，仅当主地址阶段返回 `NoAcknowledge` 时允许回退到 `0x45`。
-- 主地址阶段的 `Address NAK` 与 `Data NAK` 都允许触发 fallback。
-- 总线错误或其它非 `NoAcknowledge` 错误不得触发 fallback。
+- U13 先尝试 `0x40`，仅当主地址探测阶段返回 `NoAcknowledge` 时允许回退到 `0x44`。
+- U17 先尝试 `0x41`，仅当主地址探测阶段返回 `NoAcknowledge` 时允许回退到 `0x45`。
+- 主地址探测阶段的 `Address NAK` 与 `Data NAK` 都允许触发 fallback。
+- `NoAcknowledgeSource::Unknown`、总线错误或其它非 `NoAcknowledge` 错误不得触发 fallback。
 - 两口地址解析必须彼此独立；单口失败不得阻断另一口继续解析与采样。
 - 启动阶段未解析成功的端口，在后续刷新周期继续按相同规则重试。
 - 兼容地址需要被 telemetry allowlist 明确放行。
@@ -66,13 +66,14 @@
 
 ### Core flows
 
-- 初始化时，USB-A 与 USB-C 各自独立执行“主地址 -> 兼容地址（仅主地址阶段 NoAcknowledge）”的解析流程。
+- 初始化时，USB-A 与 USB-C 各自独立执行“主地址 -> 兼容地址（仅主地址探测阶段 NoAcknowledge）”的解析流程。
 - 正常采样阶段沿用已解析出的地址。
 - 若某口启动时仍未解析成功，则在后续刷新周期只对该口继续重试。
 
 ### Edge cases / errors
 
-- 主地址阶段返回 `Data NAK` 时，与 `Address NAK` 一样允许尝试兼容地址。
+- 主地址探测阶段返回 `Data NAK` 时，与 `Address NAK` 一样允许尝试兼容地址。
+- 主地址探测阶段返回 `Unknown` 时，不允许尝试兼容地址。
 - 若兼容地址同样失败，该口维持错误态，等待下一次刷新周期重试。
 - 兼容地址恢复量测后，不改变 UI 的 present 判定规则。
 
@@ -88,9 +89,13 @@ None。
 - Given：U17 的 `0x41` 返回 `Address NAK`，`0x45` 可应答
   When：正常界面遥测初始化或后续重试执行
   Then：USB-C 成功切换到 `0x45` 并继续采样。
-- Given：主地址阶段返回 `Data NAK`，兼容地址可应答
+- Given：主地址探测阶段返回 `Data NAK`，兼容地址可应答
   When：遥测初始化或重试执行
   Then：允许切换到兼容地址并继续采样。
+- Given：主地址探测阶段返回 `Unknown`
+  When：遥测初始化或重试执行
+  Then：不触发 fallback，并按错误处理。
+  Then：不触发 fallback，并按错误处理。
 - Given：仅一口解析失败
   When：另一口地址可正常应答
   Then：可应答端口继续采样与显示，不被阻断。
@@ -99,7 +104,7 @@ None。
 
 - 正常界面基线规格已由 `docs/specs/j9twf-gc9307-normal-ui/SPEC.md` 承接。
 - 兼容地址范围已冻结为 `U13: 0x44`、`U17: 0x45`。
-- 主地址优先与主地址阶段 `NoAcknowledge` 限定回退规则已确认。
+- 主地址优先与主地址探测阶段 `NoAcknowledge` 限定回退规则已确认。
 
 ## 非功能性验收 / 质量门槛（Quality Gates）
 
@@ -122,13 +127,13 @@ None。
 ## 实现里程碑（Milestones / Delivery checklist）
 
 - [x] M1: 为 U13 / U17 增加兼容地址常量与 allowlist
-- [x] M2: 实现主地址优先、主地址阶段 `NoAcknowledge` 才回退的独立解析逻辑
+- [x] M2: 实现主地址优先、主地址探测阶段 `NoAcknowledge` 才回退的独立解析逻辑
 - [x] M3: 为当前实现变更补独立 spec，不混入 legacy 正常界面规格
 
 ## 方案概述（Approach, high-level）
 
 - 保持正常界面旧规格与当前 fallback 变更分离：旧行为在 `j9twf`，当前补丁在 `3xckq`。
-- 通过“只在主地址阶段 `NoAcknowledge` 时回退”限制兼容范围，避免把普通总线异常误判为地址异常兼容件。
+- 通过“只在主地址探测阶段 `NoAcknowledge` 时回退”限制兼容范围，避免把普通总线异常误判为地址异常兼容件。
 
 ## 风险 / 开放问题 / 假设（Risks, Open Questions, Assumptions）
 
@@ -140,6 +145,7 @@ None。
 ## 变更记录（Change log）
 
 - 2026-03-11: 新增独立 fallback 规格，单独覆盖 `0x40 -> 0x44` 与 `0x41 -> 0x45` 的兼容地址策略。
+- 2026-03-11: 将触发条件收敛到主地址探测阶段的 `Address/Data NAK`；主地址配置写入失败与 `Unknown` 不再误触发 fallback。
 - 2026-03-11: 同步源码中的正常界面基线引用，明确 fallback 规格依赖 `j9twf`，避免旧 `docs/plan` 与当前规格混淆。
 
 ## 参考（References）

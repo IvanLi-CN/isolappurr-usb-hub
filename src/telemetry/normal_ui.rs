@@ -53,12 +53,13 @@ fn power_raw_to_mw(raw: u16, current_lsb_ua_per_bit: u32) -> u32 {
     ((numerator + 500) / 1_000) as u32
 }
 
-fn is_primary_fallback_candidate<E: embedded_hal::i2c::Error>(err: &TelemetryI2cError<E>) -> bool {
+fn is_primary_probe_fallback_candidate<E: embedded_hal::i2c::Error>(
+    err: &TelemetryI2cError<E>,
+) -> bool {
     matches!(
         err.kind(),
         ErrorKind::NoAcknowledge(NoAcknowledgeSource::Address)
             | ErrorKind::NoAcknowledge(NoAcknowledgeSource::Data)
-            | ErrorKind::NoAcknowledge(NoAcknowledgeSource::Unknown)
     )
 }
 
@@ -212,24 +213,17 @@ where
         fallback: u8,
         calibration: u16,
     ) -> Result<u8, TelemetryI2cError<I2C::Error>> {
-        match self.try_configured_port(primary, calibration) {
-            Ok(()) => Ok(primary),
-            Err(err) if is_primary_fallback_candidate(&err) => {
-                self.try_configured_port(fallback, calibration)?;
-                Ok(fallback)
+        let resolved = match self.probe_port(primary) {
+            Ok(()) => primary,
+            Err(err) if is_primary_probe_fallback_candidate(&err) => {
+                self.probe_port(fallback)?;
+                fallback
             }
-            Err(err) => Err(err),
-        }
-    }
+            Err(err) => return Err(err),
+        };
 
-    fn try_configured_port(
-        &mut self,
-        address: u8,
-        calibration: u16,
-    ) -> Result<(), TelemetryI2cError<I2C::Error>> {
-        self.probe_port(address)?;
-        self.configure_port(address, calibration)?;
-        Ok(())
+        self.configure_port(resolved, calibration)?;
+        Ok(resolved)
     }
 
     fn probe_port(&mut self, address: u8) -> Result<(), TelemetryI2cError<I2C::Error>> {
