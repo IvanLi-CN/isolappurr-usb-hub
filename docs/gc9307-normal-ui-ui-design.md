@@ -59,7 +59,7 @@
 
 正常示例（覆盖三种量级格式）：
 
-> 预览图文件仍保留在 legacy `docs/plan/0001:gc9307-normal-ui/images/` 路径；显示口径与颜色规则以 `docs/specs/j9twf-gc9307-normal-ui/SPEC.md` 为准。
+> 预览图由 `docs/plan/0001:gc9307-normal-ui/tools/gc9307_render_preview.py` 生成，并写入 `docs/specs/j9twf-gc9307-normal-ui/images/`；显示口径与颜色规则以 `docs/specs/j9twf-gc9307-normal-ui/SPEC.md` 为准。
 
 ![](specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-normal.png)
 
