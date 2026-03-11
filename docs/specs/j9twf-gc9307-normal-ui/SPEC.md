@@ -125,7 +125,7 @@ None。
 
 ### Quality checks
 
-- This migration PR is docs-only and must not change implementation files.
+- Changes that alter the normal UI behavior defined here must update this spec and the linked user-facing docs together.
 
 ## 文档更新（Docs to Update）
 
