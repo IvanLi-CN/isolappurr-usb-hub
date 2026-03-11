@@ -6,7 +6,7 @@ use super::contract::Field;
 use super::hardware::{INA226_U13_ADDR_7BIT, INA226_U17_ADDR_7BIT};
 use super::i2c_allowlist::{TelemetryI2cAllowlist, TelemetryI2cError};
 
-// Plan: docs/plan/0001:gc9307-normal-ui/PLAN.md (INA226 calibration + power source rules).
+// Spec: docs/specs/j9twf-gc9307-normal-ui/SPEC.md (INA226 calibration + power source rules).
 const U13_CURRENT_LSB_UA_PER_BIT: u32 = 62;
 const U13_CALIBRATION: u16 = 8258;
 

@@ -1,18 +1,20 @@
 # 计划（Plan）总览
 
-本目录用于管理“先计划、后实现”的工作项：每个计划在这里冻结范围与验收标准，进入实现前先把口径对齐，避免边做边改导致失控。
+本目录保留仓库历史上的 legacy plan 记录，便于追溯旧工作项的冻结口径与当时的验收标准。
 
-## 快速新增一个计划
+> 历史说明：`docs/plan/**` 保留 legacy 计划记录，也兼容尚未迁移到 `docs/specs/**/SPEC.md` 的既有工作项；已迁移的工作项继续以对应 `SPEC.md` 为准。
 
-1. 分配一个新的 `ID`（推荐 5 字符 nanoId 风格；兼容四位数字 `0001`–`9999`）。
-2. 新建目录：`docs/plan/<id>:<title>/`（`<title>` 用简短 slug，建议 kebab-case）。
-3. 在该目录下创建 `PLAN.md`（模板见下方“PLAN.md 写法（简要）”）。
-4. 在下方 Index 表新增一行，并把 `Status` 设为 `待设计` 或 `待实现`（取决于是否已冻结验收标准），并填入 `Last`（通常为当天）。
+## 新工作项入口
+
+- 新增规格：请改用 `docs/specs/README.md`
+- 新开工作项默认写入 `docs/specs/**/SPEC.md`
+- 尚未迁移的既有计划仍可在 `docs/plan/**` 继续维护，直到单独完成迁移
+- 本目录维护历史索引、迁移提示，以及仍未迁移计划的现状口径
 
 ## 目录与命名规则
 
-- 每个计划一个目录：`docs/plan/<id>:<title>/`
-- `<id>`：推荐 5 字符 nanoId 风格；兼容四位数字（`0001`–`9999`），一经分配不要变更。
+- Legacy 计划目录格式：`docs/plan/<id>:<title>/`（仅保留历史项，不再用于新增）
+- `<id>`：历史上既有 5 字符 nanoId 风格与四位数字（`0001`–`9999`）并存；这里仅用于理解旧目录命名，不再作为新增规范。
   - 推荐字符集（小写 + 避免易混淆字符）：`23456789abcdefghjkmnpqrstuvwxyz`
   - 正则：`[23456789abcdefghjkmnpqrstuvwxyz]{5}`
 - `<title>`：短标题 slug（建议 kebab-case，避免空格与特殊字符）；目录名尽量稳定。
@@ -54,7 +56,7 @@
 
 | ID   | Title | Status | Plan | Last | Notes |
 |-----:|-------|--------|------|------|-------|
-| 0001 | GC9307 正常界面规范（USB‑A + USB‑C/PD 双口电参量） | 已完成 | `0001:gc9307-normal-ui/PLAN.md` | 2026-01-08 | - |
+| 0001 | GC9307 正常界面规范（USB‑A + USB‑C/PD 双口电参量） | 已完成 | `0001:gc9307-normal-ui/PLAN.md` | 2026-01-08 | migrated spec: `docs/specs/j9twf-gc9307-normal-ui/SPEC.md` |
 | 0002 | CH442E 短按重插 / 长按断电（USB‑A 左键，USB‑C 右键） | 已完成 | `0002:usb-replug-power-cut/PLAN.md` | 2026-01-14 | - |
 | 0003 | 固件联网：Wi‑Fi + mDNS + HTTP（Hello World） | 已完成 | `0003:wifi-mdns-http/PLAN.md` | 2026-01-10 | feature: `net_http` |
 | 0004 | GitHub Pages Web：双口遥测与控制台（Mock，多设备） | 已完成 | `0004:github-pages-ports-dashboard/PLAN.md` | 2026-01-14 | Mock only（暂不连真机；后续用 PNA） |

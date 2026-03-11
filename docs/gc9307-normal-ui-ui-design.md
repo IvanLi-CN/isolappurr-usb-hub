@@ -1,7 +1,7 @@
 # GC9307 正常界面（UI 设计）
 
 适用硬件：`tps-sw`。  
-规范基线：`docs/plan/0001:gc9307-normal-ui/PLAN.md`（本文为**界面设计**与效果图，不替代规范基线）。
+规范基线：`docs/specs/j9twf-gc9307-normal-ui/SPEC.md`（本文为界面设计与效果图，不替代规格基线）。
 
 ---
 
@@ -22,7 +22,7 @@
 
 ### 2.2 单元与整行宽度
 
-- 单元宽度：6 字符（参见 Spec 的 `dddd.dU` / `--.--U` / `ERROR ` / `OVER  `）
+- 单元宽度：6 字符（参见 Spec 的 `dddd.dU` / `--.--V` / `--.--A` / `--.--W` / `ERROR ` / `OVER  `）
 - 行宽：13 字符 = `左(6) + 空格(1) + 右(6)`
 
 ---
@@ -39,7 +39,7 @@
   - `Y_OFFSET=(172-144)/2=14px`
 - 字形源：6×8
 - 放大比例：`SX=3`, `SY=4` → 字形像素为 `18×32`，在 tile 内居中（上/下留黑边）
-- 颜色：背景恒为黑；前景色按 `docs/plan/0001:gc9307-normal-ui/PLAN.md` 的 “需求（Requirements）/MUST/颜色”（1bpp：每个字符 tile 仅有前景/背景两色）
+- 颜色：背景恒为黑；前景色按 `docs/specs/j9twf-gc9307-normal-ui/SPEC.md` 的“需求（Requirements）/MUST/颜色”（1bpp：每个字符 tile 仅有前景/背景两色）
 
 > 以上参数用于生成“与固件同渲染方式”的 1:1 像素效果图；实现阶段如更改渲染策略或配色，需要同步更新本文档的效果图。
 
@@ -59,15 +59,17 @@
 
 正常示例（覆盖三种量级格式）：
 
-![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-normal.png)
+> 预览图由 `docs/plan/0001:gc9307-normal-ui/tools/gc9307_render_preview.py` 生成，并写入 `docs/specs/j9twf-gc9307-normal-ui/images/`；显示口径与颜色规则以 `docs/specs/j9twf-gc9307-normal-ui/SPEC.md` 为准。
+
+![](specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-normal.png)
 
 未插入：
 
-![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-not-present.png)
+![](specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-not-present.png)
 
 错误/超量程：
 
-![](plan/0001:gc9307-normal-ui/images/gc9307-normal-ui-preview-error-over.png)
+![](specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-error-over.png)
 
 ---
 

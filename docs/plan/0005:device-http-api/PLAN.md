@@ -21,7 +21,7 @@
 - 明确目标浏览器：Chrome / Chromium（Safari 不支持，不在范围内）。
 - 与既有口径对齐：
   - 端口 ID：`port_a` / `port_c`（Plan #0004）
-  - 遥测单位：`voltage_mv/current_ma/power_mw`（Plan #0004；数据来源与判定规则见 Plan #0001）
+  - 遥测单位：`voltage_mv/current_ma/power_mw`（Plan #0004；数据来源与判定规则见 Spec #j9twf）
   - 动作语义：Data Replug / Power On|Off（等价于 Plan #0002 的“短按重插/长按断电”能力）
 - 产出可执行的里程碑与验收标准（固件 + Web），并在契约文件里冻结输入/输出与错误语义。
 
@@ -174,7 +174,7 @@ None。
 
 ## 参考（References）
 
-- Plan #0001：双口遥测口径（USB‑A/U13 与 USB‑C/U17，mV/mA/mW）
+- Spec #j9twf：双口遥测口径（USB‑A/U13 与 USB‑C/U17，mV/mA/mW）
 - Plan #0002：端口动作语义（Data Replug / Power On|Off，busy/拒绝策略）
 - Plan #0003：Wi‑Fi + mDNS + 最小 HTTP 基线（`net_http`）
 - Plan #0004：GitHub Pages Dashboard（PortId/字段单位/UI 交互骨架）

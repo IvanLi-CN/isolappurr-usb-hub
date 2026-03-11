@@ -1,5 +1,7 @@
 # GC9307 正常界面规范（USB‑A + USB‑C/PD 双口电参量）（#0001）
 
+> 已迁移提示：当前继续维护的规格基线为 `docs/specs/j9twf-gc9307-normal-ui/SPEC.md`；本文件仅保留为历史记录。
+
 ## 状态
 
 - Status: 已完成

@@ -395,7 +395,7 @@ fn port_metrics_to_api_telemetry(
         };
     };
 
-    // Keep the v1 "overrange" semantics aligned with Plan #0001's `>= 1000.0` threshold:
+    // Keep the v1 "overrange" semantics aligned with Spec #j9twf's `>= 1000.0` threshold:
     // `1000.0 V/A/W` == `1_000_000 mV/mA/mW`.
     if voltage_mv >= 1_000_000 || current_ma >= 1_000_000 || power_mw >= 1_000_000 {
         return net::ApiPortTelemetry {
