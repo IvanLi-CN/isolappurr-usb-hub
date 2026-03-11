@@ -38,7 +38,7 @@ GLYPH_H = GLYPH_SRC_H * GLYPH_SY
 GLYPH_X0 = (TILE_W - GLYPH_W) // 2
 GLYPH_Y0 = (TILE_H - GLYPH_H) // 2
 
-# Colors (match docs/plan/0001:gc9307-normal-ui/PLAN.md)
+# Colors (match docs/specs/j9twf-gc9307-normal-ui/SPEC.md)
 COLOR_BG = (0, 0, 0)
 COLOR_NOT_PRESENT = (128, 128, 128)  # gray
 COLOR_ERROR = (255, 0, 0)  # red
