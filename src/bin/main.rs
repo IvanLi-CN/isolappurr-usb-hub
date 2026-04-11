@@ -169,10 +169,10 @@ const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
 const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
 
 // Toast colors (RGB565 raw).
-const TOAST_OK_RAW: u16 = 0x4D6A; // green (same as UI OK power)
-const TOAST_INFO_RAW: u16 = 0xFE45; // yellow (same as UI OK voltage)
-const TOAST_WARN_RAW: u16 = 0xFD40; // orange-ish
-const TOAST_ERR_RAW: u16 = 0xF800; // red
+const TOAST_OK_RAW: u16 = 0x1407; // dark green (same as UI OK power)
+const TOAST_INFO_RAW: u16 = 0x1A7B; // blue for white-background info toasts
+const TOAST_WARN_RAW: u16 = 0xC201; // dark orange warning
+const TOAST_ERR_RAW: u16 = 0x98C3; // dark red error
 
 const TOAST_USB_A_DATA_OFF: [[u8; 13]; 3] =
     [*b"USB-A DATAOFF", *b"250MS        ", *b"             "];

@@ -39,19 +39,19 @@ const TOAST_COMPACT_Y_OFFSET: u16 = (172 - TOAST_COMPACT_TILE_H * 3) / 2;
 const TOAST_COMPACT_GLYPH_SX: u16 = 2;
 const TOAST_COMPACT_GLYPH_SY: u16 = 3;
 
-const FG: Rgb565 = Rgb565::WHITE;
-const BG: Rgb565 = Rgb565::BLACK;
+const FG: Rgb565 = Rgb565::BLACK;
+const BG: Rgb565 = Rgb565::WHITE;
 
 // --- GC9307 normal UI (3×2 fixed-width) colors (RGB565; frozen spec) ---
-const UI_BG_RAW: u16 = 0x0000;
+const UI_BG_RAW: u16 = 0xFFFF;
 
-const UI_OK_VOLT_RAW: u16 = 0xFE45;
-const UI_OK_CURR_RAW: u16 = 0xF206;
-const UI_OK_PWR_RAW: u16 = 0x4D6A;
+const UI_OK_VOLT_RAW: u16 = 0x9201;
+const UI_OK_CURR_RAW: u16 = 0xB8E3;
+const UI_OK_PWR_RAW: u16 = 0x1407;
 
-const UI_STATUS_NOT_PRESENT_RAW: u16 = 0x8410;
-const UI_STATUS_ERROR_RAW: u16 = 0xF800;
-const UI_STATUS_OVER_RAW: u16 = 0xFCC0;
+const UI_STATUS_NOT_PRESENT_RAW: u16 = 0x4AAC;
+const UI_STATUS_ERROR_RAW: u16 = 0x98C3;
+const UI_STATUS_OVER_RAW: u16 = 0xC201;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NormalUiField {

@@ -41,8 +41,8 @@ GLYPH_H = GLYPH_SRC_H * GLYPH_SY
 GLYPH_X0 = (TILE_W - GLYPH_W) // 2
 GLYPH_Y0 = (TILE_H - GLYPH_H) // 2
 
-COLOR_BG = (0, 0, 0)
-COLOR_INFO = (255, 202, 40)  # #FFCA28 (same as UI OK voltage)
+COLOR_BG = (255, 255, 255)
+COLOR_INFO = (29, 78, 216)  # blue-700 info on white background
 
 
 def glyph_6x8(ch: str) -> list[int]:
