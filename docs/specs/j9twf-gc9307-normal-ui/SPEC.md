@@ -162,13 +162,13 @@ None。
 
 PR: include
 白色背景下的正常双口 V/A/W 界面。
-![](docs/specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-normal.png)
+![](./images/gc9307-normal-ui-preview-normal.png)
 
 - `docs/specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-not-present.png`：白色背景下的未插入占位状态。
 
 PR: include
 白色背景下的错误/超量程状态。
-![](docs/specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-error-over.png)
+![](./images/gc9307-normal-ui-preview-error-over.png)
 
 ## 参考（References）
 

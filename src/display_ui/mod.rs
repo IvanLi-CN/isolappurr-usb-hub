@@ -39,8 +39,10 @@ const TOAST_COMPACT_Y_OFFSET: u16 = (172 - TOAST_COMPACT_TILE_H * 3) / 2;
 const TOAST_COMPACT_GLYPH_SX: u16 = 2;
 const TOAST_COMPACT_GLYPH_SY: u16 = 3;
 
-const FG: Rgb565 = Rgb565::BLACK;
-const BG: Rgb565 = Rgb565::WHITE;
+const FRAME_FG: Rgb565 = Rgb565::BLACK;
+const FRAME_BG: Rgb565 = Rgb565::WHITE;
+const TOAST_BG: Rgb565 = Rgb565::WHITE;
+const NORMAL_UI_BG: Rgb565 = Rgb565::WHITE;
 
 // --- GC9307 normal UI (3×2 fixed-width) colors (RGB565; frozen spec) ---
 const UI_BG_RAW: u16 = 0xFFFF;
@@ -220,7 +222,7 @@ where
     pub fn draw_frame(&mut self) -> Result<(), GcError<E>> {
         self.active_view = ActiveView::TelemetryFrame;
         self.toast_until = None;
-        self.display.fill_color(BG)?;
+        self.display.fill_color(FRAME_BG)?;
 
         // Row 0: "U17"
         self.draw_tile_str(0, 0, b"U17")?;
@@ -254,10 +256,16 @@ where
         self.active_view = ActiveView::Toast;
         self.toast_until = Some(now + duration);
 
-        self.display.fill_color(BG)?;
+        self.display.fill_color(TOAST_BG)?;
         for (tile_y, row) in lines.iter().enumerate() {
             for (tile_x, &ch) in row.iter().enumerate() {
-                self.draw_tile_colored(tile_x as u16, tile_y as u16, ch, rgb565(fg_raw))?;
+                self.draw_tile_colored_with_bg(
+                    tile_x as u16,
+                    tile_y as u16,
+                    ch,
+                    rgb565(fg_raw),
+                    TOAST_BG,
+                )?;
             }
         }
         Ok(())
@@ -277,10 +285,16 @@ where
         self.active_view = ActiveView::Toast;
         self.toast_until = Some(now + duration);
 
-        self.display.fill_color(BG)?;
+        self.display.fill_color(TOAST_BG)?;
         for (tile_y, row) in lines.iter().enumerate() {
             for (tile_x, &ch) in row.iter().enumerate() {
-                self.draw_compact_tile_colored(tile_x as u16, tile_y as u16, ch, rgb565(fg_raw))?;
+                self.draw_compact_tile_colored(
+                    tile_x as u16,
+                    tile_y as u16,
+                    ch,
+                    rgb565(fg_raw),
+                    TOAST_BG,
+                )?;
             }
         }
         Ok(())
@@ -316,7 +330,7 @@ where
     pub fn render_normal_ui(&mut self, snapshot: &NormalUiSnapshot) -> Result<(), GcError<E>> {
         // Clear only when entering normal UI (or switching from another view).
         if self.active_view != ActiveView::NormalUi {
-            self.display.fill_color(BG)?;
+            self.display.fill_color(NORMAL_UI_BG)?;
             self.normal_ui_cache = NormalUiTileCache::sentinel();
             self.active_view = ActiveView::NormalUi;
         }
@@ -403,7 +417,13 @@ where
             let ch = next_chars[tile_x];
             let fg_raw = next_fg_raw[tile_x];
             if prev_chars[tile_x] != ch || prev_fg_raw[tile_x] != fg_raw {
-                self.draw_tile_colored(tile_x as u16, row, ch, rgb565(fg_raw))?;
+                self.draw_tile_colored_with_bg(
+                    tile_x as u16,
+                    row,
+                    ch,
+                    rgb565(fg_raw),
+                    NORMAL_UI_BG,
+                )?;
             }
         }
 
@@ -437,22 +457,23 @@ where
     }
 
     fn draw_tile(&mut self, tile_x: u16, tile_y: u16, ch: u8) -> Result<(), GcError<E>> {
-        self.draw_tile_colored(tile_x, tile_y, ch, FG)
+        self.draw_tile_colored_with_bg(tile_x, tile_y, ch, FRAME_FG, FRAME_BG)
     }
 
-    fn draw_tile_colored(
+    fn draw_tile_colored_with_bg(
         &mut self,
         tile_x: u16,
         tile_y: u16,
         ch: u8,
         fg: Rgb565,
+        bg: Rgb565,
     ) -> Result<(), GcError<E>> {
         let x = X_OFFSET + tile_x * TILE_W;
         let y = Y_OFFSET + tile_y * TILE_H;
 
         let mut data = [0_u8; (TILE_W as usize * TILE_H as usize) / 8];
         render_char_6x8_scaled(ch, &mut data);
-        self.display.write_area(x, y, TILE_W, &data, fg, BG)?;
+        self.display.write_area(x, y, TILE_W, &data, fg, bg)?;
         Ok(())
     }
 
@@ -462,6 +483,7 @@ where
         tile_y: u16,
         ch: u8,
         fg: Rgb565,
+        bg: Rgb565,
     ) -> Result<(), GcError<E>> {
         let x = TOAST_COMPACT_X_OFFSET + tile_x * TOAST_COMPACT_TILE_W;
         let y = TOAST_COMPACT_Y_OFFSET + tile_y * TOAST_COMPACT_TILE_H;
@@ -476,7 +498,7 @@ where
             TOAST_COMPACT_GLYPH_SY,
         );
         self.display
-            .write_area(x, y, TOAST_COMPACT_TILE_W, &data, fg, BG)?;
+            .write_area(x, y, TOAST_COMPACT_TILE_W, &data, fg, bg)?;
         Ok(())
     }
 }
