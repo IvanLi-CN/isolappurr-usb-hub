@@ -10,20 +10,23 @@ name = "isolapurr-usb-hub"
 path = "./src/bin/main.rs"
 
 [dependencies]
-esp-hal = { version = "1", features = ["defmt", "esp32s3", "rt", "unstable"] }
+esp-hal = { version = "1", features = ["defmt", "esp32s3", "psram", "rt", "unstable"] }
 
+allocator-api2 = { version = "0.3", default-features = false, features = ["alloc"] }
 critical-section = "1"
 defmt = "1"
 embedded-hal = "1"
+embedded-hal-async = "1"
 embedded-graphics-core = "0.4"
-gc9307-async = "0.1.1"
-ina226 = "0.3.0"
+gc9307-async = { version = "0.1.1", features = ["async"] }
+ina226 = { version = "0.3.0", features = ["async"] }
 esp-backtrace = { version = "0.18", features = ["defmt", "esp32s3", "panic-handler"] }
 esp-bootloader-esp-idf = { version = "0.4", features = ["defmt", "esp32s3"] }
+esp-alloc = "0.9.0"
 esp-println = { version = "0.16", default-features = false, features = ["esp32s3", "uart", "defmt-espflash"] }
 esp-rtos = { version = "0.2.0", features = ["defmt", "embassy", "esp32s3"] }
-sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "9b0d8cbd6e47d8cf90fd3c83b0e844f4b54e907f" }
-tps55288 = { package = "tps55288-rs", git = "https://github.com/IvanLi-CN/tps55288-rs", rev = "e451aa816ef97fb08ae162ed2baca414d0b22823" }
+sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "9b0d8cbd6e47d8cf90fd3c83b0e844f4b54e907f", features = ["async"] }
+tps55288 = { package = "tps55288-rs", git = "https://github.com/IvanLi-CN/tps55288-rs", rev = "e451aa816ef97fb08ae162ed2baca414d0b22823", features = ["async"] }
 
 # Async runtime (used by Plan #0003 networking + future tasks)
 embassy-executor = { version = "0.9", features = ["defmt"] }
@@ -40,7 +43,6 @@ embassy-net = { version = "0.7.1", default-features = false, features = [
     "udp",
 ], optional = true }
 embassy-sync = { version = "0.5", optional = true }
-esp-alloc = { version = "0.9.0", optional = true }
 esp-radio = { version = "0.17.0", features = ["defmt", "esp32s3", "smoltcp", "unstable", "wifi"], optional = true }
 heapless = { version = "0.8", optional = true }
 smoltcp = { version = "0.12.0", default-features = false, features = [
@@ -64,7 +66,6 @@ default = []
 net_http = [
     "dep:embassy-net",
     "dep:embassy-sync",
-    "dep:esp-alloc",
     "dep:esp-radio",
     "dep:heapless",
     "dep:smoltcp",

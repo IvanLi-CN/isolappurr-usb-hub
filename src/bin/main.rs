@@ -47,13 +47,14 @@ use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_hal::clock::CpuClock;
+use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
 use esp_hal::gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull};
 use esp_hal::i2c::master::{Config as I2cConfig, I2c, SoftwareTimeout};
 use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::{Duration, Instant, Rate};
 use esp_hal::timer::timg::TimerGroup;
-use esp_hal::{handler, ram};
+use esp_hal::{dma_buffers, handler, ram};
 use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{
     ActiveLowBacklight, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort, NormalUiPortMode,
@@ -456,14 +457,15 @@ fn port_metrics_to_api_telemetry(
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
-    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let config = esp_hal::Config::default()
+        .with_cpu_clock(CpuClock::max())
+        .with_psram(esp_hal::psram::PsramConfig::default());
     let peripherals = esp_hal::init(config);
 
-    #[cfg(feature = "net_http")]
-    {
-        // Heap for Wi‑Fi + mDNS + HTTP allocations (SSID/PSK Strings + stack internals).
-        esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64 * 1024);
-    }
+    // Internal heap for firmware/runtime allocations; display framebuffers are explicitly placed
+    // in PSRAM via `esp_alloc::ExternalMemory`.
+    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64 * 1024);
+    esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
     // Initialize the preemptive scheduler used by esp-radio (+ embassy integrations).
     let timg0 = TimerGroup::new(peripherals.TIMG0);
@@ -580,9 +582,10 @@ async fn main(_spawner: Spawner) {
     )
     .unwrap()
     .with_sda(peripherals.GPIO39)
-    .with_scl(peripherals.GPIO40);
+    .with_scl(peripherals.GPIO40)
+    .into_async();
     let mut i2c = I2cAllowlist::new(i2c);
-    info!("pd i2c: I2C0@400kHz SDA=GPIO39 SCL=GPIO40 allowlist=[0x3C,0x74]");
+    info!("pd i2c: I2C0@400kHz async SDA=GPIO39 SCL=GPIO40 allowlist=[0x3C,0x74]");
 
     // Telemetry I2C bus (no scanning; allowlist enforced in telemetry wrapper).
     // SDA = GPIO8, SCL = GPIO9.
@@ -594,11 +597,14 @@ async fn main(_spawner: Spawner) {
     )
     .unwrap()
     .with_sda(peripherals.GPIO8)
-    .with_scl(peripherals.GPIO9);
-    info!("telemetry i2c: I2C1@400kHz SDA=GPIO8 SCL=GPIO9 addr=[0x40/0x44,0x41/0x45] (no scan)");
+    .with_scl(peripherals.GPIO9)
+    .into_async();
+    info!(
+        "telemetry i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 addr=[0x40/0x44,0x41/0x45] (no scan)"
+    );
 
     let mut telemetry_sampler = NormalUiTelemetrySampler::new(i2c_telemetry);
-    match telemetry_sampler.init() {
+    match telemetry_sampler.init().await {
         Ok(()) => {
             info!(
                 "telemetry: INA226 init ok usb_a_addr={:?} usb_c_addr={:?}",
@@ -637,23 +643,31 @@ async fn main(_spawner: Spawner) {
     .with_sck(peripherals.GPIO12)
     .with_mosi(peripherals.GPIO11);
 
+    let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(4096);
+    let dma_rx_buf = DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+    let dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+    let spi_bus = spi_bus
+        .with_dma(peripherals.DMA_CH0)
+        .with_buffers(dma_rx_buf, dma_tx_buf)
+        .into_async();
+
     let spi = CsSpiDevice::new(spi_bus, cs);
 
     let workbuf = unsafe { &mut *core::ptr::addr_of_mut!(DISPLAY_WORKBUF) };
     let backlight = ActiveLowBacklight(blk);
     let mut ui: DisplayUi<'_, _, _, _, EspHalSpinTimer, _> =
-        DisplayUi::new(spi, dc, rst, workbuf, backlight);
+        DisplayUi::new(spi, dc, rst, workbuf, backlight).expect("display ui psram framebuffers");
     info!(
-        "display: GC9307 landscape SPI2 MOSI=GPIO11 SCLK=GPIO12 CS=GPIO13 DC=GPIO10 RES=GPIO14 BLK=GPIO15(active-low)"
+        "display: GC9307 landscape SPI2@40MHz async DMA MOSI=GPIO11 SCLK=GPIO12 CS=GPIO13 DC=GPIO10 RES=GPIO14 BLK=GPIO15(active-low)"
     );
 
-    if let Err(err) = ui.init() {
+    if let Err(err) = ui.init().await {
         defmt::warn!(
             "display: init error (PD loop continues): {:?}",
             defmt::Debug2Format(&err)
         );
         prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::DisplayInit));
-    } else if let Err(err) = ui.draw_frame() {
+    } else if let Err(err) = ui.draw_frame().await {
         defmt::warn!(
             "display: draw_frame error (PD loop continues): {:?}",
             defmt::Debug2Format(&err)
@@ -683,7 +697,7 @@ async fn main(_spawner: Spawner) {
     // Failure strategy: warn and continue PD loop.
     let mut boot_profile_applied = false;
     for attempt in 1..=3 {
-        match apply_enable_profile_full(&mut i2c) {
+        match apply_enable_profile_full(&mut i2c).await {
             Ok(status) => {
                 info!(
                     "sw2303 profile: applied full (attempt {}/3) power_register_mode={} cap_w={}W protocols={:?} fast={:?} type_c={:?} vin_mv={:?} vbus_mv={:?} sys0={:?} sys1={:?} sys2={:?} sys3={:?}",
@@ -758,7 +772,7 @@ async fn main(_spawner: Spawner) {
             ledd_usb_a_state.stable()
         };
 
-        let (request, setpoint) = match read_power_request(&mut i2c) {
+        let (request, setpoint) = match read_power_request(&mut i2c).await {
             Ok(request) => {
                 sw2303_error_latched = false;
                 // NOTE: Do not use `request.online` (REG0x0D bit7) for any functional behavior.
@@ -803,7 +817,7 @@ async fn main(_spawner: Spawner) {
                 .unwrap_or(true);
             if allow_retry {
                 last_sw2303_profile_attempt = Some(Instant::now());
-                match apply_enable_profile_full(&mut i2c) {
+                match apply_enable_profile_full(&mut i2c).await {
                     Ok(status) => {
                         info!(
                             "sw2303 profile: re-applied full after i2c recovery power_register_mode={} cap_w={}W protocols={:?} fast={:?} type_c={:?} vin_mv={:?} vbus_mv={:?} sys0={:?} sys1={:?} sys2={:?} sys3={:?}",
@@ -862,7 +876,7 @@ async fn main(_spawner: Spawner) {
             _ => 50,
         };
 
-        if let Err(err) = apply_setpoint(&mut i2c, &mut tps_state, setpoint) {
+        if let Err(err) = apply_setpoint(&mut i2c, &mut tps_state, setpoint).await {
             if !tps_error_latched {
                 defmt::warn!(
                     "tps55288 apply error (keeping output as-is): {:?}",
@@ -896,7 +910,7 @@ async fn main(_spawner: Spawner) {
 
             let status = {
                 let mut dev = tps55288::Tps55288::with_address(&mut i2c, TPS55288_ADDR_7BIT);
-                dev.read_status()
+                dev.read_status().await
             };
 
             match status {
@@ -941,7 +955,7 @@ async fn main(_spawner: Spawner) {
                 // Pause normal UI updates while an action toast is active.
                 // Telemetry/PD loop continues unaffected.
             } else {
-                let telemetry = telemetry_sampler.sample();
+                let telemetry = telemetry_sampler.sample().await;
 
                 // Presence rules (frozen spec):
                 // - USB-A: if voltage is Ok(v_mv) and v_mv < 1000 => NotPresent; else Present (incl. read error).
@@ -981,7 +995,7 @@ async fn main(_spawner: Spawner) {
                     },
                 };
 
-                if let Err(err) = ui.render_normal_ui(&snapshot) {
+                if let Err(err) = ui.render_normal_ui(&snapshot).await {
                     if !ui_error_latched {
                         defmt::warn!(
                             "display: render error (continuing): {:?}",
@@ -1051,12 +1065,9 @@ async fn main(_spawner: Spawner) {
                         let _ = p1_en_n.set_low();
                         let _ = p1_ced.set_high();
                         let (lines, fg_raw) = toast_spec(ButtonId::Left, ToastId::DataOff);
-                        let _ = ui.show_toast(
-                            ports_now,
-                            lines,
-                            fg_raw,
-                            Duration::from_millis(TOAST_MS),
-                        );
+                        let _ = ui
+                            .show_toast(ports_now, lines, fg_raw, Duration::from_millis(TOAST_MS))
+                            .await;
                         prompt_tone.notify(SoundEvent::ActionOk);
                     }
                     net::ApiPortAction::Power { enabled } => match (enabled, port_usb_a.power) {
@@ -1069,12 +1080,14 @@ async fn main(_spawner: Spawner) {
                             let _ = p1_en_n.set_low();
                             let _ = p1_ced.set_low();
                             let (lines, fg_raw) = toast_spec(ButtonId::Left, ToastId::PwrOn);
-                            let _ = ui.show_toast(
-                                ports_now,
-                                lines,
-                                fg_raw,
-                                Duration::from_millis(TOAST_MS),
-                            );
+                            let _ = ui
+                                .show_toast(
+                                    ports_now,
+                                    lines,
+                                    fg_raw,
+                                    Duration::from_millis(TOAST_MS),
+                                )
+                                .await;
                             prompt_tone.notify(SoundEvent::ActionOk);
                         }
                         (false, PowerState::On) => {
@@ -1085,12 +1098,14 @@ async fn main(_spawner: Spawner) {
                             let _ = p1_en_n.set_high();
                             let _ = p1_ced.set_high();
                             let (lines, fg_raw) = toast_spec(ButtonId::Left, ToastId::PwrOff);
-                            let _ = ui.show_toast(
-                                ports_now,
-                                lines,
-                                fg_raw,
-                                Duration::from_millis(TOAST_MS),
-                            );
+                            let _ = ui
+                                .show_toast(
+                                    ports_now,
+                                    lines,
+                                    fg_raw,
+                                    Duration::from_millis(TOAST_MS),
+                                )
+                                .await;
                             prompt_tone.notify(SoundEvent::ActionOk);
                         }
                     },
@@ -1109,12 +1124,9 @@ async fn main(_spawner: Spawner) {
                         let _ = ce_tps.set_low();
                         let _ = p2_ced.set_high();
                         let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOff);
-                        let _ = ui.show_toast(
-                            ports_now,
-                            lines,
-                            fg_raw,
-                            Duration::from_millis(TOAST_MS),
-                        );
+                        let _ = ui
+                            .show_toast(ports_now, lines, fg_raw, Duration::from_millis(TOAST_MS))
+                            .await;
                         prompt_tone.notify(SoundEvent::ActionOk);
                     }
                     net::ApiPortAction::Power { enabled } => match (enabled, port_usb_c.power) {
@@ -1127,12 +1139,14 @@ async fn main(_spawner: Spawner) {
                             let _ = ce_tps.set_low();
                             let _ = p2_ced.set_low();
                             let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::PwrOn);
-                            let _ = ui.show_toast(
-                                ports_now,
-                                lines,
-                                fg_raw,
-                                Duration::from_millis(TOAST_MS),
-                            );
+                            let _ = ui
+                                .show_toast(
+                                    ports_now,
+                                    lines,
+                                    fg_raw,
+                                    Duration::from_millis(TOAST_MS),
+                                )
+                                .await;
                             prompt_tone.notify(SoundEvent::ActionOk);
                         }
                         (false, PowerState::On) => {
@@ -1143,12 +1157,14 @@ async fn main(_spawner: Spawner) {
                             let _ = ce_tps.set_high();
                             let _ = p2_ced.set_high();
                             let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::PwrOff);
-                            let _ = ui.show_toast(
-                                ports_now,
-                                lines,
-                                fg_raw,
-                                Duration::from_millis(TOAST_MS),
-                            );
+                            let _ = ui
+                                .show_toast(
+                                    ports_now,
+                                    lines,
+                                    fg_raw,
+                                    Duration::from_millis(TOAST_MS),
+                                )
+                                .await;
                             prompt_tone.notify(SoundEvent::ActionOk);
                         }
                     },
@@ -1173,12 +1189,14 @@ async fn main(_spawner: Spawner) {
                             port_usb_a.busy_until = None;
                             let _ = p1_ced.set_low();
                             let (lines, fg_raw) = toast_spec(ButtonId::Left, ToastId::DataOn);
-                            let _ = ui.show_toast(
-                                ports_now,
-                                lines,
-                                fg_raw,
-                                Duration::from_millis(TOAST_MS),
-                            );
+                            let _ = ui
+                                .show_toast(
+                                    ports_now,
+                                    lines,
+                                    fg_raw,
+                                    Duration::from_millis(TOAST_MS),
+                                )
+                                .await;
                         } else {
                             let _ = p1_ced.set_high();
                         }
@@ -1209,12 +1227,14 @@ async fn main(_spawner: Spawner) {
                             port_usb_c.busy_until = None;
                             let _ = p2_ced.set_low();
                             let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOn);
-                            let _ = ui.show_toast(
-                                ports_now,
-                                lines,
-                                fg_raw,
-                                Duration::from_millis(TOAST_MS),
-                            );
+                            let _ = ui
+                                .show_toast(
+                                    ports_now,
+                                    lines,
+                                    fg_raw,
+                                    Duration::from_millis(TOAST_MS),
+                                )
+                                .await;
                         } else {
                             let _ = p2_ced.set_high();
                         }
@@ -1284,12 +1304,14 @@ async fn main(_spawner: Spawner) {
                     };
 
                     let lines = net::format_network_toast_lines(short_id, ip);
-                    let _ = ui.show_toast_compact(
-                        buttons_now,
-                        &lines,
-                        TOAST_INFO_RAW,
-                        Duration::from_millis(5_000),
-                    );
+                    let _ = ui
+                        .show_toast_compact(
+                            buttons_now,
+                            &lines,
+                            TOAST_INFO_RAW,
+                            Duration::from_millis(5_000),
+                        )
+                        .await;
                 }
             }
             combo_done = true;
@@ -1322,12 +1344,14 @@ async fn main(_spawner: Spawner) {
 
                         if let Some(reject_toast) = rejected {
                             let (lines, fg_raw) = toast_spec(ButtonId::Left, reject_toast);
-                            let _ = ui.show_toast(
-                                buttons_now,
-                                lines,
-                                fg_raw,
-                                Duration::from_millis(TOAST_MS),
-                            );
+                            let _ = ui
+                                .show_toast(
+                                    buttons_now,
+                                    lines,
+                                    fg_raw,
+                                    Duration::from_millis(TOAST_MS),
+                                )
+                                .await;
                             prompt_tone.notify(SoundEvent::ActionFail);
                             button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
                         } else {
@@ -1344,12 +1368,14 @@ async fn main(_spawner: Spawner) {
                                         let _ = p1_ced.set_low();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Left, ToastId::PwrOn);
-                                        let _ = ui.show_toast(
-                                            buttons_now,
-                                            lines,
-                                            fg_raw,
-                                            Duration::from_millis(TOAST_MS),
-                                        );
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                     PowerState::On => {
@@ -1363,12 +1389,14 @@ async fn main(_spawner: Spawner) {
                                         let _ = p1_ced.set_high();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Left, ToastId::DataOff);
-                                        let _ = ui.show_toast(
-                                            buttons_now,
-                                            lines,
-                                            fg_raw,
-                                            Duration::from_millis(TOAST_MS),
-                                        );
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                 },
@@ -1384,12 +1412,14 @@ async fn main(_spawner: Spawner) {
                                         let _ = p1_ced.set_low();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Left, ToastId::PwrOn);
-                                        let _ = ui.show_toast(
-                                            buttons_now,
-                                            lines,
-                                            fg_raw,
-                                            Duration::from_millis(TOAST_MS),
-                                        );
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                     PowerState::On => {
@@ -1403,12 +1433,14 @@ async fn main(_spawner: Spawner) {
                                         let _ = p1_ced.set_high();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Left, ToastId::PwrOff);
-                                        let _ = ui.show_toast(
-                                            buttons_now,
-                                            lines,
-                                            fg_raw,
-                                            Duration::from_millis(TOAST_MS),
-                                        );
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                 },
@@ -1447,12 +1479,14 @@ async fn main(_spawner: Spawner) {
 
                         if let Some(reject_toast) = rejected {
                             let (lines, fg_raw) = toast_spec(ButtonId::Right, reject_toast);
-                            let _ = ui.show_toast(
-                                buttons_now,
-                                lines,
-                                fg_raw,
-                                Duration::from_millis(TOAST_MS),
-                            );
+                            let _ = ui
+                                .show_toast(
+                                    buttons_now,
+                                    lines,
+                                    fg_raw,
+                                    Duration::from_millis(TOAST_MS),
+                                )
+                                .await;
                             prompt_tone.notify(SoundEvent::ActionFail);
                             button_fast_loop_until = Some(buttons_now + Duration::from_millis(250));
                         } else {
@@ -1469,12 +1503,14 @@ async fn main(_spawner: Spawner) {
                                         let _ = p2_ced.set_low();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Right, ToastId::PwrOn);
-                                        let _ = ui.show_toast(
-                                            buttons_now,
-                                            lines,
-                                            fg_raw,
-                                            Duration::from_millis(TOAST_MS),
-                                        );
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                     PowerState::On => {
@@ -1488,12 +1524,14 @@ async fn main(_spawner: Spawner) {
                                         let _ = p2_ced.set_high();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Right, ToastId::DataOff);
-                                        let _ = ui.show_toast(
-                                            buttons_now,
-                                            lines,
-                                            fg_raw,
-                                            Duration::from_millis(TOAST_MS),
-                                        );
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                 },
@@ -1509,12 +1547,14 @@ async fn main(_spawner: Spawner) {
                                         let _ = p2_ced.set_low();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Right, ToastId::PwrOn);
-                                        let _ = ui.show_toast(
-                                            buttons_now,
-                                            lines,
-                                            fg_raw,
-                                            Duration::from_millis(TOAST_MS),
-                                        );
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                     PowerState::On => {
@@ -1528,12 +1568,14 @@ async fn main(_spawner: Spawner) {
                                         let _ = p2_ced.set_high();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Right, ToastId::PwrOff);
-                                        let _ = ui.show_toast(
-                                            buttons_now,
-                                            lines,
-                                            fg_raw,
-                                            Duration::from_millis(TOAST_MS),
-                                        );
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                 },

@@ -1,4 +1,5 @@
-use embedded_hal::i2c::{ErrorKind, ErrorType, I2c, Operation};
+use embedded_hal::i2c::{ErrorKind, ErrorType};
+use embedded_hal_async::i2c::{I2c, Operation};
 
 use super::{SW2303_ADDR_7BIT, TPS55288_ADDR_7BIT};
 
@@ -74,33 +75,7 @@ where
     I2C: I2c,
     I2C::Error: embedded_hal::i2c::Error,
 {
-    fn read(&mut self, address: u8, buffer: &mut [u8]) -> Result<(), Self::Error> {
-        ensure_allowed_address::<I2C::Error>(address)?;
-        self.inner
-            .read(address, buffer)
-            .map_err(I2cAllowlistError::Bus)
-    }
-
-    fn write(&mut self, address: u8, bytes: &[u8]) -> Result<(), Self::Error> {
-        ensure_allowed_address::<I2C::Error>(address)?;
-        self.inner
-            .write(address, bytes)
-            .map_err(I2cAllowlistError::Bus)
-    }
-
-    fn write_read(
-        &mut self,
-        address: u8,
-        bytes: &[u8],
-        buffer: &mut [u8],
-    ) -> Result<(), Self::Error> {
-        ensure_allowed_address::<I2C::Error>(address)?;
-        self.inner
-            .write_read(address, bytes, buffer)
-            .map_err(I2cAllowlistError::Bus)
-    }
-
-    fn transaction(
+    async fn transaction(
         &mut self,
         address: u8,
         operations: &mut [Operation<'_>],
@@ -108,6 +83,7 @@ where
         ensure_allowed_address::<I2C::Error>(address)?;
         self.inner
             .transaction(address, operations)
+            .await
             .map_err(I2cAllowlistError::Bus)
     }
 }

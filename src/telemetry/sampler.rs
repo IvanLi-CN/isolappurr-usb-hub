@@ -1,4 +1,4 @@
-use embedded_hal::i2c::I2c;
+use embedded_hal_async::i2c::I2c;
 
 use ina226::{AVG, Config, INA226, MODE, VBUSCT, VSHCT};
 
@@ -15,7 +15,7 @@ fn ceil_div_u32(n: u32, d: u32) -> u32 {
     if d == 0 {
         return 0;
     }
-    (n + (d - 1)) / d
+    n.div_ceil(d)
 }
 
 fn clamp_u32_to_u16(v: u32) -> u16 {
@@ -54,7 +54,7 @@ where
 
     /// Initialize INA226 for ~10 Hz sampling (continuous conversions) and calibrate
     /// it for the shared shunt resistor and expected maximum current.
-    pub fn init(&mut self) -> Result<(), TelemetryI2cError<I2C::Error>> {
+    pub async fn init(&mut self) -> Result<(), TelemetryI2cError<I2C::Error>> {
         let config = Config {
             avg: AVG::_16,
             vbusct: VBUSCT::_1100us,
@@ -62,14 +62,8 @@ where
             mode: MODE::ShuntBusVoltageContinuous,
         };
 
-        self.ina226.set_configuration(&config)?;
+        self.ina226.set_configuration(&config).await?;
 
-        // Calibration = 0.00512 / (current_lsb * rshunt)
-        // Using integer math:
-        // - current_lsb in uA/bit => current_lsb(A) = current_lsb_uA / 1e6
-        // - rshunt in uOhm => rshunt(Ohm) = rshunt_uOhm / 1e6
-        // - denom = current_lsb_uA * rshunt_uOhm / 1e12
-        // - calib = 0.00512 / denom = 0.00512 * 1e12 / (current_lsb_uA * rshunt_uOhm)
         let denom = (self.current_lsb_ua as u64) * (U17_R29_SHUNT_RESISTANCE_UOHMS as u64);
         let cal = if denom == 0 {
             0
@@ -77,7 +71,7 @@ where
             (INA226_SCALING_VALUE / denom).min(u64::from(u16::MAX)) as u16
         };
 
-        self.ina226.set_callibration_raw(cal)?;
+        self.ina226.set_callibration_raw(cal).await?;
         Ok(())
     }
 
@@ -86,29 +80,22 @@ where
     }
 
     /// Sample U17(meas), derive U14(meas), and attach SET(applied).
-    ///
-    /// Frozen v1 error policy:
-    /// - Each U17 field becomes `Err` on read/compute failures.
-    /// - U14 is derived and becomes fully `Err` if any U17 field is `Err`.
-    /// - SET(applied) comes from the input `PowerSetpoint`.
-    pub fn sample_snapshot(&mut self, setpoint_applied: PowerSetpoint) -> TelemetrySnapshot {
-        let voltage_mv = match self.ina226.bus_voltage_raw() {
+    pub async fn sample_snapshot(&mut self, setpoint_applied: PowerSetpoint) -> TelemetrySnapshot {
+        let voltage_mv = match self.ina226.bus_voltage_raw().await {
             Ok(raw) => {
-                // INA226 bus voltage LSB: 1.25 mV
                 let mv = ((u32::from(raw) * 125) + 50) / 100;
                 Field::Ok(clamp_u32_to_u16(mv))
             }
             Err(_) => Field::Err,
         };
 
-        let current_ma = match self.ina226.current_raw() {
+        let current_ma = match self.ina226.current_raw().await {
             Ok(raw) if raw >= 0 => {
-                // current = raw * current_lsb (uA/bit)
                 let ua = (raw as u32).saturating_mul(self.current_lsb_ua);
                 let ma = (ua + 500) / 1_000;
                 Field::Ok(clamp_u32_to_u16(ma))
             }
-            Ok(_) => Field::Err, // negative current not representable in v1 contract (u16)
+            Ok(_) => Field::Err,
             Err(_) => Field::Err,
         };
 

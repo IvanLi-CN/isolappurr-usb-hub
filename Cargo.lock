@@ -1040,6 +1040,7 @@ version = "0.1.1"
 dependencies = [
  "embedded-graphics-core",
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "maybe-async-cfg",
 ]
 
@@ -1117,6 +1118,7 @@ dependencies = [
  "bitflags 2.10.0",
  "byteorder",
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "maybe-async-cfg",
 ]
 
@@ -1156,6 +1158,7 @@ dependencies = [
 name = "isolapurr-usb-hub"
 version = "0.1.0"
 dependencies = [
+ "allocator-api2",
  "critical-section",
  "defmt 1.0.1",
  "embassy-executor",
@@ -1165,6 +1168,7 @@ dependencies = [
  "embassy-time",
  "embedded-graphics-core",
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "esp-alloc",
  "esp-backtrace",
  "esp-bootloader-esp-idf",
@@ -1716,6 +1720,7 @@ source = "git+https://github.com/IvanLi-CN/sw2303-rs?rev=9b0d8cbd6e47d8cf90fd3c8
 dependencies = [
  "bitflags 2.10.0",
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "maybe-async-cfg",
 ]
 
@@ -1807,6 +1812,7 @@ source = "git+https://github.com/IvanLi-CN/tps55288-rs?rev=e451aa816ef97fb08ae16
 dependencies = [
  "bitflags 2.10.0",
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
 ]
 
 [[package]]
