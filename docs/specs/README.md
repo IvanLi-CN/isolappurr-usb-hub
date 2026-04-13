@@ -57,3 +57,4 @@
 |-----:|-------|--------|------|------|-------|
 | j9twf | GC9307 正常界面（USB-A + USB-C/PD 双口电参量） | 已完成 | `j9twf-gc9307-normal-ui/SPEC.md` | 2026-04-11 | White-background palette sync; migrated from legacy `docs/plan/0001:gc9307-normal-ui/PLAN.md` |
 | 3xckq | INA226 兼容地址 fallback | 已完成 | `3xckq-ina226-fallback-addresses/SPEC.md` | 2026-03-11 | Depends on `j9twf`; probe-stage Address/Data NAK fallback only |
+| 3j4df | GC9307 外壳联动 Dashboard UI | 已完成 | `3j4df-gc9307-shell-dashboard-ui/SPEC.md` | 2026-04-13 | Hardware-validated shell palette, larger header chips, and fixed rounded-chip renderer on GC9307 |

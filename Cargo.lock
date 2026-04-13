@@ -1037,8 +1037,6 @@ dependencies = [
 [[package]]
 name = "gc9307-async"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d24356d377f936fa70378f3d0c98a0e700633f13a5be8fc1e204aa80ac40c76b"
 dependencies = [
  "embedded-graphics-core",
  "embedded-hal 1.0.0",

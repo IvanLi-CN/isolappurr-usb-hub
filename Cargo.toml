@@ -86,3 +86,5 @@ incremental = false
 lto = "fat"
 opt-level = "s"
 overflow-checks = false
+[patch.crates-io]
+gc9307-async = { path = "vendor/gc9307-async" }
