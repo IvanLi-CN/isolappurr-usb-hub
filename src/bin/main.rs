@@ -56,8 +56,8 @@ use esp_hal::timer::timg::TimerGroup;
 use esp_hal::{handler, ram};
 use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{
-    ActiveLowBacklight, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort, NormalUiSnapshot,
-    WORKBUF_SIZE,
+    ActiveLowBacklight, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort, NormalUiPortMode,
+    NormalUiSnapshot, WORKBUF_SIZE,
 };
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
@@ -169,10 +169,10 @@ const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
 const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
 
 // Toast colors (RGB565 raw).
-const TOAST_OK_RAW: u16 = 0x4D6A; // green (same as UI OK power)
-const TOAST_INFO_RAW: u16 = 0xFE45; // yellow (same as UI OK voltage)
-const TOAST_WARN_RAW: u16 = 0xFD40; // orange-ish
-const TOAST_ERR_RAW: u16 = 0xF800; // red
+const TOAST_OK_RAW: u16 = 0x1407; // dark green (same as UI OK power)
+const TOAST_INFO_RAW: u16 = 0x1A7B; // blue for white-background info toasts
+const TOAST_WARN_RAW: u16 = 0xC201; // dark orange warning
+const TOAST_ERR_RAW: u16 = 0x98C3; // dark red error
 
 const TOAST_USB_A_DATA_OFF: [[u8; 13]; 3] =
     [*b"USB-A DATAOFF", *b"250MS        ", *b"             "];
@@ -359,6 +359,44 @@ fn telemetry_field_to_ui(field: Field<u32>) -> NormalUiField {
     match field {
         Field::Ok(v) => NormalUiField::Ok(v.saturating_mul(1_000)),
         Field::Err => NormalUiField::Err,
+    }
+}
+
+fn normal_ui_usb_c_mode(request: Option<PowerRequest>) -> NormalUiPortMode {
+    let Some(request) = request else {
+        return NormalUiPortMode::Off;
+    };
+
+    if request.negotiated_protocol == Some(sw2303::ProtocolType::PD) {
+        return if matches!(request.v_req_mv, 5_000 | 9_000 | 12_000 | 15_000 | 20_000) {
+            NormalUiPortMode::Pd
+        } else {
+            NormalUiPortMode::Pps
+        };
+    }
+
+    if request.negotiated_protocol.is_some() || request.fast_protocol || request.fast_voltage {
+        return NormalUiPortMode::Dc;
+    }
+
+    NormalUiPortMode::Off
+}
+
+fn normal_ui_badge_mv(
+    request: Option<PowerRequest>,
+    fallback_voltage_mv: Field<u32>,
+) -> Option<u16> {
+    if let Some(request) = request {
+        if request.v_req_mv >= 1_000 {
+            return Some(request.v_req_mv);
+        }
+    }
+
+    match fallback_voltage_mv {
+        Field::Ok(voltage_mv) if voltage_mv >= 1_000 => {
+            Some(voltage_mv.min(u16::MAX as u32) as u16)
+        }
+        _ => None,
     }
 }
 
@@ -912,10 +950,8 @@ async fn main(_spawner: Spawner) {
                     Field::Ok(v_mv) if v_mv < 1_000 => false,
                     _ => true,
                 };
-                let usb_c_present = request
-                    .as_ref()
-                    .map(|r| r.negotiated_protocol.is_some() || r.fast_protocol || r.fast_voltage)
-                    .unwrap_or(false);
+                let usb_c_mode = normal_ui_usb_c_mode(request);
+                let usb_c_present = !matches!(usb_c_mode, NormalUiPortMode::Off);
 
                 #[cfg(feature = "net_http")]
                 {
@@ -929,12 +965,16 @@ async fn main(_spawner: Spawner) {
                 let snapshot = NormalUiSnapshot {
                     usb_a: NormalUiPort {
                         present: usb_a_present,
+                        mode: NormalUiPortMode::UsbA,
+                        badge_mv: if usb_a_present { Some(5_000) } else { None },
                         voltage_uv: telemetry_field_to_ui(telemetry.usb_a.voltage_mv),
                         current_ua: telemetry_field_to_ui(telemetry.usb_a.current_ma),
                         power_uw: telemetry_field_to_ui(telemetry.usb_a.power_mw),
                     },
                     usb_c: NormalUiPort {
                         present: usb_c_present,
+                        mode: usb_c_mode,
+                        badge_mv: normal_ui_badge_mv(request, telemetry.usb_c.voltage_mv),
                         voltage_uv: telemetry_field_to_ui(telemetry.usb_c.voltage_mv),
                         current_ua: telemetry_field_to_ui(telemetry.usb_c.current_ma),
                         power_uw: telemetry_field_to_ui(telemetry.usb_c.power_mw),

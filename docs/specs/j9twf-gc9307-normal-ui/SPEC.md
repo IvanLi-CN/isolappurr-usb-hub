@@ -4,7 +4,7 @@
 
 - Status: 已完成
 - Created: 2026-01-07
-- Last: 2026-03-11
+- Last: 2026-04-11
 
 ## 背景 / 问题陈述
 
@@ -65,7 +65,7 @@
   - U13：`Current_LSB=62µA/bit`，`Calibration=8258`（目标 `I_MAX=2.000A`）
   - U17：`Current_LSB=107µA/bit`，`Calibration=4785`（目标 `I_MAX=3.500A`）
 - 功率换算：`Power_LSB = 25 × Current_LSB`；读取失败视为 `ERROR`。
-- 颜色（RGB565）：背景 `0x0000`；电压 `0xFE45`；电流 `0xF206`；功率 `0x4D6A`；未插入 `0x8410`；错误 `0xF800`；超量程 `0xFCC0`
+- 颜色（RGB565）：背景 `0xFFFF`；电压 `0x9201`；电流 `0xB8E3`；功率 `0x1407`；未插入 `0x4AAC`；错误 `0x98C3`；超量程 `0xC201`
 
 ### SHOULD
 
@@ -155,7 +155,20 @@ None。
 
 ## 变更记录（Change log）
 
+- 2026-04-11: 正常界面与 GC9307 toast/网络提示统一切换为白色背景浅色主题，并同步更新预览资源与配色口径。
 - 2026-03-11: 从 legacy `docs/plan/0001:gc9307-normal-ui/PLAN.md` 迁移到 `docs/specs/j9twf-gc9307-normal-ui/SPEC.md`，不改变原有正常界面行为口径。
+
+## Visual Evidence
+
+PR: include
+白色背景下的正常双口 V/A/W 界面。
+![](./images/gc9307-normal-ui-preview-normal.png)
+
+- `docs/specs/j9twf-gc9307-normal-ui/images/gc9307-normal-ui-preview-not-present.png`：白色背景下的未插入占位状态。
+
+PR: include
+白色背景下的错误/超量程状态。
+![](./images/gc9307-normal-ui-preview-error-over.png)
 
 ## 参考（References）
 

@@ -39,14 +39,14 @@ GLYPH_X0 = (TILE_W - GLYPH_W) // 2
 GLYPH_Y0 = (TILE_H - GLYPH_H) // 2
 
 # Colors (match docs/specs/j9twf-gc9307-normal-ui/SPEC.md)
-COLOR_BG = (0, 0, 0)
-COLOR_NOT_PRESENT = (128, 128, 128)  # gray
-COLOR_ERROR = (255, 0, 0)  # red
-COLOR_OVER = (255, 152, 0)  # orange (#FF9800)
+COLOR_BG = (255, 255, 255)
+COLOR_NOT_PRESENT = (75, 85, 99)  # slate-600
+COLOR_ERROR = (153, 27, 27)  # red-800
+COLOR_OVER = (194, 65, 12)  # orange-700
 
-COLOR_OK_V = (255, 202, 40)  # #FFCA28 (Voltage)
-COLOR_OK_I = (244, 67, 54)  # #F44336 (Current)
-COLOR_OK_P = (76, 175, 80)  # #4CAF50 (Power)
+COLOR_OK_V = (146, 64, 14)  # amber-800 (Voltage)
+COLOR_OK_I = (185, 28, 28)  # red-700 (Current)
+COLOR_OK_P = (21, 128, 61)  # green-700 (Power)
 
 ROW_OK_COLORS = [COLOR_OK_V, COLOR_OK_I, COLOR_OK_P]
 

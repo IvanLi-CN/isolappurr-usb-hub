@@ -46,11 +46,11 @@ GLYPH_H = GLYPH_SRC_H * GLYPH_SY
 GLYPH_X0 = (TILE_W - GLYPH_W) // 2
 GLYPH_Y0 = (TILE_H - GLYPH_H) // 2
 
-COLOR_BG = (0, 0, 0)
-COLOR_OK = (76, 175, 80)  # green (OK)
-COLOR_INFO = (255, 202, 40)  # yellow (action in-progress / info)
-COLOR_WARN = (255, 152, 0)  # orange (power-off / warning)
-COLOR_ERR = (255, 0, 0)  # red (reject)
+COLOR_BG = (255, 255, 255)
+COLOR_OK = (21, 128, 61)  # dark green (OK)
+COLOR_INFO = (29, 78, 216)  # blue (action in-progress / info)
+COLOR_WARN = (194, 65, 12)  # dark orange (power-off / warning)
+COLOR_ERR = (153, 27, 27)  # dark red (reject)
 
 
 def glyph_6x8(ch: str) -> list[int]:

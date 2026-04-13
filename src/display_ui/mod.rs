@@ -1,5 +1,9 @@
 #![allow(clippy::identity_op)]
 
+mod dashboard;
+mod dashboard_font;
+mod font6x8;
+
 use core::convert::Infallible;
 use core::future::{Future, ready};
 
@@ -22,9 +26,6 @@ const TILES_X: u16 = 13;
 const X_OFFSET: u16 = (320 - TILE_W * TILES_X) / 2;
 const Y_OFFSET: u16 = (172 - TILE_H * 3) / 2;
 
-const GLYPH_SRC_W: u16 = 6;
-const GLYPH_SRC_H: u16 = 8;
-
 // Smaller font + spacing: render 6x8 glyph centered into a 24x48 tile.
 const GLYPH_SX: u16 = 3;
 const GLYPH_SY: u16 = 4;
@@ -39,19 +40,21 @@ const TOAST_COMPACT_Y_OFFSET: u16 = (172 - TOAST_COMPACT_TILE_H * 3) / 2;
 const TOAST_COMPACT_GLYPH_SX: u16 = 2;
 const TOAST_COMPACT_GLYPH_SY: u16 = 3;
 
-const FG: Rgb565 = Rgb565::WHITE;
-const BG: Rgb565 = Rgb565::BLACK;
+const FRAME_FG: Rgb565 = Rgb565::BLACK;
+const FRAME_BG: Rgb565 = Rgb565::WHITE;
+const TOAST_BG: Rgb565 = Rgb565::WHITE;
+const NORMAL_UI_BG: Rgb565 = Rgb565::WHITE;
 
 // --- GC9307 normal UI (3×2 fixed-width) colors (RGB565; frozen spec) ---
-const UI_BG_RAW: u16 = 0x0000;
+const UI_BG_RAW: u16 = 0xFFFF;
 
-const UI_OK_VOLT_RAW: u16 = 0xFE45;
-const UI_OK_CURR_RAW: u16 = 0xF206;
-const UI_OK_PWR_RAW: u16 = 0x4D6A;
+const UI_OK_VOLT_RAW: u16 = 0x9201;
+const UI_OK_CURR_RAW: u16 = 0xB8E3;
+const UI_OK_PWR_RAW: u16 = 0x1407;
 
-const UI_STATUS_NOT_PRESENT_RAW: u16 = 0x8410;
-const UI_STATUS_ERROR_RAW: u16 = 0xF800;
-const UI_STATUS_OVER_RAW: u16 = 0xFCC0;
+const UI_STATUS_NOT_PRESENT_RAW: u16 = 0x4AAC;
+const UI_STATUS_ERROR_RAW: u16 = 0x98C3;
+const UI_STATUS_OVER_RAW: u16 = 0xC201;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NormalUiField {
@@ -70,8 +73,19 @@ impl NormalUiField {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NormalUiPortMode {
+    UsbA,
+    Pd,
+    Pps,
+    Dc,
+    Off,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NormalUiPort {
     pub present: bool,
+    pub mode: NormalUiPortMode,
+    pub badge_mv: Option<u16>,
     /// Voltage in µV.
     pub voltage_uv: NormalUiField,
     /// Current in µA.
@@ -220,7 +234,7 @@ where
     pub fn draw_frame(&mut self) -> Result<(), GcError<E>> {
         self.active_view = ActiveView::TelemetryFrame;
         self.toast_until = None;
-        self.display.fill_color(BG)?;
+        self.display.fill_color(FRAME_BG)?;
 
         // Row 0: "U17"
         self.draw_tile_str(0, 0, b"U17")?;
@@ -254,10 +268,16 @@ where
         self.active_view = ActiveView::Toast;
         self.toast_until = Some(now + duration);
 
-        self.display.fill_color(BG)?;
+        self.display.fill_color(TOAST_BG)?;
         for (tile_y, row) in lines.iter().enumerate() {
             for (tile_x, &ch) in row.iter().enumerate() {
-                self.draw_tile_colored(tile_x as u16, tile_y as u16, ch, rgb565(fg_raw))?;
+                self.draw_tile_colored_with_bg(
+                    tile_x as u16,
+                    tile_y as u16,
+                    ch,
+                    rgb565(fg_raw),
+                    TOAST_BG,
+                )?;
             }
         }
         Ok(())
@@ -277,10 +297,16 @@ where
         self.active_view = ActiveView::Toast;
         self.toast_until = Some(now + duration);
 
-        self.display.fill_color(BG)?;
+        self.display.fill_color(TOAST_BG)?;
         for (tile_y, row) in lines.iter().enumerate() {
             for (tile_x, &ch) in row.iter().enumerate() {
-                self.draw_compact_tile_colored(tile_x as u16, tile_y as u16, ch, rgb565(fg_raw))?;
+                self.draw_compact_tile_colored(
+                    tile_x as u16,
+                    tile_y as u16,
+                    ch,
+                    rgb565(fg_raw),
+                    TOAST_BG,
+                )?;
             }
         }
         Ok(())
@@ -314,66 +340,7 @@ where
     /// Layout (each row): `left_cell(6) + ' ' + right_cell(6)`.
     /// Units are fixed per row: V / A / W.
     pub fn render_normal_ui(&mut self, snapshot: &NormalUiSnapshot) -> Result<(), GcError<E>> {
-        // Clear only when entering normal UI (or switching from another view).
-        if self.active_view != ActiveView::NormalUi {
-            self.display.fill_color(BG)?;
-            self.normal_ui_cache = NormalUiTileCache::sentinel();
-            self.active_view = ActiveView::NormalUi;
-        }
-        self.toast_until = None;
-
-        // Row 0: Voltage (V)
-        {
-            let (left_s, left_fg_raw) = format_normal_ui_cell(
-                snapshot.usb_a.present,
-                snapshot.usb_a.voltage_uv,
-                b'V',
-                UI_OK_VOLT_RAW,
-            );
-            let (right_s, right_fg_raw) = format_normal_ui_cell(
-                snapshot.usb_c.present,
-                snapshot.usb_c.voltage_uv,
-                b'V',
-                UI_OK_VOLT_RAW,
-            );
-            self.draw_normal_ui_row_diff(0, 0, &left_s, left_fg_raw, &right_s, right_fg_raw)?;
-        }
-
-        // Row 1: Current (A)
-        {
-            let (left_s, left_fg_raw) = format_normal_ui_cell(
-                snapshot.usb_a.present,
-                snapshot.usb_a.current_ua,
-                b'A',
-                UI_OK_CURR_RAW,
-            );
-            let (right_s, right_fg_raw) = format_normal_ui_cell(
-                snapshot.usb_c.present,
-                snapshot.usb_c.current_ua,
-                b'A',
-                UI_OK_CURR_RAW,
-            );
-            self.draw_normal_ui_row_diff(1, 1, &left_s, left_fg_raw, &right_s, right_fg_raw)?;
-        }
-
-        // Row 2: Power (W)
-        {
-            let (left_s, left_fg_raw) = format_normal_ui_cell(
-                snapshot.usb_a.present,
-                snapshot.usb_a.power_uw,
-                b'W',
-                UI_OK_PWR_RAW,
-            );
-            let (right_s, right_fg_raw) = format_normal_ui_cell(
-                snapshot.usb_c.present,
-                snapshot.usb_c.power_uw,
-                b'W',
-                UI_OK_PWR_RAW,
-            );
-            self.draw_normal_ui_row_diff(2, 2, &left_s, left_fg_raw, &right_s, right_fg_raw)?;
-        }
-
-        Ok(())
+        self.render_dashboard_ui(snapshot)
     }
 
     fn draw_normal_ui_row_diff(
@@ -403,7 +370,13 @@ where
             let ch = next_chars[tile_x];
             let fg_raw = next_fg_raw[tile_x];
             if prev_chars[tile_x] != ch || prev_fg_raw[tile_x] != fg_raw {
-                self.draw_tile_colored(tile_x as u16, row, ch, rgb565(fg_raw))?;
+                self.draw_tile_colored_with_bg(
+                    tile_x as u16,
+                    row,
+                    ch,
+                    rgb565(fg_raw),
+                    NORMAL_UI_BG,
+                )?;
             }
         }
 
@@ -437,22 +410,23 @@ where
     }
 
     fn draw_tile(&mut self, tile_x: u16, tile_y: u16, ch: u8) -> Result<(), GcError<E>> {
-        self.draw_tile_colored(tile_x, tile_y, ch, FG)
+        self.draw_tile_colored_with_bg(tile_x, tile_y, ch, FRAME_FG, FRAME_BG)
     }
 
-    fn draw_tile_colored(
+    fn draw_tile_colored_with_bg(
         &mut self,
         tile_x: u16,
         tile_y: u16,
         ch: u8,
         fg: Rgb565,
+        bg: Rgb565,
     ) -> Result<(), GcError<E>> {
         let x = X_OFFSET + tile_x * TILE_W;
         let y = Y_OFFSET + tile_y * TILE_H;
 
         let mut data = [0_u8; (TILE_W as usize * TILE_H as usize) / 8];
         render_char_6x8_scaled(ch, &mut data);
-        self.display.write_area(x, y, TILE_W, &data, fg, BG)?;
+        self.display.write_area(x, y, TILE_W, &data, fg, bg)?;
         Ok(())
     }
 
@@ -462,6 +436,7 @@ where
         tile_y: u16,
         ch: u8,
         fg: Rgb565,
+        bg: Rgb565,
     ) -> Result<(), GcError<E>> {
         let x = TOAST_COMPACT_X_OFFSET + tile_x * TOAST_COMPACT_TILE_W;
         let y = TOAST_COMPACT_Y_OFFSET + tile_y * TOAST_COMPACT_TILE_H;
@@ -476,7 +451,7 @@ where
             TOAST_COMPACT_GLYPH_SY,
         );
         self.display
-            .write_area(x, y, TOAST_COMPACT_TILE_W, &data, fg, BG)?;
+            .write_area(x, y, TOAST_COMPACT_TILE_W, &data, fg, bg)?;
         Ok(())
     }
 }
@@ -608,7 +583,7 @@ fn format_ok_value_6(micros: u32, unit: u8) -> Result<[u8; 6], OkValueError> {
 }
 
 fn render_char_6x8_scaled(ch: u8, out: &mut [u8; 144]) {
-    render_char_6x8_scaled_custom(ch, out, TILE_W, TILE_H, GLYPH_SX, GLYPH_SY);
+    font6x8::render_char_6x8_scaled_custom(ch, out, TILE_W, TILE_H, GLYPH_SX, GLYPH_SY);
 }
 
 fn render_char_6x8_scaled_custom(
@@ -619,165 +594,5 @@ fn render_char_6x8_scaled_custom(
     glyph_sx: u16,
     glyph_sy: u16,
 ) {
-    out.fill(0);
-    debug_assert_eq!(
-        out.len(),
-        (tile_w as usize * tile_h as usize) / 8,
-        "1bpp buffer must be exactly w*h/8 bytes",
-    );
-
-    let glyph_w = GLYPH_SRC_W * glyph_sx;
-    let glyph_h = GLYPH_SRC_H * glyph_sy;
-    let glyph_x0 = (tile_w - glyph_w) / 2;
-    let glyph_y0 = (tile_h - glyph_h) / 2;
-
-    let glyph = glyph_6x8(ch);
-    for (src_y, &row_bits) in glyph.iter().enumerate() {
-        for rep_y in 0..glyph_sy {
-            let y = glyph_y0 + src_y as u16 * glyph_sy + rep_y;
-            for src_x in 0..GLYPH_SRC_W {
-                let on = row_bits & (1 << (5 - src_x)) != 0;
-                if !on {
-                    continue;
-                }
-                for rep_x in 0..glyph_sx {
-                    let x = glyph_x0 + src_x * glyph_sx + rep_x;
-                    set_1bpp(out, tile_w, x, y);
-                }
-            }
-        }
-    }
-}
-
-fn set_1bpp(buf: &mut [u8], width: u16, x: u16, y: u16) {
-    let idx = usize::from(y) * usize::from(width) + usize::from(x);
-    let byte = idx / 8;
-    let bit = 7 - (idx % 8);
-    buf[byte] |= 1 << bit;
-}
-
-fn glyph_6x8(ch: u8) -> [u8; 8] {
-    match ch {
-        b'0' => [
-            0b011110, 0b110011, 0b110111, 0b111011, 0b110011, 0b110011, 0b011110, 0,
-        ],
-        b'1' => [
-            0b001100, 0b011100, 0b001100, 0b001100, 0b001100, 0b001100, 0b111111, 0,
-        ],
-        b'2' => [
-            0b011110, 0b110011, 0b000011, 0b000110, 0b001100, 0b011000, 0b111111, 0,
-        ],
-        b'3' => [
-            0b011110, 0b110011, 0b000011, 0b001110, 0b000011, 0b110011, 0b011110, 0,
-        ],
-        b'4' => [
-            0b000110, 0b001110, 0b011110, 0b110110, 0b111111, 0b000110, 0b000110, 0,
-        ],
-        b'5' => [
-            0b111111, 0b110000, 0b111110, 0b000011, 0b000011, 0b110011, 0b011110, 0,
-        ],
-        b'6' => [
-            0b011110, 0b110011, 0b110000, 0b111110, 0b110011, 0b110011, 0b011110, 0,
-        ],
-        b'7' => [
-            0b111111, 0b000011, 0b000110, 0b001100, 0b011000, 0b011000, 0b011000, 0,
-        ],
-        b'8' => [
-            0b011110, 0b110011, 0b110011, 0b011110, 0b110011, 0b110011, 0b011110, 0,
-        ],
-        b'9' => [
-            0b011110, 0b110011, 0b110011, 0b011111, 0b000011, 0b110011, 0b011110, 0,
-        ],
-
-        b'.' => [0, 0, 0, 0, 0, 0, 0b001100, 0],
-        b':' => [0, 0b001100, 0b001100, 0, 0b001100, 0b001100, 0, 0],
-        b'-' => [0, 0, 0, 0b111111, 0, 0, 0, 0],
-        b'/' => [0b000011, 0b000110, 0b001100, 0b011000, 0b110000, 0, 0, 0],
-        b'_' => [0, 0, 0, 0, 0, 0, 0b111111, 0],
-        b' ' => [0, 0, 0, 0, 0, 0, 0, 0],
-
-        b'A' => [
-            0b011110, 0b110011, 0b110011, 0b111111, 0b110011, 0b110011, 0b110011, 0,
-        ],
-        b'B' => [
-            0b111110, 0b110011, 0b110011, 0b111110, 0b110011, 0b110011, 0b111110, 0,
-        ],
-        b'C' => [
-            0b011110, 0b110011, 0b110000, 0b110000, 0b110000, 0b110011, 0b011110, 0,
-        ],
-        b'D' => [
-            0b111100, 0b110110, 0b110011, 0b110011, 0b110011, 0b110110, 0b111100, 0,
-        ],
-        b'E' => [
-            0b111111, 0b110000, 0b110000, 0b111110, 0b110000, 0b110000, 0b111111, 0,
-        ],
-        b'F' => [
-            0b111111, 0b110000, 0b110000, 0b111110, 0b110000, 0b110000, 0b110000, 0,
-        ],
-        b'G' => [
-            0b011110, 0b110011, 0b110000, 0b110111, 0b110011, 0b110011, 0b011110, 0,
-        ],
-        b'H' => [
-            0b110011, 0b110011, 0b110011, 0b111111, 0b110011, 0b110011, 0b110011, 0,
-        ],
-        b'I' => [
-            0b111111, 0b001100, 0b001100, 0b001100, 0b001100, 0b001100, 0b111111, 0,
-        ],
-        b'J' => [
-            0b111111, 0b001100, 0b001100, 0b001100, 0b001100, 0b110011, 0b011110, 0,
-        ],
-        b'K' => [
-            0b110011, 0b110110, 0b111100, 0b111000, 0b111100, 0b110110, 0b110011, 0,
-        ],
-        b'L' => [
-            0b110000, 0b110000, 0b110000, 0b110000, 0b110000, 0b110000, 0b111111, 0,
-        ],
-        b'M' => [
-            0b110011, 0b111111, 0b111111, 0b110011, 0b110011, 0b110011, 0b110011, 0,
-        ],
-        b'N' => [
-            0b110011, 0b111011, 0b111011, 0b110111, 0b110111, 0b110011, 0b110011, 0,
-        ],
-        b'R' => [
-            0b111110, 0b110011, 0b110011, 0b111110, 0b110110, 0b110011, 0b110011, 0,
-        ],
-        b'S' => [
-            0b011111, 0b110000, 0b110000, 0b011110, 0b000011, 0b000011, 0b111110, 0,
-        ],
-        b'T' => [
-            0b111111, 0b001100, 0b001100, 0b001100, 0b001100, 0b001100, 0b001100, 0,
-        ],
-        b'U' => [
-            0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b011110, 0,
-        ],
-        b'V' => [
-            0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b011110, 0b001100, 0,
-        ],
-        b'W' => [
-            0b100001, 0b100001, 0b100001, 0b101101, 0b101101, 0b110011, 0b100001, 0,
-        ],
-        b'O' => [
-            0b011110, 0b110011, 0b110011, 0b110011, 0b110011, 0b110011, 0b011110, 0,
-        ],
-        b'P' => [
-            0b111110, 0b110011, 0b110011, 0b111110, 0b110000, 0b110000, 0b110000, 0,
-        ],
-        b'Q' => [
-            0b011110, 0b110011, 0b110011, 0b110011, 0b110011, 0b110111, 0b011111, 0,
-        ],
-        b'Y' => [
-            0b110011, 0b110011, 0b011110, 0b001100, 0b001100, 0b001100, 0b001100, 0,
-        ],
-        b'X' => [
-            0b110011, 0b011110, 0b001100, 0b001100, 0b001100, 0b011110, 0b110011, 0,
-        ],
-        b'Z' => [
-            0b111111, 0b000011, 0b000110, 0b001100, 0b011000, 0b110000, 0b111111, 0,
-        ],
-
-        b'?' => [
-            0b011110, 0b110011, 0b000011, 0b000110, 0b001100, 0, 0b001100, 0,
-        ],
-        _ => glyph_6x8(b'?'),
-    }
+    font6x8::render_char_6x8_scaled_custom(ch, out, tile_w, tile_h, glyph_sx, glyph_sy);
 }
