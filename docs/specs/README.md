@@ -59,3 +59,4 @@
 | 3xckq | INA226 兼容地址 fallback | 已完成 | `3xckq-ina226-fallback-addresses/SPEC.md` | 2026-03-11 | Depends on `j9twf`; probe-stage Address/Data NAK fallback only |
 | 3j4df | GC9307 外壳联动 Dashboard UI | 已完成 | `3j4df-gc9307-shell-dashboard-ui/SPEC.md` | 2026-04-13 | Hardware-validated shell palette, larger header chips, and fixed rounded-chip renderer on GC9307 |
 | 8885f | GC9307 无闪屏 async 渲染与 PSRAM 双缓冲 | 已完成 | `8885f-gc9307-async-psram-render/SPEC.md` | 2026-04-14 | Async SPI/I2C + PSRAM front/back framebuffer + dirty-band flush |
+| jqapx | SW2303 高压 PPS PDO 缺失定位与修复 | 部分完成（3/4） | `jqapx-sw2303-pps-high-voltage-pdo/SPEC.md` | 2026-04-14 | Structured PD/PPS capability readback, auto-mode PPS fix, hardware validation pending |

@@ -63,7 +63,9 @@ use isolapurr_usb_hub::display_ui::{
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
 use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
-use isolapurr_usb_hub::pd_i2c::sw2303::{apply_enable_profile_full, read_power_request};
+use isolapurr_usb_hub::pd_i2c::sw2303::{
+    EnableProfileStatus, apply_enable_profile_full, read_power_request,
+};
 use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
 };
@@ -401,6 +403,48 @@ fn normal_ui_badge_mv(
     }
 }
 
+fn log_sw2303_profile_status(context: &'static str, status: &EnableProfileStatus) {
+    let pps_max_mv = status
+        .pd_capabilities
+        .and_then(|pd_capabilities| pd_capabilities.max_pps_voltage_mv());
+    let pps_above_11v = status
+        .pd_capabilities
+        .map(|pd_capabilities| pd_capabilities.supports_pps_above_11v());
+
+    info!(
+        "sw2303 profile: {} power_register_mode={} cap_w={}W protocols={:?} pd_caps={:?} fast={:?} type_c={:?} vin_mv={:?} vbus_mv={:?} sys0={:?} sys1={:?} sys2={:?} sys3={:?} pps_max_mv={:?} pps_above_11v={:?}",
+        context,
+        status.power_config_register_mode,
+        status.power_watts,
+        defmt::Debug2Format(&status.protocols),
+        defmt::Debug2Format(&status.pd_capabilities),
+        defmt::Debug2Format(&status.fast_charge),
+        defmt::Debug2Format(&status.type_c),
+        defmt::Debug2Format(&status.vin_mv),
+        defmt::Debug2Format(&status.vbus_mv),
+        defmt::Debug2Format(&status.system_status0),
+        defmt::Debug2Format(&status.system_status1),
+        defmt::Debug2Format(&status.system_status2),
+        defmt::Debug2Format(&status.system_status3),
+        defmt::Debug2Format(&pps_max_mv),
+        defmt::Debug2Format(&pps_above_11v)
+    );
+
+    if let Some(pd_capabilities) = status.pd_capabilities {
+        if pd_capabilities.pps_enabled && !pd_capabilities.supports_pps_above_11v() {
+            defmt::warn!(
+                "sw2303 pps diag: PPS is enabled but >11V ranges are absent; pps_mode={:?} pps_ranges={:?}",
+                defmt::Debug2Format(&pd_capabilities.pps_config_mode),
+                defmt::Debug2Format(&pd_capabilities.pps_ranges)
+            );
+        }
+    } else {
+        defmt::warn!(
+            "sw2303 pps diag: PD/PPS capability readback unavailable after profile apply; keeping configuration success"
+        );
+    }
+}
+
 #[cfg(feature = "net_http")]
 fn uptime_ms_from_instant(now: Instant) -> u64 {
     (now.duration_since_epoch().as_micros() / 1_000) as u64
@@ -699,21 +743,11 @@ async fn main(_spawner: Spawner) {
     for attempt in 1..=3 {
         match apply_enable_profile_full(&mut i2c).await {
             Ok(status) => {
-                info!(
-                    "sw2303 profile: applied full (attempt {}/3) power_register_mode={} cap_w={}W protocols={:?} fast={:?} type_c={:?} vin_mv={:?} vbus_mv={:?} sys0={:?} sys1={:?} sys2={:?} sys3={:?}",
-                    attempt,
-                    status.power_config_register_mode,
-                    status.power_watts,
-                    defmt::Debug2Format(&status.protocols),
-                    defmt::Debug2Format(&status.fast_charge),
-                    defmt::Debug2Format(&status.type_c),
-                    defmt::Debug2Format(&status.vin_mv),
-                    defmt::Debug2Format(&status.vbus_mv),
-                    defmt::Debug2Format(&status.system_status0),
-                    defmt::Debug2Format(&status.system_status1),
-                    defmt::Debug2Format(&status.system_status2),
-                    defmt::Debug2Format(&status.system_status3)
-                );
+                match attempt {
+                    1 => log_sw2303_profile_status("applied full (attempt 1/3)", &status),
+                    2 => log_sw2303_profile_status("applied full (attempt 2/3)", &status),
+                    _ => log_sw2303_profile_status("applied full (attempt 3/3)", &status),
+                }
                 last_sw2303_profile_attempt = Some(Instant::now());
                 boot_profile_applied = true;
                 break;
@@ -819,20 +853,7 @@ async fn main(_spawner: Spawner) {
                 last_sw2303_profile_attempt = Some(Instant::now());
                 match apply_enable_profile_full(&mut i2c).await {
                     Ok(status) => {
-                        info!(
-                            "sw2303 profile: re-applied full after i2c recovery power_register_mode={} cap_w={}W protocols={:?} fast={:?} type_c={:?} vin_mv={:?} vbus_mv={:?} sys0={:?} sys1={:?} sys2={:?} sys3={:?}",
-                            status.power_config_register_mode,
-                            status.power_watts,
-                            defmt::Debug2Format(&status.protocols),
-                            defmt::Debug2Format(&status.fast_charge),
-                            defmt::Debug2Format(&status.type_c),
-                            defmt::Debug2Format(&status.vin_mv),
-                            defmt::Debug2Format(&status.vbus_mv),
-                            defmt::Debug2Format(&status.system_status0),
-                            defmt::Debug2Format(&status.system_status1),
-                            defmt::Debug2Format(&status.system_status2),
-                            defmt::Debug2Format(&status.system_status3)
-                        );
+                        log_sw2303_profile_status("re-applied full after i2c recovery", &status);
                     }
                     Err(err) => {
                         defmt::warn!(

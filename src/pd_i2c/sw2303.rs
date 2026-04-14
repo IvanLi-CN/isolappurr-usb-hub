@@ -7,6 +7,7 @@ pub struct EnableProfileStatus {
     pub power_config_register_mode: bool,
     pub power_watts: u8,
     pub protocols: sw2303::ProtocolConfiguration,
+    pub pd_capabilities: Option<sw2303::PdCapabilityStatus>,
     pub fast_charge: sw2303::FastChargeConfiguration,
     pub type_c: sw2303::TypeCConfiguration,
     pub vin_mv: Option<u32>,
@@ -55,6 +56,9 @@ where
         dr_swap: false,
         emarker_enabled: true,
         pps_enabled: true,
+        // Keep PPS advertisement in the chip's auto mode unless/until a full
+        // register-backed PPS profile is explicitly configured.
+        pps_config_mode: sw2303::PpsConfigMode::Auto,
         fixed_voltages: [true, true, true, true],
         emark_5a_bypass: false,
         emarker_60_70w: true,
@@ -92,6 +96,7 @@ where
 
     let (power_config_register_mode, power_watts) = dev.get_power_config().await?;
     let protocols = dev.get_protocol_status().await?;
+    let pd_capabilities = dev.get_pd_capability_status().await.ok();
     let fast_charge = dev.get_fast_charge_status().await?;
     let type_c = dev.get_type_c_status().await?;
     let vin_mv = dev.read_vin_mv_12bit().await.ok();
@@ -105,6 +110,7 @@ where
         power_config_register_mode,
         power_watts,
         protocols,
+        pd_capabilities,
         fast_charge,
         type_c,
         vin_mv,
