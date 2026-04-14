@@ -1,7 +1,7 @@
 use core::convert::Infallible;
 
 use embedded_hal::digital::OutputPin;
-use embedded_hal::spi::{ErrorType, Operation, SpiBus, SpiDevice};
+use embedded_hal_async::spi::{ErrorType, Operation, SpiBus, SpiDevice};
 use esp_hal::time::{Duration, Instant};
 
 pub struct CsSpiDevice<BUS, CS> {
@@ -47,21 +47,24 @@ where
     BUS: SpiBus<u8>,
     CS: OutputPin<Error = Infallible>,
 {
-    fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
+    async fn transaction(
+        &mut self,
+        operations: &mut [Operation<'_, u8>],
+    ) -> Result<(), Self::Error> {
         self.cs.set_low().ok();
         let _guard = CsGuard { cs: &mut self.cs };
 
         for op in operations {
             match op {
-                Operation::Read(buf) => self.bus.read(buf)?,
-                Operation::Write(buf) => self.bus.write(buf)?,
-                Operation::Transfer(read, write) => self.bus.transfer(read, write)?,
-                Operation::TransferInPlace(buf) => self.bus.transfer_in_place(buf)?,
+                Operation::Read(buf) => self.bus.read(buf).await?,
+                Operation::Write(buf) => self.bus.write(buf).await?,
+                Operation::Transfer(read, write) => self.bus.transfer(read, write).await?,
+                Operation::TransferInPlace(buf) => self.bus.transfer_in_place(buf).await?,
                 Operation::DelayNs(ns) => spin_delay_ns(*ns),
             }
         }
 
-        self.bus.flush()?;
+        self.bus.flush().await?;
         Ok(())
     }
 }

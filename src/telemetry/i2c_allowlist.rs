@@ -1,6 +1,5 @@
-use embedded_hal::i2c::{
-    Error, ErrorKind, ErrorType, I2c, NoAcknowledgeSource, Operation, SevenBitAddress,
-};
+use embedded_hal::i2c::{Error, ErrorKind, ErrorType, NoAcknowledgeSource, SevenBitAddress};
+use embedded_hal_async::i2c::{I2c, Operation};
 
 use super::hardware::{
     INA226_U13_ADDR_7BIT, INA226_U13_FALLBACK_ADDR_7BIT, INA226_U17_ADDR_7BIT,
@@ -54,7 +53,7 @@ impl<I2C> I2c<SevenBitAddress> for TelemetryI2cAllowlist<I2C>
 where
     I2C: I2c<SevenBitAddress>,
 {
-    fn transaction(
+    async fn transaction(
         &mut self,
         address: SevenBitAddress,
         operations: &mut [Operation<'_>],
@@ -69,6 +68,7 @@ where
 
         self.inner
             .transaction(address, operations)
+            .await
             .map_err(TelemetryI2cError::Bus)
     }
 }

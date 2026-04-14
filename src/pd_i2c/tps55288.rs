@@ -66,13 +66,13 @@ fn quantize_ilim_ma_floor_with_margin(ma: u16) -> u16 {
 /// - Only disable output when the setpoint explicitly requests it.
 ///
 /// Minimal write policy: if `setpoint == state.last`, this is a no-op.
-pub fn apply_setpoint<I2C>(
+pub async fn apply_setpoint<I2C>(
     i2c: &mut I2C,
     state: &mut TpsApplyState,
     setpoint: PowerSetpoint,
 ) -> Result<(), tps55288::Error<I2C::Error>>
 where
-    I2C: embedded_hal::i2c::I2c,
+    I2C: embedded_hal_async::i2c::I2c,
 {
     if state.last == Some(setpoint) {
         return Ok(());
@@ -81,11 +81,11 @@ where
     let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
 
     if setpoint.output_enabled {
-        dev.set_ilim_ma(setpoint.i_lim_ma, true)?;
-        dev.set_vout_mv(setpoint.v_out_mv)?;
-        dev.enable_output()?;
+        dev.set_ilim_ma(setpoint.i_lim_ma, true).await?;
+        dev.set_vout_mv(setpoint.v_out_mv).await?;
+        dev.enable_output().await?;
     } else {
-        dev.disable_output()?;
+        dev.disable_output().await?;
     }
 
     state.last = Some(setpoint);

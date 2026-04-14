@@ -1,4 +1,5 @@
-use embedded_hal::i2c::{Error as _, ErrorKind, I2c, NoAcknowledgeSource};
+use embedded_hal::i2c::{Error as _, ErrorKind, NoAcknowledgeSource};
+use embedded_hal_async::i2c::I2c;
 
 use ina226::{AVG, Config, INA226, MODE, VBUSCT, VSHCT};
 
@@ -101,16 +102,16 @@ where
     type Error = <TelemetryI2cAllowlist<I2C> as embedded_hal::i2c::ErrorType>::Error;
 }
 
-impl<I2C> embedded_hal::i2c::I2c for TelemetryI2cBorrow<'_, I2C>
+impl<I2C> embedded_hal_async::i2c::I2c for TelemetryI2cBorrow<'_, I2C>
 where
-    TelemetryI2cAllowlist<I2C>: embedded_hal::i2c::I2c,
+    TelemetryI2cAllowlist<I2C>: embedded_hal_async::i2c::I2c,
 {
-    fn transaction(
+    async fn transaction(
         &mut self,
         address: embedded_hal::i2c::SevenBitAddress,
-        operations: &mut [embedded_hal::i2c::Operation<'_>],
+        operations: &mut [embedded_hal_async::i2c::Operation<'_>],
     ) -> Result<(), Self::Error> {
-        self.0.transaction(address, operations)
+        self.0.transaction(address, operations).await
     }
 }
 
@@ -153,17 +154,21 @@ where
         self.usb_c_address
     }
 
-    pub fn init(&mut self) -> Result<(), TelemetryI2cError<I2C::Error>> {
-        let usb_a = self.resolve_port_address(
-            INA226_U13_ADDR_7BIT,
-            INA226_U13_FALLBACK_ADDR_7BIT,
-            U13_CALIBRATION,
-        );
-        let usb_c = self.resolve_port_address(
-            INA226_U17_ADDR_7BIT,
-            INA226_U17_FALLBACK_ADDR_7BIT,
-            U17_CALIBRATION,
-        );
+    pub async fn init(&mut self) -> Result<(), TelemetryI2cError<I2C::Error>> {
+        let usb_a = self
+            .resolve_port_address(
+                INA226_U13_ADDR_7BIT,
+                INA226_U13_FALLBACK_ADDR_7BIT,
+                U13_CALIBRATION,
+            )
+            .await;
+        let usb_c = self
+            .resolve_port_address(
+                INA226_U17_ADDR_7BIT,
+                INA226_U17_FALLBACK_ADDR_7BIT,
+                U17_CALIBRATION,
+            )
+            .await;
 
         self.usb_a_address = usb_a.as_ref().copied().ok();
         self.usb_c_address = usb_c.as_ref().copied().ok();
@@ -175,7 +180,7 @@ where
         }
     }
 
-    pub fn sample(&mut self) -> NormalUiTelemetrySnapshot {
+    pub async fn sample(&mut self) -> NormalUiTelemetrySnapshot {
         if self.usb_a_address.is_none() {
             self.usb_a_address = self
                 .resolve_port_address(
@@ -183,6 +188,7 @@ where
                     INA226_U13_FALLBACK_ADDR_7BIT,
                     U13_CALIBRATION,
                 )
+                .await
                 .ok();
         }
         if self.usb_c_address.is_none() {
@@ -192,72 +198,73 @@ where
                     INA226_U17_FALLBACK_ADDR_7BIT,
                     U17_CALIBRATION,
                 )
+                .await
                 .ok();
         }
 
         let usb_a = match self.usb_a_address {
-            Some(address) => self.sample_port(address, U13_CURRENT_LSB_UA_PER_BIT),
+            Some(address) => self.sample_port(address, U13_CURRENT_LSB_UA_PER_BIT).await,
             None => PortMetrics::err(),
         };
         let usb_c = match self.usb_c_address {
-            Some(address) => self.sample_port(address, U17_CURRENT_LSB_UA_PER_BIT),
+            Some(address) => self.sample_port(address, U17_CURRENT_LSB_UA_PER_BIT).await,
             None => PortMetrics::err(),
         };
 
         NormalUiTelemetrySnapshot { usb_a, usb_c }
     }
 
-    fn resolve_port_address(
+    async fn resolve_port_address(
         &mut self,
         primary: u8,
         fallback: u8,
         calibration: u16,
     ) -> Result<u8, TelemetryI2cError<I2C::Error>> {
-        let resolved = match self.probe_port(primary) {
+        let resolved = match self.probe_port(primary).await {
             Ok(()) => primary,
             Err(err) if is_primary_probe_fallback_candidate(&err) => {
-                self.probe_port(fallback)?;
+                self.probe_port(fallback).await?;
                 fallback
             }
             Err(err) => return Err(err),
         };
 
-        self.configure_port(resolved, calibration)?;
+        self.configure_port(resolved, calibration).await?;
         Ok(resolved)
     }
 
-    fn probe_port(&mut self, address: u8) -> Result<(), TelemetryI2cError<I2C::Error>> {
+    async fn probe_port(&mut self, address: u8) -> Result<(), TelemetryI2cError<I2C::Error>> {
         let mut ina226 = INA226::new(TelemetryI2cBorrow::new(&mut self.i2c), address);
-        let _ = ina226.configuration_raw()?;
+        let _ = ina226.configuration_raw().await?;
         Ok(())
     }
 
-    fn configure_port(
+    async fn configure_port(
         &mut self,
         address: u8,
         calibration: u16,
     ) -> Result<(), TelemetryI2cError<I2C::Error>> {
         let config = ina226_config_for_continuous_sampling();
         let mut ina226 = INA226::new(TelemetryI2cBorrow::new(&mut self.i2c), address);
-        ina226.set_configuration(&config)?;
-        ina226.set_callibration_raw(calibration)?;
+        ina226.set_configuration(&config).await?;
+        ina226.set_callibration_raw(calibration).await?;
         Ok(())
     }
 
-    fn sample_port(&mut self, address: u8, current_lsb_ua_per_bit: u32) -> PortMetrics {
+    async fn sample_port(&mut self, address: u8, current_lsb_ua_per_bit: u32) -> PortMetrics {
         let mut ina226 = INA226::new(TelemetryI2cBorrow::new(&mut self.i2c), address);
 
-        let voltage_mv = match ina226.bus_voltage_raw() {
+        let voltage_mv = match ina226.bus_voltage_raw().await {
             Ok(raw) => Field::Ok(bus_voltage_raw_to_mv(raw)),
             Err(_) => Field::Err,
         };
 
-        let current_ma = match ina226.current_raw() {
+        let current_ma = match ina226.current_raw().await {
             Ok(raw) => current_raw_to_ma(raw, current_lsb_ua_per_bit),
             Err(_) => Field::Err,
         };
 
-        let power_mw = match ina226.power_raw() {
+        let power_mw = match ina226.power_raw().await {
             Ok(raw) => Field::Ok(power_raw_to_mw(raw, current_lsb_ua_per_bit)),
             Err(_) => Field::Err,
         };
