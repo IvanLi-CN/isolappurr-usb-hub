@@ -122,7 +122,7 @@
 
 ### Testing
 
-- Unit tests: `cargo test --manifest-path vendor/sw2303-rs/Cargo.toml --tests`
+- Unit tests: `./tools/test-sw2303-host.sh`
 - Integration tests: None
 - E2E tests (if applicable): 真机刷写 + 启动日志对照完成，日志确认 `pps_config_mode=Auto`、`pps_ranges=[true, true, true, true]`、`pps_max_mv=21000`、`pps_above_11v=true`
 

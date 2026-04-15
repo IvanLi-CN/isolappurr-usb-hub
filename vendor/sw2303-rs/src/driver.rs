@@ -1145,11 +1145,24 @@ where
         let mut config2 = self.get_fast_charge_config_2_raw().await?;
         let mut config3 = self.get_fast_charge_config_3_raw().await?;
 
+        // Fast charge global gate (active-low disable bit).
+        // If any fast-charge family is requested, clear the global disable bit.
+        if config.qc20_enabled
+            || config.qc30_enabled
+            || config.fcp_enabled
+            || config.afc_enabled
+            || config.scp_enabled
+            || config.pe20_enabled
+            || config.bc12_enabled
+            || config.sfcp_enabled
+        {
+            config2.remove(FastChargeConfig2Flags::FAST_CHARGE_DISABLE);
+        } else {
+            config2.insert(FastChargeConfig2Flags::FAST_CHARGE_DISABLE);
+        }
+
         // QC protocols
         // 有源低：清除禁用位=使能；置禁用位=禁用
-        if config.qc20_enabled || config.qc30_enabled {
-            config2.remove(FastChargeConfig2Flags::FAST_CHARGE_DISABLE);
-        }
         if config.qc20_enabled {
             config2.remove(FastChargeConfig2Flags::QC2_DISABLE);
         } else {
@@ -1537,14 +1550,13 @@ where
         let fc_config3 = self.get_fast_charge_config_3_raw().await?;
 
         let fast_ok = !fc_config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE);
-        let qc_ok = fast_ok
-            && (!fc_config2.contains(FastChargeConfig2Flags::QC2_DISABLE)
-                || !fc_config2.contains(FastChargeConfig2Flags::QC3_DISABLE));
+        let qc20_ok = fast_ok && !fc_config2.contains(FastChargeConfig2Flags::QC2_DISABLE);
+        let qc30_ok = fast_ok && !fc_config2.contains(FastChargeConfig2Flags::QC3_DISABLE);
 
         Ok(ProtocolConfiguration {
             pd_enabled: !pd_config0.contains(PdConfig0Flags::PD_DISABLE),
-            qc20_enabled: qc_ok,
-            qc30_enabled: qc_ok,
+            qc20_enabled: qc20_ok,
+            qc30_enabled: qc30_ok,
             // 0=使能,1=不使能（取反）
             fcp_enabled: !fc_config3.contains(FastChargeConfig3Flags::FCP_DISABLE),
             afc_enabled: !fc_config3.contains(FastChargeConfig3Flags::AFC_DISABLE),
@@ -1572,12 +1584,18 @@ where
     ) -> Result<bool, Error<I2C::Error>> {
         match protocol {
             ProtocolType::PD => self.is_pd_protocol_enabled().await,
-            ProtocolType::QC20 | ProtocolType::QC30 => {
+            ProtocolType::QC20 => {
                 let config2 = self.get_fast_charge_config_2_raw().await?;
                 Ok(
                     !config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE)
-                        && (!config2.contains(FastChargeConfig2Flags::QC2_DISABLE)
-                            || !config2.contains(FastChargeConfig2Flags::QC3_DISABLE)),
+                        && !config2.contains(FastChargeConfig2Flags::QC2_DISABLE),
+                )
+            }
+            ProtocolType::QC30 => {
+                let config2 = self.get_fast_charge_config_2_raw().await?;
+                Ok(
+                    !config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE)
+                        && !config2.contains(FastChargeConfig2Flags::QC3_DISABLE),
                 )
             }
             ProtocolType::FCP => {

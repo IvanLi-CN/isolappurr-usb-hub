@@ -317,3 +317,12 @@ at your option.
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+
+## Testing
+
+When this crate is vendored under an embedded repository that sets a `no_std` default target, run its integration tests with an explicit host target override, for example:
+
+```bash
+./tools/test-sw2303-host.sh
+```

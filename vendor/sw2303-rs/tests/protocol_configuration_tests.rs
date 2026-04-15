@@ -238,6 +238,64 @@ fn test_type_c_configuration() {
 }
 
 #[test]
+fn test_configure_protocols_clears_global_fast_charge_disable_for_non_qc_modes() {
+    let mut i2c = MockI2c::new();
+    i2c.set_register(0xB0, 0xFF);
+    let mut sw2303 = SW2303::new(&mut i2c, DEFAULT_ADDRESS);
+
+    sw2303.init().unwrap();
+    sw2303.unlock_write_enable_0().unwrap();
+
+    sw2303
+        .configure_protocols(ProtocolConfiguration {
+            pd_enabled: false,
+            qc20_enabled: false,
+            qc30_enabled: false,
+            fcp_enabled: true,
+            afc_enabled: false,
+            scp_enabled: false,
+            pe20_enabled: false,
+            bc12_enabled: false,
+            sfcp_enabled: false,
+        })
+        .unwrap();
+
+    let cfg2 = sw2303.get_fast_charge_config_2_raw().unwrap();
+    assert!(!cfg2.contains(sw2303::registers::FastChargeConfig2Flags::FAST_CHARGE_DISABLE));
+    assert_eq!(sw2303.get_protocol_status().unwrap().fcp_enabled, true);
+}
+
+#[test]
+fn test_protocol_status_reports_qc2_and_qc3_independently() {
+    let mut i2c = MockI2c::new();
+    i2c.set_register(0xB0, 0x00);
+    let mut sw2303 = SW2303::new(&mut i2c, DEFAULT_ADDRESS);
+
+    sw2303.init().unwrap();
+    sw2303.unlock_write_enable_0().unwrap();
+
+    sw2303
+        .configure_protocols(ProtocolConfiguration {
+            pd_enabled: false,
+            qc20_enabled: true,
+            qc30_enabled: false,
+            fcp_enabled: false,
+            afc_enabled: false,
+            scp_enabled: false,
+            pe20_enabled: false,
+            bc12_enabled: false,
+            sfcp_enabled: false,
+        })
+        .unwrap();
+
+    let status = sw2303.get_protocol_status().unwrap();
+    assert!(status.qc20_enabled);
+    assert!(!status.qc30_enabled);
+    assert!(sw2303.is_protocol_enabled(ProtocolType::QC20).unwrap());
+    assert!(!sw2303.is_protocol_enabled(ProtocolType::QC30).unwrap());
+}
+
+#[test]
 fn test_protocol_enable_disable() {
     let mut i2c = MockI2c::new();
     let mut sw2303 = SW2303::new(&mut i2c, DEFAULT_ADDRESS);
