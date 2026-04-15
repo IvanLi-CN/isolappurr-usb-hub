@@ -17,6 +17,9 @@ fmt:
 clean:
 	cargo clean
 
+sw2303-test:
+	./tools/test-sw2303-host.sh
+
 # Port selection via mcu-agentd (cached in .esp32-port)
 ports:
 	mcu-agentd selector list usb_hub

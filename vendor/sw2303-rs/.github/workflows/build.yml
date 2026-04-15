@@ -1,0 +1,28 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      run: cargo build --verbose
+    - name: Check documentation examples
+      run: |
+        # Check that documentation examples compile correctly
+        # Skip actual doc tests due to embedded target configuration
+        echo "Checking documentation examples compilation..."
+        cargo check --verbose
+    - name: Build
+      run: cargo build --verbose --features async
