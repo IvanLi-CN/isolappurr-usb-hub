@@ -227,3 +227,56 @@ fn test_fast_charge_configuration_roundtrip() {
     assert_eq!(i2c.get_register(0xB1), 0xA6);
     assert_eq!(i2c.get_register(0xB2), 0xD7);
 }
+
+#[test]
+fn test_fast_charge_configuration_enables_bc12_only_profiles_globally() {
+    let mut i2c = MockI2c::new();
+    i2c.set_register(0xB0, 0xFF);
+
+    let cfg = FastChargeConfiguration {
+        qc_enabled: false,
+        fcp_enabled: false,
+        afc_enabled: false,
+        scp_enabled: false,
+        pe20_enabled: false,
+        sfcp_enabled: false,
+        bc12_enabled: true,
+        ..Default::default()
+    };
+
+    {
+        let mut sw2303 = SW2303::new(&mut i2c, DEFAULT_ADDRESS);
+        sw2303.init().unwrap();
+        sw2303.unlock_write_enable_0().unwrap();
+        sw2303.configure_fast_charge(cfg).unwrap();
+
+        let got = sw2303.get_fast_charge_status().unwrap();
+        assert!(got.bc12_enabled);
+    }
+
+    let reg_b0 = i2c.get_register(0xB0);
+    assert_eq!(reg_b0 & 0x02, 0x00);
+    assert_eq!(reg_b0 & 0x01, 0x00);
+}
+
+#[test]
+fn test_fast_charge_status_honors_global_disable_gate() {
+    let mut i2c = MockI2c::new();
+    i2c.set_register(0xAD, 0x00);
+    i2c.set_register(0xAE, 0x00);
+    i2c.set_register(0xB0, 0x02);
+    i2c.set_register(0xB1, 0x00);
+    i2c.set_register(0xB2, 0x00);
+
+    let mut sw2303 = SW2303::new(&mut i2c, DEFAULT_ADDRESS);
+    sw2303.init().unwrap();
+
+    let got = sw2303.get_fast_charge_status().unwrap();
+    assert!(!got.qc_enabled);
+    assert!(!got.fcp_enabled);
+    assert!(!got.afc_enabled);
+    assert!(!got.scp_enabled);
+    assert!(!got.pe20_enabled);
+    assert!(!got.sfcp_enabled);
+    assert!(!got.bc12_enabled);
+}

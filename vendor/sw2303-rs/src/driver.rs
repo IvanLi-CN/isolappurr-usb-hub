@@ -1277,7 +1277,8 @@ where
             || config.afc_enabled
             || config.scp_enabled
             || config.pe20_enabled
-            || config.sfcp_enabled;
+            || config.sfcp_enabled
+            || config.bc12_enabled;
         if any_fast {
             config2.remove(FastChargeConfig2Flags::FAST_CHARGE_DISABLE);
         } else {
@@ -1357,13 +1358,14 @@ where
 
         Ok(FastChargeConfiguration {
             qc_enabled: qc2_ok || qc3_ok,
-            fcp_enabled: !config3.contains(FastChargeConfig3Flags::FCP_DISABLE),
-            afc_enabled: !config3.contains(FastChargeConfig3Flags::AFC_DISABLE),
-            scp_enabled: !config2.contains(FastChargeConfig2Flags::SCP_HV_DISABLE)
-                || !config2.contains(FastChargeConfig2Flags::SCP_LV_DISABLE),
-            pe20_enabled: !config3.contains(FastChargeConfig3Flags::PE_DISABLE),
-            sfcp_enabled: !config3.contains(FastChargeConfig3Flags::SFCP_DISABLE),
-            bc12_enabled: !config2.contains(FastChargeConfig2Flags::BC12_DISABLE),
+            fcp_enabled: fast_ok && !config3.contains(FastChargeConfig3Flags::FCP_DISABLE),
+            afc_enabled: fast_ok && !config3.contains(FastChargeConfig3Flags::AFC_DISABLE),
+            scp_enabled: fast_ok
+                && (!config2.contains(FastChargeConfig2Flags::SCP_HV_DISABLE)
+                    || !config2.contains(FastChargeConfig2Flags::SCP_LV_DISABLE)),
+            pe20_enabled: fast_ok && !config3.contains(FastChargeConfig3Flags::PE_DISABLE),
+            sfcp_enabled: fast_ok && !config3.contains(FastChargeConfig3Flags::SFCP_DISABLE),
+            bc12_enabled: fast_ok && !config2.contains(FastChargeConfig2Flags::BC12_DISABLE),
             scp_current_limit: (config4.bits() & FastChargeConfig4Flags::SCP_CURRENT_MASK.bits())
                 >> 4,
             fcp_afc_sfcp_2_25a: config0.contains(FastChargeConfig0Flags::FCP_AFC_SFCP_2_25A),
@@ -1558,13 +1560,14 @@ where
             qc20_enabled: qc20_ok,
             qc30_enabled: qc30_ok,
             // 0=使能,1=不使能（取反）
-            fcp_enabled: !fc_config3.contains(FastChargeConfig3Flags::FCP_DISABLE),
-            afc_enabled: !fc_config3.contains(FastChargeConfig3Flags::AFC_DISABLE),
-            scp_enabled: !fc_config2.contains(FastChargeConfig2Flags::SCP_HV_DISABLE)
-                || !fc_config2.contains(FastChargeConfig2Flags::SCP_LV_DISABLE),
-            pe20_enabled: !fc_config3.contains(FastChargeConfig3Flags::PE_DISABLE),
-            bc12_enabled: !fc_config2.contains(FastChargeConfig2Flags::BC12_DISABLE),
-            sfcp_enabled: !fc_config3.contains(FastChargeConfig3Flags::SFCP_DISABLE),
+            fcp_enabled: fast_ok && !fc_config3.contains(FastChargeConfig3Flags::FCP_DISABLE),
+            afc_enabled: fast_ok && !fc_config3.contains(FastChargeConfig3Flags::AFC_DISABLE),
+            scp_enabled: fast_ok
+                && (!fc_config2.contains(FastChargeConfig2Flags::SCP_HV_DISABLE)
+                    || !fc_config2.contains(FastChargeConfig2Flags::SCP_LV_DISABLE)),
+            pe20_enabled: fast_ok && !fc_config3.contains(FastChargeConfig3Flags::PE_DISABLE),
+            bc12_enabled: fast_ok && !fc_config2.contains(FastChargeConfig2Flags::BC12_DISABLE),
+            sfcp_enabled: fast_ok && !fc_config3.contains(FastChargeConfig3Flags::SFCP_DISABLE),
         })
     }
 
@@ -1599,29 +1602,51 @@ where
                 )
             }
             ProtocolType::FCP => {
+                let config2 = self.get_fast_charge_config_2_raw().await?;
                 let config3 = self.get_fast_charge_config_3_raw().await?;
-                Ok(!config3.contains(FastChargeConfig3Flags::FCP_DISABLE))
+                Ok(
+                    !config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE)
+                        && !config3.contains(FastChargeConfig3Flags::FCP_DISABLE),
+                )
             }
             ProtocolType::AFC => {
+                let config2 = self.get_fast_charge_config_2_raw().await?;
                 let config3 = self.get_fast_charge_config_3_raw().await?;
-                Ok(!config3.contains(FastChargeConfig3Flags::AFC_DISABLE))
+                Ok(
+                    !config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE)
+                        && !config3.contains(FastChargeConfig3Flags::AFC_DISABLE),
+                )
             }
             ProtocolType::SCP => {
                 let config2 = self.get_fast_charge_config_2_raw().await?;
-                Ok(!config2.contains(FastChargeConfig2Flags::SCP_HV_DISABLE)
-                    || !config2.contains(FastChargeConfig2Flags::SCP_LV_DISABLE))
+                Ok(
+                    !config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE)
+                        && (!config2.contains(FastChargeConfig2Flags::SCP_HV_DISABLE)
+                            || !config2.contains(FastChargeConfig2Flags::SCP_LV_DISABLE)),
+                )
             }
             ProtocolType::PE20 => {
+                let config2 = self.get_fast_charge_config_2_raw().await?;
                 let config3 = self.get_fast_charge_config_3_raw().await?;
-                Ok(!config3.contains(FastChargeConfig3Flags::PE_DISABLE))
+                Ok(
+                    !config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE)
+                        && !config3.contains(FastChargeConfig3Flags::PE_DISABLE),
+                )
             }
             ProtocolType::BC12 => {
                 let config2 = self.get_fast_charge_config_2_raw().await?;
-                Ok(!config2.contains(FastChargeConfig2Flags::BC12_DISABLE))
+                Ok(
+                    !config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE)
+                        && !config2.contains(FastChargeConfig2Flags::BC12_DISABLE),
+                )
             }
             ProtocolType::SFCP => {
+                let config2 = self.get_fast_charge_config_2_raw().await?;
                 let config3 = self.get_fast_charge_config_3_raw().await?;
-                Ok(!config3.contains(FastChargeConfig3Flags::SFCP_DISABLE))
+                Ok(
+                    !config2.contains(FastChargeConfig2Flags::FAST_CHARGE_DISABLE)
+                        && !config3.contains(FastChargeConfig3Flags::SFCP_DISABLE),
+                )
             }
         }
     }
