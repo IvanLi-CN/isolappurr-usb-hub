@@ -4,7 +4,7 @@
 
 - Status: 部分完成（3/4）
 - Created: 2026-04-14
-- Last: 2026-04-14
+- Last: 2026-04-15
 
 ## 背景 / 问题陈述
 
@@ -124,7 +124,7 @@
 
 - Unit tests: `cargo test --manifest-path vendor/sw2303-rs/Cargo.toml --tests`
 - Integration tests: None
-- E2E tests (if applicable): 真机 Source Cap / PPS 观察，待硬件条件具备后执行
+- E2E tests (if applicable): 真机刷写 + 启动日志对照完成，日志确认 `pps_config_mode=Auto`、`pps_ranges=[true, true, true, true]`、`pps_max_mv=21000`、`pps_above_11v=true`
 
 ### Quality checks
 
@@ -153,7 +153,7 @@
 - [x] M1: 冻结 canonical spec 与收口标准
 - [x] M2: 在本地 vendor `sw2303-rs` 中补齐结构化 PD/PPS capability 状态接口与回归测试
 - [x] M3: 固件 boot/recovery 路径输出结构化 PPS 诊断，并默认保持 PPS `Auto` mode
-- [ ] M4: 在同一套现场观测路径上完成真机对照，确认 `>11V PPS PDO` 恢复或归因到外部约束
+- [x] M4: 在同一套现场观测路径上完成真机对照，确认 `>11V PPS PDO` 恢复或归因到外部约束
 
 ## 方案概述（Approach, high-level）
 
@@ -163,13 +163,14 @@
 
 ## 风险 / 开放问题 / 假设（Risks, Open Questions, Assumptions）
 
-- 风险：若 SW2303 硬件/线材/源端对高压 PPS 仍有限制，代码修复后现场现象可能不立即变化。
+- 风险：若后续换用不同线材/源端组合，仍需沿用相同日志口径复核现场 PDO 观测。
 - 需要决策的问题：无；当前先按仓库侧配置语义修复推进。
-- 假设（需主人确认）：后续真机验收会沿用当前同一套 PDO 观测方法与设备。
+- 假设（需主人确认）：后续 PDO 观测仍以当前这套现场链路作为对照基线。
 
 ## 变更记录（Change log）
 
-- 2026-04-14: 首版 spec，冻结“高压 PPS PDO 缺失”问题边界与修复口径。
+- 2026-04-14: 首版 spec，冻结“高压 PPS PDO 缺失”问题边界与修复口径.
+- 2026-04-15: 真机刷写并核对启动日志，确认 `pps_config_mode=Auto`、`pps_ranges=[true, true, true, true]`、`pps_max_mv=21000`、`pps_above_11v=true`，关闭 M4。
 
 ## 参考（References）
 
