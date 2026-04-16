@@ -7,14 +7,10 @@ mod dashboard_font;
 const WIDTH: usize = 320;
 const HEIGHT: usize = 172;
 
-const PEARL: u16 = rgb565(0xF8, 0xFB, 0xFD);
 const WHITE: u16 = rgb565(0xFF, 0xFF, 0xFF);
-const MIST: u16 = rgb565(0xD8, 0xEE, 0xF6);
-const MIST_2: u16 = rgb565(0xC6, 0xDA, 0xE5);
 const AQUA: u16 = rgb565(0x4B, 0xA6, 0xC3);
 const INK: u16 = rgb565(0x21, 0x44, 0x57);
 const INK_SOFT: u16 = rgb565(0x6E, 0x84, 0x91);
-const SHELL: u16 = rgb565(0xE9, 0xCF, 0xC4);
 const BERRY: u16 = rgb565(0xB9, 0x49, 0x5A);
 const BORDER: u16 = rgb565(0xD6, 0xE5, 0xED);
 
@@ -62,19 +58,6 @@ impl Canvas {
     fn draw_hline(&mut self, x: i32, y: i32, w: i32, color: u16) {
         for xx in x..(x + w) {
             self.set(xx, y, color);
-        }
-    }
-
-    fn blend_circle(&mut self, cx: i32, cy: i32, r: i32, color: u16, alpha: u8) {
-        let rr = r * r;
-        for yy in (cy - r)..=(cy + r) {
-            for xx in (cx - r)..=(cx + r) {
-                let dx = xx - cx;
-                let dy = yy - cy;
-                if dx * dx + dy * dy <= rr {
-                    self.blend(xx, yy, color, alpha);
-                }
-            }
         }
     }
 
@@ -315,10 +298,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let framebuffer_path = assets.join("gc9307-shell-dashboard-example.framebuffer.bin");
 
-    let mut canvas = Canvas::new(PEARL);
-    canvas.blend_circle(20, 20, 20, MIST, 86);
-    canvas.blend_circle(300, 22, 24, SHELL, 40);
-    canvas.blend_circle(310, 150, 20, MIST_2, 24);
+    let mut canvas = Canvas::new(WHITE);
 
     draw_port(
         &mut canvas,
