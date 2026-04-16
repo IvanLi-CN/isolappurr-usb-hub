@@ -9,7 +9,7 @@ ASSETS = ROOT / 'assets'
 ASSETS.mkdir(parents=True, exist_ok=True)
 
 PALETTE = {
-    'canvas': '#F8FBFD',
+    'canvas': '#FFFFFF',
     'mist': '#D8EEF6',
     'mist2': '#C6DAE5',
     'aqua': '#4BA6C3',
@@ -231,7 +231,7 @@ def dashboard_example(scale=4):
     # Header
     d.rounded_rectangle((24 * scale, 20 * scale, 36 * scale, 32 * scale), radius=6 * scale, fill=PALETTE['aqua'])
     d.text((42 * scale, 12 * scale), 'Dashboard', font=font(14 * scale, bold=True), fill=PALETTE['ink'])
-    d.text((42 * scale, 30 * scale), 'Shell-linked Pearl Aqua system', font=font(7 * scale), fill=PALETTE['ink_soft'])
+    d.text((42 * scale, 30 * scale), 'Shell-linked Pure White Aqua system', font=font(7 * scale), fill=PALETTE['ink_soft'])
     draw_chip(d, (W - 90 * scale, 18 * scale, W - 26 * scale, 36 * scale), 'ONLINE', rgba(PALETTE['aqua'], 40), PALETTE['aqua_deep'], stroke=rgba(PALETTE['aqua_deep'], 60), font_obj=font(7 * scale, bold=True))
 
     # Cards
@@ -266,7 +266,7 @@ def dashboard_example(scale=4):
     footer = (12 * scale, 144 * scale, W - 12 * scale, 160 * scale)
     rounded_panel(img, footer, radius=8 * scale, fill=rgba('#FFFFFF', 188), outline=rgba(PALETTE['line'], 170), outline_w=max(1, scale))
     draw_chip(d, (20 * scale, 147 * scale, 82 * scale, 157 * scale), 'TOTAL 65.1W', rgba(PALETTE['aqua'], 34), PALETTE['aqua_deep'], stroke=rgba(PALETTE['aqua_deep'], 50), font_obj=font(5 * scale, bold=True))
-    d.text((96 * scale, 146 * scale), 'Dual-port glance-first telemetry · soft pearl contrast', font=font(6 * scale), fill=PALETTE['ink_soft'])
+    d.text((96 * scale, 146 * scale), 'Dual-port glance-first telemetry · pure white canvas', font=font(6 * scale), fill=PALETTE['ink_soft'])
     d.text((W - 84 * scale, 146 * scale), 'THEME 01', font=font(6 * scale, bold=True), fill=PALETTE['berry'])
 
     # Soft gloss kept away from key metrics
@@ -292,7 +292,7 @@ def render_poster(dashboard_path: Path):
     draw_wrapped_text(
         d,
         (110, 156),
-        '把外壳原图里的「珍珠白 / 水雾青 / 绶带莓红 / 暖米金」收进屏幕，让硬件界面和外观成为同一套气质。',
+        '把外壳原图里的「纯白 / 水雾青 / 绶带莓红 / 暖米金」收进屏幕，让硬件界面和外观成为同一套气质。',
         font(20),
         PALETTE['ink_soft'],
         max_width=520,
@@ -424,7 +424,7 @@ def render_poster(dashboard_path: Path):
     callouts = [
         ('Data first', '双口的 V / A / W 直接占主体，第一眼只能看到关键读数。', PALETTE['aqua_deep']),
         ('Hardware fit', 'USB-A / OFF / PD 标题胶囊必须有更强浅色底与描边，不能融进白卡片。', PALETTE['aqua']),
-        ('Shell palette', 'RGB565 实屏优先保对比度，再保留珍珠白、水雾青、莓红气质。', PALETTE['berry']),
+        ('Shell palette', 'RGB565 实屏优先保对比度，再保留纯白、水雾青、莓红气质。', PALETTE['berry']),
     ]
     callout_body_font = font(14)
     callout_heights = [

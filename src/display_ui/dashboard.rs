@@ -1,6 +1,12 @@
 use super::*;
 
-const DASHBOARD_BG_RAW: u16 = rgb565_raw(0xF8, 0xFB, 0xFD);
+pub const DASHBOARD_BG_RGB8: (u8, u8, u8) = (0xFF, 0xFF, 0xFF);
+
+const DASHBOARD_BG_RAW: u16 = rgb565_raw(
+    DASHBOARD_BG_RGB8.0,
+    DASHBOARD_BG_RGB8.1,
+    DASHBOARD_BG_RGB8.2,
+);
 const WHITE_RAW: u16 = rgb565_raw(0xFF, 0xFF, 0xFF);
 const AQUA_RAW: u16 = rgb565_raw(0x4B, 0xA6, 0xC3);
 const BERRY_RAW: u16 = rgb565_raw(0xB9, 0x49, 0x5A);

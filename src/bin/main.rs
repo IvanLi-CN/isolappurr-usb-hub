@@ -38,6 +38,11 @@ pub const WIFI_GATEWAY: Option<&str> = option_env!("USB_HUB_WIFI_GATEWAY");
 #[cfg(feature = "net_http")]
 pub const WIFI_DNS: Option<&str> = option_env!("USB_HUB_WIFI_DNS");
 
+const BUILD_GIT_SHA: &str = env!("USB_HUB_BUILD_GIT_SHA");
+const BUILD_GIT_REF: &str = env!("USB_HUB_BUILD_GIT_REF");
+const BUILD_GIT_DIRTY: &str = env!("USB_HUB_BUILD_GIT_DIRTY");
+const BUILD_PROFILE: &str = env!("USB_HUB_BUILD_PROFILE");
+
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 use critical_section::Mutex;
@@ -57,8 +62,8 @@ use esp_hal::timer::timg::TimerGroup;
 use esp_hal::{dma_buffers, handler, ram};
 use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{
-    ActiveLowBacklight, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort, NormalUiPortMode,
-    NormalUiSnapshot, WORKBUF_SIZE,
+    ActiveLowBacklight, DASHBOARD_BG_RGB8, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort,
+    NormalUiPortMode, NormalUiSnapshot, WORKBUF_SIZE,
 };
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
@@ -516,6 +521,17 @@ async fn main(_spawner: Spawner) {
     esp_rtos::start(timg0.timer0);
 
     info!("boot: isolapurr-usb-hub starting (pd i2c coordinator)");
+    info!(
+        "firmware: version={} profile={} git={} ref={} dirty={} dashboard_bg_rgb=({},{},{})",
+        env!("CARGO_PKG_VERSION"),
+        BUILD_PROFILE,
+        BUILD_GIT_SHA,
+        BUILD_GIT_REF,
+        BUILD_GIT_DIRTY,
+        DASHBOARD_BG_RGB8.0,
+        DASHBOARD_BG_RGB8.1,
+        DASHBOARD_BG_RGB8.2
+    );
 
     // Optional Wi‑Fi STA + mDNS + HTTP stack (Plan #0003).
     #[cfg(feature = "net_http")]
