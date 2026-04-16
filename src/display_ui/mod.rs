@@ -4,6 +4,8 @@ mod dashboard;
 mod dashboard_font;
 mod font6x8;
 
+pub use dashboard::DASHBOARD_BG_RGB8;
+
 use allocator_api2::vec::Vec;
 use core::convert::Infallible;
 use core::future::{Future, ready};
