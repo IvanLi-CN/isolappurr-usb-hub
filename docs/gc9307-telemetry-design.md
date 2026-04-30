@@ -107,19 +107,20 @@
 - 设备与地址（7-bit）：
   - `INA226 (U17)`：`0x41`（A1=GND、A0=3V3）
   - `EEPROM (U21)`：`0x50`（同总线存在，必须避免误访问）
-- 约束（冻结）：**禁止扫描**；遥测 I2C 必须按 allowlist **仅允许访问 `0x41`**。
+  - 前面板 TCA（TCA9554/TCA9534 兼容）：`0x21`，仅用于屏幕 `CS/RES` 控制
+- 约束（冻结）：**禁止扫描**；INA226 遥测访问必须按 allowlist 限定在既定 INA226 地址，前面板 TCA 访问固定限定为 `0x21`。
 
 ### 5.3 屏幕 SPI 与控制脚
 
-来自网表 `hardware/tps-sw/netlist.enet`（U19 与 FPC1）：
+仓库当前网表 `hardware/tps-sw/netlist.enet` 仍记录旧直连关系（U19 与 FPC1），但固件目标映射已切换到前面板 TCA：
 
 - SPI 信号：
   - `MOSI`：U19 pin16 → GPIO11
   - `SCLK`：U19 pin17 → GPIO12
-  - `CS`：U19 pin18 → GPIO13
+  - `CS`：前面板 TCA `0x21` P6（idle high；MCU GPIO13 不再分配给该网络）
 - 控制信号：
   - `DC`：U19 pin15 → GPIO10
-  - `RES`：U19 pin19 → GPIO14
+  - `RES`：前面板 TCA `0x21` P5（idle high；MCU GPIO14 不再分配给该网络）
   - `BLK`：U19 pin21（pin name 为 `XTAL_32K_P`，v1 默认作为背光控制 GPIO 使用；若未来启用 32k 晶振需调整策略）
 
 > `BLK` 通过 Q8（BSS84，P 沟道 MOSFET）控制 FPC1 pin1（通常为背光 LEDA）从 `3V3` 取电，实现背光开关（必要时可做 PWM 调光，非本次必需）。

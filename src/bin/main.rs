@@ -8,6 +8,8 @@
 
 #[path = "../spi_device.rs"]
 mod spi_device;
+#[path = "../tca9554.rs"]
+mod tca9554;
 
 // Enable heap allocations (String, Vec, etc.) only when the experimental
 // net_http feature is used for Wi‑Fi + mDNS + HTTP (Plan #0003).
@@ -50,6 +52,8 @@ use critical_section::Mutex;
 use defmt::debug;
 use defmt::info;
 use embassy_executor::Spawner;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_time::Timer;
 use esp_hal::clock::CpuClock;
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
@@ -85,6 +89,9 @@ use isolapurr_usb_hub::telemetry::PortMetrics;
 use {esp_backtrace as _, esp_println as _};
 
 use spi_device::CsSpiDevice;
+use tca9554::{
+    DISPLAY_CS_BIT, DISPLAY_RES_BIT, FRONT_PANEL_TCA_ADDR, NoopResetPin, SharedI2c, Tca9554,
+};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -660,10 +667,11 @@ async fn main(_spawner: Spawner) {
     .with_scl(peripherals.GPIO9)
     .into_async();
     info!(
-        "telemetry i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 addr=[0x40/0x44,0x41/0x45] (no scan)"
+        "telemetry/front-panel i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 telemetry_addr=[0x40/0x44,0x41/0x45] tca_addr=0x21 (no scan)"
     );
 
-    let mut telemetry_sampler = NormalUiTelemetrySampler::new(i2c_telemetry);
+    let i2c_telemetry_bus = AsyncMutex::<CriticalSectionRawMutex, _>::new(i2c_telemetry);
+    let mut telemetry_sampler = NormalUiTelemetrySampler::new(SharedI2c::new(&i2c_telemetry_bus));
     match telemetry_sampler.init().await {
         Ok(()) => {
             info!(
@@ -684,11 +692,35 @@ async fn main(_spawner: Spawner) {
     }
 
     // GC9307 display (landscape) + backlight control.
-    // SPI: MOSI=GPIO11, SCLK=GPIO12. CS=GPIO13, DC=GPIO10, RES=GPIO14.
+    // SPI: MOSI=GPIO11, SCLK=GPIO12. CS=front-panel TCA0x21.P6, DC=GPIO10,
+    // RES=front-panel TCA0x21.P5. MCU GPIO13/GPIO14 are intentionally left
+    // in their default state and are no longer allocated to these display nets.
     // Backlight gate BLK=GPIO15 (active-low).
     let dc = Output::new(peripherals.GPIO10, Level::Low, OutputConfig::default());
-    let rst = Output::new(peripherals.GPIO14, Level::High, OutputConfig::default());
-    let cs = Output::new(peripherals.GPIO13, Level::High, OutputConfig::default());
+    let mut front_panel_tca =
+        Tca9554::new(SharedI2c::new(&i2c_telemetry_bus), FRONT_PANEL_TCA_ADDR);
+    let display_control_mask = (1 << DISPLAY_CS_BIT) | (1 << DISPLAY_RES_BIT);
+    if let Err(err) = front_panel_tca
+        .init_outputs_high(display_control_mask)
+        .await
+    {
+        defmt::warn!(
+            "front-panel tca: init error addr=0x21 CS=P6 RES=P5 (PD loop continues; display may be unavailable): {:?}",
+            defmt::Debug2Format(&err)
+        );
+        prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::DisplayInit));
+    }
+    if let Err(err) = front_panel_tca.reset_active_low(DISPLAY_RES_BIT).await {
+        defmt::warn!(
+            "display: front-panel TCA reset error addr=0x21 RES=P5 (PD loop continues; display may be unavailable): {:?}",
+            defmt::Debug2Format(&err)
+        );
+        prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::DisplayInit));
+    }
+    let cs = front_panel_tca
+        .into_output_pin(DISPLAY_CS_BIT)
+        .expect("valid front-panel TCA CS bit");
+    let rst = NoopResetPin;
     // Backlight gate BLK is active-low. Force it ON immediately so backlight is not
     // coupled to display init success.
     let blk = Output::new(peripherals.GPIO15, Level::Low, OutputConfig::default());
@@ -718,7 +750,7 @@ async fn main(_spawner: Spawner) {
     let mut ui: DisplayUi<'_, _, _, _, EspHalSpinTimer, _> =
         DisplayUi::new(spi, dc, rst, workbuf, backlight).expect("display ui psram framebuffers");
     info!(
-        "display: GC9307 landscape SPI2@40MHz async DMA MOSI=GPIO11 SCLK=GPIO12 CS=GPIO13 DC=GPIO10 RES=GPIO14 BLK=GPIO15(active-low)"
+        "display: GC9307 landscape SPI2@40MHz async DMA MOSI=GPIO11 SCLK=GPIO12 CS=TCA0x21.P6 DC=GPIO10 RES=TCA0x21.P5 BLK=GPIO15(active-low)"
     );
 
     if let Err(err) = ui.init().await {

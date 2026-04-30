@@ -4,7 +4,7 @@
 
 - Status: 已完成
 - Created: 2026-04-14
-- Last: 2026-04-14
+- Last: 2026-04-30
 
 ## 背景 / 问题陈述
 
@@ -68,6 +68,7 @@
 
 - `DisplayUi::{init, draw_frame, render_snapshot, render_normal_ui, show_toast, show_toast_compact}` 全部改为 async。
 - 新的 `CsSpiDevice` 改为基于 `embedded_hal_async::spi::SpiDevice` 的 async CS wrapper；SPI 总线改用 DMA-capable async bus。
+- GC9307 `CS` / `RES` 由前面板 TCA9554/TCA9534 兼容 I/O expander 控制：I2C `0x21`，`CS=P6`，`RES=P5`，两者 idle high；MCU `GPIO13` / `GPIO14` 保持默认状态，不再由固件分配给屏幕控制网络。
 - `DisplayUi` 内部新增 PSRAM `front/back/dashboard_base` 三块 RGB565 缓冲：
   - `front`：当前已上屏画面
   - `back`：本帧离屏渲染目标
@@ -83,6 +84,9 @@
 - Given 当前仓库默认固件目标
 - When 执行 `cargo check --bin isolapurr-usb-hub` 与 `just build`
 - Then 两者都必须通过，且 async/PSRAM 特性参与构建。
+- Given 显示初始化
+- When 固件准备 GC9307 控制脚
+- Then TCA `0x21` P6/P5 被置为输出并先保持高电平，且代码不再构造 `GPIO13` / `GPIO14` 输出。
 
 ### Display path
 
