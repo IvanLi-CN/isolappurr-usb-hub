@@ -72,6 +72,9 @@
   - pin13 → `VBUS_TPS`
   - pin14 → 悬空
   - pin15 → `VOUT_TPS`
+- 供电/启动依赖：
+  - `TPS55288(U14)` 的 `VIN` 接 `VIN`，`VCC` 接 `+5V`
+  - `SW2303(U16)` 的 `VIN` 接 `VOUT_TPS`
 - 上拉：`RN2` 为 `SCL_TPS/SDA_TPS`（以及 `INT_TPS`）提供到 `3V3` 的 4.7 kΩ 上拉。
 
 ### 3.1 引脚复用风险（ESP32‑S3）
@@ -92,7 +95,7 @@
 ### 4.2 地址白名单（强约束）
 
 - `SW2303`：`0x3C`
-  - `TPS55288`：`0x74`  
+  - `TPS55288`：`0x74`
   依据：网表显示 `TPS55288 MODE/RMODE`（pin15）通过 `R35=75kΩ` 接到 `AGND_TPS`，按数据手册 MODE 电阻配置表，对应 external VCC、I2C 地址 `74h`、PFM。
 
 固件必须实现 **allowlist wrapper**：任何对非白名单地址的 `write/write_read` 直接拒绝并记录错误（用于保证“不得与其他设备通信”的范围要求）。
@@ -103,10 +106,14 @@
 
 ### 5.1 上电到可输出
 
-1) MCU 初始化 `SCL_TPS/SDA_TPS` I2C（400 kHz）与地址白名单。  
-2) 轮询 `SW2303` online 状态：由 offline → online 稳定 N 次（例如 3 次）后进入跟随。  
-3) 读取 `SW2303` 当前设置（目标电压/限流/协议），转换成 TPS setpoint。  
-4) 写入 `TPS55288`（先限流、后电压、最后使能）。  
+1) MCU 释放 `CE_TPS`，确保 `TPS55288 EN/UVLO` 不被硬关断链路下拉。
+2) MCU 初始化 `SCL_TPS/SDA_TPS` I2C（400 kHz）与地址白名单。
+3) MCU 先向 `TPS55288` 写入保守 boot setpoint，使 `VOUT_TPS` 到达可供 `SW2303` 工作的电压。
+4) 在 `VOUT_TPS` 建立后，轮询 `SW2303` online 状态：由 offline → online 稳定 N 次（例如 3 次）后进入跟随。
+5) 读取 `SW2303` 当前设置（目标电压/限流/协议），转换成 TPS setpoint。
+6) 写入 `TPS55288`（先限流、后电压、最后使能）。
+
+约束：`SW2303` 与 `TPS55288` 共用 `SDA_TPS/SCL_TPS`，而 `SW2303` 的 `VIN` 来自 `VOUT_TPS`。如果 `VOUT_TPS` 建立前 `SW2303` 将 SDA 拉低，MCU 无法通过同一条 I2C 总线先配置 `TPS55288`。这种启动死锁需要硬件上保证 `SW2303` 未上电时不箝位总线，或让 `TPS55288` 在无需 I2C 的条件下先产生足够的 `VOUT_TPS`。
 
 ### 5.2 协商变化 / PPS 调节
 
@@ -223,7 +230,7 @@ TPS55288 驱动（`tps55288-rs` 仓库）的抽象假定：
 
 → 立即拉起 `CE_TPS`（使 `Q9` 导通，将 `EN/UVLO` 节点下拉到 GND，进入硬关断）。
 
-> PCB v1.2：`SW2303` 由外部 `+5V` 供电，因此 `CE_TPS` 不再等价于“同时掉电/复位 SW2303”；若需要复位 SW2303，需另行设计控制链路或在软件层面处理。
+网表显示 `SW2303(U16)` 的 `VIN` 接 `VOUT_TPS`，因此 `CE_TPS` 进入硬关断会移除 `TPS55288` 输出，也会使 `SW2303` 失去工作电压。`CE_TPS` 解除硬关断后，固件仍必须先让 `TPS55288` 建立 boot 输出，再访问 `SW2303`。
 
 ### 9.2 软关断：TPS `OE`
 
@@ -247,7 +254,15 @@ TPS55288 驱动（`tps55288-rs` 仓库）的抽象假定：
 
 `SDA_TPS/SCL_TPS` 使用物理 pin44/pin45（复用 `MTCK/MTDO`），需确认调试方案（USB‑Serial‑JTAG vs 传统 JTAG）。
 
-### 10.3 SW2303 数据手册中的 I2C “Register address = 0xB0” 表述歧义
+### 10.3 PD I2C 启动死锁
+
+`SW2303` 在 `VOUT_TPS` 达到其可工作电压前不应持续拉低 `SDA_TPS`。若实物测得 `SDA_TPS` 低、`SCL_TPS` 高，且 SCL recovery 后 SDA 仍不能释放，则 MCU 无法访问 `TPS55288(0x74)` 或 `SW2303(0x3C)`。可选硬件处理方向：
+
+- 给 `SW2303` 使用先于 `VOUT_TPS` 建立的供电，且满足其数据手册约束。
+- 在 `SW2303` 与 `SDA_TPS/SCL_TPS` 之间增加总线隔离，使其未上电时不影响 TPS I2C。
+- 让 `TPS55288` 通过硬件默认配置先建立大于 `SW2303` 可工作阈值的 `VOUT_TPS`，再由 MCU 接管。
+
+### 10.4 SW2303 数据手册中的 I2C “Register address = 0xB0” 表述歧义
 
 SW2303 数据手册的 I2C 章节存在 “Register address = 0xB0” 的表述；本方案以寄存器手册与 `sw2303-rs` 的寄存器映射为准，避免误解实现。
 
