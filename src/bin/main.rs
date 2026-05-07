@@ -593,7 +593,8 @@ async fn main(_spawner: Spawner) {
     let mut combo_expired = false;
 
     // Port controls (tps-sw netlist):
-    // - P1_CED/P2_CED drive CH442E IN: low=connect, high=disconnect (S2x is NC).
+    // - P1_CED/P2_CED drive CH442E EN#: low=enable/connect, high=disable/disconnect.
+    // - U8 IN is P1_ESP with an RN3 pulldown default; firmware leaves it at reset default.
     // - P1_EN# drives CH217K enable: low=enable (power on), high=disable (power off).
     // - CE_TPS drives Q9, pulling TPS EN/UVLO low when CE_TPS is high (power off).
     //
