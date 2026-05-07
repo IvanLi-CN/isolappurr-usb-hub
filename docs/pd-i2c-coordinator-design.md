@@ -106,7 +106,7 @@
 
 ### 5.1 上电到可输出
 
-1) MCU 释放 `CE_TPS`，确保 `TPS55288 EN/UVLO` 不被硬关断链路下拉。
+1) MCU 对 `CE_TPS` 执行一次硬复位周期：先拉高关闭 `TPS55288 EN/UVLO`，再拉低释放，使 TPS 与挂在同一 PD I2C 总线上的器件从确定状态启动。
 2) MCU 初始化 `SCL_TPS/SDA_TPS` I2C（400 kHz）与地址白名单。
 3) MCU 先向 `TPS55288` 写入保守 boot setpoint，使 `VOUT_TPS` 到达可供 `SW2303` 工作的电压。
 4) 在 `VOUT_TPS` 建立后，轮询 `SW2303` online 状态：由 offline → online 稳定 N 次（例如 3 次）后进入跟随。
@@ -114,6 +114,8 @@
 6) 写入 `TPS55288`（先限流、后电压、最后使能）。
 
 约束：`SW2303` 与 `TPS55288` 共用 `SDA_TPS/SCL_TPS`，而 `SW2303` 的 `VIN` 来自 `VOUT_TPS`。如果 `VOUT_TPS` 建立前 `SW2303` 将 SDA 拉低，MCU 无法通过同一条 I2C 总线先配置 `TPS55288`。这种启动死锁需要硬件上保证 `SW2303` 未上电时不箝位总线，或让 `TPS55288` 在无需 I2C 的条件下先产生足够的 `VOUT_TPS`。
+
+启动期不对 `SW2303` 立即执行 enable profile 写入；固件先等待 `SW2303` 读路径恢复，读通后再按恢复路径限频应用 profile。若 `SW2303` I2C 失败，读取进入退避重试，TPS 保持 boot setpoint，避免高频 SW 超时事务拖住 PD I2C 总线。
 
 ### 5.2 协商变化 / PPS 调节
 

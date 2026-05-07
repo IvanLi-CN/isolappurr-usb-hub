@@ -75,8 +75,8 @@ use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
 };
 use isolapurr_usb_hub::prompt_tone::{
-    DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitFailReason, InitWarnReason,
-    PromptToneManager, SafetyKind, SoundEvent,
+    DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitWarnReason, PromptToneManager, SafetyKind,
+    SoundEvent,
 };
 use isolapurr_usb_hub::telemetry::{Field, NormalUiTelemetrySampler};
 
@@ -744,6 +744,7 @@ async fn main(_spawner: Spawner) {
     let mut tps_error_latched = false;
     let mut ui_error_latched = false;
     let mut last_sw2303_profile_attempt: Option<Instant> = None;
+    let mut last_sw2303_read_attempt: Option<Instant> = None;
     let mut last_tps_status: Option<(
         tps55288::data_types::OperatingStatus,
         tps55288::data_types::FaultStatus,
@@ -753,6 +754,12 @@ async fn main(_spawner: Spawner) {
     let boot_sp = boot_supply_setpoint();
     // Give TPS and SW2303 time to power up before first I2C poll.
     Timer::after_millis(200).await;
+
+    info!("tps55288: cycling CE_TPS high(off) -> low(on) before first I2C access");
+    let _ = ce_tps.set_high();
+    Timer::after_millis(500).await;
+    let _ = ce_tps.set_low();
+    Timer::after_millis(2_000).await;
 
     // SW2303 is powered from the TPS output path, so bring TPS to a conservative
     // 5V keep-alive setpoint before touching SW2303 over I2C.
@@ -783,44 +790,14 @@ async fn main(_spawner: Spawner) {
         }
     }
     if tps_boot_ready {
-        Timer::after_millis(200).await;
+        Timer::after_millis(2_000).await;
     } else {
         defmt::warn!("tps55288 boot supply not ready; skipping boot-time SW2303 profile");
         prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
     }
 
-    // Boot-time SW2303 "Enable Profile" apply: up to 3 attempts, 200ms backoff.
-    // Failure strategy: warn and continue PD loop.
-    let mut boot_profile_applied = false;
     if tps_boot_ready {
-        for attempt in 1..=3 {
-            match apply_enable_profile_full(&mut i2c).await {
-                Ok(status) => {
-                    match attempt {
-                        1 => log_sw2303_profile_status("applied full (attempt 1/3)", &status),
-                        2 => log_sw2303_profile_status("applied full (attempt 2/3)", &status),
-                        _ => log_sw2303_profile_status("applied full (attempt 3/3)", &status),
-                    }
-                    last_sw2303_profile_attempt = Some(Instant::now());
-                    boot_profile_applied = true;
-                    break;
-                }
-                Err(err) => {
-                    defmt::warn!(
-                        "sw2303 profile: apply failed (attempt {}/3): {:?}",
-                        attempt,
-                        defmt::Debug2Format(&err)
-                    );
-                    if attempt < 3 {
-                        Timer::after_millis(200).await;
-                    }
-                }
-            }
-        }
-    }
-    if tps_boot_ready && !boot_profile_applied {
-        defmt::warn!("sw2303 profile: giving up after 3 attempts (PD loop continues)");
-        prompt_tone.notify(SoundEvent::InitFail(InitFailReason::Sw2303ProfileBoot));
+        info!("sw2303 profile: deferred until first successful SW2303 read");
     }
 
     let mut last_tick = Instant::now();
@@ -860,34 +837,43 @@ async fn main(_spawner: Spawner) {
             ledd_usb_a_state.stable()
         };
 
-        let (request, setpoint) = match read_power_request(&mut i2c).await {
-            Ok(request) => {
-                sw2303_error_latched = false;
-                // NOTE: Do not use `request.online` (REG0x0D bit7) for any functional behavior.
-                // Some chips may customize its semantics (Type‑C insert or A‑port current threshold).
-                //
-                // Follow SW2303 requests when a protocol is indicated as active; otherwise keep a
-                // conservative 5V "keep-alive" supply for VBUS.
-                let sp = if request.negotiated_protocol.is_some()
-                    || request.fast_protocol
-                    || request.fast_voltage
-                {
-                    power_request_to_setpoint(request)
-                } else {
-                    boot_sp
-                };
-                (Some(request), sp)
-            }
-            Err(err) => {
-                if !sw2303_error_latched {
-                    defmt::warn!(
-                        "sw2303 read error; falling back to boot supply: {:?}",
-                        defmt::Debug2Format(&err)
-                    );
-                    sw2303_error_latched = true;
+        let allow_sw2303_read = !sw2303_error_latched
+            || last_sw2303_read_attempt
+                .map(|attempt| attempt.elapsed() >= Duration::from_secs(2))
+                .unwrap_or(true);
+        let (request, setpoint) = if allow_sw2303_read {
+            last_sw2303_read_attempt = Some(Instant::now());
+            match read_power_request(&mut i2c).await {
+                Ok(request) => {
+                    sw2303_error_latched = false;
+                    // NOTE: Do not use `request.online` (REG0x0D bit7) for any functional behavior.
+                    // Some chips may customize its semantics (Type‑C insert or A‑port current threshold).
+                    //
+                    // Follow SW2303 requests when a protocol is indicated as active; otherwise keep a
+                    // conservative 5V "keep-alive" supply for VBUS.
+                    let sp = if request.negotiated_protocol.is_some()
+                        || request.fast_protocol
+                        || request.fast_voltage
+                    {
+                        power_request_to_setpoint(request)
+                    } else {
+                        boot_sp
+                    };
+                    (Some(request), sp)
                 }
-                (None, boot_sp)
+                Err(err) => {
+                    if !sw2303_error_latched {
+                        defmt::warn!(
+                            "sw2303 read error; falling back to boot supply: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                        sw2303_error_latched = true;
+                    }
+                    (None, boot_sp)
+                }
             }
+        } else {
+            (None, boot_sp)
         };
 
         if !sw2303_was_in_error && sw2303_error_latched {
