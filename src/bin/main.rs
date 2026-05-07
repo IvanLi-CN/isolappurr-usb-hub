@@ -754,34 +754,71 @@ async fn main(_spawner: Spawner) {
     // Give TPS and SW2303 time to power up before first I2C poll.
     Timer::after_millis(200).await;
 
-    // Boot-time SW2303 "Enable Profile" apply: up to 3 attempts, 200ms backoff.
-    // Failure strategy: warn and continue PD loop.
-    let mut boot_profile_applied = false;
+    // SW2303 is powered from the TPS output path, so bring TPS to a conservative
+    // 5V keep-alive setpoint before touching SW2303 over I2C.
+    let mut tps_boot_ready = false;
     for attempt in 1..=3 {
-        match apply_enable_profile_full(&mut i2c).await {
-            Ok(status) => {
-                match attempt {
-                    1 => log_sw2303_profile_status("applied full (attempt 1/3)", &status),
-                    2 => log_sw2303_profile_status("applied full (attempt 2/3)", &status),
-                    _ => log_sw2303_profile_status("applied full (attempt 3/3)", &status),
-                }
-                last_sw2303_profile_attempt = Some(Instant::now());
-                boot_profile_applied = true;
+        match apply_setpoint(&mut i2c, &mut tps_state, boot_sp).await {
+            Ok(()) => {
+                info!(
+                    "tps55288 boot supply applied (attempt {}/3): v={}mV ilim={}mA",
+                    attempt, boot_sp.v_out_mv, boot_sp.i_lim_ma
+                );
+                tps_error_latched = false;
+                tps_boot_ready = true;
                 break;
             }
             Err(err) => {
                 defmt::warn!(
-                    "sw2303 profile: apply failed (attempt {}/3): {:?}",
+                    "tps55288 boot supply apply failed (attempt {}/3): {:?}",
                     attempt,
                     defmt::Debug2Format(&err)
                 );
+                tps_state.last = None;
+                tps_error_latched = true;
                 if attempt < 3 {
-                    Timer::after_millis(200).await;
+                    Timer::after_millis(100).await;
                 }
             }
         }
     }
-    if !boot_profile_applied {
+    if tps_boot_ready {
+        Timer::after_millis(200).await;
+    } else {
+        defmt::warn!("tps55288 boot supply not ready; skipping boot-time SW2303 profile");
+        prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
+    }
+
+    // Boot-time SW2303 "Enable Profile" apply: up to 3 attempts, 200ms backoff.
+    // Failure strategy: warn and continue PD loop.
+    let mut boot_profile_applied = false;
+    if tps_boot_ready {
+        for attempt in 1..=3 {
+            match apply_enable_profile_full(&mut i2c).await {
+                Ok(status) => {
+                    match attempt {
+                        1 => log_sw2303_profile_status("applied full (attempt 1/3)", &status),
+                        2 => log_sw2303_profile_status("applied full (attempt 2/3)", &status),
+                        _ => log_sw2303_profile_status("applied full (attempt 3/3)", &status),
+                    }
+                    last_sw2303_profile_attempt = Some(Instant::now());
+                    boot_profile_applied = true;
+                    break;
+                }
+                Err(err) => {
+                    defmt::warn!(
+                        "sw2303 profile: apply failed (attempt {}/3): {:?}",
+                        attempt,
+                        defmt::Debug2Format(&err)
+                    );
+                    if attempt < 3 {
+                        Timer::after_millis(200).await;
+                    }
+                }
+            }
+        }
+    }
+    if tps_boot_ready && !boot_profile_applied {
         defmt::warn!("sw2303 profile: giving up after 3 attempts (PD loop continues)");
         prompt_tone.notify(SoundEvent::InitFail(InitFailReason::Sw2303ProfileBoot));
     }
