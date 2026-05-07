@@ -61,6 +61,9 @@ fn quantize_ilim_ma_floor_with_margin(ma: u16) -> u16 {
 
 /// Apply a `PowerSetpoint` to TPS55288 (I2C address 0x74) using a safe write order.
 ///
+/// Hardware note: TPS55288 MODE/RMODE is set by `R35=75kΩ` (external VCC, 0x74, PFM).
+/// The driver calls below only change OE while preserving the other MODE bits.
+///
 /// Safe order:
 /// - Never disable output when `setpoint.output_enabled = true` (avoids VOUT dropouts).
 /// - Only disable output when the setpoint explicitly requests it.

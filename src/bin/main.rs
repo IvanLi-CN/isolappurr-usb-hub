@@ -1210,7 +1210,7 @@ async fn main(_spawner: Spawner) {
             }
         }
 
-        // USB-A invariants.
+        // USB-A invariants: P1_CED drives CH442E EN# (low=connected, high=disconnected).
         match port_usb_a.power {
             PowerState::On => {
                 let _ = p1_en_n.set_low();
@@ -1248,7 +1248,7 @@ async fn main(_spawner: Spawner) {
             }
         }
 
-        // USB-C invariants.
+        // USB-C invariants: P2_CED drives CH442E EN# (low=connected, high=disconnected).
         match port_usb_c.power {
             PowerState::On => {
                 let _ = ce_tps.set_low();
