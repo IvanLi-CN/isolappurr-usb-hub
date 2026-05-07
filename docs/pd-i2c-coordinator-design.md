@@ -115,7 +115,7 @@
 
 约束：`SW2303` 与 `TPS55288` 共用 `SDA_TPS/SCL_TPS`，而 `SW2303` 的 `VIN` 来自 `VOUT_TPS`。如果 `VOUT_TPS` 建立前 `SW2303` 将 SDA 拉低，MCU 无法通过同一条 I2C 总线先配置 `TPS55288`。这种启动死锁需要硬件上保证 `SW2303` 未上电时不箝位总线，或让 `TPS55288` 在无需 I2C 的条件下先产生足够的 `VOUT_TPS`。
 
-启动期不对 `SW2303` 立即执行 enable profile 写入；固件先等待 `SW2303` 读路径恢复，读通后再按恢复路径限频应用 profile。若 `SW2303` I2C 失败，读取进入退避重试，TPS 保持 boot setpoint，避免高频 SW 超时事务拖住 PD I2C 总线。
+启动期不对 `SW2303` 立即执行 enable profile 写入。固件必须先通过 USB-C/TPS 遥测确认 TPS 输出处于 5V 档并稳定超过 1 秒，再允许任何 `SW2303` I2C 事务；若检测到 TPS 输出低于 3.3V、TPS apply 失败或 TPS fault，则清除 SW 访问许可，重新等待 5V 稳定。`SW2303` 读通后再按恢复路径限频应用 profile。若 `SW2303` I2C 失败，读取进入退避重试，TPS 保持 boot setpoint，避免高频 SW 超时事务拖住 PD I2C 总线。
 
 ### 5.2 协商变化 / PPS 调节
 

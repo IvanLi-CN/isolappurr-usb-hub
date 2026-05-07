@@ -175,6 +175,9 @@ const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
 const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
 const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
 const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
+const TPS_SW_ENABLE_MIN_MV: u32 = 4_750;
+const TPS_SW_FAULT_RESET_MV: u32 = 3_300;
+const TPS_SW_STABLE_MS: u64 = 1_000;
 
 // Toast colors (RGB565 raw).
 const TOAST_OK_RAW: u16 = 0x1407; // dark green (same as UI OK power)
@@ -745,6 +748,8 @@ async fn main(_spawner: Spawner) {
     let mut ui_error_latched = false;
     let mut last_sw2303_profile_attempt: Option<Instant> = None;
     let mut last_sw2303_read_attempt: Option<Instant> = None;
+    let mut tps_5v_stable_since: Option<Instant> = None;
+    let mut sw2303_power_gate_ready = false;
     let mut last_tps_status: Option<(
         tps55288::data_types::OperatingStatus,
         tps55288::data_types::FaultStatus,
@@ -790,7 +795,37 @@ async fn main(_spawner: Spawner) {
         }
     }
     if tps_boot_ready {
-        Timer::after_millis(2_000).await;
+        info!(
+            "sw2303 power gate: waiting for TPS output >= {}mV for {}ms before SW2303 I2C",
+            TPS_SW_ENABLE_MIN_MV, TPS_SW_STABLE_MS
+        );
+        loop {
+            let telemetry = telemetry_sampler.sample().await;
+            match telemetry.usb_c.voltage_mv {
+                Field::Ok(v_mv) if v_mv >= TPS_SW_ENABLE_MIN_MV => {
+                    let since = tps_5v_stable_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() >= Duration::from_millis(TPS_SW_STABLE_MS) {
+                        sw2303_power_gate_ready = true;
+                        info!("sw2303 power gate: TPS output stable at {}mV", v_mv);
+                        break;
+                    }
+                }
+                Field::Ok(v_mv) => {
+                    if v_mv < TPS_SW_FAULT_RESET_MV {
+                        defmt::warn!(
+                            "sw2303 power gate: TPS output below {}mV ({}mV); waiting for 5V stability",
+                            TPS_SW_FAULT_RESET_MV,
+                            v_mv
+                        );
+                    }
+                    tps_5v_stable_since = None;
+                }
+                Field::Err => {
+                    tps_5v_stable_since = None;
+                }
+            }
+            Timer::after_millis(250).await;
+        }
     } else {
         defmt::warn!("tps55288 boot supply not ready; skipping boot-time SW2303 profile");
         prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
@@ -837,10 +872,38 @@ async fn main(_spawner: Spawner) {
             ledd_usb_a_state.stable()
         };
 
-        let allow_sw2303_read = !sw2303_error_latched
+        let allow_sw2303_probe = !sw2303_error_latched
             || last_sw2303_read_attempt
                 .map(|attempt| attempt.elapsed() >= Duration::from_secs(2))
                 .unwrap_or(true);
+        if allow_sw2303_probe {
+            let telemetry = telemetry_sampler.sample().await;
+            match telemetry.usb_c.voltage_mv {
+                Field::Ok(v_mv) if v_mv >= TPS_SW_ENABLE_MIN_MV => {
+                    let since = tps_5v_stable_since.get_or_insert_with(Instant::now);
+                    sw2303_power_gate_ready =
+                        since.elapsed() >= Duration::from_millis(TPS_SW_STABLE_MS);
+                }
+                Field::Ok(v_mv) => {
+                    if sw2303_power_gate_ready || v_mv < TPS_SW_FAULT_RESET_MV {
+                        defmt::warn!(
+                            "sw2303 power gate: TPS output not safe for SW2303 I2C ({}mV)",
+                            v_mv
+                        );
+                    }
+                    tps_5v_stable_since = None;
+                    sw2303_power_gate_ready = false;
+                    if v_mv < TPS_SW_FAULT_RESET_MV {
+                        tps_state.last = None;
+                    }
+                }
+                Field::Err => {
+                    tps_5v_stable_since = None;
+                    sw2303_power_gate_ready = false;
+                }
+            }
+        }
+        let allow_sw2303_read = allow_sw2303_probe && sw2303_power_gate_ready;
         let (request, setpoint) = if allow_sw2303_read {
             last_sw2303_read_attempt = Some(Instant::now());
             match read_power_request(&mut i2c).await {
@@ -947,6 +1010,8 @@ async fn main(_spawner: Spawner) {
             }
 
             tps_state.last = None;
+            tps_5v_stable_since = None;
+            sw2303_power_gate_ready = false;
             loop_delay_ms = 100;
         } else {
             tps_error_latched = false;
@@ -976,6 +1041,10 @@ async fn main(_spawner: Spawner) {
 
             match status {
                 Ok((operating, faults)) => {
+                    if faults.short_circuit || faults.over_current || faults.over_voltage {
+                        tps_5v_stable_since = None;
+                        sw2303_power_gate_ready = false;
+                    }
                     let changed = int_tps_low != last_int_tps_low
                         || last_tps_status != Some((operating, faults));
                     if changed {

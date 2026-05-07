@@ -58,7 +58,7 @@
 
 - [x] `U16` 电源反馈相关连接已按网表收敛：`pin13 -> VBUS_TPS`、`pin15 -> VOUT_TPS`、`pin14` 悬空；网表中不再存在 `FB_TPS/FB_INT` 反馈分压网络。
 - [ ] 启动依赖需要硬件确认：`U16(SW2303)` 与 `U14(TPS55288)` 共用 `SDA_TPS/SCL_TPS`，且 `U16 pin15(VIN)` 接 `VOUT_TPS`。若 `VOUT_TPS` 建立前 `SW2303` 将 `SDA_TPS` 箝低，MCU 无法先通过同一条 I2C 总线访问 `TPS55288` 来建立输出。需保证 `SW2303` 未上电时不拉低总线、增加总线隔离，或让 `TPS55288` 具备无需 I2C 的初始输出路径。
-- [x] 固件启动策略已按实测收敛：先对 `CE_TPS` 执行硬复位，再写 TPS boot setpoint；`SW2303` 访问失败后退避重试，启动期 profile 写入延后到 SW 读通后执行。
+- [x] 固件启动策略已按实测收敛：先对 `CE_TPS` 执行硬复位，再写 TPS boot setpoint；只有 TPS 输出处于 5V 档并稳定超过 1 秒后才访问 `SW2303`；若 TPS 输出低于 3.3V、TPS apply 失败或 TPS fault，则重新等待 5V 稳定；`SW2303` 访问失败后退避重试，启动期 profile 写入延后到 SW 读通后执行。
 - [x] `R31/R32` 已作为 USB2.0 串联电阻使用：`R31=22Ω (ESP_DM↔$2N245)`、`R32=22Ω (ESP_DP↔$2N246)`；旧反馈分压/短接相关的 `R33/R41/R42/R50` 不在网表中。
 - [ ] 若产品需求包含 QC/BC1.2 等依赖 `DP/DM` 的快充兼容，请确认 SW2303 的 `DP/DM` 引脚在网表/原理图中已接入（否则仅剩 Type‑C/PD 走 CC）。
 
