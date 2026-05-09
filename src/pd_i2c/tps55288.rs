@@ -5,14 +5,51 @@ use super::{PowerRequest, PowerSetpoint, TPS55288_ADDR_7BIT};
 /// This must stay within the TPS55288 DAC range and should be a safe default on VBUS.
 pub const TPS_BOOT_VOUT_MV: u16 = 5_000;
 /// Conservative current limit for the boot setpoint (mA).
-pub const TPS_BOOT_ILIM_MA: u16 = 1_000;
-
+pub const TPS_BOOT_ILIM_MA: u16 = 6_350;
 pub const fn boot_supply_setpoint() -> PowerSetpoint {
     PowerSetpoint {
         output_enabled: true,
         v_out_mv: TPS_BOOT_VOUT_MV,
         i_lim_ma: TPS_BOOT_ILIM_MA,
     }
+}
+
+pub async fn stop_output_and_enable_discharge<I2C>(
+    i2c: &mut I2C,
+) -> Result<(), tps55288::Error<I2C::Error>>
+where
+    I2C: embedded_hal_async::i2c::I2c,
+{
+    use tps55288::registers::{ModeBits, addr};
+
+    let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
+    let mut mode = ModeBits::from_bits_truncate(dev.read_reg(addr::MODE).await?);
+    mode.remove(ModeBits::OE);
+    mode.insert(ModeBits::DISCHG);
+    dev.write_reg(addr::MODE, mode.bits()).await
+}
+
+pub async fn apply_setpoint_before_enable<I2C>(
+    i2c: &mut I2C,
+    state: &mut TpsApplyState,
+    setpoint: PowerSetpoint,
+) -> Result<u8, tps55288::Error<I2C::Error>>
+where
+    I2C: embedded_hal_async::i2c::I2c,
+{
+    use tps55288::registers::{ModeBits, addr};
+
+    let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
+    let mut mode = ModeBits::from_bits_truncate(dev.read_reg(addr::MODE).await?);
+    if mode.contains(ModeBits::DISCHG) {
+        mode.remove(ModeBits::DISCHG);
+        dev.write_reg(addr::MODE, mode.bits()).await?;
+    }
+    dev.set_ilim_ma(setpoint.i_lim_ma, true).await?;
+    dev.set_vout_mv(setpoint.v_out_mv).await?;
+    mode.insert(ModeBits::OE);
+    state.last = None;
+    Ok(mode.bits())
 }
 
 /// Caller-maintained state for "minimal write" TPS programming.
@@ -38,7 +75,7 @@ impl TpsApplyState {
 pub fn power_request_to_setpoint(request: PowerRequest) -> PowerSetpoint {
     PowerSetpoint {
         output_enabled: true,
-        v_out_mv: quantize_vout_mv_floor(request.v_req_mv),
+        v_out_mv: quantize_vout_mv_floor(request.v_req_mv.max(5_000)),
         i_lim_ma: quantize_ilim_ma_floor_with_margin(request.i_req_ma),
     }
 }
@@ -84,6 +121,14 @@ where
     let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
 
     if setpoint.output_enabled {
+        let mut mode = tps55288::registers::ModeBits::from_bits_truncate(
+            dev.read_reg(tps55288::registers::addr::MODE).await?,
+        );
+        if mode.contains(tps55288::registers::ModeBits::DISCHG) {
+            mode.remove(tps55288::registers::ModeBits::DISCHG);
+            dev.write_reg(tps55288::registers::addr::MODE, mode.bits())
+                .await?;
+        }
         dev.set_ilim_ma(setpoint.i_lim_ma, true).await?;
         dev.set_vout_mv(setpoint.v_out_mv).await?;
         dev.enable_output().await?;

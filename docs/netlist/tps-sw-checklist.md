@@ -57,8 +57,10 @@
 ### SW2303（U16，USB‑C/PD 控制）
 
 - [x] `U16` 电源反馈相关连接已按网表收敛：`pin13 -> VBUS_TPS`、`pin15 -> VOUT_TPS`、`pin14` 悬空；网表中不再存在 `FB_TPS/FB_INT` 反馈分压网络。
-- [ ] 启动依赖需要硬件确认：`U16(SW2303)` 与 `U14(TPS55288)` 共用 `SDA_TPS/SCL_TPS`，且 `U16 pin15(VIN)` 接 `VOUT_TPS`。若 `VOUT_TPS` 建立前 `SW2303` 将 `SDA_TPS` 箝低，MCU 无法先通过同一条 I2C 总线访问 `TPS55288` 来建立输出。需保证 `SW2303` 未上电时不拉低总线、增加总线隔离，或让 `TPS55288` 具备无需 I2C 的初始输出路径。
-- [x] 固件启动策略已按实测收敛：先对 `CE_TPS` 执行硬复位，再写 TPS boot setpoint；只有 TPS 输出处于 5V 档并稳定超过 1 秒后才访问 `SW2303`；若 TPS 输出低于 3.3V、TPS apply 失败或 TPS fault，则重新等待 5V 稳定；`SW2303` 访问失败后退避重试，启动期 profile 写入延后到 SW 读通后执行。
+- [x] 启动依赖已确认：`U16(SW2303)` 与 `U14(TPS55288)` 共用 `SDA_TPS/SCL_TPS`，且 `U16 pin15(VIN)` 接 `VOUT_TPS`。TPS 主动放电约 1 秒后，实测 `SDA_TPS/SCL_TPS` 会被拉低；固件必须先释放并检查总线，必要时用一次 `CE_TPS` hard-start 恢复电源域，再写入 TPS 5V boot setpoint。
+- [x] 固件启动策略已按实测收敛：PD I2C 初始化前以 open-drain 释放 `SDA_TPS/SCL_TPS`；常规输出控制优先通过 TPS55288 `OE` 寄存器；仅当放电后总线 stuck-low 或 TPS boot setpoint 不可达时，才允许短暂拉高 `CE_TPS` 做 hard-start；boot setpoint 写入成功后，固件继续释放总线并等待约 3 秒才访问 `SW2303`。TPS 是否进入 5V 设定不得根据 INA226 遥测读数判断。若 `SW2303` 上电后 `SDA_TPS` 仍为低，固件保持 TPS boot 输出并等待总线释放，不反复拉高 `CE_TPS`。
+- [x] 固件必须固定周期读取 SW2303 目标电压/限流寄存器并跟随，不能用协议枚举或快充标志作为是否读取目标值的门槛；启动恢复阶段在首次稳定读通后写一次 SW2303 启动 `Enable Profile`，把协议/档位恢复到已知配置。
+- [x] 固件不得读取、建模、记录或展示禁用的 SW2303 状态位；TPS 输出、USB-C present、协议活动、读取分支、状态机、错误恢复和 UI 状态都不得依赖该状态位。
 - [x] `R31/R32` 已作为 USB2.0 串联电阻使用：`R31=22Ω (ESP_DM↔$2N245)`、`R32=22Ω (ESP_DP↔$2N246)`；旧反馈分压/短接相关的 `R33/R41/R42/R50` 不在网表中。
 - [ ] 若产品需求包含 QC/BC1.2 等依赖 `DP/DM` 的快充兼容，请确认 SW2303 的 `DP/DM` 引脚在网表/原理图中已接入（否则仅剩 Type‑C/PD 走 CC）。
 

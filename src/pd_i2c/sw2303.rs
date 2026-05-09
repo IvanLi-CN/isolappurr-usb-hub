@@ -15,7 +15,6 @@ pub struct EnableProfileStatus {
     pub system_status0: Option<sw2303::registers::SystemStatus0Flags>,
     pub system_status1: Option<sw2303::registers::SystemStatus1Flags>,
     pub system_status2: Option<sw2303::registers::SystemStatus2Flags>,
-    pub system_status3: Option<sw2303::registers::SystemStatus3Flags>,
 }
 
 /// Apply SW2303 "Enable Profile" (full) configuration:
@@ -104,7 +103,6 @@ where
     let system_status0 = dev.get_system_status0().await.ok();
     let system_status1 = dev.get_system_status_1().await.ok();
     let system_status2 = dev.get_system_status_2().await.ok();
-    let system_status3 = dev.get_system_status3().await.ok();
 
     Ok(EnableProfileStatus {
         power_config_register_mode,
@@ -118,7 +116,6 @@ where
         system_status0,
         system_status1,
         system_status2,
-        system_status3,
     })
 }
 
@@ -130,18 +127,51 @@ where
     I2C: I2c,
     I2C::Error: core::fmt::Debug,
 {
+    use sw2303::registers::{Register, constants::pd};
+
     let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
 
-    let online = dev.is_sink_device_connected().await?;
+    let status = dev.read_register(Register::FastChargingStatus).await?;
+    let fast_protocol =
+        (status & sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL.bits()) != 0;
+    let fast_voltage = (status & sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE.bits()) != 0;
+    let negotiated_protocol = match status & 0x0f {
+        pd::PROTOCOL_QC20 => Some(sw2303::ProtocolType::QC20),
+        pd::PROTOCOL_QC30 => Some(sw2303::ProtocolType::QC30),
+        pd::PROTOCOL_FCP => Some(sw2303::ProtocolType::FCP),
+        pd::PROTOCOL_SCP => Some(sw2303::ProtocolType::SCP),
+        pd::PROTOCOL_PD_FIX | pd::PROTOCOL_PD_PPS => Some(sw2303::ProtocolType::PD),
+        pd::PROTOCOL_PE20 => Some(sw2303::ProtocolType::PE20),
+        pd::PROTOCOL_SFCP => Some(sw2303::ProtocolType::SFCP),
+        pd::PROTOCOL_AFC => Some(sw2303::ProtocolType::AFC),
+        _ => None,
+    };
     let req = dev.get_power_request().await?;
-    let fc = dev.get_fast_charging_status().await?;
-    let negotiated_protocol = dev.get_negotiated_protocol().await?;
 
     Ok(PowerRequest {
-        online,
-        fast_protocol: fc.contains(sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL),
-        fast_voltage: fc.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE),
+        fast_protocol,
+        fast_voltage,
         negotiated_protocol,
+        v_req_mv: req.voltage_mv,
+        i_req_ma: req.current_limit_ma,
+    })
+}
+
+/// Read only the SW2303 target voltage/current registers used to drive TPS55288.
+pub async fn read_power_target<I2C>(
+    i2c: &mut I2C,
+) -> Result<PowerRequest, sw2303::error::Error<I2C::Error>>
+where
+    I2C: I2c,
+    I2C::Error: core::fmt::Debug,
+{
+    let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
+    let req = dev.get_power_request().await?;
+
+    Ok(PowerRequest {
+        fast_protocol: false,
+        fast_voltage: false,
+        negotiated_protocol: None,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
     })

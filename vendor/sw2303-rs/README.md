@@ -8,7 +8,6 @@ A Rust driver for the SW2303 USB PD (Power Delivery) controller chip, designed f
 - **Async support**: Optional async/await support with `async` feature
 - **Defmt logging**: Optional structured logging with `defmt` feature
 - **Type-safe register access**: Strongly typed register definitions
-- **Device detection**: Sink device connection monitoring
 - **Protocol configuration**: Complete USB PD and fast charging protocol support
 - **Error handling**: Comprehensive error types for robust applications
 
@@ -60,10 +59,8 @@ where I2C::Error: core::fmt::Debug
     sw2303.unlock_write_enable_0()?;
     sw2303.set_power_config(65)?; // Set to 65W
 
-    // Check if a sink device is connected
-    if sw2303.is_sink_device_connected()? {
-        // Sink device connected
-    }
+    // Read protocol state when needed.
+    let _protocol = sw2303.get_negotiated_protocol()?;
 
     Ok(())
 }
@@ -122,16 +119,14 @@ where I2C::Error: core::fmt::Debug
     sw2303.configure_type_c(type_c_config)?;
 
     // Monitor protocol negotiation
-    if sw2303.is_sink_device_connected()? {
-        if let Some(protocol) = sw2303.get_negotiated_protocol()? {
-            match protocol {
-                ProtocolType::PD => println!("PD protocol negotiated"),
-                ProtocolType::QC20 => println!("QC2.0 protocol negotiated"),
-                ProtocolType::QC30 => println!("QC3.0 protocol negotiated"),
-                ProtocolType::FCP => println!("FCP protocol negotiated"),
-                ProtocolType::AFC => println!("AFC protocol negotiated"),
-                _ => println!("Other protocol negotiated"),
-            }
+    if let Some(protocol) = sw2303.get_negotiated_protocol()? {
+        match protocol {
+            ProtocolType::PD => println!("PD protocol negotiated"),
+            ProtocolType::QC20 => println!("QC2.0 protocol negotiated"),
+            ProtocolType::QC30 => println!("QC3.0 protocol negotiated"),
+            ProtocolType::FCP => println!("FCP protocol negotiated"),
+            ProtocolType::AFC => println!("AFC protocol negotiated"),
+            _ => println!("Other protocol negotiated"),
         }
     }
 
@@ -206,10 +201,8 @@ where I2C::Error: core::fmt::Debug
     // Initialize asynchronously
     sw2303.init().await?;
 
-    // Check sink device connection
-    if sw2303.is_sink_device_connected().await? {
-        // Handle connected device
-    }
+    // Check protocol state
+    let _protocol = sw2303.get_negotiated_protocol().await?;
 
     Ok(())
 }
@@ -226,7 +219,6 @@ where I2C::Error: core::fmt::Debug
 This driver is designed for the SW2303 USB PD controller. The SW2303 is a USB PD controller that supports:
 
 - USB PD charging management
-- Sink device detection
 - Power delivery control
 - Status monitoring
 - I2C configuration interface
