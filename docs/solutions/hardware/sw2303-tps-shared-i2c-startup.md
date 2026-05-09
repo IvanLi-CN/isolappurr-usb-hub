@@ -16,6 +16,7 @@ symptoms:
   - After TPS 5V boot output is enabled, SDA_TPS can be held low while SCL_TPS stays high.
   - SW2303 cannot be read when SDA_TPS is held low.
   - SW2303 target reads can ACK only after its POR window while the bus stays released.
+  - Shorter SW2303 POR holds can show transitional target values before settling to the negotiated 7 V request.
 root_cause: SW2303 VIN is powered by TPS55288 VOUT while SW2303 and TPS55288 share SDA_TPS/SCL_TPS, so firmware must keep SDA_TPS/SCL_TPS released through SW2303 POR before using the shared bus.
 resolution_type: firmware-guardrail
 ---
@@ -37,16 +38,22 @@ valid I2C target until its POR window has completed with the bus released.
 - After TPS `OE` is cleared and active discharge is enabled for about 1 second,
   `SDA_TPS/SCL_TPS` can both read low; treat this as a shared-bus stuck-low
   condition before trying to configure the 5 V boot setpoint.
-- A single `CE_TPS` hard-start can restore the bus; on the tested board the
-  lines returned high about 50 ms after CE release, while the first post-POR TPS
-  I2C transaction still required a controlled retry.
+- A `CE_TPS` hard-start can restore the bus when the shared bus is stuck low;
+  on the tested board the lines returned high after a few hundred milliseconds
+  of recovery polling.
 - If the MCU starts I2C traffic while SW2303 is still in its POR window, the
   shared bus can fail with `SW2303(0x3C)` read timeouts.
 - With `SDA_TPS/SCL_TPS` released through the SW2303 POR window, logs show
   `sda_high=true scl_high=true` before the first SW2303 target read.
-- A too-short POR wait made even a single SW2303 register probe require about
-  14-15 retries; a longer released-bus POR wait reduced the first target read
-  to about 1 retry on the tested board.
+- A shorter POR wait can still work, but the first visible SW2303 targets may
+  step through intermediate values such as `5V/3A`, `5V/3.25A`, or
+  `5.53V/1A` before settling at the negotiated `7V/1A`.
+- A 100 ms POR hold was stable in long-run testing and still let the first
+  SW2303 read settle to `7V/1A` on the tested board.
+- A 500 ms or 800 ms POR hold also worked, but did not improve the final
+  target-read behavior enough to justify the extra wait.
+- Skipping the CE recovery path altogether left the startup stuck and produced
+  no useful boot logs on the tested board.
 
 ## Root Cause
 
@@ -59,7 +66,9 @@ Firmware can improve TPS startup by holding `SDA_TPS/SCL_TPS` released before
 I2C peripheral takeover and by using `CE_TPS` only as a TPS hard-start fallback.
 After the TPS 5 V setpoint is programmed, firmware must again release
 `SDA_TPS/SCL_TPS` through SW2303 POR, then bind the I2C peripheral and start
-reading SW2303 target voltage/current.
+reading SW2303 target voltage/current. The apparent SW2303 "ramp" in target
+reads is normal and should be treated as part of its own control loop, not as a
+failure signal.
 
 ## Resolution
 
@@ -76,8 +85,9 @@ Use this firmware startup sequence:
    the last TPS transaction before the SW2303 POR hold. If this is immediately
    after a hard-start, allow a bounded retry for the first post-POR TPS I2C
    transaction.
-6. After TPS 5 V setpoint success, release `SDA_TPS/SCL_TPS` for about 1.005 seconds
-   before SW2303 I2C.
+6. After TPS 5 V setpoint success, release `SDA_TPS/SCL_TPS` for about 100 ms
+   before SW2303 I2C on the tested board; longer holds worked too, but did not
+   improve the observed final SW2303 behavior.
 7. Poll SW2303 target voltage/current from the structured driver path and keep
    the last valid target if a single read window is missed.
 8. Avoid TPS no-op writes when the SW2303 target is still the 5 V boot setpoint;
@@ -98,12 +108,15 @@ Guardrails:
 - Do not replace SW2303 target reads with a burst read unless the register map
   explicitly guarantees auto-increment; the tested burst read returned invalid
   voltage/current values.
+- Treat early SW2303 target transitions as expected behavior if the bus stays
+  readable and the values converge to the negotiated request.
 
 ## References
 
 - `src/bin/main.rs`
 - `src/pd_i2c/tps55288.rs`
 - `src/pd_i2c/sw2303.rs`
+- `docs/solutions/hardware/usb-c-sink-output-verification.md`
 - `docs/hardware-variants.md`
 - `docs/pd-i2c-coordinator-design.md`
 - `docs/netlist/tps-sw-checklist.md`
