@@ -110,7 +110,7 @@
 3) 通过 `TPS55288` 的 `OE` 寄存器关闭输出并开启主动放电，延迟约 1 秒。
 4) 放电窗口结束后释放并读取 `SCL_TPS/SDA_TPS`。若总线被拉低，说明 `OE` 路径之后的共享总线不可用；此时允许短暂拉高 `CE_TPS` 做一次 hard-start，释放后等待总线恢复高电平。
 5) MCU 向 `TPS55288` 写入 5V boot setpoint；该步骤不得等待遥测、屏幕或其他无关初始化完成。若上一步刚发生 hard-start，允许对 POR 后首笔 TPS I2C 做受控重试。
-6) 5V boot setpoint 写入成功后，固件继续以 open-drain 释放 `SCL_TPS/SDA_TPS` 并等待约 1.05 秒，再允许任何 `SW2303` I2C 事务；等待窗口内也不得执行非必要 PD I2C 事务，包括 TPS status/fault 读取。
+6) 5V boot setpoint 写入成功后，固件继续以 open-drain 释放 `SCL_TPS/SDA_TPS` 并等待约 1.005 秒，再允许任何 `SW2303` I2C 事务；等待窗口内也不得执行非必要 PD I2C 事务，包括 TPS status/fault 读取。
 7) 若首次 `SW2303` 读取前出现 stuck-low，固件保持 TPS boot 输出并等待总线释放，不反复拉高 `CE_TPS`。
 8) 等待窗口结束后，以固定周期轮询 `SW2303` 当前请求；每次读取目标电压/限流字段，并以该目标字段作为 TPS 跟随依据。
 9) 读取 `SW2303` 当前设置（目标电压/限流/协议），转换成 TPS setpoint。
@@ -118,7 +118,7 @@
 
 约束：`SW2303` 与 `TPS55288` 共用 `SDA_TPS/SCL_TPS`，而 `SW2303` 的 `VIN` 来自 `VOUT_TPS`。如果 `VOUT_TPS` 建立前或建立后 `SW2303` 将 SDA 拉低，MCU 无法通过同一条 I2C 总线完成对应阶段的配置或读取。这类问题需要硬件上保证 `SW2303` 不持续箝位总线，或为 `SW2303` 增加总线隔离/调整供电与模式脚连接。
 
-启动期不对 `SW2303` 立即执行 enable profile 写入。TPS 是否进入 5V 输出设定不得根据 INA226 遥测读数判断；固件必须以 `TPS55288` I2C boot setpoint 写入成功为依据。boot setpoint 写入成功后，固件继续释放 `SDA_TPS/SCL_TPS` 并等待约 1.05 秒，再允许任何 `SW2303` I2C 事务。等待窗口内不得执行非必要 PD I2C 事务，包括 TPS status/fault 读取。若 `TPS55288` apply 失败或 TPS fault，则清除 SW 访问许可，重新等待下一次 TPS 5V setpoint 成功写入后的 POR 窗口。常规 USB-C 电源开关、恢复和停机优先通过 TPS55288 `OE` 寄存器完成。`CE_TPS` 只允许用于 TPS I2C 不可达时的 hard-start 或调用方明确接受 `SW2303` 掉电副作用的硬关断。若 `SW2303` 上电后仍持续拉低 SDA，固件不得继续制造 I2C 超时或反复掉电，应保持 TPS boot 输出并等待总线电平恢复。`SW2303` 启动恢复阶段先只读取目标电压/限流；在首次稳定读通后，固件应执行一次启动 `Enable Profile`，把协议/档位恢复到已知配置，再进入常规轮询。若 profile 写入失败，继续保持只读协同，但要把该状态明确记入日志。
+启动期不对 `SW2303` 立即执行 enable profile 写入。TPS 是否进入 5V 输出设定不得根据 INA226 遥测读数判断；固件必须以 `TPS55288` I2C boot setpoint 写入成功为依据。boot setpoint 写入成功后，固件继续释放 `SDA_TPS/SCL_TPS` 并等待约 1.005 秒，再允许任何 `SW2303` I2C 事务。等待窗口内不得执行非必要 PD I2C 事务，包括 TPS status/fault 读取。若 `TPS55288` apply 失败或 TPS fault，则清除 SW 访问许可，重新等待下一次 TPS 5V setpoint 成功写入后的 POR 窗口。常规 USB-C 电源开关、恢复和停机优先通过 TPS55288 `OE` 寄存器完成。`CE_TPS` 只允许用于 TPS I2C 不可达时的 hard-start 或调用方明确接受 `SW2303` 掉电副作用的硬关断。若 `SW2303` 上电后仍持续拉低 SDA，固件不得继续制造 I2C 超时或反复掉电，应保持 TPS boot 输出并等待总线电平恢复。`SW2303` 启动恢复阶段先只读取目标电压/限流；在首次稳定读通后，固件应执行一次启动 `Enable Profile`，把协议/档位恢复到已知配置，再进入常规轮询。若 profile 写入失败，继续保持只读协同，但要把该状态明确记入日志。
 
 ### 5.2 协商变化 / PPS 调节
 

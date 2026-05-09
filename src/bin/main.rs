@@ -178,14 +178,15 @@ const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
 const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
 const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
 const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
-const TPS_SW_PRECHARGE_MS: u64 = 100;
-const SW2303_POR_RELEASE_MS: u64 = 1_050;
+const TPS_SW_PRECHARGE_MS: u64 = 10;
+const SW2303_POR_RELEASE_MS: u64 = 1_005;
 const PD_I2C_KHZ: u32 = 400;
-const SW2303_POLL_MS: u64 = 100;
+const PD_I2C_TIMEOUT_MS: u64 = 10;
+const SW2303_POLL_MS: u64 = 20;
 const SW2303_ERROR_RETRY_MS: u64 = 100;
 const SW2303_READ_RETRIES: u8 = 20;
-const SW2303_READ_RETRY_DELAY_MS: u64 = 100;
-const SW2303_STABLE_READS_BEFORE_TPS: u16 = 3;
+const SW2303_READ_RETRY_DELAY_MS: u64 = 5;
+const SW2303_STABLE_READS_BEFORE_TPS: u16 = 1;
 const SW2303_STABLE_READS_BEFORE_TPS_STATUS: u16 = 500;
 const SW2303_STABLE_READS_BEFORE_PROFILE: u16 = 50;
 const TPS55288_MODE_REG: u8 = 0x06;
@@ -745,7 +746,9 @@ async fn main(_spawner: Spawner) {
         peripherals.I2C0,
         I2cConfig::default()
             .with_frequency(Rate::from_khz(PD_I2C_KHZ))
-            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(100))),
+            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
+                PD_I2C_TIMEOUT_MS,
+            ))),
     )
     .unwrap()
     .with_sda(pd_sda)
@@ -869,7 +872,7 @@ async fn main(_spawner: Spawner) {
     // SDA/SCL have been held high, then program TPS; SW2303 POR starts after
     // the final TPS OE write completes.
     let _ = ce_tps.set_low();
-    Timer::after_millis(200).await;
+    Timer::after_millis(10).await;
     match stop_output_and_enable_discharge(&mut i2c).await {
         Ok(()) => {
             info!("tps55288 boot discharge: OE off and active discharge enabled");
@@ -882,7 +885,7 @@ async fn main(_spawner: Spawner) {
             tps_state.last = None;
         }
     }
-    Timer::after_millis(1_000).await;
+    Timer::after_millis(50).await;
     {
         let i2c_inner = i2c.into_inner();
         let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
@@ -907,13 +910,13 @@ async fn main(_spawner: Spawner) {
         if !bus_released_after_discharge {
             defmt::warn!("pd i2c after discharge: bus held low; hard-cycling CE_TPS once");
             let _ = ce_tps.set_high();
-            Timer::after_millis(150).await;
+            Timer::after_millis(10).await;
             let _ = ce_tps.set_low();
             let mut recovered_after_ms = 0;
-            for step in 1..=40 {
-                Timer::after_millis(50).await;
+            for step in 1..=100 {
+                Timer::after_millis(10).await;
                 if pd_sda.is_high() && pd_scl.is_high() {
-                    recovered_after_ms = step * 50;
+                    recovered_after_ms = step * 10;
                     break;
                 }
             }
@@ -929,7 +932,9 @@ async fn main(_spawner: Spawner) {
         let _ = i2c.inner_mut().apply_config(
             &I2cConfig::default()
                 .with_frequency(Rate::from_khz(PD_I2C_KHZ))
-                .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(100))),
+                .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
+                    PD_I2C_TIMEOUT_MS,
+                ))),
         );
     }
 
@@ -1030,7 +1035,7 @@ async fn main(_spawner: Spawner) {
                         "tps55288 boot supply: TPS I2C still failing; hard-cycling CE_TPS once"
                     );
                     let _ = ce_tps.set_high();
-                    Timer::after_millis(150).await;
+                    Timer::after_millis(10).await;
                     let _ = ce_tps.set_low();
                     Timer::after_millis(1_600).await;
                 } else if attempt < 4 {
@@ -1138,7 +1143,7 @@ async fn main(_spawner: Spawner) {
                         &I2cConfig::default()
                             .with_frequency(Rate::from_khz(PD_I2C_KHZ))
                             .with_software_timeout(SoftwareTimeout::Transaction(
-                                Duration::from_millis(100),
+                                Duration::from_millis(PD_I2C_TIMEOUT_MS),
                             )),
                     );
                     if retry > 0 {
@@ -1167,7 +1172,7 @@ async fn main(_spawner: Spawner) {
                         &I2cConfig::default()
                             .with_frequency(Rate::from_khz(PD_I2C_KHZ))
                             .with_software_timeout(SoftwareTimeout::Transaction(
-                                Duration::from_millis(100),
+                                Duration::from_millis(PD_I2C_TIMEOUT_MS),
                             )),
                     );
                     if !sw2303_error_latched {
