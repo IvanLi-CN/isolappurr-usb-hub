@@ -52,8 +52,8 @@ valid I2C target until its POR window has completed with the bus released.
   SW2303 read settle to `7V/1A` on the tested board.
 - A 500 ms or 800 ms POR hold also worked, but did not improve the final
   target-read behavior enough to justify the extra wait.
-- Skipping the CE recovery path altogether left the startup stuck and produced
-  no useful boot logs on the tested board.
+- On the tested board, skipping CE recovery on the known stuck-low boot path
+  left startup stuck and produced no useful boot logs.
 
 ## Root Cause
 
@@ -63,7 +63,8 @@ MCU drives I2C traffic during that interval, SW2303 can hold or perturb SDA and
 the shared bus becomes unusable for both TPS55288 and SW2303.
 
 Firmware can improve TPS startup by holding `SDA_TPS/SCL_TPS` released before
-I2C peripheral takeover and by using `CE_TPS` only as a TPS hard-start fallback.
+I2C peripheral takeover and by using `CE_TPS` only as a TPS hard-start fallback
+when the shared bus is already stuck low or repeated TPS I2C attempts fail.
 After the TPS 5 V setpoint is programmed, firmware must again release
 `SDA_TPS/SCL_TPS` through SW2303 POR, then bind the I2C peripheral and start
 reading SW2303 target voltage/current. The apparent SW2303 "ramp" in target
@@ -80,7 +81,9 @@ Use this firmware startup sequence:
 3. Release `CE_TPS`, use TPS55288 `OE` plus active discharge to stop output,
    wait about 1 second, then release and read `SDA_TPS/SCL_TPS`.
 4. If the bus is stuck low after discharge, pulse `CE_TPS` once, wait until
-   `SDA_TPS/SCL_TPS` are high, then retry TPS boot setup.
+   `SDA_TPS/SCL_TPS` are high, then retry TPS boot setup. If the first TPS I2C
+   retry still fails, treat CE recovery as the next fallback rather than as a
+   routine pre-step.
 5. Program TPS55288 registers before enabling output; make the TPS `OE` write
    the last TPS transaction before the SW2303 POR hold. If this is immediately
    after a hard-start, allow a bounded retry for the first post-POR TPS I2C
@@ -100,8 +103,9 @@ Guardrails:
 - Do not use INA226 to decide whether TPS output is ready for SW2303 access.
 - Do not use `CE_TPS` for routine power-path control; prefer TPS55288 `OE`.
 - Use `CE_TPS` only for hard restrap/recovery when TPS I2C cannot otherwise
-  establish the boot setpoint or when the post-discharge shared bus is stuck
-  low.
+  establish the boot setpoint, when the post-discharge shared bus is stuck low,
+  or when a retry after a transient I2C failure still cannot complete the boot
+  setpoint.
 - Do not force SW2303 pass-path control to make connector output appear.
 - Use SW2303 target voltage/current as the PD source control input; do not add
   SW2303-derived connection-state gating.
