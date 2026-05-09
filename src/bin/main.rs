@@ -189,6 +189,12 @@ const SW2303_READ_RETRY_DELAY_MS: u64 = 5;
 const SW2303_STABLE_READS_BEFORE_TPS: u16 = 1;
 const SW2303_STABLE_READS_BEFORE_TPS_STATUS: u16 = 500;
 const SW2303_STABLE_READS_BEFORE_PROFILE: u16 = 50;
+const BOOT_PD_DISCHARGE_SETTLE_MS: u64 = 50;
+const BOOT_PD_RELEASE_SETTLE_MS: u64 = 10;
+const BOOT_CE_RECOVERY_HOLD_MS: u64 = 5;
+const BOOT_CE_RECOVERY_POLL_MS: u64 = 5;
+const BOOT_CE_RELEASE_SETTLE_MS: u64 = 10;
+const BOOT_TPS_RETRY_DELAY_MS: u64 = 10;
 const TPS55288_MODE_REG: u8 = 0x06;
 
 // Toast colors (RGB565 raw).
@@ -535,6 +541,10 @@ fn uptime_ms_from_instant(now: Instant) -> u64 {
     (now.duration_since_epoch().as_micros() / 1_000) as u64
 }
 
+fn elapsed_ms_since(start: Instant) -> u64 {
+    (start.elapsed().as_micros() / 1_000) as u64
+}
+
 #[cfg(feature = "net_http")]
 fn port_metrics_to_api_telemetry(
     present: bool,
@@ -760,6 +770,217 @@ async fn main(_spawner: Spawner) {
         PD_I2C_KHZ
     );
 
+    let mut tps_state = TpsApplyState::new();
+    let mut last_request: Option<PowerRequest> = None;
+    let mut last_valid_sw2303_request: Option<PowerRequest> = None;
+    let mut last_fast_protocol: Option<bool> = None;
+
+    let mut sw2303_error_latched = false;
+    let mut tps_error_latched = false;
+    let mut ui_error_latched = false;
+    let mut sw2303_profile_applied = false;
+    let mut last_sw2303_profile_attempt: Option<Instant> = None;
+    let mut last_sw2303_read_attempt: Option<Instant> = None;
+    let mut sw2303_stable_reads: u16 = 0;
+    let mut tps_5v_setpoint_since: Option<Instant> = None;
+    let mut last_tps_status: Option<(
+        tps55288::data_types::OperatingStatus,
+        tps55288::data_types::FaultStatus,
+    )> = None;
+    let mut button_fast_loop_until: Option<Instant> = None;
+
+    let pd_boot_started = Instant::now();
+    let boot_sp = boot_supply_setpoint();
+    // CE_TPS has held TPS/SW2303 off since GPIO init. Release TPS only after
+    // SDA/SCL have been held high, then program TPS; SW2303 POR starts after
+    // the final TPS OE write completes.
+    let _ = ce_tps.set_low();
+    Timer::after_millis(BOOT_CE_RELEASE_SETTLE_MS).await;
+    match stop_output_and_enable_discharge(&mut i2c).await {
+        Ok(()) => {
+            info!("tps55288 boot discharge: OE off and active discharge enabled");
+        }
+        Err(err) => {
+            defmt::warn!(
+                "tps55288 boot discharge failed; continuing with boot setpoint: {:?}",
+                defmt::Debug2Format(&err)
+            );
+            tps_state.last = None;
+        }
+    }
+    Timer::after_millis(BOOT_PD_DISCHARGE_SETTLE_MS).await;
+    {
+        let i2c_inner = i2c.into_inner();
+        let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
+        let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
+        pd_sda.set_input_enable(true);
+        pd_scl.set_input_enable(true);
+        pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
+        pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
+        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+        pd_sda.set_high();
+        pd_scl.set_high();
+        pd_sda.set_output_enable(false);
+        pd_scl.set_output_enable(false);
+        Timer::after_millis(BOOT_PD_RELEASE_SETTLE_MS).await;
+        let bus_released_after_discharge = pd_sda.is_high() && pd_scl.is_high();
+        info!(
+            "pd i2c after discharge: sda_high={} scl_high={}",
+            pd_sda.is_high(),
+            pd_scl.is_high()
+        );
+        if !bus_released_after_discharge {
+            defmt::warn!("pd i2c after discharge: bus held low; hard-cycling CE_TPS once");
+            let _ = ce_tps.set_high();
+            Timer::after_millis(BOOT_CE_RECOVERY_HOLD_MS).await;
+            let _ = ce_tps.set_low();
+            let mut recovered_after_ms = 0;
+            for step in 1..=100 {
+                Timer::after_millis(BOOT_CE_RECOVERY_POLL_MS).await;
+                if pd_sda.is_high() && pd_scl.is_high() {
+                    recovered_after_ms =
+                        BOOT_CE_RECOVERY_HOLD_MS as u32 + step * BOOT_CE_RECOVERY_POLL_MS as u32;
+                    break;
+                }
+            }
+            info!(
+                "pd i2c after CE recovery: sda_high={} scl_high={} recovered_after_ms={}",
+                pd_sda.is_high(),
+                pd_scl.is_high(),
+                recovered_after_ms
+            );
+        }
+        let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
+        i2c = I2cAllowlist::new(i2c_inner);
+        let _ = i2c.inner_mut().apply_config(
+            &I2cConfig::default()
+                .with_frequency(Rate::from_khz(PD_I2C_KHZ))
+                .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
+                    PD_I2C_TIMEOUT_MS,
+                ))),
+        );
+    }
+
+    // SW2303 is powered from the TPS output path, so bring TPS to a conservative
+    // 5V keep-alive setpoint before touching SW2303 over I2C.
+    let mut tps_boot_ready = false;
+    let mut sw2303_i2c_allowed = false;
+    for attempt in 1..=4 {
+        match apply_setpoint_before_enable(&mut i2c, &mut tps_state, boot_sp).await {
+            Ok(mode_with_oe) => {
+                let i2c_inner = i2c.into_inner();
+                let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
+                let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
+                pd_sda.set_input_enable(true);
+                pd_scl.set_input_enable(true);
+                pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
+                pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
+                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                pd_sda.set_high();
+                pd_scl.set_high();
+                pd_sda.set_output_enable(false);
+                pd_scl.set_output_enable(false);
+
+                let mode_ack =
+                    bitbang_tps55288_mode_write(&mut pd_sda, &mut pd_scl, mode_with_oe).await;
+                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                pd_sda.set_high();
+                pd_scl.set_high();
+                pd_sda.set_output_enable(false);
+                pd_scl.set_output_enable(false);
+
+                tps_error_latched = false;
+                tps_boot_ready = true;
+                tps_5v_setpoint_since = Some(Instant::now());
+                tps_state.last = Some(boot_sp);
+                if !mode_ack {
+                    defmt::warn!(
+                        "tps55288 boot OE bitbang write had missing ACK; continuing into SW2303 POR hold"
+                    );
+                }
+                info!(
+                    "tps55288 boot supply applied (attempt {}/4): v={}mV ilim={}mA elapsed_ms={}; PD I2C lines held high",
+                    attempt,
+                    boot_sp.v_out_mv,
+                    boot_sp.i_lim_ma,
+                    elapsed_ms_since(pd_boot_started)
+                );
+                info!(
+                    "sw2303 power gate: holding SDA/SCL high for {}ms after TPS boot setpoint",
+                    SW2303_POR_RELEASE_MS
+                );
+                Timer::after_millis(SW2303_POR_RELEASE_MS).await;
+                pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
+                pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
+                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                pd_sda.set_high();
+                pd_scl.set_high();
+                pd_sda.set_output_enable(false);
+                pd_scl.set_output_enable(false);
+                Timer::after_millis(BOOT_PD_RELEASE_SETTLE_MS).await;
+                let sw2303_start_bus_released = pd_sda.is_high() && pd_scl.is_high();
+                info!(
+                    "sw2303 power gate: SW2303 POR delay elapsed sda_high={} scl_high={} elapsed_ms={}",
+                    pd_sda.is_high(),
+                    pd_scl.is_high(),
+                    elapsed_ms_since(pd_boot_started)
+                );
+                let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
+                i2c = I2cAllowlist::new(i2c_inner);
+
+                if !sw2303_start_bus_released {
+                    defmt::warn!(
+                        "sw2303 power gate: PD I2C release not established; keeping TPS boot output and skipping SW2303 access"
+                    );
+                    sw2303_i2c_allowed = false;
+                } else {
+                    sw2303_i2c_allowed = true;
+                }
+                break;
+            }
+            Err(err) => {
+                if attempt == 4 {
+                    defmt::warn!(
+                        "tps55288 boot supply apply failed (attempt {}/4): {:?}",
+                        attempt,
+                        defmt::Debug2Format(&err)
+                    );
+                } else {
+                    info!(
+                        "tps55288 boot supply retrying after transient I2C error (attempt {}/4): {:?}",
+                        attempt,
+                        defmt::Debug2Format(&err)
+                    );
+                }
+                tps_state.last = None;
+                tps_error_latched = true;
+                if attempt == 3 {
+                    defmt::warn!(
+                        "tps55288 boot supply: TPS I2C still failing; hard-cycling CE_TPS once"
+                    );
+                    let _ = ce_tps.set_high();
+                    Timer::after_millis(10).await;
+                    let _ = ce_tps.set_low();
+                    Timer::after_millis(1_600).await;
+                } else if attempt < 4 {
+                    Timer::after_millis(BOOT_TPS_RETRY_DELAY_MS).await;
+                }
+            }
+        }
+    }
+    if !tps_boot_ready {
+        defmt::warn!("tps55288 boot supply not ready; skipping boot-time SW2303 profile");
+        prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
+    }
+
+    if tps_boot_ready {
+        info!("sw2303 profile: deferred until first successful SW2303 read");
+    }
+
     // Telemetry I2C bus (no scanning; allowlist enforced in telemetry wrapper).
     // SDA = GPIO8, SCL = GPIO9.
     let i2c_telemetry = I2c::new(
@@ -846,211 +1067,6 @@ async fn main(_spawner: Spawner) {
             defmt::Debug2Format(&err)
         );
         prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::DisplayInit));
-    }
-
-    let mut tps_state = TpsApplyState::new();
-    let mut last_request: Option<PowerRequest> = None;
-    let mut last_valid_sw2303_request: Option<PowerRequest> = None;
-    let mut last_fast_protocol: Option<bool> = None;
-
-    let mut sw2303_error_latched = false;
-    let mut tps_error_latched = false;
-    let mut ui_error_latched = false;
-    let mut sw2303_profile_applied = false;
-    let mut last_sw2303_profile_attempt: Option<Instant> = None;
-    let mut last_sw2303_read_attempt: Option<Instant> = None;
-    let mut sw2303_stable_reads: u16 = 0;
-    let mut tps_5v_setpoint_since: Option<Instant> = None;
-    let mut last_tps_status: Option<(
-        tps55288::data_types::OperatingStatus,
-        tps55288::data_types::FaultStatus,
-    )> = None;
-    let mut button_fast_loop_until: Option<Instant> = None;
-
-    let boot_sp = boot_supply_setpoint();
-    // CE_TPS has held TPS/SW2303 off since GPIO init. Release TPS only after
-    // SDA/SCL have been held high, then program TPS; SW2303 POR starts after
-    // the final TPS OE write completes.
-    let _ = ce_tps.set_low();
-    Timer::after_millis(10).await;
-    match stop_output_and_enable_discharge(&mut i2c).await {
-        Ok(()) => {
-            info!("tps55288 boot discharge: OE off and active discharge enabled");
-        }
-        Err(err) => {
-            defmt::warn!(
-                "tps55288 boot discharge failed; continuing with boot setpoint: {:?}",
-                defmt::Debug2Format(&err)
-            );
-            tps_state.last = None;
-        }
-    }
-    Timer::after_millis(50).await;
-    {
-        let i2c_inner = i2c.into_inner();
-        let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
-        let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
-        pd_sda.set_input_enable(true);
-        pd_scl.set_input_enable(true);
-        pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-        pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-        pd_sda.set_high();
-        pd_scl.set_high();
-        pd_sda.set_output_enable(false);
-        pd_scl.set_output_enable(false);
-        Timer::after_millis(10).await;
-        let bus_released_after_discharge = pd_sda.is_high() && pd_scl.is_high();
-        info!(
-            "pd i2c after discharge: sda_high={} scl_high={}",
-            pd_sda.is_high(),
-            pd_scl.is_high()
-        );
-        if !bus_released_after_discharge {
-            defmt::warn!("pd i2c after discharge: bus held low; hard-cycling CE_TPS once");
-            let _ = ce_tps.set_high();
-            Timer::after_millis(10).await;
-            let _ = ce_tps.set_low();
-            let mut recovered_after_ms = 0;
-            for step in 1..=100 {
-                Timer::after_millis(10).await;
-                if pd_sda.is_high() && pd_scl.is_high() {
-                    recovered_after_ms = step * 10;
-                    break;
-                }
-            }
-            info!(
-                "pd i2c after CE recovery: sda_high={} scl_high={} recovered_after_ms={}",
-                pd_sda.is_high(),
-                pd_scl.is_high(),
-                recovered_after_ms
-            );
-        }
-        let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
-        i2c = I2cAllowlist::new(i2c_inner);
-        let _ = i2c.inner_mut().apply_config(
-            &I2cConfig::default()
-                .with_frequency(Rate::from_khz(PD_I2C_KHZ))
-                .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
-                    PD_I2C_TIMEOUT_MS,
-                ))),
-        );
-    }
-
-    // SW2303 is powered from the TPS output path, so bring TPS to a conservative
-    // 5V keep-alive setpoint before touching SW2303 over I2C.
-    let mut tps_boot_ready = false;
-    let mut sw2303_i2c_allowed = false;
-    for attempt in 1..=4 {
-        match apply_setpoint_before_enable(&mut i2c, &mut tps_state, boot_sp).await {
-            Ok(mode_with_oe) => {
-                let i2c_inner = i2c.into_inner();
-                let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
-                let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
-                pd_sda.set_input_enable(true);
-                pd_scl.set_input_enable(true);
-                pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_sda.set_high();
-                pd_scl.set_high();
-                pd_sda.set_output_enable(false);
-                pd_scl.set_output_enable(false);
-
-                let mode_ack =
-                    bitbang_tps55288_mode_write(&mut pd_sda, &mut pd_scl, mode_with_oe).await;
-                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_sda.set_high();
-                pd_scl.set_high();
-                pd_sda.set_output_enable(false);
-                pd_scl.set_output_enable(false);
-
-                tps_error_latched = false;
-                tps_boot_ready = true;
-                tps_5v_setpoint_since = Some(Instant::now());
-                tps_state.last = Some(boot_sp);
-                if !mode_ack {
-                    defmt::warn!(
-                        "tps55288 boot OE bitbang write had missing ACK; continuing into SW2303 POR hold"
-                    );
-                }
-                info!(
-                    "tps55288 boot supply applied (attempt {}/4): v={}mV ilim={}mA; PD I2C lines held high",
-                    attempt, boot_sp.v_out_mv, boot_sp.i_lim_ma
-                );
-                info!(
-                    "sw2303 power gate: holding SDA/SCL high for {}ms after TPS boot setpoint",
-                    SW2303_POR_RELEASE_MS
-                );
-                Timer::after_millis(SW2303_POR_RELEASE_MS).await;
-                pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_sda.set_high();
-                pd_scl.set_high();
-                pd_sda.set_output_enable(false);
-                pd_scl.set_output_enable(false);
-                Timer::after_millis(10).await;
-                let sw2303_start_bus_released = pd_sda.is_high() && pd_scl.is_high();
-                info!(
-                    "sw2303 power gate: SW2303 POR delay elapsed sda_high={} scl_high={}",
-                    pd_sda.is_high(),
-                    pd_scl.is_high()
-                );
-                let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
-                i2c = I2cAllowlist::new(i2c_inner);
-
-                if !sw2303_start_bus_released {
-                    defmt::warn!(
-                        "sw2303 power gate: PD I2C release not established; keeping TPS boot output and skipping SW2303 access"
-                    );
-                    sw2303_i2c_allowed = false;
-                } else {
-                    sw2303_i2c_allowed = true;
-                }
-                break;
-            }
-            Err(err) => {
-                if attempt == 4 {
-                    defmt::warn!(
-                        "tps55288 boot supply apply failed (attempt {}/4): {:?}",
-                        attempt,
-                        defmt::Debug2Format(&err)
-                    );
-                } else {
-                    info!(
-                        "tps55288 boot supply retrying after transient I2C error (attempt {}/4): {:?}",
-                        attempt,
-                        defmt::Debug2Format(&err)
-                    );
-                }
-                tps_state.last = None;
-                tps_error_latched = true;
-                if attempt == 3 {
-                    defmt::warn!(
-                        "tps55288 boot supply: TPS I2C still failing; hard-cycling CE_TPS once"
-                    );
-                    let _ = ce_tps.set_high();
-                    Timer::after_millis(10).await;
-                    let _ = ce_tps.set_low();
-                    Timer::after_millis(1_600).await;
-                } else if attempt < 4 {
-                    Timer::after_millis(100).await;
-                }
-            }
-        }
-    }
-    if !tps_boot_ready {
-        defmt::warn!("tps55288 boot supply not ready; skipping boot-time SW2303 profile");
-        prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
-    }
-
-    if tps_boot_ready {
-        info!("sw2303 profile: deferred until first successful SW2303 read");
     }
 
     let mut last_tick = Instant::now();
