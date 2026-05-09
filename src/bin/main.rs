@@ -178,14 +178,14 @@ const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
 const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
 const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
 const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
-const TPS_SW_PRECHARGE_MS: u64 = 1_500;
-const SW2303_POR_RELEASE_MS: u64 = 3_000;
+const TPS_SW_PRECHARGE_MS: u64 = 100;
+const SW2303_POR_RELEASE_MS: u64 = 1_050;
 const PD_I2C_KHZ: u32 = 400;
-const SW2303_POLL_MS: u64 = 200;
+const SW2303_POLL_MS: u64 = 100;
 const SW2303_ERROR_RETRY_MS: u64 = 100;
 const SW2303_READ_RETRIES: u8 = 20;
 const SW2303_READ_RETRY_DELAY_MS: u64 = 100;
-const SW2303_STABLE_READS_BEFORE_TPS: u16 = 10;
+const SW2303_STABLE_READS_BEFORE_TPS: u16 = 3;
 const SW2303_STABLE_READS_BEFORE_TPS_STATUS: u16 = 500;
 const SW2303_STABLE_READS_BEFORE_PROFILE: u16 = 50;
 const TPS55288_MODE_REG: u8 = 0x06;
@@ -907,7 +907,7 @@ async fn main(_spawner: Spawner) {
         if !bus_released_after_discharge {
             defmt::warn!("pd i2c after discharge: bus held low; hard-cycling CE_TPS once");
             let _ = ce_tps.set_high();
-            Timer::after_millis(500).await;
+            Timer::after_millis(150).await;
             let _ = ce_tps.set_low();
             let mut recovered_after_ms = 0;
             for step in 1..=40 {
@@ -1030,7 +1030,7 @@ async fn main(_spawner: Spawner) {
                         "tps55288 boot supply: TPS I2C still failing; hard-cycling CE_TPS once"
                     );
                     let _ = ce_tps.set_high();
-                    Timer::after_millis(500).await;
+                    Timer::after_millis(150).await;
                     let _ = ce_tps.set_low();
                     Timer::after_millis(1_600).await;
                 } else if attempt < 4 {

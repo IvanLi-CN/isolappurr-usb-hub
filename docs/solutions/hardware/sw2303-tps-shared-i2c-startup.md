@@ -76,7 +76,7 @@ Use this firmware startup sequence:
    the last TPS transaction before the SW2303 POR hold. If this is immediately
    after a hard-start, allow a bounded retry for the first post-POR TPS I2C
    transaction.
-6. After TPS 5 V setpoint success, release `SDA_TPS/SCL_TPS` for about 3 seconds
+6. After TPS 5 V setpoint success, release `SDA_TPS/SCL_TPS` for about 1.05 seconds
    before SW2303 I2C.
 7. Poll SW2303 target voltage/current from the structured driver path and keep
    the last valid target if a single read window is missed.
