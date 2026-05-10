@@ -790,6 +790,7 @@ async fn main(_spawner: Spawner) {
     let mut button_fast_loop_until: Option<Instant> = None;
 
     let pd_boot_started = Instant::now();
+    let mut boot_recovery_cycled = false;
     let boot_sp = boot_supply_setpoint();
     // CE_TPS has held TPS/SW2303 off since GPIO init. Release TPS only after
     // SDA/SCL have been held high, then program TPS; SW2303 POR starts after
@@ -832,7 +833,34 @@ async fn main(_spawner: Spawner) {
         );
         if !bus_released_after_discharge {
             defmt::warn!(
-                "pd i2c after discharge: bus held low; trying TPS short path before any CE recovery"
+                "pd i2c after discharge: bus held low; hard-cycling CE_TPS before TPS boot I2C"
+            );
+            let mut recovered_after_ms = 0;
+            let mut recovery_cycles = 0;
+            for cycle in 1..=3 {
+                recovery_cycles = cycle;
+                let _ = ce_tps.set_high();
+                Timer::after_millis(BOOT_CE_RECOVERY_HOLD_MS).await;
+                let _ = ce_tps.set_low();
+                for step in 1..=100 {
+                    Timer::after_millis(BOOT_CE_RECOVERY_POLL_MS).await;
+                    if pd_sda.is_high() && pd_scl.is_high() {
+                        recovered_after_ms = BOOT_CE_RECOVERY_HOLD_MS as u32
+                            + step * BOOT_CE_RECOVERY_POLL_MS as u32;
+                        break;
+                    }
+                }
+                if pd_sda.is_high() && pd_scl.is_high() {
+                    break;
+                }
+            }
+            boot_recovery_cycled = true;
+            info!(
+                "pd i2c after CE recovery: sda_high={} scl_high={} cycles={} recovered_after_ms={}",
+                pd_sda.is_high(),
+                pd_scl.is_high(),
+                recovery_cycles,
+                recovered_after_ms
             );
         }
         let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
@@ -850,7 +878,7 @@ async fn main(_spawner: Spawner) {
     // 5V keep-alive setpoint before touching SW2303 over I2C.
     let mut tps_boot_ready = false;
     let mut sw2303_i2c_allowed = false;
-    let mut boot_recovery_cycled = false;
+    let mut boot_retry_recovery_cycled = false;
     for attempt in 1..=4 {
         match apply_setpoint_before_enable(&mut i2c, &mut tps_state, boot_sp).await {
             Ok(mode_with_oe) => {
@@ -934,29 +962,32 @@ async fn main(_spawner: Spawner) {
                         attempt,
                         defmt::Debug2Format(&err)
                     );
-                } else {
-                    if !boot_recovery_cycled {
-                        defmt::warn!(
-                            "tps55288 boot short path failed on first I2C error; hard-cycling CE_TPS and retrying full recovery path: {:?}",
-                            defmt::Debug2Format(&err)
-                        );
-                        let i2c_inner = i2c.into_inner();
-                        let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
-                        let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
-                        pd_sda.set_input_enable(true);
-                        pd_scl.set_input_enable(true);
-                        pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                        pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                        pd_sda.set_high();
-                        pd_scl.set_high();
-                        pd_sda.set_output_enable(false);
-                        pd_scl.set_output_enable(false);
+                } else if !boot_retry_recovery_cycled {
+                    defmt::warn!(
+                        "tps55288 boot I2C failed after pre-boot recovery; hard-cycling CE_TPS before retry: {:?}",
+                        defmt::Debug2Format(&err)
+                    );
+                    let i2c_inner = i2c.into_inner();
+                    let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
+                    let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
+                    pd_sda.set_input_enable(true);
+                    pd_scl.set_input_enable(true);
+                    pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
+                    pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
+                    pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+                    pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                    pd_sda.set_high();
+                    pd_scl.set_high();
+                    pd_sda.set_output_enable(false);
+                    pd_scl.set_output_enable(false);
+
+                    let mut recovered_after_ms = 0;
+                    let mut recovery_cycles = 0;
+                    for cycle in 1..=3 {
+                        recovery_cycles = cycle;
                         let _ = ce_tps.set_high();
                         Timer::after_millis(BOOT_CE_RECOVERY_HOLD_MS).await;
                         let _ = ce_tps.set_low();
-                        let mut recovered_after_ms = 0;
                         for step in 1..=100 {
                             Timer::after_millis(BOOT_CE_RECOVERY_POLL_MS).await;
                             if pd_sda.is_high() && pd_scl.is_high() {
@@ -965,28 +996,33 @@ async fn main(_spawner: Spawner) {
                                 break;
                             }
                         }
-                        info!(
-                            "pd i2c after CE recovery: sda_high={} scl_high={} recovered_after_ms={}",
-                            pd_sda.is_high(),
-                            pd_scl.is_high(),
-                            recovered_after_ms
-                        );
-                        i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
-                        let _ = i2c.inner_mut().apply_config(
-                            &I2cConfig::default()
-                                .with_frequency(Rate::from_khz(PD_I2C_KHZ))
-                                .with_software_timeout(SoftwareTimeout::Transaction(
-                                    Duration::from_millis(PD_I2C_TIMEOUT_MS),
-                                )),
-                        );
-                        boot_recovery_cycled = true;
-                    } else {
-                        info!(
-                            "tps55288 boot supply retrying after transient I2C error (attempt {}/4): {:?}",
-                            attempt,
-                            defmt::Debug2Format(&err)
-                        );
+                        if pd_sda.is_high() && pd_scl.is_high() {
+                            break;
+                        }
                     }
+                    boot_retry_recovery_cycled = true;
+                    boot_recovery_cycled = true;
+                    info!(
+                        "pd i2c after retry CE recovery: sda_high={} scl_high={} cycles={} recovered_after_ms={}",
+                        pd_sda.is_high(),
+                        pd_scl.is_high(),
+                        recovery_cycles,
+                        recovered_after_ms
+                    );
+                    i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
+                    let _ = i2c.inner_mut().apply_config(
+                        &I2cConfig::default()
+                            .with_frequency(Rate::from_khz(PD_I2C_KHZ))
+                            .with_software_timeout(SoftwareTimeout::Transaction(
+                                Duration::from_millis(PD_I2C_TIMEOUT_MS),
+                            )),
+                    );
+                } else {
+                    info!(
+                        "tps55288 boot supply retrying after transient I2C error (attempt {}/4): {:?}",
+                        attempt,
+                        defmt::Debug2Format(&err)
+                    );
                 }
                 tps_state.last = None;
                 tps_error_latched = true;
@@ -1081,10 +1117,12 @@ async fn main(_spawner: Spawner) {
     info!(
         "pd boot summary: tps_ready={} path={} sw2303_i2c_allowed={} elapsed_ms={}",
         tps_boot_ready,
-        if boot_recovery_cycled {
-            "short_failed_then_ce_recovered"
+        if boot_retry_recovery_cycled {
+            "ce_recovered_before_tps_and_retry"
+        } else if boot_recovery_cycled {
+            "ce_recovered_before_tps"
         } else {
-            "short"
+            "direct"
         },
         sw2303_i2c_allowed,
         elapsed_ms_since(pd_boot_started)
