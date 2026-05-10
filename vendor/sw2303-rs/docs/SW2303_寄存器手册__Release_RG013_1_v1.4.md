@@ -93,6 +93,13 @@ Vin 低于 3V 则认为低电</td><td>R</td><td>0x0</td></tr><tr><td>1</td><td>/
 0: 未过流
 1: 过流保护</td><td>R</td><td>0x0</td></tr></table>
 
+### 2.9. REG 0x0D: 系统状态3
+
+<table><tr><td>Bit</td><td>Description</td><td>R/W</td><td>Default</td></tr><tr><td>7</td><td>在线指示
+0: 不在线
+1: 在线
+C 口接入或 A 口电流大于门限，此位置 1; C 口拔出或 A 口电流小于门限，此位清零。</td><td>R</td><td>0x0</td></tr><tr><td>6-0</td><td>Reserved</td><td>/</td><td>/</td></tr></table>
+
 ### 2.10. REG 0x12: I2C 写使能控制0
 
 <table><tr><td>Bit</td><td>Description</td><td>R/W</td><td>Default</td></tr><tr><td>7-5</td><td>I2C 写操作使能
@@ -235,6 +242,16 @@ adc_data[03:00]</td><td>R</td><td>0x0</td></tr></table>
 2: 125℃
 3: 135℃</td><td>R/W</td><td>0x2</td></tr><tr><td>1-0</td><td>Reserved
 注意不能修改默认值</td><td>R/W</td><td>0x0</td></tr></table>
+
+### 2.28. REG0xAC：在线配置
+
+<table><tr><td>Bit</td><td>Description</td><td>R/W</td><td>Default</td></tr><tr><td>7-3</td><td>Reserved</td><td>R/W</td><td>0x6</td></tr><tr><td>2</td><td>电流小于掉线门限的 debounce 时间
+0: 6~8s
+1: 3~4s</td><td>R/W</td><td>0x0</td></tr><tr><td>1-0</td><td>判别 A 口为在线的电流门限
+0: 200mA
+1: 100mA
+2: 300mA
+3: 400mA</td><td>R/W</td><td>0x2</td></tr></table>
 
 ### 2.29. REG0xAD：快充配置0
 
