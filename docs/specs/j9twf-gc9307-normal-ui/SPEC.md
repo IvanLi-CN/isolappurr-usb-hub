@@ -56,7 +56,7 @@
 - 功率必须读取 INA226 Power 寄存器，不得由 `V × I` 推导。
 - 屏幕刷新周期为 500ms。
 - USB-A present 判定：电压有效且 `< 1.0V` 视为未插入；否则视为已插入（包含读数错误）。
-- USB-C present 判定：依据 SW2303 协议激活状态，不使用 `online` bit，也不以 5V keep-alive 代替协议状态。
+- USB-C present 判定：依据 SW2303 协议激活状态，不读取禁用的 SW2303 状态位，也不以 5V keep-alive 代替协议状态。
 - 硬件映射（tps-sw）：
   - U13：INA226，I2C 7-bit 地址 `0x40`，分流 `R22=10mΩ`（`P1_SNP ↔ P1_VBUS`）
   - U17：INA226，I2C 7-bit 地址 `0x41`，分流 `R29=10mΩ`（`ISP_TPS ↔ VOUT_TPS`）

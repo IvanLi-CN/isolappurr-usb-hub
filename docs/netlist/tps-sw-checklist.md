@@ -2,7 +2,7 @@
 
 网表文件：`hardware/tps-sw/netlist.enet`
 
-适用硬件：`tps-sw`
+适用硬件：`tps-sw`（`SW2303 + TPS55288`）
 
 说明：本清单基于**网表连线**与各器件**数据手册/典型应用**对照，不包含 PCB 布局/走线/ESD 结构的版图级验证。器件位号以当前网表为准。
 
@@ -15,7 +15,8 @@
 - `RT9013-33GB`：`U5`
 - `CH412K`（ESD 阵列）：`D2/D3`
 - `ECMF02-2AMX6`（USB2.0 EMI/ESD）：`L3`
-- `CH442E`（USB2.0 数据开关）：`U7/U8`
+- `CH442E`（USB2.0 数据开关）：`U7/U8/U18`
+- `TMP112AIDRLR`（温度传感器）：`U23`
 
 ## 总体结构（快速确认）
 
@@ -55,7 +56,12 @@
 
 ### SW2303（U16，USB‑C/PD 控制）
 
-- [x] `VFB/FB_TPS` 分压：`R31=100kΩ (VOUT_TPS→FB_TPS)`、`R33=31.6kΩ (FB_TPS→AGND_TPS)`；请对照手册确认该模式与参数符合预期。
+- [x] `U16` 电源反馈相关连接已按网表收敛：`pin13 -> VBUS_TPS`、`pin15 -> VOUT_TPS`、`pin14` 悬空；网表中不再存在 `FB_TPS/FB_INT` 反馈分压网络。
+- [x] 启动依赖已确认：`U16(SW2303)` 与 `U14(TPS55288)` 共用 `SDA_TPS/SCL_TPS`，且 `U16 pin15(VIN)` 接 `VOUT_TPS`。TPS 主动放电约 1 秒后，实测 `SDA_TPS/SCL_TPS` 会被拉低；固件必须先释放并检查总线，必要时用一次 `CE_TPS` hard-start 恢复电源域，再写入 TPS 5V boot setpoint。
+- [x] 固件启动策略已按实测收敛：PD I2C 初始化前以 open-drain 释放 `SDA_TPS/SCL_TPS`；常规输出控制优先通过 TPS55288 `OE` 寄存器；仅当放电后总线 stuck-low 或 TPS boot setpoint 不可达时，才允许短暂拉高 `CE_TPS` 做 hard-start；boot setpoint 写入成功后，固件继续释放总线并等待约 1.005 秒才访问 `SW2303`。TPS 是否进入 5V 设定不得根据 INA226 遥测读数判断。若 `SW2303` 上电后 `SDA_TPS` 仍为低，固件保持 TPS boot 输出并等待总线释放，不反复拉高 `CE_TPS`。
+- [x] 固件必须固定周期读取 SW2303 目标电压/限流寄存器并跟随，不能用协议枚举或快充标志作为是否读取目标值的门槛；启动恢复阶段在首次稳定读通后写一次 SW2303 启动 `Enable Profile`，把协议/档位恢复到已知配置。
+- [x] 固件不得读取、建模、记录或展示禁用的 SW2303 状态位；TPS 输出、USB-C present、协议活动、读取分支、状态机、错误恢复和 UI 状态都不得依赖该状态位。
+- [x] `R31/R32` 已作为 USB2.0 串联电阻使用：`R31=22Ω (ESP_DM↔$2N245)`、`R32=22Ω (ESP_DP↔$2N246)`；旧反馈分压/短接相关的 `R33/R41/R42/R50` 不在网表中。
 - [ ] 若产品需求包含 QC/BC1.2 等依赖 `DP/DM` 的快充兼容，请确认 SW2303 的 `DP/DM` 引脚在网表/原理图中已接入（否则仅剩 Type‑C/PD 走 CC）。
 
 ## P2：一致性/工程性改进（建议）
@@ -72,7 +78,22 @@
 
 ### CH442E（U7/U8，USB2.0 数据开关）
 
-- [ ] 上电/复位期间 MCU IO 可能浮空导致 USB 数据路径抖动。建议为 `IN/EN#` 等控制脚提供确定上拉/下拉，或设计成默认断开再由固件使能。
+- [x] `U7`（USB-A 数据路径）：`IN(pin1)=GND` 固定选择 S1，`EN#(pin9)=P1_CED`；`P1_CED=low` 使能连接，`P1_CED=high` 断开。
+- [x] `U8`（USB-C/ESP/TPS 数据路径）：`IN(pin1)=P1_ESP`，`EN#(pin9)=P2_CED`；`P2_CED=low` 使能连接，`P2_CED=high` 断开。
+- [x] `U18`（上游隔离域数据路径）：`IN(pin1)=UGND` 固定选择 S1，`EN#(pin9)=PU_CED`；`PU_CED=low` 使能连接，`PU_CED=high` 断开。
+- [x] `RN3=10kΩ` 为 `P2_CED/P1_CED/P1_ESP` 提供下拉，避免这些控制脚在上电/复位期间悬空。
+
+### TPS55288（U14，MODE/INT）
+
+- [x] `MODE/RMODE`：`R35=75kΩ` 连接 `U14 pin15($1N57)` 到 `AGND_TPS`；按 TPS55288 MODE 电阻表，对应 external VCC、I2C 地址 `0x74`、PFM。
+- [x] `U14 pin14` 连接 `INT_TPS`，并通过 `RN2` 的 4.7kΩ 上拉到 `3V3`；固件侧应按 active-low 中断/故障输入处理。
+- [x] `R29=10mΩ` 位于 `ISP_TPS <-> VOUT_TPS`，与 `U17(INA226)` 共用输出电流采样路径。
+
+### I2C1 设备
+
+- [x] `INA226(U17)` 位于 `SDA/SCL`，用于输出电压/电流遥测。
+- [x] `EEPROM(U21)` 位于 `SDA/SCL`，固件遥测路径不得误访问。
+- [x] `TMP112(U23)` 位于 `SDA/SCL/INT`，网表显示 `ADD0` 接地；若启用温度遥测，应先补充地址 allowlist 与采样策略。
 
 ## 待确认（需要你给出需求/实物信息）
 

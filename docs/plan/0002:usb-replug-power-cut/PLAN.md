@@ -42,8 +42,8 @@
 
 - 物理按键：`BTNL(GPIO1)` / `BTNR(GPIO0)` 的去抖、按下/松开与按压时长识别（短按/长按）。
 - 端口映射（适用硬件：`tps-sw`）：
-  - USB‑A（左键）：数据开关 `P1_CED`（CH442E `IN`：低=连通， 高=断开/NC）；电源开关 `P1_EN#`（`CH217K`，低有效）。
-  - USB‑C（右键）：数据开关 `P2_CED`（CH442E `IN`：低=连通， 高=断开/NC）；电源断开 `CE_TPS`（高有效，拉低 TPS55288 的 EN/UVLO）。
+  - USB‑A（左键）：数据开关 `P1_CED`（CH442E `EN#`：低=连通，高=断开）；电源开关 `P1_EN#`（`CH217K`，低有效）。
+  - USB‑C（右键）：数据开关 `P2_CED`（CH442E `EN#`：低=连通，高=断开）；电源断开 `CE_TPS`（高有效，拉低 TPS55288 的 EN/UVLO）。
 - 每口状态机：`Power=On/Off`、`Data=Connected/Disconnected/Pulsing`、`Busy` 与拒绝原因。
 - 屏幕提示：状态变化的 toast/overlay（不破坏现有“正常界面”基线）。
 - 提示音：复用 `PromptToneManager` 的 `SoundEvent::ActionOk` / `SoundEvent::ActionFail`。
@@ -61,10 +61,9 @@
 - **CH442E 控制语义（来自数据手册）**：
   - CH442E 具有 `EN#`（全局使能，低有效）与 `IN`（选择脚，高电平选 `S2x`，低电平选 `S1x`）。
   - 在 `tps-sw` 网表中：
-    - `P1_CED/P2_CED` 连接到 CH442E 的 `IN`（pin1）
-    - `EN#`（pin9）连接到 `GND`（常使能）
-    - `S2B/S2C`（pin3/pin7）未连接（NC）
-  - 因此本计划将 CH442E 当作“**单一通断开关**”使用：通过 `IN` 选择“连接端（S1x）/断开端（S2x=NC）”，实现 D+/D- 同步连通/断开。
+    - `U7`：`P1_CED` 连接到 `EN#`（pin9），`IN`（pin1）固定接 `GND`。
+    - `U8`：`P2_CED` 连接到 `EN#`（pin9），`P1_ESP` 连接到 `IN`（pin1）并由 `RN3` 下拉。
+  - 因此本计划将 CH442E 当作低有效“使能/断开”开关使用：`P1_CED/P2_CED=low` 连通，`high` 断开。
 - **Data Replug 断开时长（默认值，待实机验证后可微调）**：
   - `DATA_DISCONNECT_MS = 250ms`（默认）
   - 备注：USB Hub/Host 对“端口连接变化”的识别存在去抖/稳定窗口；默认值选择偏保守，优先保证“主机确实认为已拔插”。
@@ -156,7 +155,7 @@
   - When：左键一次按压时长在 `100–500ms` 内并松开
   - Then：
     - 立即显示 toast：`USB‑A DATA OFF (t ms)`（或等价文案），并播放 `ActionOk`。
-    - `P1_CED` 进入“断开”态（`IN=High`）持续 `DATA_DISCONNECT_MS` 后恢复连通（`IN=Low`）。
+    - `P1_CED` 进入“断开”态（`EN#=High`）持续 `DATA_DISCONNECT_MS` 后恢复连通（`EN#=Low`）。
     - 恢复连通后显示 toast：`USB‑A DATA ON`（或等价文案）。
 - **长按触发断电（松开后断）**
   - Given：USB‑A 处于 `Power=On` 且 `Gate=Idle`
@@ -218,6 +217,6 @@
 - `docs/buzzer-prompt-tones-design.md`（提示音模块策略与安全报警抑制）
 - `src/bin/main.rs`（已存在按键去抖、`CE_TPS` 逻辑说明）
 - CH442E 数据手册（WCH CH440/CH442/CH443/CH444/CH445/CH448 手册；LCSC PDF `620B9380...2617B.pdf`）：
-  - CH442E 章节给出 2 路 DPDT 模拟开关与控制逻辑：`EN#` 为全局使能（低有效），`IN` 为选择脚（高电平选 2# 端 `S2x`，低电平选 1# 端 `S1x`）；本硬件将 `S2x` 悬空以实现“选择即断开”。
+  - CH442E 章节给出 2 路 DPDT 模拟开关与控制逻辑：`EN#` 为全局使能（低有效），`IN` 为选择脚（高电平选 2# 端 `S2x`，低电平选 1# 端 `S1x`）。
 - 资源生成脚本：
   - `docs/plan/0002:usb-replug-power-cut/tools/generate_assets.py`（生成像素级 PNG + WAV 试听音频）

@@ -176,5 +176,5 @@
 
 - `src/pd_i2c/sw2303.rs`
 - `src/bin/main.rs`
-- `vendor/sw2303-rs/docs/SW2303_寄存器手册__Release_RG013_1_v1.4.md`
+- `https://github.com/IvanLi-CN/sw2303-rs/blob/3e720b7c0570144edca2a0789d7e166bcfd37e0f/docs/SW2303_%E5%AF%84%E5%AD%98%E5%99%A8%E6%89%8B%E5%86%8C__Release_RG013_1_v1.4.md`
 - `docs/sw2303-init-enable-profile.md`

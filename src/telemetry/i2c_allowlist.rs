@@ -26,7 +26,8 @@ impl<E: Error> Error for TelemetryI2cError<E> {
 /// Frozen v1 policy:
 /// - Only allow INA226 (U13/U17) at addresses `0x40` / `0x41` and the
 ///   documented counterfeit/clone fallbacks `0x44` / `0x45`
-/// - Never scan / never touch other devices on the same bus (e.g. EEPROM @ 0x50)
+/// - Never scan / never touch other devices on the same bus (e.g. EEPROM U21,
+///   TMP112 U23)
 pub struct TelemetryI2cAllowlist<I2C> {
     inner: I2C,
 }

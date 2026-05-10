@@ -80,7 +80,7 @@ function longDevices(count: number): DiscoveredDevice[] {
           ? `http://hub-${n}.local/this/is/a/very/long/path/to/trigger/truncation/in/narrow/layouts`
           : `http://hub-${n}.local`,
       firmware: { name: "isolapurr", version: `0.1.${n}` },
-      variant: n % 2 === 0 ? "tps-sw" : "ip6557",
+      variant: "tps-sw",
       last_seen_at: new Date(Date.now() - n * 60_000).toISOString(),
     };
   });
