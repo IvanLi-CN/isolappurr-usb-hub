@@ -41,6 +41,11 @@ that the USB-C sink actually receives `VBUS_TPS`.
 - After the firmware fix and hardware repair, a 7 V PPS request with a 250 mA
   LoadLynx CC load held around 7.01-7.06 V at the sink terminals for more than
   2 minutes.
+- If the firmware clamps TPS55288 below-5 V setpoints to 5 V, LoadLynx can show
+  a 3.3-4.5 V PPS contract while the connector stays near 5 V.
+- LoadLynx `POST /api/v1/cc` updates the CC API view, but does not necessarily
+  change the active electronic-load preset. For proof current, update/apply the
+  active preset and enable `/api/v1/control`.
 - Repeated `CE_TPS` probing can disturb the PD/source state and should not be
   treated as a stable output test.
 
@@ -132,6 +137,17 @@ Observed passing pattern:
   `7011-7059 mV`, and current around `247-251 mA` with the 250 mA CC preset.
 - Firmware logs show `sw2303 stable reads` continuing, `v_req_mv=7000`, and
   SW2303 ADC readback around `vin_mv=7050`, `vbus_mv=7035-7042`.
+- With the TPS55288 low-voltage clamp removed, reconnect-style PPS negotiation
+  also works below 5 V: tested targets `3300`, `3600`, `3900`, `4200`, and
+  `4500 mV` produced LoadLynx `v_main_mv` around `3331`, `3638`, `3981`,
+  `4229`, and `4536 mV` at a 100 mA load setting.
+- At a real 500 mA LoadLynx preset, reconnect-style PPS negotiation worked at
+  `3300`, `3900`, and `4500 mV`; LoadLynx reported local current around
+  `499 mA` and no fault flags.
+- In-place PPS target changes made through the LoadLynx HTTP API are not enough
+  by themselves as acceptance proof. If `contract_mv` changes but SW2303 target
+  registers and `v_main_mv` do not move, treat the test as a sink/request
+  stimulus problem and rerun with a reconnect-style negotiation.
 
 Observed diagnostic pattern:
 

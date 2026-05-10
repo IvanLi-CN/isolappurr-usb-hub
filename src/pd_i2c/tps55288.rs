@@ -75,7 +75,7 @@ impl TpsApplyState {
 pub fn power_request_to_setpoint(request: PowerRequest) -> PowerSetpoint {
     PowerSetpoint {
         output_enabled: true,
-        v_out_mv: quantize_vout_mv_floor(request.v_req_mv.max(5_000)),
+        v_out_mv: quantize_vout_mv_floor(request.v_req_mv),
         i_lim_ma: quantize_ilim_ma_floor_with_margin(request.i_req_ma),
     }
 }
