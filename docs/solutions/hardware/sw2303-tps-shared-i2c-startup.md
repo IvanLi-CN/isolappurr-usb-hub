@@ -106,9 +106,14 @@ Use this firmware startup sequence:
    improve the observed final SW2303 behavior.
 7. Poll SW2303 target voltage/current from the structured driver path and keep
    the last valid target if a single read window is missed.
-8. Avoid TPS no-op writes when the SW2303 target is still the 5 V boot setpoint;
+8. If runtime SW2303 reads or TPS setpoint writes keep failing, enter the same
+   shared-bus recovery flow automatically: stop TPS output and enable active
+   discharge when possible, hard-cycle `CE_TPS`, reapply the TPS 5 V boot
+   setpoint, hold the released bus through SW2303 POR, then clear stale SW2303
+   target/profile state so normal polling rebuilds from fresh reads.
+9. Avoid TPS no-op writes when the SW2303 target is still the 5 V boot setpoint;
    only update TPS when SW2303 asks for a higher target voltage.
-9. Defer TPS fault/status reads and SW2303 profile writes until SW2303 target
+10. Defer TPS fault/status reads and SW2303 profile writes until SW2303 target
    reads have been stable for a long window.
 
 Guardrails:
@@ -121,6 +126,8 @@ Guardrails:
 - Do not force SW2303 pass-path control to make connector output appear.
 - Use SW2303 target voltage/current as the PD source control input; do not add
   SW2303-derived connection-state gating.
+- Runtime recovery must not keep applying stale SW2303 targets after a hard
+  recovery; clear the cached target and wait for fresh target-register reads.
 - Do not replace SW2303 target reads with a burst read unless the register map
   explicitly guarantees auto-increment; the tested burst read returned invalid
   voltage/current values.

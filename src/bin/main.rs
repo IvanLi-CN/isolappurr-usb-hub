@@ -189,6 +189,9 @@ const SW2303_READ_RETRY_DELAY_MS: u64 = 5;
 const SW2303_STABLE_READS_BEFORE_TPS: u16 = 1;
 const SW2303_STABLE_READS_BEFORE_TPS_STATUS: u16 = 500;
 const SW2303_STABLE_READS_BEFORE_PROFILE: u16 = 50;
+const PD_RUNTIME_RECOVERY_ERROR_LIMIT: u8 = 3;
+const PD_RUNTIME_RECOVERY_MIN_INTERVAL_MS: u64 = 1_000;
+const PD_RUNTIME_RECOVERY_TPS_RETRIES: u8 = 4;
 const BOOT_PD_DISCHARGE_SETTLE_MS: u64 = 50;
 const BOOT_PD_RELEASE_SETTLE_MS: u64 = 10;
 const BOOT_CE_RECOVERY_HOLD_MS: u64 = 5;
@@ -782,6 +785,10 @@ async fn main(_spawner: Spawner) {
     let mut last_sw2303_profile_attempt: Option<Instant> = None;
     let mut last_sw2303_read_attempt: Option<Instant> = None;
     let mut sw2303_stable_reads: u16 = 0;
+    let mut sw2303_consecutive_errors: u8 = 0;
+    let mut tps_consecutive_errors: u8 = 0;
+    let mut last_pd_runtime_recovery: Option<Instant> = None;
+    let mut pd_runtime_recovery_count: u32 = 0;
     let mut tps_5v_setpoint_since: Option<Instant> = None;
     let mut last_tps_status: Option<(
         tps55288::data_types::OperatingStatus,
@@ -1239,6 +1246,7 @@ async fn main(_spawner: Spawner) {
                         info!("sw2303 read recovered after {} retries", retry);
                     }
                     sw2303_error_latched = false;
+                    sw2303_consecutive_errors = 0;
                     last_valid_sw2303_request = Some(request);
                     sw2303_stable_reads = sw2303_stable_reads.saturating_add(1);
                     if matches!(sw2303_stable_reads, 1 | 10 | 50 | 100)
@@ -1271,6 +1279,7 @@ async fn main(_spawner: Spawner) {
                         );
                         sw2303_error_latched = true;
                     }
+                    sw2303_consecutive_errors = sw2303_consecutive_errors.saturating_add(1);
                     let sp = last_valid_sw2303_request
                         .map(power_request_to_setpoint)
                         .unwrap_or(boot_sp);
@@ -1357,11 +1366,13 @@ async fn main(_spawner: Spawner) {
                 );
                 tps_error_latched = true;
             }
+            tps_consecutive_errors = tps_consecutive_errors.saturating_add(1);
 
             tps_state.last = None;
             loop_delay_ms = SW2303_ERROR_RETRY_MS;
         } else {
             tps_error_latched = false;
+            tps_consecutive_errors = 0;
             tps_5v_setpoint_since.get_or_insert_with(Instant::now);
         }
 
@@ -1369,6 +1380,221 @@ async fn main(_spawner: Spawner) {
             prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
         } else if tps_was_in_error && !tps_error_latched {
             prompt_tone.notify(SoundEvent::ExitSafety(SafetyKind::TpsApply));
+        }
+
+        let runtime_recovery_due = sw2303_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT
+            || tps_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT;
+        let runtime_recovery_allowed = last_pd_runtime_recovery
+            .map(|last| {
+                last.elapsed() >= Duration::from_millis(PD_RUNTIME_RECOVERY_MIN_INTERVAL_MS)
+            })
+            .unwrap_or(true);
+        if runtime_recovery_due && runtime_recovery_allowed {
+            pd_runtime_recovery_count = pd_runtime_recovery_count.saturating_add(1);
+            last_pd_runtime_recovery = Some(Instant::now());
+            defmt::warn!(
+                "pd i2c runtime recovery #{}: sw_errors={} tps_errors={} sw_allowed={} stable_reads={}",
+                pd_runtime_recovery_count,
+                sw2303_consecutive_errors,
+                tps_consecutive_errors,
+                sw2303_i2c_allowed,
+                sw2303_stable_reads
+            );
+
+            match stop_output_and_enable_discharge(&mut i2c).await {
+                Ok(()) => info!("pd i2c runtime recovery: TPS OE off and discharge enabled"),
+                Err(err) => {
+                    defmt::warn!(
+                        "pd i2c runtime recovery: TPS discharge failed before CE recovery: {:?}",
+                        defmt::Debug2Format(&err)
+                    );
+                    tps_state.last = None;
+                }
+            }
+            Timer::after_millis(BOOT_PD_DISCHARGE_SETTLE_MS).await;
+
+            let i2c_inner = i2c.into_inner();
+            let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
+            let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
+            pd_sda.set_input_enable(true);
+            pd_scl.set_input_enable(true);
+            pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
+            pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
+            pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+            pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+            pd_sda.set_high();
+            pd_scl.set_high();
+            pd_sda.set_output_enable(false);
+            pd_scl.set_output_enable(false);
+
+            let mut recovered_after_ms = 0;
+            let mut recovery_cycles = 0;
+            for cycle in 1..=3 {
+                recovery_cycles = cycle;
+                let _ = ce_tps.set_high();
+                Timer::after_millis(BOOT_CE_RECOVERY_HOLD_MS).await;
+                let _ = ce_tps.set_low();
+                for step in 1..=100 {
+                    Timer::after_millis(BOOT_CE_RECOVERY_POLL_MS).await;
+                    if pd_sda.is_high() && pd_scl.is_high() {
+                        recovered_after_ms = BOOT_CE_RECOVERY_HOLD_MS as u32
+                            + step * BOOT_CE_RECOVERY_POLL_MS as u32;
+                        break;
+                    }
+                }
+                if pd_sda.is_high() && pd_scl.is_high() {
+                    break;
+                }
+            }
+            info!(
+                "pd i2c runtime recovery: after CE sda_high={} scl_high={} cycles={} recovered_after_ms={}",
+                pd_sda.is_high(),
+                pd_scl.is_high(),
+                recovery_cycles,
+                recovered_after_ms
+            );
+
+            let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
+            i2c = I2cAllowlist::new(i2c_inner);
+            let _ = i2c.inner_mut().apply_config(
+                &I2cConfig::default()
+                    .with_frequency(Rate::from_khz(PD_I2C_KHZ))
+                    .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
+                        PD_I2C_TIMEOUT_MS,
+                    ))),
+            );
+
+            let mut runtime_boot_ready = false;
+            let mut runtime_sw2303_allowed = false;
+            for attempt in 1..=PD_RUNTIME_RECOVERY_TPS_RETRIES {
+                match apply_setpoint_before_enable(&mut i2c, &mut tps_state, boot_sp).await {
+                    Ok(mode_with_oe) => {
+                        let i2c_inner = i2c.into_inner();
+                        let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
+                        let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
+                        pd_sda.set_input_enable(true);
+                        pd_scl.set_input_enable(true);
+                        pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
+                        pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
+                        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+                        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                        pd_sda.set_high();
+                        pd_scl.set_high();
+                        pd_sda.set_output_enable(false);
+                        pd_scl.set_output_enable(false);
+
+                        let mode_ack =
+                            bitbang_tps55288_mode_write(&mut pd_sda, &mut pd_scl, mode_with_oe)
+                                .await;
+                        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+                        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                        pd_sda.set_high();
+                        pd_scl.set_high();
+                        pd_sda.set_output_enable(false);
+                        pd_scl.set_output_enable(false);
+                        tps_5v_setpoint_since = Some(Instant::now());
+                        tps_state.last = Some(boot_sp);
+                        if !mode_ack {
+                            defmt::warn!(
+                                "pd i2c runtime recovery: TPS OE bitbang write had missing ACK"
+                            );
+                        }
+                        info!(
+                            "pd i2c runtime recovery: TPS boot 5V applied (attempt {}/{}); holding SW2303 POR",
+                            attempt, PD_RUNTIME_RECOVERY_TPS_RETRIES
+                        );
+                        Timer::after_millis(SW2303_POR_RELEASE_MS).await;
+                        pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
+                        pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
+                        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+                        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                        pd_sda.set_high();
+                        pd_scl.set_high();
+                        pd_sda.set_output_enable(false);
+                        pd_scl.set_output_enable(false);
+                        Timer::after_millis(BOOT_PD_RELEASE_SETTLE_MS).await;
+                        runtime_sw2303_allowed = pd_sda.is_high() && pd_scl.is_high();
+                        info!(
+                            "pd i2c runtime recovery: SW2303 POR elapsed sda_high={} scl_high={}",
+                            pd_sda.is_high(),
+                            pd_scl.is_high()
+                        );
+                        i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
+                        runtime_boot_ready = true;
+                        break;
+                    }
+                    Err(err) => {
+                        if attempt == PD_RUNTIME_RECOVERY_TPS_RETRIES {
+                            defmt::warn!(
+                                "pd i2c runtime recovery: TPS boot 5V failed (attempt {}/{}): {:?}",
+                                attempt,
+                                PD_RUNTIME_RECOVERY_TPS_RETRIES,
+                                defmt::Debug2Format(&err)
+                            );
+                        } else {
+                            defmt::warn!(
+                                "pd i2c runtime recovery: TPS boot I2C retry after error (attempt {}/{}): {:?}",
+                                attempt,
+                                PD_RUNTIME_RECOVERY_TPS_RETRIES,
+                                defmt::Debug2Format(&err)
+                            );
+                            let i2c_inner = i2c.into_inner();
+                            let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
+                            let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
+                            pd_sda.set_input_enable(true);
+                            pd_scl.set_input_enable(true);
+                            pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
+                            pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
+                            pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
+                            pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                            pd_sda.set_high();
+                            pd_scl.set_high();
+                            pd_sda.set_output_enable(false);
+                            pd_scl.set_output_enable(false);
+                            let _ = ce_tps.set_high();
+                            Timer::after_millis(BOOT_CE_RECOVERY_HOLD_MS).await;
+                            let _ = ce_tps.set_low();
+                            Timer::after_millis(BOOT_TPS_RETRY_DELAY_MS).await;
+                            i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
+                            let _ = i2c.inner_mut().apply_config(
+                                &I2cConfig::default()
+                                    .with_frequency(Rate::from_khz(PD_I2C_KHZ))
+                                    .with_software_timeout(SoftwareTimeout::Transaction(
+                                        Duration::from_millis(PD_I2C_TIMEOUT_MS),
+                                    )),
+                            );
+                        }
+                        tps_state.last = None;
+                    }
+                }
+            }
+
+            sw2303_i2c_allowed = runtime_sw2303_allowed;
+            if runtime_boot_ready {
+                sw2303_consecutive_errors = 0;
+                tps_consecutive_errors = 0;
+                sw2303_error_latched = false;
+                tps_error_latched = false;
+                sw2303_stable_reads = 0;
+                sw2303_profile_applied = false;
+                last_sw2303_read_attempt = None;
+                last_sw2303_profile_attempt = None;
+                last_valid_sw2303_request = None;
+                last_request = None;
+                last_fast_protocol = None;
+                last_tps_status = None;
+                info!(
+                    "pd i2c runtime recovery #{} complete: sw2303_i2c_allowed={}",
+                    pd_runtime_recovery_count, sw2303_i2c_allowed
+                );
+                Timer::after_millis(SW2303_POLL_MS).await;
+                continue;
+            }
+
+            defmt::warn!(
+                "pd i2c runtime recovery #{} failed; keeping safety state",
+                pd_runtime_recovery_count
+            );
         }
 
         // TPS55288 fault change logging via INT_TPS (GPIO38).
