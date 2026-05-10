@@ -12,7 +12,7 @@ use crate::registers::{
     BroadcastCurrentFlags, ConnectionControlFlags, FastChargeConfig0Flags, FastChargeConfig1Flags,
     FastChargeConfig2Flags, FastChargeConfig3Flags, FastChargeConfig4Flags, FastChargingFlags,
     ForceControlFlags, PdConfig0Flags, PdConfig1Flags, PdConfig2Flags, PdConfig3Flags, Register,
-    SystemStatus0Flags, SystemStatus1Flags, SystemStatus2Flags, constants,
+    SystemStatus0Flags, SystemStatus1Flags, SystemStatus2Flags, SystemStatus3Flags, constants,
 };
 
 #[cfg(not(feature = "async"))]
@@ -272,6 +272,21 @@ where
         Ok(v & 0x03)
     }
 
+    /// Check if a sink device is connected (online status).
+    ///
+    /// This method reads the system status 3 register to determine if a sink device is connected.
+    /// This is more reliable for detecting actual device connection than UFP status.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(true)` if sink device is connected (online), `Ok(false)` if not connected,
+    /// or an `Error` if the operation fails.
+    pub async fn is_sink_device_connected(&mut self) -> Result<bool, Error<I2C::Error>> {
+        let status = self.read_register(Register::SystemStatus3).await?;
+        let flags = SystemStatus3Flags::from_bits_truncate(status);
+        Ok(flags.contains(SystemStatus3Flags::DEVICE_ONLINE))
+    }
+
     /// Get system status 0 flags.
     ///
     /// # Returns
@@ -280,6 +295,16 @@ where
     pub async fn get_system_status0(&mut self) -> Result<SystemStatus0Flags, Error<I2C::Error>> {
         let status = self.read_register(Register::SystemStatus0).await?;
         Ok(SystemStatus0Flags::from_bits_truncate(status))
+    }
+
+    /// Get system status 3 flags.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(SystemStatus3Flags)` on success, or an `Error` if the operation fails.
+    pub async fn get_system_status3(&mut self) -> Result<SystemStatus3Flags, Error<I2C::Error>> {
+        let status = self.read_register(Register::SystemStatus3).await?;
+        Ok(SystemStatus3Flags::from_bits_truncate(status))
     }
 
     /// Get fast charging status flags.

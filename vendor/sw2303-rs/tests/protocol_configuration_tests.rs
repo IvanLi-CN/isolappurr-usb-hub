@@ -16,6 +16,7 @@ use sw2303::{
 #[derive(Debug, Default)]
 struct MockI2c {
     registers: HashMap<u8, u8>,
+    current_register: Option<u8>,
     write_enabled: bool,
 }
 
@@ -23,6 +24,7 @@ impl MockI2c {
     fn new() -> Self {
         Self {
             registers: HashMap::new(),
+            current_register: None,
             write_enabled: false,
         }
     }
@@ -44,14 +46,18 @@ impl ErrorType for MockI2c {
 impl I2c for MockI2c {
     fn read(&mut self, _address: u8, buffer: &mut [u8]) -> Result<(), Self::Error> {
         if buffer.len() == 1 {
-            // Single register read - this is actually a write_read operation
-            Ok(())
-        } else {
-            Ok(())
+            let reg = self.current_register.unwrap_or(0);
+            buffer[0] = self.get_register(reg);
         }
+        Ok(())
     }
 
     fn write(&mut self, _address: u8, bytes: &[u8]) -> Result<(), Self::Error> {
+        if bytes.len() == 1 {
+            self.current_register = Some(bytes[0]);
+            return Ok(());
+        }
+
         if bytes.len() == 2 {
             let reg = bytes[0];
             let value = bytes[1];

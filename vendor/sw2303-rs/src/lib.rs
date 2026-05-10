@@ -4,10 +4,11 @@
 //! # SW2303 USB PD Controller Driver
 //!
 //! This crate provides a driver for the SW2303 USB PD (Power Delivery) controller chip.
-//! The SW2303 is a USB PD controller that supports charging management.
+//! The SW2303 is a USB PD controller that supports charging management and device detection.
 //!
 //! ## Features
 //!
+//! - **Device Detection**: Monitor sink device connection status
 //! - **Power Management**: USB PD charging control and monitoring
 //! - **Protocol Configuration**: Complete USB PD and fast charging protocol configuration
 //! - **Status Monitoring**: Real-time controller and charging status information
@@ -80,9 +81,12 @@
 //! };
 //! sw2303.configure_pd(pd_config)?;
 //!
-//! // Check which protocol was negotiated
-//! if let Some(protocol) = sw2303.get_negotiated_protocol()? {
-//!     // Handle specific protocol
+//! // Check if a sink device is connected
+//! if sw2303.is_sink_device_connected()? {
+//!     // Check which protocol was negotiated
+//!     if let Some(protocol) = sw2303.get_negotiated_protocol()? {
+//!         // Handle specific protocol
+//!     }
 //! }
 //! # Ok(())
 //! # }
@@ -100,8 +104,10 @@
 //! // let mut sw2303 = SW2303::new(&mut i2c, DEFAULT_ADDRESS);
 //! // sw2303.init().await?;
 //!
-//! // Check which protocol was negotiated
-//! // let protocol = sw2303.get_negotiated_protocol().await?;
+//! // Check if a sink device is connected
+//! // if sw2303.is_sink_device_connected().await? {
+//! //     // Sink device connected
+//! // }
 //! # Ok(())
 //! # }
 //! ```

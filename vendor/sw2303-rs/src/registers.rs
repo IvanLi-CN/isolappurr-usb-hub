@@ -27,6 +27,9 @@ pub enum Register {
     SystemStatus1 = 0x0B,
     /// REG 0x0C: System status 2
     SystemStatus2 = 0x0C,
+    /// REG 0x0D: System status 3
+    SystemStatus3 = 0x0D,
+
     /// REG 0x12: I2C write enable control 0
     I2cWriteEnable0 = 0x12,
     /// REG 0x14: Connection control
@@ -67,6 +70,8 @@ pub enum Register {
     BroadcastCurrentConfig = 0xA8,
     /// REG 0xAB: 异常保护配置 (Exception protection configuration)
     ExceptionProtectionConfig = 0xAB,
+    /// REG 0xAC: 在线配置 (Online configuration)
+    OnlineConfig = 0xAC,
     /// REG 0xAD: 快充配置0 (Fast charging configuration 0)
     FastChargingConfig0 = 0xAD,
     /// REG 0xAE: 快充配置1 (Fast charging configuration 1)
@@ -187,7 +192,23 @@ impl defmt::Format for SystemStatus1Flags {
     }
 }
 
-bitflags! {}
+bitflags! {
+    /// System status 3 flags (REG 0x0D)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct SystemStatus3Flags: u8 {
+        /// Device online status (bit 7) - indicates if sink device is connected
+        /// 0: offline (no sink device)
+        /// 1: online (sink device connected)
+        const DEVICE_ONLINE = 0b10000000;
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for SystemStatus3Flags {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "SystemStatus3Flags({})", self.bits())
+    }
+}
 
 bitflags! {
     /// Fast charging status flags (REG 0x06)
