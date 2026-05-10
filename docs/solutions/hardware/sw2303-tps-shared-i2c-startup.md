@@ -53,9 +53,10 @@ valid I2C target until its POR window has completed with the bus released.
   SW2303 read settle to `7V/1A` on the tested board.
 - A 500 ms or 800 ms POR hold also worked, but did not improve the final
   target-read behavior enough to justify the extra wait.
-- On the repaired board, the short path can now reach a stable SW2303 boot
-  sequence, but the first TPS I2C attempt can still need one CE-backed
-  recovery before the boot setpoint settles.
+- On the repaired board, three reset samples did not show direct short-path
+  success. Each sample reported `path=short_failed_then_ce_recovered`; the
+  first TPS boot I2C transaction timed out, one CE-backed recovery ran, and
+  TPS boot 5 V then settled before SW2303 access.
 
 ## Root Cause
 
@@ -85,6 +86,8 @@ Use this firmware startup sequence:
 4. Try the TPS short path first. If the first TPS I2C transaction fails, pulse
    `CE_TPS` once, wait until `SDA_TPS/SCL_TPS` are high, and then retry the
    full boot sequence; do not keep CE recovery as a routine pre-step.
+   Keep a boot-path summary log so tests can distinguish direct short-path
+   success from CE-backed recovery.
 5. Program TPS55288 registers before enabling output; make the TPS `OE` write
    the last TPS transaction before the SW2303 POR hold. If this is immediately
    after a hard-start, allow a bounded retry for the first post-POR TPS I2C

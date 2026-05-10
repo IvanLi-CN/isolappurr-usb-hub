@@ -1078,6 +1078,17 @@ async fn main(_spawner: Spawner) {
     info!(
         "display: GC9307 landscape SPI2@40MHz async DMA MOSI=GPIO11 SCLK=GPIO12 CS=GPIO13 DC=GPIO10 RES=GPIO14 BLK=GPIO15(active-low)"
     );
+    info!(
+        "pd boot summary: tps_ready={} path={} sw2303_i2c_allowed={} elapsed_ms={}",
+        tps_boot_ready,
+        if boot_recovery_cycled {
+            "short_failed_then_ce_recovered"
+        } else {
+            "short"
+        },
+        sw2303_i2c_allowed,
+        elapsed_ms_since(pd_boot_started)
+    );
 
     if let Err(err) = ui.init().await {
         defmt::warn!(
