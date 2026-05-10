@@ -71,16 +71,22 @@ failure by toggling `PU_CE`.
 
 ## Resolution
 
-For the current hardware revision:
+For the old switched upstream path, the temporary mitigation was:
 
-- Keep `PU_CE` driven low in firmware. It must not be used as a periodic or
-  conditional recovery toggle for production behavior.
+- Firmware kept `PU_CE` low, and did not use it as a periodic or conditional
+  recovery toggle for production behavior.
 - Treat `PU_CED=High` as a host-side hardware/control-state failure that keeps
   `U18` disconnected.
 - Do not rely on EEPROM-configured `PU_CE` recovery, button-driven `PU_CE`
   recovery, LEDD-triggered recovery, or timed startup toggles as the final fix.
 - Use `LEDD` only as an indication input; it cannot prove that sideband
   recovery is available.
+
+For the direct upstream path:
+
+- Remove `U18` and short the upstream USB data path in hardware.
+- Do not initialize or drive `GPIO36/PU_CE` in firmware.
+- Keep `LEDD` as a high-impedance active-low status input only.
 
 For the next hardware revision:
 

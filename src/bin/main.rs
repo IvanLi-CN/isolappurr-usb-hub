@@ -173,14 +173,8 @@ impl PortState {
 const DATA_DISCONNECT_MS: u64 = 250;
 const TOAST_MS: u64 = 1500;
 const POWER_SWITCH_GUARD_MS: u64 = 350;
-const UPSTREAM_BOOT_RECOVERY_ENABLED: bool = false;
-const UPSTREAM_BOOT_RECOVERY_DISCONNECT_MS: u64 = 2_000;
 #[cfg(feature = "net_http")]
-const LEDD_INTEGRATOR_MAX: u8 = 32;
-#[cfg(feature = "net_http")]
-const LEDD_INTEGRATOR_CONNECTED_THRESHOLD: u8 = 24;
-#[cfg(feature = "net_http")]
-const LEDD_INTEGRATOR_DISCONNECTED_THRESHOLD: u8 = 8;
+const LEDD_SAMPLE_MS: u64 = 1_000;
 
 const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
 const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
@@ -325,54 +319,6 @@ impl DebouncedButton {
         } else {
             ButtonEdge::Released
         })
-    }
-}
-
-#[cfg(feature = "net_http")]
-#[derive(Debug)]
-struct IntegratedLevel {
-    stable: bool,
-    score: u8,
-}
-
-#[cfg(feature = "net_http")]
-impl IntegratedLevel {
-    fn new(initial: bool) -> Self {
-        Self {
-            stable: initial,
-            score: if initial { LEDD_INTEGRATOR_MAX } else { 0 },
-        }
-    }
-
-    fn stable(&self) -> bool {
-        self.stable
-    }
-
-    fn score(&self) -> u8 {
-        self.score
-    }
-
-    fn update(&mut self, active_sample: bool) -> Option<bool> {
-        if active_sample {
-            self.score = self.score.saturating_add(1).min(LEDD_INTEGRATOR_MAX);
-        } else {
-            self.score = self.score.saturating_sub(1);
-        }
-
-        let next = if self.score >= LEDD_INTEGRATOR_CONNECTED_THRESHOLD {
-            true
-        } else if self.score <= LEDD_INTEGRATOR_DISCONNECTED_THRESHOLD {
-            false
-        } else {
-            self.stable
-        };
-
-        if next == self.stable {
-            None
-        } else {
-            self.stable = next;
-            Some(next)
-        }
     }
 }
 
@@ -668,7 +614,9 @@ async fn main(_spawner: Spawner) {
     #[cfg(feature = "net_http")]
     let ledd_usb_a = Input::new(peripherals.GPIO6, ledd_cfg);
     #[cfg(feature = "net_http")]
-    let mut ledd_usb_a_state = IntegratedLevel::new(ledd_usb_a.is_low());
+    let mut api_upstream_connected = ledd_usb_a.is_low();
+    #[cfg(feature = "net_http")]
+    let mut ledd_last_sample = Instant::now();
     #[cfg(feature = "net_http")]
     info!(
         "usb-a ledd: GPIO6 initial raw_low={} (active-low, hi-z input; no pull)",
@@ -689,8 +637,6 @@ async fn main(_spawner: Spawner) {
     let mut combo_expired = false;
 
     // Port controls (tps-sw netlist):
-    // - PU_CE drives CH318T U2 IO2, which maps to U1 IO2/PU_CED and U18 EN#:
-    //   low=upstream CH442E enabled/connect, high=upstream signal disconnect.
     // - P1_CED/P2_CED drive CH442E EN#: low=enable/connect, high=disable/disconnect.
     // - U8 IN is P1_ESP with an RN3 pulldown default; firmware leaves it at reset default.
     // - P1_EN# drives CH217K enable: low=enable (power on), high=disable (power off).
@@ -698,25 +644,13 @@ async fn main(_spawner: Spawner) {
     //
     // Keep data paths connected at boot, but hold TPS output off before the
     // SW2303 POR window is explicitly controlled below.
-    let mut upstream_pu_ce = Output::new(peripherals.GPIO36, Level::Low, OutputConfig::default());
     let mut p2_ced = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
     let mut p1_ced = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
     let mut p1_en_n = Output::new(peripherals.GPIO16, Level::Low, OutputConfig::default());
     let mut ce_tps = Output::new(peripherals.GPIO37, Level::High, OutputConfig::default());
     info!(
-        "ports: boot state pu_ce=low(upstream-connect) p1_en#=low(on) p1_ced=low(connect) p2_ced=low(connect) ce_tps=high(off)"
+        "ports: boot state p1_en#=low(on) p1_ced=low(connect) p2_ced=low(connect) ce_tps=high(off)"
     );
-    if UPSTREAM_BOOT_RECOVERY_ENABLED {
-        info!(
-            "upstream boot recovery: disconnecting upstream USB signal for {}ms",
-            UPSTREAM_BOOT_RECOVERY_DISCONNECT_MS
-        );
-        let _ = upstream_pu_ce.set_high();
-        Timer::after_millis(UPSTREAM_BOOT_RECOVERY_DISCONNECT_MS).await;
-        let _ = upstream_pu_ce.set_low();
-        info!("upstream boot recovery: upstream USB signal reconnected");
-    }
-    let _upstream_pu_ce = upstream_pu_ce;
 
     let mut port_usb_a = PortState::new(PowerState::On);
     let mut port_usb_c = PortState::new(PowerState::On);
@@ -1194,18 +1128,18 @@ async fn main(_spawner: Spawner) {
         let ui_was_in_error = ui_error_latched;
 
         #[cfg(feature = "net_http")]
-        let api_upstream_connected = {
+        if ledd_last_sample.elapsed() >= Duration::from_millis(LEDD_SAMPLE_MS) {
+            ledd_last_sample = Instant::now();
             let raw_low = ledd_usb_a.is_low();
-            if let Some(connected) = ledd_usb_a_state.update(raw_low) {
+            let connected = raw_low;
+            if connected != api_upstream_connected {
                 debug!(
-                    "usb-a ledd: integrated_connected={} score={} raw_low={}",
-                    connected,
-                    ledd_usb_a_state.score(),
-                    raw_low
+                    "usb-a ledd: sampled_connected={} raw_low={} sample_ms={}",
+                    connected, raw_low, LEDD_SAMPLE_MS
                 );
             }
-            ledd_usb_a_state.stable()
-        };
+            api_upstream_connected = connected;
+        }
 
         let allow_sw2303_probe = !sw2303_error_latched
             || last_sw2303_read_attempt
