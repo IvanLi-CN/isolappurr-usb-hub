@@ -53,10 +53,12 @@ valid I2C target until its POR window has completed with the bus released.
   SW2303 read settle to `7V/1A` on the tested board.
 - A 500 ms or 800 ms POR hold also worked, but did not improve the final
   target-read behavior enough to justify the extra wait.
-- On the repaired board, three reset samples did not show direct short-path
-  success. Each sample reported `path=short_failed_then_ce_recovered`; the
-  first TPS boot I2C transaction timed out, one CE-backed recovery ran, and
-  TPS boot 5 V then settled before SW2303 access.
+- On the repaired board, eight `monitor --from-start --reset` samples did not
+  show direct short-path success. Each sample reported
+  `path=short_failed_then_ce_recovered`; the first TPS boot I2C transaction
+  timed out, one CE-backed recovery ran, and TPS boot 5 V then settled before
+  SW2303 access. Seven samples applied the boot setpoint on attempt 3/4; one
+  sample applied it on attempt 4/4.
 
 ## Root Cause
 
