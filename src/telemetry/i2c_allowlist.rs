@@ -5,6 +5,8 @@ use super::hardware::{
     INA226_U13_ADDR_7BIT, INA226_U13_FALLBACK_ADDR_7BIT, INA226_U17_ADDR_7BIT,
     INA226_U17_FALLBACK_ADDR_7BIT,
 };
+#[cfg(feature = "net_http")]
+use crate::provisioning::WIFI_EEPROM_ADDR_7BIT;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TelemetryI2cError<E> {
@@ -26,8 +28,9 @@ impl<E: Error> Error for TelemetryI2cError<E> {
 /// Frozen v1 policy:
 /// - Only allow INA226 (U13/U17) at addresses `0x40` / `0x41` and the
 ///   documented counterfeit/clone fallbacks `0x44` / `0x45`
-/// - Never scan / never touch other devices on the same bus (e.g. EEPROM U21,
-///   TMP112 U23)
+/// - Only allow the provisioning EEPROM U21 (`0x50`) through explicit
+///   provisioning calls when `net_http` is enabled.
+/// - Never scan / never touch other devices on the same bus (e.g. TMP112 U23).
 pub struct TelemetryI2cAllowlist<I2C> {
     inner: I2C,
 }
@@ -59,6 +62,16 @@ where
         address: SevenBitAddress,
         operations: &mut [Operation<'_>],
     ) -> Result<(), Self::Error> {
+        #[cfg(feature = "net_http")]
+        if address != INA226_U13_ADDR_7BIT
+            && address != INA226_U13_FALLBACK_ADDR_7BIT
+            && address != INA226_U17_ADDR_7BIT
+            && address != INA226_U17_FALLBACK_ADDR_7BIT
+            && address != WIFI_EEPROM_ADDR_7BIT
+        {
+            return Err(TelemetryI2cError::AddressNotAllowed(address));
+        }
+        #[cfg(not(feature = "net_http"))]
         if address != INA226_U13_ADDR_7BIT
             && address != INA226_U13_FALLBACK_ADDR_7BIT
             && address != INA226_U17_ADDR_7BIT

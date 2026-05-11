@@ -1,21 +1,25 @@
 use std::{
     collections::HashMap,
+    io::{BufRead as _, BufReader, Write as _},
     net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
+    path::{Path, PathBuf},
+    process::Command,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration as StdDuration,
 };
 
 use anyhow::{Context as _, anyhow};
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path as AxumPath, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
+use base64::Engine as _;
 use clap::{Parser, Subcommand};
 use default_net::interface::InterfaceType;
 use directories::ProjectDirs;
@@ -24,7 +28,10 @@ use mdns_sd::{ServiceDaemon, ServiceEvent};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
-use tokio::{net::TcpListener, sync::RwLock};
+use tokio::{
+    net::TcpListener,
+    sync::{Mutex as TokioMutex, RwLock},
+};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
@@ -202,6 +209,61 @@ struct AppState {
     mode: &'static str,
     discovery: Arc<DiscoveryController>,
     storage: Arc<StorageManager>,
+    serial_lock: Arc<TokioMutex<()>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct SerialPortInfo {
+    path: String,
+    label: String,
+    #[serde(rename = "vendorId")]
+    vendor_id: Option<u16>,
+    #[serde(rename = "productId")]
+    product_id: Option<u16>,
+    #[serde(rename = "serialNumber")]
+    serial_number: Option<String>,
+    manufacturer: Option<String>,
+    product: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct SerialPortsResponse {
+    ports: Vec<SerialPortInfo>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SerialJsonlRequest {
+    port_path: String,
+    #[serde(default = "default_serial_baud_rate")]
+    baud_rate: u32,
+    #[serde(default = "default_serial_timeout_ms")]
+    timeout_ms: u64,
+    request: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SerialJsonlResponse {
+    response: serde_json::Value,
+    raw: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FirmwareFlashRequest {
+    port_path: String,
+    address: u32,
+    file_name: String,
+    file_base64: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FirmwareFlashResponse {
+    ok: bool,
+    exit_code: Option<i32>,
+    log: String,
 }
 
 struct DiscoveryController {
@@ -711,6 +773,7 @@ async fn start_agent_server(
         mode,
         discovery: discovery.clone(),
         storage: storage.clone(),
+        serial_lock: Arc::new(TokioMutex::new(())),
     };
 
     discovery.start_mdns_background().await;
@@ -722,6 +785,9 @@ async fn start_agent_server(
         .route("/api/v1/discovery/refresh", post(api_discovery_refresh))
         .route("/api/v1/discovery/ip-scan", post(api_discovery_ip_scan))
         .route("/api/v1/discovery/cancel", post(api_discovery_cancel))
+        .route("/api/v1/serial/ports", get(api_serial_ports))
+        .route("/api/v1/serial/request", post(api_serial_request))
+        .route("/api/v1/firmware/flash", post(api_firmware_flash))
         .route(
             "/api/v1/storage/devices",
             get(api_storage_list_devices).post(api_storage_upsert_device),
@@ -1577,6 +1643,185 @@ async fn api_discovery_cancel(State(state): State<AppState>, headers: HeaderMap)
         .into_response()
 }
 
+fn default_serial_baud_rate() -> u32 {
+    115_200
+}
+
+fn default_serial_timeout_ms() -> u64 {
+    1_500
+}
+
+async fn api_serial_ports(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+
+    let result = tokio::task::spawn_blocking(|| {
+        serialport::available_ports().map(|ports| {
+            ports
+                .into_iter()
+                .map(|port| {
+                    let (vendor_id, product_id, serial_number, manufacturer, product) =
+                        match port.port_type {
+                            serialport::SerialPortType::UsbPort(info) => (
+                                Some(info.vid),
+                                Some(info.pid),
+                                info.serial_number,
+                                info.manufacturer,
+                                info.product,
+                            ),
+                            _ => (None, None, None, None, None),
+                        };
+                    let label = product
+                        .clone()
+                        .or_else(|| manufacturer.clone())
+                        .unwrap_or_else(|| port.port_name.clone());
+                    SerialPortInfo {
+                        path: port.port_name,
+                        label,
+                        vendor_id,
+                        product_id,
+                        serial_number,
+                        manufacturer,
+                        product,
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+    })
+    .await;
+
+    match result {
+        Ok(Ok(ports)) => Json(SerialPortsResponse { ports }).into_response(),
+        Ok(Err(err)) => internal_error(&format!("serial port enumeration failed: {err}")),
+        Err(err) => internal_error(&format!("serial port task failed: {err}")),
+    }
+}
+
+async fn api_serial_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<SerialJsonlRequest>,
+) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    if req.port_path.trim().is_empty() {
+        return bad_request("portPath is required");
+    }
+
+    let Ok(_guard) = state.serial_lock.try_lock() else {
+        return conflict("serial port is busy");
+    };
+
+    let result = tokio::task::spawn_blocking(move || run_serial_jsonl_request(req)).await;
+    match result {
+        Ok(Ok(response)) => Json(response).into_response(),
+        Ok(Err(err)) => internal_error(&err),
+        Err(err) => internal_error(&format!("serial request task failed: {err}")),
+    }
+}
+
+fn run_serial_jsonl_request(req: SerialJsonlRequest) -> Result<SerialJsonlResponse, String> {
+    let timeout = StdDuration::from_millis(req.timeout_ms.clamp(250, 10_000));
+    let mut port = serialport::new(&req.port_path, req.baud_rate)
+        .timeout(timeout)
+        .open()
+        .map_err(|err| format!("open {} failed: {err}", req.port_path))?;
+
+    let mut line = serde_json::to_string(&req.request).map_err(|err| err.to_string())?;
+    line.push('\n');
+    port.write_all(line.as_bytes())
+        .map_err(|err| format!("serial write failed: {err}"))?;
+    port.flush()
+        .map_err(|err| format!("serial flush failed: {err}"))?;
+
+    let mut reader = BufReader::new(port);
+    let mut raw = String::new();
+    reader
+        .read_line(&mut raw)
+        .map_err(|err| format!("serial read failed: {err}"))?;
+    if raw.trim().is_empty() {
+        return Err("serial response timed out".to_string());
+    }
+    let response = serde_json::from_str(raw.trim())
+        .map_err(|err| format!("serial response was not JSON: {err}"))?;
+    Ok(SerialJsonlResponse { response, raw })
+}
+
+async fn api_firmware_flash(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<FirmwareFlashRequest>,
+) -> Response {
+    if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
+        return forbidden("origin not allowed");
+    }
+    if !is_authorized(&headers, &state) {
+        return unauthorized("missing/invalid bearer token");
+    }
+    if req.port_path.trim().is_empty() {
+        return bad_request("portPath is required");
+    }
+
+    let Ok(_guard) = state.serial_lock.try_lock() else {
+        return conflict("serial port is busy");
+    };
+
+    let result = tokio::task::spawn_blocking(move || run_firmware_flash(req)).await;
+    match result {
+        Ok(Ok(response)) => Json(response).into_response(),
+        Ok(Err(err)) => internal_error(&err),
+        Err(err) => internal_error(&format!("firmware flash task failed: {err}")),
+    }
+}
+
+fn run_firmware_flash(req: FirmwareFlashRequest) -> Result<FirmwareFlashResponse, String> {
+    let firmware = base64::engine::general_purpose::STANDARD
+        .decode(req.file_base64.trim())
+        .map_err(|err| format!("firmware payload was not valid base64: {err}"))?;
+    let temp_path = {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|err| format!("clock error: {err}"))?
+            .as_nanos();
+        let file_name = Path::new(req.file_name.trim())
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("firmware.bin");
+        std::env::temp_dir().join(format!("isolapurr-flash-{stamp}-{file_name}"))
+    };
+    std::fs::write(&temp_path, firmware)
+        .map_err(|err| format!("failed to write temp firmware image: {err}"))?;
+
+    let output = Command::new("espflash")
+        .arg("write-bin")
+        .arg("--chip")
+        .arg("esp32s3")
+        .arg("--port")
+        .arg(&req.port_path)
+        .arg(format!("0x{:x}", req.address))
+        .arg(&temp_path)
+        .output()
+        .map_err(|err| format!("failed to start espflash: {err}"))?;
+    let _ = std::fs::remove_file(&temp_path);
+
+    let mut log = String::new();
+    log.push_str(&String::from_utf8_lossy(&output.stdout));
+    log.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(FirmwareFlashResponse {
+        ok: output.status.success(),
+        exit_code: output.status.code(),
+        log,
+    })
+}
+
 async fn api_storage_list_devices(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
         return forbidden("origin not allowed");
@@ -1608,7 +1853,7 @@ async fn api_storage_upsert_device(
 async fn api_storage_delete_device(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(device_id): Path<String>,
+    AxumPath(device_id): AxumPath<String>,
 ) -> Response {
     if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
         return forbidden("origin not allowed");
@@ -1716,10 +1961,10 @@ async fn api_storage_reset(State(state): State<AppState>, headers: HeaderMap) ->
 }
 
 async fn ui_index() -> Response {
-    ui_asset(Path("index.html".to_string())).await
+    ui_asset(AxumPath("index.html".to_string())).await
 }
 
-async fn ui_asset(Path(path): Path<String>) -> Response {
+async fn ui_asset(AxumPath(path): AxumPath<String>) -> Response {
     // Serve SPA assets; fall back to index.html for client-side routing.
     let path = path.trim_start_matches('/').to_string();
     let asset = WebDist::get(&path).or_else(|| WebDist::get("index.html"));

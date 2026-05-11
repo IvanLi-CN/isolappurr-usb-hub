@@ -13,6 +13,7 @@ tauri-build = { version = "2.5.3", features = [] }
 anyhow = "1.0.95"
 axum = "0.7.9"
 clap = { version = "4.5.27", features = ["derive"] }
+base64 = "0.22.1"
 default-net = "0.22.0"
 directories = "5.0.1"
 futures = "0.3.31"
@@ -26,6 +27,7 @@ reqwest = { version = "0.12.12", default-features = false, features = ["json", "
 rust-embed = "8.5.0"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
+serialport = "4.9.0"
 tauri = { version = "2.9.5", features = ["tray-icon"] }
 time = { version = "0.3.37", features = ["formatting"] }
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "signal", "time"] }

@@ -22,28 +22,14 @@ mod mdns;
 #[path = "../net.rs"]
 mod net;
 
-// Wi‑Fi compile-time configuration injected by build.rs when `net_http` is enabled.
-#[cfg(feature = "net_http")]
-pub const WIFI_SSID: &str = env!("USB_HUB_WIFI_SSID");
-#[cfg(feature = "net_http")]
-pub const WIFI_PSK: &str = env!("USB_HUB_WIFI_PSK");
-#[cfg(feature = "net_http")]
-pub const WIFI_HOSTNAME: Option<&str> = option_env!("USB_HUB_WIFI_HOSTNAME");
-#[cfg(feature = "net_http")]
-pub const WIFI_STATIC_IP: Option<&str> = option_env!("USB_HUB_WIFI_STATIC_IP");
-#[cfg(feature = "net_http")]
-pub const WIFI_NETMASK: Option<&str> = option_env!("USB_HUB_WIFI_NETMASK");
-#[cfg(feature = "net_http")]
-pub const WIFI_GATEWAY: Option<&str> = option_env!("USB_HUB_WIFI_GATEWAY");
-#[cfg(feature = "net_http")]
-pub const WIFI_DNS: Option<&str> = option_env!("USB_HUB_WIFI_DNS");
-
 const BUILD_GIT_SHA: &str = env!("USB_HUB_BUILD_GIT_SHA");
 const BUILD_GIT_REF: &str = env!("USB_HUB_BUILD_GIT_REF");
 const BUILD_GIT_DIRTY: &str = env!("USB_HUB_BUILD_GIT_DIRTY");
 const BUILD_PROFILE: &str = env!("USB_HUB_BUILD_PROFILE");
 
 use core::cell::RefCell;
+#[cfg(feature = "net_http")]
+use core::fmt::Write as _;
 use core::sync::atomic::{AtomicBool, Ordering};
 use critical_section::Mutex;
 #[cfg(feature = "net_http")]
@@ -61,6 +47,8 @@ use esp_hal::spi::Mode;
 use esp_hal::spi::master::{Config as SpiConfig, Spi};
 use esp_hal::time::{Duration, Instant, Rate};
 use esp_hal::timer::timg::TimerGroup;
+#[cfg(feature = "net_http")]
+use esp_hal::usb_serial_jtag::UsbSerialJtag;
 use esp_hal::{dma_buffers, handler, ram};
 use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{
@@ -81,7 +69,9 @@ use isolapurr_usb_hub::prompt_tone::{
     DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitWarnReason, PromptToneManager, SafetyKind,
     SoundEvent,
 };
-use isolapurr_usb_hub::telemetry::{Field, NormalUiTelemetrySampler};
+#[cfg(feature = "net_http")]
+use isolapurr_usb_hub::provisioning;
+use isolapurr_usb_hub::telemetry::{Field, NormalUiTelemetrySampler, TelemetryI2cAllowlist};
 
 #[cfg(feature = "net_http")]
 use isolapurr_usb_hub::telemetry::PortMetrics;
@@ -97,6 +87,408 @@ static mut DISPLAY_WORKBUF: [u8; WORKBUF_SIZE] = [0; WORKBUF_SIZE];
 
 static INT_TPS: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
 static INT_TPS_DIRTY: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "net_http")]
+#[derive(Clone, Copy)]
+enum WifiProvisioningCommand {
+    Store(provisioning::WifiCredentials),
+    Clear,
+}
+
+#[cfg(feature = "net_http")]
+static WIFI_PROVISIONING_PENDING: Mutex<RefCell<Option<WifiProvisioningCommand>>> =
+    Mutex::new(RefCell::new(None));
+
+#[cfg(feature = "net_http")]
+static REBOOT_PENDING: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "net_http")]
+#[embassy_executor::task]
+async fn usb_console_task(
+    mut usb: UsbSerialJtag<'static, esp_hal::Async>,
+    api_state: &'static net::ApiSharedMutex,
+) {
+    use embedded_io_async::Read as _;
+
+    let mut rx = [0u8; 64];
+    let mut line = [0u8; 512];
+    let mut len = 0usize;
+
+    loop {
+        let n = usb.read(&mut rx).await.ok().unwrap_or(0);
+        for byte in &rx[..n] {
+            if *byte == b'\n' {
+                if len > 0 {
+                    let request = core::str::from_utf8(&line[..len]).unwrap_or("");
+                    let response = handle_usb_jsonl_request(request, api_state).await;
+                    let _ = embedded_io_async::Write::write(&mut usb, response.as_bytes()).await;
+                    let _ = embedded_io_async::Write::write(&mut usb, b"\n").await;
+                    let _ = embedded_io_async::Write::flush(&mut usb).await;
+                    len = 0;
+                }
+            } else if *byte != b'\r' && len < line.len() {
+                line[len] = *byte;
+                len += 1;
+            } else if len >= line.len() {
+                len = 0;
+                let _ = embedded_io_async::Write::write(
+                    &mut usb,
+                    b"{\"id\":null,\"ok\":false,\"error\":{\"code\":\"frame_too_large\",\"message\":\"JSONL frame too large\",\"retryable\":false}}\n",
+                )
+                .await;
+                let _ = embedded_io_async::Write::flush(&mut usb).await;
+            }
+        }
+    }
+}
+
+#[cfg(feature = "net_http")]
+async fn handle_usb_jsonl_request(
+    request: &str,
+    api_state: &'static net::ApiSharedMutex,
+) -> alloc::string::String {
+    let id = parse_jsonl_id(request);
+    let mut body = alloc::string::String::new();
+
+    if request.contains("\"method\":\"info\"") || request.contains("\"method\": \"info\"") {
+        let _ = write!(
+            body,
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"device\":{{\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}}}}}}}}",
+            id.as_str(),
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION")
+        );
+        return body;
+    }
+
+    if request.contains("\"method\":\"ports.get\"") || request.contains("\"method\": \"ports.get\"")
+    {
+        let state = { *api_state.lock().await };
+        let _ = write!(
+            body,
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{}}},\"ports\":[",
+            id.as_str(),
+            state.hub.upstream_connected
+        );
+        write_usb_port_json(&mut body, "port_a", "USB-A", &state.ports.port_a);
+        let _ = body.push(',');
+        write_usb_port_json(&mut body, "port_c", "USB-C", &state.ports.port_c);
+        let _ = body.push_str("]}}}");
+        return body;
+    }
+
+    if request.contains("\"method\":\"port.replug\"")
+        || request.contains("\"method\": \"port.replug\"")
+        || request.contains("\"method\":\"port.power_set\"")
+        || request.contains("\"method\": \"port.power_set\"")
+    {
+        let port_id = if request.contains("port_c") {
+            net::ApiPortId::PortC
+        } else {
+            net::ApiPortId::PortA
+        };
+        let action = if request.contains("power_set") {
+            net::ApiPortAction::Power {
+                enabled: request.contains("\"enabled\":true")
+                    || request.contains("\"enabled\": true"),
+            }
+        } else {
+            net::ApiPortAction::Replug
+        };
+
+        match net::try_set_action(api_state, port_id, action).await {
+            Ok(()) => {
+                let _ = write!(
+                    body,
+                    "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true}}}}",
+                    id.as_str()
+                );
+            }
+            Err(net::ApiActionError::Busy) => {
+                write_jsonl_error(&mut body, id.as_str(), "busy", "port is busy", true)
+            }
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"wifi.get\"") || request.contains("\"method\": \"wifi.get\"") {
+        let _ = write!(
+            body,
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"configured\":null,\"storage\":\"eeprom\",\"address\":\"0x50\"}}}}",
+            id.as_str()
+        );
+        return body;
+    }
+
+    if request.contains("\"method\":\"wifi.set\"") || request.contains("\"method\": \"wifi.set\"") {
+        let Some(ssid) = extract_json_string(request, "ssid") else {
+            write_jsonl_error(&mut body, id.as_str(), "bad_request", "missing ssid", false);
+            return body;
+        };
+        let psk = extract_json_string(request, "psk").unwrap_or_default();
+        match provisioning::WifiCredentials::new(ssid.as_str(), psk.as_str()) {
+            Ok(credentials) => {
+                if enqueue_wifi_provisioning(WifiProvisioningCommand::Store(credentials)).is_ok() {
+                    let _ = write!(
+                        body,
+                        "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":true}}}}",
+                        id.as_str()
+                    );
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "busy",
+                        "wifi provisioning command is already pending",
+                        true,
+                    );
+                }
+            }
+            Err(_) => write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "bad_request",
+                "ssid or psk length is invalid",
+                false,
+            ),
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"wifi.clear\"")
+        || request.contains("\"method\": \"wifi.clear\"")
+    {
+        if enqueue_wifi_provisioning(WifiProvisioningCommand::Clear).is_ok() {
+            let _ = write!(
+                body,
+                "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":true}}}}",
+                id.as_str()
+            );
+        } else {
+            write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "busy",
+                "wifi provisioning command is already pending",
+                true,
+            );
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"reboot\"") || request.contains("\"method\": \"reboot\"") {
+        REBOOT_PENDING.store(true, Ordering::Release);
+        let _ = write!(
+            body,
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true}}}}",
+            id.as_str()
+        );
+        return body;
+    }
+
+    write_jsonl_error(
+        &mut body,
+        id.as_str(),
+        "unknown_method",
+        "unknown method",
+        false,
+    );
+    body
+}
+
+#[cfg(feature = "net_http")]
+fn enqueue_wifi_provisioning(command: WifiProvisioningCommand) -> Result<(), ()> {
+    critical_section::with(|cs| {
+        let mut slot = WIFI_PROVISIONING_PENDING.borrow_ref_mut(cs);
+        if slot.is_some() {
+            return Err(());
+        }
+        *slot = Some(command);
+        Ok(())
+    })
+}
+
+#[cfg(feature = "net_http")]
+fn take_wifi_provisioning() -> Option<WifiProvisioningCommand> {
+    critical_section::with(|cs| WIFI_PROVISIONING_PENDING.borrow_ref_mut(cs).take())
+}
+
+#[cfg(feature = "net_http")]
+fn has_wifi_provisioning_pending() -> bool {
+    critical_section::with(|cs| WIFI_PROVISIONING_PENDING.borrow_ref(cs).is_some())
+}
+
+#[cfg(feature = "net_http")]
+fn extract_json_string(request: &str, key: &str) -> Option<alloc::string::String> {
+    let rest = json_value_after_key(request, key)?;
+    parse_json_string_value(rest).map(|(value, _)| value)
+}
+
+#[cfg(feature = "net_http")]
+fn json_value_after_key<'a>(request: &'a str, key: &str) -> Option<&'a str> {
+    let needle = {
+        let mut s = alloc::string::String::new();
+        let _ = write!(s, "\"{}\"", key);
+        s
+    };
+    let start = request.find(needle.as_str())?;
+    let colon = request[start..].find(':')?;
+    Some(request[start + colon + 1..].trim_start())
+}
+
+#[cfg(feature = "net_http")]
+fn parse_json_string_value(rest: &str) -> Option<(alloc::string::String, usize)> {
+    let mut chars = rest.char_indices();
+    let (_, first) = chars.next()?;
+    if first != '"' {
+        return None;
+    }
+
+    let mut out = alloc::string::String::new();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => return Some((out, idx + ch.len_utf8())),
+            '\\' => {
+                let (_, escaped) = chars.next()?;
+                match escaped {
+                    '"' | '\\' | '/' => {
+                        let _ = out.push(escaped);
+                    }
+                    'b' => {
+                        let _ = out.push('\u{0008}');
+                    }
+                    'f' => {
+                        let _ = out.push('\u{000c}');
+                    }
+                    'n' => {
+                        let _ = out.push('\n');
+                    }
+                    'r' => {
+                        let _ = out.push('\r');
+                    }
+                    't' => {
+                        let _ = out.push('\t');
+                    }
+                    'u' => {
+                        let mut code = 0u32;
+                        for _ in 0..4 {
+                            let (_, hex) = chars.next()?;
+                            code = (code << 4) | hex.to_digit(16)?;
+                        }
+                        let decoded = char::from_u32(code)?;
+                        let _ = out.push(decoded);
+                    }
+                    _ => return None,
+                }
+            }
+            _ => {
+                let _ = out.push(ch);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(feature = "net_http")]
+fn write_usb_port_json(
+    body: &mut alloc::string::String,
+    id: &str,
+    label: &str,
+    port: &net::ApiPortSnapshot,
+) {
+    let _ = write!(
+        body,
+        "{{\"portId\":\"{}\",\"label\":\"{}\",\"telemetry\":{{\"status\":\"{}\",\"voltage_mv\":",
+        id,
+        label,
+        port.telemetry.status.as_str()
+    );
+    write_usb_u32_or_null(body, port.telemetry.voltage_mv);
+    let _ = body.push_str(",\"current_ma\":");
+    write_usb_u32_or_null(body, port.telemetry.current_ma);
+    let _ = body.push_str(",\"power_mw\":");
+    write_usb_u32_or_null(body, port.telemetry.power_mw);
+    let _ = write!(
+        body,
+        ",\"sample_uptime_ms\":{}}},\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}}}}",
+        port.telemetry.sample_uptime_ms,
+        port.state.power_enabled,
+        port.state.data_connected,
+        port.state.replugging,
+        port.state.busy
+    );
+}
+
+#[cfg(feature = "net_http")]
+fn write_usb_u32_or_null(body: &mut alloc::string::String, value: Option<u32>) {
+    match value {
+        Some(value) => {
+            let _ = write!(body, "{}", value);
+        }
+        None => {
+            let _ = body.push_str("null");
+        }
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn write_jsonl_error(
+    body: &mut alloc::string::String,
+    id: &str,
+    code: &str,
+    message: &str,
+    retryable: bool,
+) {
+    let _ = write!(
+        body,
+        "{{\"id\":{},\"ok\":false,\"error\":{{\"code\":\"{}\",\"message\":\"{}\",\"retryable\":{}}}}}",
+        id, code, message, retryable
+    );
+}
+
+#[cfg(feature = "net_http")]
+fn parse_jsonl_id(request: &str) -> alloc::string::String {
+    let Some(rest) = json_value_after_key(request, "id") else {
+        return alloc::string::String::from("null");
+    };
+    if rest.starts_with('"') {
+        return copy_json_string_token(rest).unwrap_or_else(|| alloc::string::String::from("null"));
+    }
+
+    let mut out = alloc::string::String::new();
+    for ch in rest.chars() {
+        if ch.is_ascii_digit() || (out.is_empty() && ch == '-') {
+            let _ = out.push(ch);
+        } else {
+            break;
+        }
+    }
+    if out.is_empty() || out == "-" {
+        alloc::string::String::from("null")
+    } else {
+        out
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn copy_json_string_token(rest: &str) -> Option<alloc::string::String> {
+    let mut out = alloc::string::String::new();
+    let mut escaped = false;
+    for ch in rest.chars() {
+        let _ = out.push(ch);
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' if out.len() > 1 => return Some(out),
+            '"' => {}
+            _ => {}
+        }
+    }
+    None
+}
 
 #[handler]
 #[ram]
@@ -626,11 +1018,21 @@ async fn main(_spawner: Spawner) {
         DASHBOARD_BG_RGB8.2
     );
 
-    // Optional Wi‑Fi STA + mDNS + HTTP stack (Plan #0003).
+    // Optional HTTP API state is shared by Wi-Fi and USB/native transports.
     #[cfg(feature = "net_http")]
     let api_state = net::init_http_api_state();
     #[cfg(feature = "net_http")]
-    let net_handles = net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state);
+    {
+        let usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
+        if _spawner
+            .spawn(usb_console_task(usb_serial, api_state))
+            .is_err()
+        {
+            defmt::warn!("usb console: failed to spawn USB Serial/JTAG JSONL task");
+        } else {
+            info!("usb console: USB Serial/JTAG JSONL task started");
+        }
+    }
 
     let buzzer = LedcBuzzer::new(peripherals.LEDC, peripherals.GPIO21).expect("buzzer LEDC init");
     let mut prompt_tone = PromptToneManager::new(buzzer);
@@ -1061,10 +1463,34 @@ async fn main(_spawner: Spawner) {
     .with_scl(peripherals.GPIO9)
     .into_async();
     info!(
-        "telemetry i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 addr=[0x40/0x44,0x41/0x45] (no scan)"
+        "telemetry i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 addr=[0x40/0x44,0x41/0x45,0x50] (no scan)"
     );
 
-    let mut telemetry_sampler = NormalUiTelemetrySampler::new(i2c_telemetry);
+    #[allow(unused_mut)]
+    let mut telemetry_i2c = TelemetryI2cAllowlist::new(i2c_telemetry);
+    #[cfg(feature = "net_http")]
+    let wifi_credentials = match provisioning::load_wifi_credentials(&mut telemetry_i2c).await {
+        Ok(value) => {
+            if value.is_some() {
+                info!("provisioning: Wi-Fi credentials loaded from EEPROM U21");
+            } else {
+                info!("provisioning: Wi-Fi EEPROM U21 has no configured credentials");
+            }
+            value
+        }
+        Err(err) => {
+            defmt::warn!(
+                "provisioning: failed to load Wi-Fi credentials from EEPROM U21: {:?}",
+                defmt::Debug2Format(&err)
+            );
+            None
+        }
+    };
+    #[cfg(feature = "net_http")]
+    let net_handles =
+        net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state, wifi_credentials);
+
+    let mut telemetry_sampler = NormalUiTelemetrySampler::new_with_allowlist(telemetry_i2c);
     match telemetry_sampler.init().await {
         Ok(()) => {
             info!(
@@ -1175,6 +1601,41 @@ async fn main(_spawner: Spawner) {
         let sw2303_was_in_error = sw2303_error_latched;
         let tps_was_in_error = tps_error_latched;
         let ui_was_in_error = ui_error_latched;
+
+        #[cfg(feature = "net_http")]
+        if let Some(command) = take_wifi_provisioning() {
+            match command {
+                WifiProvisioningCommand::Store(credentials) => {
+                    match provisioning::store_wifi_credentials(
+                        telemetry_sampler.i2c_mut(),
+                        &credentials,
+                    )
+                    .await
+                    {
+                        Ok(()) => info!("provisioning: Wi-Fi credentials saved to EEPROM U21"),
+                        Err(err) => defmt::warn!(
+                            "provisioning: failed to save Wi-Fi credentials to EEPROM U21: {:?}",
+                            defmt::Debug2Format(&err)
+                        ),
+                    }
+                }
+                WifiProvisioningCommand::Clear => {
+                    match provisioning::clear_wifi_credentials(telemetry_sampler.i2c_mut()).await {
+                        Ok(()) => info!("provisioning: Wi-Fi credentials cleared from EEPROM U21"),
+                        Err(err) => defmt::warn!(
+                            "provisioning: failed to clear Wi-Fi credentials from EEPROM U21: {:?}",
+                            defmt::Debug2Format(&err)
+                        ),
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "net_http")]
+        if REBOOT_PENDING.load(Ordering::Acquire) && !has_wifi_provisioning_pending() {
+            REBOOT_PENDING.store(false, Ordering::Release);
+            Timer::after_millis(100).await;
+            esp_hal::system::software_reset();
+        }
 
         #[cfg(feature = "net_http")]
         let api_upstream_connected = {
