@@ -173,6 +173,8 @@ impl PortState {
 const DATA_DISCONNECT_MS: u64 = 250;
 const TOAST_MS: u64 = 1500;
 const POWER_SWITCH_GUARD_MS: u64 = 350;
+#[cfg(feature = "net_http")]
+const LEDD_SAMPLE_MS: u64 = 1_000;
 
 const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
 const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
@@ -317,57 +319,6 @@ impl DebouncedButton {
         } else {
             ButtonEdge::Released
         })
-    }
-}
-
-#[cfg(feature = "net_http")]
-#[derive(Debug)]
-struct DebouncedLevel {
-    stable: bool,
-    candidate: bool,
-    candidate_since: Option<Instant>,
-}
-
-#[cfg(feature = "net_http")]
-impl DebouncedLevel {
-    fn new(initial: bool) -> Self {
-        Self {
-            stable: initial,
-            candidate: initial,
-            candidate_since: None,
-        }
-    }
-
-    fn stable(&self) -> bool {
-        self.stable
-    }
-
-    fn update(&mut self, now: Instant, level: bool, debounce: Duration) -> Option<bool> {
-        if level == self.stable {
-            self.candidate = level;
-            self.candidate_since = None;
-            return None;
-        }
-
-        let Some(since) = self.candidate_since else {
-            self.candidate = level;
-            self.candidate_since = Some(now);
-            return None;
-        };
-
-        if self.candidate != level {
-            self.candidate = level;
-            self.candidate_since = Some(now);
-            return None;
-        }
-
-        if now - since < debounce {
-            return None;
-        }
-
-        self.stable = level;
-        self.candidate_since = None;
-        Some(level)
     }
 }
 
@@ -663,9 +614,9 @@ async fn main(_spawner: Spawner) {
     #[cfg(feature = "net_http")]
     let ledd_usb_a = Input::new(peripherals.GPIO6, ledd_cfg);
     #[cfg(feature = "net_http")]
-    let ledd_debounce = Duration::from_millis(20);
+    let mut api_upstream_connected = ledd_usb_a.is_low();
     #[cfg(feature = "net_http")]
-    let mut ledd_usb_a_state = DebouncedLevel::new(ledd_usb_a.is_low());
+    let mut ledd_last_sample = Instant::now();
     #[cfg(feature = "net_http")]
     info!(
         "usb-a ledd: GPIO6 initial raw_low={} (active-low, hi-z input; no pull)",
@@ -1177,14 +1128,18 @@ async fn main(_spawner: Spawner) {
         let ui_was_in_error = ui_error_latched;
 
         #[cfg(feature = "net_http")]
-        let api_upstream_connected = {
-            let now = Instant::now();
+        if ledd_last_sample.elapsed() >= Duration::from_millis(LEDD_SAMPLE_MS) {
+            ledd_last_sample = Instant::now();
             let raw_low = ledd_usb_a.is_low();
-            if let Some(stable_low) = ledd_usb_a_state.update(now, raw_low, ledd_debounce) {
-                debug!("usb-a ledd: stable_raw_low={}", stable_low);
+            let connected = raw_low;
+            if connected != api_upstream_connected {
+                debug!(
+                    "usb-a ledd: sampled_connected={} raw_low={} sample_ms={}",
+                    connected, raw_low, LEDD_SAMPLE_MS
+                );
             }
-            ledd_usb_a_state.stable()
-        };
+            api_upstream_connected = connected;
+        }
 
         let allow_sw2303_probe = !sw2303_error_latched
             || last_sw2303_read_attempt
