@@ -108,22 +108,28 @@ export function isEsp32SerialPort(port: SerialPortInfo): boolean {
   if (path.includes("bluetooth") || path.includes("debug-console")) {
     return false;
   }
-  if (!path.includes("usbmodem") && !path.includes("usbserial")) {
-    return false;
-  }
 
   const manufacturer = (port.manufacturer ?? "").toLowerCase();
   const product = (port.product ?? port.label ?? "").toLowerCase();
   const vendorMatches = port.vendorId === ESPRESSIF_USB_VENDOR_ID;
   const serialJtagMatches =
     vendorMatches && port.productId === ESP32_USB_SERIAL_JTAG_PRODUCT_ID;
+  if (serialJtagMatches) {
+    return true;
+  }
+
+  const pathLooksLikeUsbSerial =
+    path.includes("usbmodem") ||
+    path.includes("usbserial") ||
+    path.includes("ttyacm") ||
+    /^com\d+$/i.test(port.path);
   const espressifTextMatches =
     manufacturer.includes("espressif") ||
     product.includes("esp32") ||
     product.includes("jtag/serial") ||
     product.includes("usb jtag");
 
-  return serialJtagMatches || espressifTextMatches;
+  return pathLooksLikeUsbSerial && espressifTextMatches;
 }
 
 function compareSerialPortsForConnect(
