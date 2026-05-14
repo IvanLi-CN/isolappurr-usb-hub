@@ -52,7 +52,7 @@
   - `R8=1kΩ → LED1 → 3V3`：板载指示灯网络（`LEDD=0` 时 LED 亮，active-low 灌电流）。
   - `LEDD → MCU(GPIO6)`：tps-sw 网表中 `LEDD` 直接连接到 MCU `GPIO6`（无串联电阻）。
   - 说明：虽然 `LEDD` 有 `5.1k` 下拉，但该脚在本设计中仍会被 CH318 主动驱动；`5.1k@3.3V` 仅约 `0.65mA` 负载，处于 CH318 I/O 驱动能力范围内，因此不会导致信号“必然被钳死为低电平”。
-  - 固件约束：MCU 必须以高阻输入读取（禁用内部上下拉/禁止输出驱动），避免反向干扰 `LEDD` 的模式/指示逻辑。
+  - 固件约束：MCU 必须以高阻输入读取（禁用内部上下拉/禁止输出驱动），避免反向干扰 `LEDD` 的模式/指示逻辑；固件将 `LEDD=0` 作为 active-low 有效样本，并以 1 秒周期更新上游链路指示。
 
 ### SW2303（U16，USB‑C/PD 控制）
 
@@ -80,7 +80,8 @@
 
 - [x] `U7`（USB-A 数据路径）：`IN(pin1)=GND` 固定选择 S1，`EN#(pin9)=P1_CED`；`P1_CED=low` 使能连接，`P1_CED=high` 断开。
 - [x] `U8`（USB-C/ESP/TPS 数据路径）：`IN(pin1)=P1_ESP`，`EN#(pin9)=P2_CED`；`P2_CED=low` 使能连接，`P2_CED=high` 断开。
-- [x] `U18`（上游隔离域数据路径）：`IN(pin1)=UGND` 固定选择 S1，`EN#(pin9)=PU_CED`；`PU_CED=low` 使能连接，`PU_CED=high` 断开。
+- [x] 旧版 `U18`（上游隔离域数据路径）依赖 `PU_CED` 控制 `EN#`，实测不能依赖 CH318T 边带在链路未建立时恢复通信；新版硬件已移除 `U18` 并直接短接上游 USB 信号。
+- [x] 旧版 `PU_CE/GPIO36 -> CH318T IO2 -> PU_CED` 仅作为历史调试路径保留记录；固件不再初始化或驱动 `GPIO36/PU_CE`。
 - [x] `RN3=10kΩ` 为 `P2_CED/P1_CED/P1_ESP` 提供下拉，避免这些控制脚在上电/复位期间悬空。
 
 ### TPS55288（U14，MODE/INT）
