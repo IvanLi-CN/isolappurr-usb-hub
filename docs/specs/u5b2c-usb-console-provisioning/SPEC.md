@@ -110,6 +110,8 @@ Evidence source: Storybook canvas, captured from this worktree implementation.
 
 Add device Web Serial desktop:
 
+PR: include
+
 ![Add device Web Serial desktop](assets/add-device-web-serial-desktop.png)
 
 Add device Local USB mobile:
@@ -118,8 +120,12 @@ Add device Local USB mobile:
 
 Device Hardware firmware update:
 
+PR: include
+
 ![Device Hardware Web Serial firmware update](assets/device-hardware-web-serial-flashing.png)
 
 Device list connection badges:
+
+PR: include
 
 ![Device connection badges](assets/device-card-connection-badges.png)
