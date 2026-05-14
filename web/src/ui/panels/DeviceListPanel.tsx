@@ -1,7 +1,13 @@
 import { useAddDeviceUi } from "../../app/add-device-ui";
 import { useDeviceRuntime } from "../../app/device-runtime";
 import type { StoredDevice } from "../../domain/devices";
-import { DeviceCard } from "../cards/DeviceCard";
+import { DeviceCard, type DeviceTransportBadge } from "../cards/DeviceCard";
+
+const TRANSPORT_ORDER: DeviceTransportBadge["transport"][] = [
+  "http",
+  "web_serial",
+  "local_usb",
+];
 
 export type DeviceListPanelProps = {
   devices: StoredDevice[];
@@ -15,7 +21,30 @@ export function DeviceListPanel({
   onSelect,
 }: DeviceListPanelProps) {
   const { openAddDevice } = useAddDeviceUi();
-  const { connectionState } = useDeviceRuntime();
+  const { connectionState, transport, channelState, runtimeById } =
+    useDeviceRuntime();
+
+  const transportBadges = (deviceId: string): DeviceTransportBadge[] => {
+    const current = transport(deviceId);
+    const channels = runtimeById[deviceId]?.channels;
+    if (!channels) {
+      return [];
+    }
+    return TRANSPORT_ORDER.flatMap((candidate) => {
+      const channel = channels[candidate];
+      const hasHistory = Boolean(channel?.lastOkAt || channel?.lastError);
+      if (!hasHistory) {
+        return [];
+      }
+      const state =
+        candidate === current && channelState(deviceId, candidate) === "online"
+          ? "primary"
+          : channelState(deviceId, candidate) === "online"
+            ? "connected"
+            : "history";
+      return [{ transport: candidate, state }];
+    });
+  };
 
   return (
     <div
@@ -46,6 +75,7 @@ export function DeviceListPanel({
                 device={d}
                 selected={d.id === selectedDeviceId}
                 status={connectionState(d.id)}
+                transportBadges={transportBadges(d.id)}
                 unselectedFill={selectedDeviceId ? "panel-2" : "panel"}
                 onSelect={onSelect}
               />

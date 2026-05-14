@@ -146,6 +146,10 @@ where
         self.i2c
     }
 
+    pub fn i2c_mut(&mut self) -> &mut TelemetryI2cAllowlist<I2C> {
+        &mut self.i2c
+    }
+
     pub const fn usb_a_address(&self) -> Option<u8> {
         self.usb_a_address
     }

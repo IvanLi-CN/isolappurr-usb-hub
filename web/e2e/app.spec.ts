@@ -27,7 +27,7 @@ test("renders devices list and mock dashboard", async ({ page }) => {
   await expect(page.getByTestId("port-card-port_c")).toBeVisible();
 });
 
-test("opens add device modal with discovery + manual columns (web)", async ({
+test("opens add device modal with supported connection methods (web)", async ({
   page,
 }) => {
   const storageKey = "isolapurr_usb_hub.devices";
@@ -51,13 +51,26 @@ test("opens add device modal with discovery + manual columns (web)", async ({
   await expect(
     dialog.getByText("Auto discovery", { exact: true }),
   ).toBeVisible();
-  await expect(dialog.getByText("Manual add", { exact: true })).toBeVisible();
-
   await expect(
     dialog.getByText("Service discovery: Desktop App only", { exact: true }),
   ).toBeVisible();
   await expect(
     dialog.getByText("IP scan (advanced)", { exact: true }),
   ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Create" })).toBeEnabled();
+
+  await dialog.getByRole("tab", { name: /Web Serial/ }).click();
+  await expect(
+    dialog.getByText("Add by Web Serial", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Connect and add" }),
+  ).toBeVisible();
+
+  await dialog.getByRole("tab", { name: /Local USB/ }).click();
+  await expect(
+    dialog.getByText("Add by Local USB", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Connect Local USB and add" }),
+  ).toBeVisible();
 });

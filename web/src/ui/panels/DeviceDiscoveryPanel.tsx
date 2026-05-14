@@ -114,7 +114,7 @@ export function DeviceDiscoveryPanel({
         <div>
           <div className="text-[16px] font-bold">Auto discovery</div>
           <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
-            Find hubs on your local network; pick one to fill Manual add.
+            Find hubs on your local network; pick one to add it.
           </div>
         </div>
         <button
@@ -136,7 +136,7 @@ export function DeviceDiscoveryPanel({
               </div>
               <div className="text-sm">
                 The Web app can’t do mDNS/DNS-SD. Use IP scan (advanced) or
-                Manual add.
+                connect by USB first.
               </div>
             </div>
           </div>
@@ -211,7 +211,7 @@ export function DeviceDiscoveryPanel({
                     onClick={() => onSelect(d)}
                     disabled={added}
                   >
-                    Use
+                    Add
                   </button>
                 </div>
               );
@@ -309,7 +309,7 @@ export function DeviceDiscoveryPanel({
             ipScanCandidates.length === 0 &&
             cidr.trim().length === 0 ? (
               <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
-                No local network candidates. Enter CIDR manually.
+                No local network candidates. Enter a CIDR range.
               </div>
             ) : null}
 

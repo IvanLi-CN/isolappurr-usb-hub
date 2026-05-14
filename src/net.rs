@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use core::fmt::Write as _;
+use core::sync::atomic::Ordering;
 
 use alloc::string::String;
 use defmt::*;
@@ -17,13 +18,21 @@ use esp_radio::{
     wifi::{self, ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent},
 };
 use heapless::{String as HString, Vec};
+use isolapurr_usb_hub::provisioning::WifiCredentials;
 use static_cell::StaticCell;
 
 use crate::mdns;
 use crate::mdns::MdnsConfig;
-use crate::{
-    WIFI_DNS, WIFI_GATEWAY, WIFI_HOSTNAME, WIFI_NETMASK, WIFI_PSK, WIFI_SSID, WIFI_STATIC_IP,
-};
+#[cfg(feature = "net_http")]
+const WIFI_HOSTNAME: Option<&str> = option_env!("USB_HUB_WIFI_HOSTNAME");
+#[cfg(feature = "net_http")]
+const WIFI_STATIC_IP: Option<&str> = option_env!("USB_HUB_WIFI_STATIC_IP");
+#[cfg(feature = "net_http")]
+const WIFI_NETMASK: Option<&str> = option_env!("USB_HUB_WIFI_NETMASK");
+#[cfg(feature = "net_http")]
+const WIFI_GATEWAY: Option<&str> = option_env!("USB_HUB_WIFI_GATEWAY");
+#[cfg(feature = "net_http")]
+const WIFI_DNS: Option<&str> = option_env!("USB_HUB_WIFI_DNS");
 
 pub struct NetHandles {
     pub device_names: &'static DeviceNames,
@@ -246,6 +255,7 @@ pub fn spawn_wifi_mdns_http(
     spawner: &Spawner,
     wifi_peripheral: WIFI<'static>,
     api_state: &'static ApiSharedMutex,
+    credentials: Option<WifiCredentials>,
 ) -> Option<NetHandles> {
     let wifi_state = WIFI_STATE_CELL.init(Mutex::new(WifiState::new()));
 
@@ -278,7 +288,15 @@ pub fn spawn_wifi_mdns_http(
     let wifi_mac = wifi_device.mac_address();
     let device_names = DEVICE_NAMES_CELL.init(derive_device_names(wifi_mac));
 
-    let (net_cfg, is_static) = build_net_config_from_env();
+    let Some(credentials) = credentials else {
+        info!("Wi-Fi credentials not configured in EEPROM; network services remain offline");
+        return Some(NetHandles {
+            device_names,
+            wifi_state,
+        });
+    };
+
+    let (net_cfg, is_static) = build_net_config_from_env(Some(&credentials));
 
     let rng = Rng::new();
     let seed = (rng.random() as u64) << 32 | rng.random() as u64;
@@ -293,6 +311,8 @@ pub fn spawn_wifi_mdns_http(
             wifi_state,
             is_static,
             wifi_mac,
+            String::from(credentials.ssid()),
+            String::from(credentials.psk()),
         ))
         .ok()?;
 
@@ -378,14 +398,14 @@ async fn wifi_task(
     state: &'static WifiStateMutex,
     is_static_ip: bool,
     mac: [u8; 6],
+    ssid: String,
+    password: String,
 ) {
     info!(
-        "Wi-Fi task starting (ssid=\"{}\", hostname={:?}, static_ip={})",
-        WIFI_SSID, WIFI_HOSTNAME, is_static_ip,
+        "Wi-Fi task starting (ssid=\"{}\", static_ip={})",
+        ssid.as_str(),
+        is_static_ip,
     );
-
-    let ssid = String::from(WIFI_SSID);
-    let password = String::from(WIFI_PSK);
 
     loop {
         {
@@ -426,7 +446,7 @@ async fn wifi_task(
             }
         }
 
-        info!("Connecting to Wi-Fi SSID=\"{}\"", WIFI_SSID);
+        info!("Connecting to Wi-Fi SSID=\"{}\"", ssid.as_str());
         match controller.connect_async().await {
             Ok(()) => {
                 info!("Wi-Fi connect_async returned Ok; waiting for IPv4 config");
@@ -561,20 +581,27 @@ async fn handle_http_connection(
         }
     }
 
-    let req = core::str::from_utf8(&buf[..total]).unwrap_or("");
-    let mut lines = req.lines();
+    let header_end = buf[..total]
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|idx| idx + 4)
+        .unwrap_or(total);
+    let header_text = core::str::from_utf8(&buf[..header_end]).unwrap_or("");
+    let mut lines = header_text.lines();
     let request_line = lines.next().unwrap_or("");
     let mut parts = request_line.split_whitespace();
 
-    let method = parts.next().unwrap_or("");
-    let path_and_query = parts.next().unwrap_or("");
-    let (path, query) = path_and_query
+    let method: String = String::from(parts.next().unwrap_or(""));
+    let path_and_query: String = String::from(parts.next().unwrap_or(""));
+    let (path, query): (String, String) = path_and_query
         .split_once('?')
-        .unwrap_or((path_and_query, ""));
+        .map(|(path, query)| (String::from(path), String::from(query)))
+        .unwrap_or_else(|| (path_and_query.clone(), String::new()));
 
-    let mut origin: Option<&str> = None;
-    let mut acr_headers: Option<&str> = None;
+    let mut origin: Option<String> = None;
+    let mut acr_headers: Option<String> = None;
     let mut acr_private_network = false;
+    let mut content_length = 0usize;
 
     for line in lines {
         let line = line.trim_end_matches('\r');
@@ -588,13 +615,31 @@ async fn handle_http_connection(
         let value = value.trim();
 
         if key.eq_ignore_ascii_case("Origin") {
-            origin = Some(value);
+            origin = Some(String::from(value));
         } else if key.eq_ignore_ascii_case("Access-Control-Request-Headers") {
-            acr_headers = Some(value);
+            acr_headers = Some(String::from(value));
         } else if key.eq_ignore_ascii_case("Access-Control-Request-Private-Network") {
             acr_private_network = value.eq_ignore_ascii_case("true");
+        } else if key.eq_ignore_ascii_case("Content-Length") {
+            content_length = value.parse::<usize>().unwrap_or(0);
         }
     }
+
+    let mut body_len = total.saturating_sub(header_end);
+    while body_len < content_length && total < MAX_REQUEST_SIZE {
+        let n = socket.read(&mut buf[total..]).await?;
+        if n == 0 {
+            break;
+        }
+        total += n;
+        body_len = total.saturating_sub(header_end);
+    }
+    let body = if content_length == 0 || header_end >= total {
+        ""
+    } else {
+        let end = (header_end + content_length).min(total);
+        core::str::from_utf8(&buf[header_end..end]).unwrap_or("")
+    };
 
     if method == "GET" && path == "/" {
         write_plain_response(socket, "200 OK", "Hello World").await?;
@@ -605,8 +650,8 @@ async fn handle_http_connection(
         if method == "OPTIONS" {
             write_preflight_response(
                 socket,
-                origin,
-                acr_headers,
+                origin.as_deref(),
+                acr_headers.as_deref(),
                 acr_private_network,
                 device_names,
             )
@@ -616,10 +661,11 @@ async fn handle_http_connection(
 
         handle_api_request(
             socket,
-            method,
-            path,
-            query,
-            origin,
+            method.as_str(),
+            path.as_str(),
+            query.as_str(),
+            body,
+            origin.as_deref(),
             device_names,
             wifi_state,
             api_state,
@@ -664,6 +710,7 @@ async fn handle_api_request(
     method: &str,
     path: &str,
     query: &str,
+    body: &str,
     origin: Option<&str>,
     device_names: &'static DeviceNames,
     wifi_state: &'static WifiStateMutex,
@@ -836,6 +883,112 @@ async fn handle_api_request(
         }
     }
 
+    if method == "GET" && path == "/api/v1/wifi" {
+        let wifi = { *wifi_state.lock().await };
+        let mut body = String::new();
+        let _ = core::write!(
+            body,
+            "{{\"storage\":\"eeprom\",\"address\":\"0x50\",\"state\":\"{}\",\"ipv4\":",
+            wifi_state_str(wifi.state),
+        );
+        match wifi.ipv4 {
+            Some(ip) => {
+                let _ = core::write!(body, "\"{}\"", format_ipv4(ip).as_str());
+            }
+            None => {
+                let _ = body.push_str("null");
+            }
+        }
+        let _ = core::write!(body, ",\"is_static\":{}}}", wifi.is_static);
+        write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+        return Ok(());
+    }
+
+    if method == "POST" && path == "/api/v1/wifi/set" {
+        let payload = if body.trim().is_empty() { query } else { body };
+        let Some(ssid) = crate::extract_json_string(payload, "ssid") else {
+            write_api_error(
+                socket,
+                "400 Bad Request",
+                allow_origin,
+                "bad_request",
+                "missing ssid",
+                false,
+            )
+            .await?;
+            return Ok(());
+        };
+        let psk = crate::extract_json_string(payload, "psk").unwrap_or_default();
+        match WifiCredentials::new(ssid.as_str(), psk.as_str()) {
+            Ok(credentials) => {
+                if crate::enqueue_wifi_provisioning(crate::WifiProvisioningCommand::Store(
+                    credentials,
+                ))
+                .is_ok()
+                {
+                    write_json_response(
+                        socket,
+                        "202 Accepted",
+                        allow_origin,
+                        "{\"accepted\":true,\"reboot_required\":true}",
+                    )
+                    .await?;
+                } else {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "wifi provisioning command is already pending",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            Err(_) => {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "ssid or psk length is invalid",
+                    false,
+                )
+                .await?;
+            }
+        }
+        return Ok(());
+    }
+
+    if method == "POST" && path == "/api/v1/wifi/clear" {
+        if crate::enqueue_wifi_provisioning(crate::WifiProvisioningCommand::Clear).is_ok() {
+            write_json_response(
+                socket,
+                "202 Accepted",
+                allow_origin,
+                "{\"accepted\":true,\"reboot_required\":true}",
+            )
+            .await?;
+        } else {
+            write_api_error(
+                socket,
+                "409 Conflict",
+                allow_origin,
+                "busy",
+                "wifi provisioning command is already pending",
+                true,
+            )
+            .await?;
+        }
+        return Ok(());
+    }
+
+    if method == "POST" && path == "/api/v1/reboot" {
+        crate::REBOOT_PENDING.store(true, Ordering::Release);
+        write_json_response(socket, "202 Accepted", allow_origin, "{\"accepted\":true}").await?;
+        return Ok(());
+    }
+
     write_api_error(
         socket,
         "400 Bad Request",
@@ -869,6 +1022,50 @@ fn parse_enabled_query(query: &str) -> Option<bool> {
         }
     }
     None
+}
+
+fn parse_query_value(query: &str, key: &str) -> Option<String> {
+    for part in query.split('&') {
+        let (k, v) = part.split_once('=')?;
+        if k == key {
+            return percent_decode(v);
+        }
+    }
+    None
+}
+
+fn percent_decode(value: &str) -> Option<String> {
+    let mut out = String::new();
+    let bytes = value.as_bytes();
+    let mut idx = 0;
+    while idx < bytes.len() {
+        match bytes[idx] {
+            b'+' => {
+                let _ = out.push(' ');
+                idx += 1;
+            }
+            b'%' if idx + 2 < bytes.len() => {
+                let hi = hex_value(bytes[idx + 1])?;
+                let lo = hex_value(bytes[idx + 2])?;
+                let _ = out.push((hi << 4 | lo) as char);
+                idx += 3;
+            }
+            byte => {
+                let _ = out.push(byte as char);
+                idx += 1;
+            }
+        }
+    }
+    Some(out)
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &ApiPortSnapshot) {
@@ -920,11 +1117,11 @@ fn write_json_u32_or_null(body: &mut String, v: Option<u32>) {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ApiActionError {
+pub enum ApiActionError {
     Busy,
 }
 
-async fn try_set_action(
+pub async fn try_set_action(
     api_state: &'static ApiSharedMutex,
     port_id: ApiPortId,
     action: ApiPortAction,
@@ -1112,16 +1309,10 @@ fn format_mac_lower(mac: [u8; 6]) -> HString<17> {
 
 fn derive_device_names(mac: [u8; 6]) -> DeviceNames {
     let short_id = mdns::short_id_from_mac(mac);
-    let hostname = if let Some(override_host) = WIFI_HOSTNAME {
-        let sanitized = sanitize_hostname(override_host);
-        if sanitized.is_empty() {
-            mdns::hostname_from_short_id(short_id.as_str())
-        } else {
-            sanitized
-        }
-    } else {
-        mdns::hostname_from_short_id(short_id.as_str())
-    };
+    let hostname = WIFI_HOSTNAME
+        .map(sanitize_hostname)
+        .filter(|hostname| !hostname.is_empty())
+        .unwrap_or_else(|| mdns::hostname_from_short_id(short_id.as_str()));
     let hostname_fqdn = mdns::fqdn_from_hostname(hostname.as_str());
 
     DeviceNames {
@@ -1151,8 +1342,7 @@ fn parse_ipv4(s: &str) -> Option<Ipv4Address> {
         if idx >= 4 {
             return None;
         }
-        let v = part.parse::<u8>().ok()?;
-        parts[idx] = v;
+        parts[idx] = part.parse::<u8>().ok()?;
         idx += 1;
     }
     if idx != 4 {
@@ -1162,13 +1352,8 @@ fn parse_ipv4(s: &str) -> Option<Ipv4Address> {
 }
 
 fn netmask_to_prefix(mask: Ipv4Address) -> Option<u8> {
-    let octets = mask.octets();
-    let value = u32::from_be_bytes(octets);
-    let ones = value.count_ones();
-    if ones > 32 {
-        return None;
-    }
-    let prefix = ones as u8;
+    let value = u32::from_be_bytes(mask.octets());
+    let prefix = value.count_ones() as u8;
     let reconstructed = if prefix == 0 {
         0
     } else {
@@ -1181,7 +1366,45 @@ fn netmask_to_prefix(mask: Ipv4Address) -> Option<u8> {
     }
 }
 
-fn build_net_config_from_env() -> (NetConfig, bool) {
+fn build_net_config_from_env(credentials: Option<&WifiCredentials>) -> (NetConfig, bool) {
+    if let Some(static_ipv4) = credentials.and_then(|credentials| credentials.static_ipv4()) {
+        let address = Ipv4Address::new(
+            static_ipv4.address[0],
+            static_ipv4.address[1],
+            static_ipv4.address[2],
+            static_ipv4.address[3],
+        );
+        let netmask = Ipv4Address::new(
+            static_ipv4.netmask[0],
+            static_ipv4.netmask[1],
+            static_ipv4.netmask[2],
+            static_ipv4.netmask[3],
+        );
+        let gateway = Ipv4Address::new(
+            static_ipv4.gateway[0],
+            static_ipv4.gateway[1],
+            static_ipv4.gateway[2],
+            static_ipv4.gateway[3],
+        );
+        if let Some(prefix) = netmask_to_prefix(netmask) {
+            let mut dns_servers: Vec<Ipv4Address, 3> = Vec::new();
+            if let Some(dns) = static_ipv4.dns {
+                let dns_ip = Ipv4Address::new(dns[0], dns[1], dns[2], dns[3]);
+                let _ = dns_servers.push(dns_ip);
+            }
+            let static_cfg = StaticConfigV4 {
+                address: Ipv4Cidr::new(address, prefix),
+                gateway: Some(gateway),
+                dns_servers,
+            };
+            info!(
+                "Wi-Fi using EEPROM static IPv4: addr={} prefix={} gw={}",
+                address, prefix, gateway
+            );
+            return (NetConfig::ipv4_static(static_cfg), true);
+        }
+    }
+
     let static_ip = WIFI_STATIC_IP;
     let netmask = WIFI_NETMASK;
     let gateway = WIFI_GATEWAY;
@@ -1211,20 +1434,14 @@ fn build_net_config_from_env() -> (NetConfig, bool) {
                     ip, prefix, gw
                 );
                 return (NetConfig::ipv4_static(static_cfg), true);
-            } else {
-                warn!(
-                    "Wi-Fi static netmask invalid (mask={}); falling back to DHCP",
-                    mask
-                );
             }
-        } else {
-            warn!(
-                "Wi-Fi static config parse failed (ip={:?}, netmask={:?}, gateway={:?}); falling back to DHCP",
-                static_ip, netmask, gateway
-            );
         }
     }
 
+    build_net_config_dhcp()
+}
+
+fn build_net_config_dhcp() -> (NetConfig, bool) {
     info!("Wi-Fi using DHCPv4 for IPv4 configuration");
     (NetConfig::dhcpv4(DhcpConfig::default()), false)
 }

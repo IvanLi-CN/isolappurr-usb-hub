@@ -1,4 +1,5 @@
 import { Link, useParams } from "react-router";
+import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
 import { DevicePageTabs } from "../ui/nav/DevicePageTabs";
 import { DeviceInfoPanel } from "../ui/panels/DeviceInfoPanel";
@@ -6,6 +7,7 @@ import { DeviceInfoPanel } from "../ui/panels/DeviceInfoPanel";
 export function DeviceInfoPage() {
   const { deviceId } = useParams();
   const { getDevice } = useDevices();
+  const runtime = useDeviceRuntime();
 
   if (!deviceId) {
     return null;
@@ -44,7 +46,11 @@ export function DeviceInfoPage() {
       </div>
 
       <div className="mt-[22px]">
-        <DeviceInfoPanel device={device} />
+        <DeviceInfoPanel
+          device={device}
+          transport={runtime.transport(device.id)}
+          loadInfo={() => runtime.deviceInfo(device.id)}
+        />
       </div>
     </div>
   );

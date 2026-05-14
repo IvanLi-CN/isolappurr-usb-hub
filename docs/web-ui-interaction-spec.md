@@ -22,7 +22,7 @@
 
 ### Non-goals
 
-- 不改变业务规则（discovery、IP scan、去重逻辑等以既有 plan 为准）。
+- 不改变业务规则（连接协议、串口筛选、HTTP fallback、去重逻辑等以对应 spec 为准）。
 - 不要求引入新依赖或重做整体 IA（Information Architecture）。
 
 ## 自适应与窗口变化（Responsive / Resize）
@@ -56,7 +56,7 @@
   - 点击遮罩层（backdrop）可关闭
   - `Escape` 可关闭
   - 明确的 `Cancel` 按钮可关闭
-- 关闭时需要取消正在进行的长任务（例如 IP scan）。
+- 关闭时需要取消正在进行的长任务（例如串口读取或 Local USB 请求）。
 
 ### 键盘与可访问性（最低要求）
 
@@ -74,59 +74,67 @@
 - `Cancel/Create` 操作区在小高度窗口下必须保持可达（不被滚动推离视口）。
 - 滚动区域必须有明确边界（容器高度与 `overflow-y` 归属清晰），避免出现“滚着滚着不知道滚的是哪一层”。
 
-## Add device（Discovery + Manual）交互规范
+## Add device（Wi‑Fi / Web Serial / Local USB）交互规范
 
-本节为 Plan #0007 的交互口径补充“实现验收要点”；细节参考：
-
-- `docs/plan/0007:add-device-discovery/PLAN.md`
-- `docs/plan/0007:add-device-discovery/contracts/ui-components.md`
+本节为当前 Add device modal 的交互口径补充“实现验收要点”；字段与协议形状以 `docs/specs/u5b2c-usb-console-provisioning/SPEC.md` 为准。
 
 ### 状态与反馈
 
-- Discovery 状态必须清晰可见（idle/scanning/ready/unavailable）。
+- Add device modal 以连接方式为首要分组：`Wi-Fi / LAN`、`Web Serial`、`Local USB`。
+- Web Serial 与 Local USB 的连接、端口选择、进度与错误必须留在当前 modal 内完成，不跳转到其他页面。
+- 不得新增独立设备连接页；设备连接必须经由 Add device modal 发起。
+- 固件更新不得出现在 Add device modal 内；它属于已添加设备的 Hardware 页。
+- 同一个 `device_id` 可以同时存在 Wi‑Fi / LAN 与 USB 通道；USB 连接成功时不得创建重复设备，而应更新该设备的运行时通道状态。
+- Dashboard 运行时必须显示当前主通道，并在主通道失效时自动切换到另一条可用通道。
 - 错误提示需可读可执行：
   - 说明原因（短句）
-  - 给出下一步（例如“Try IP scan (advanced) with a CIDR range”或“use Manual add”）
+  - 给出下一步（例如切换到 Local USB 或 Wi-Fi）
+  - 错误应贴近当前活跃面板，避免漂到无关区域
 
-### IP scan（advanced）
+### Web Serial
 
-- 默认折叠为一行（`Show`/`Hide` 文本链接），避免占用列表高度。
-- Desktop App：30 秒无新增设备时允许自动展开，并提示用户可尝试手动输入 CIDR。
-- 在 Web（浏览器）遇到 PNA/CORS 阻断时必须给出可读提示，并明确建议用 Manual add 作为 fallback。
+- 浏览器支持 Web Serial 时，连接过程应先请求串口选择，再读取设备 `info` / `ports`。
+- 若浏览器不支持 Web Serial，或目标设备不是 ESP32 系列，应显示明确的 fallback 提示，并允许改走 Local USB 或 Wi-Fi。
+- 串口输出中夹杂的非 JSONL 内容不应直接中断流程；应提示未读到有效设备响应，而不是抛出原始乱码。
 
-### 选择候选设备
+### Local USB
 
-- 选择某条候选后，右侧表单应自动填充：
-  - `Base URL`（必填）
-  - `ID`（优先 `device_id`）
-  - `Name`（优先 `hostname`）
-- 该行为不应触发表单提交；提交仍需用户显式点击 `Create`。
+- Local USB 负责本机串口枚举、JSONL 代理与受控烧录。
+- 端口列表需要先过滤出符合 ESP32 串口特征的设备，再让用户确认目标端口。
+- Local USB 服务不可用、端口不可达或设备未响应时，必须在 modal 内显示原因与重试入口。
 
-### Manual add 提交行为（建议口径）
+### Wi‑Fi / LAN
 
-- `Create` 点击后：
-  - 输入合法：创建并关闭 modal
-  - 输入不合法：展示就地校验错误并保持 modal 打开
-- 键盘：
-  - `Enter`（在 Manual add 的输入框内）：建议等价于点击 `Create`（实现阶段落地）
-  - `Escape`：关闭 modal（不提交）
+- Wi‑Fi / LAN 保留网络可达路径、已有设备接入与 HTTP fallback。
+- 若网络侧不可达，应展示可读状态，但不要把当前流程写成“手动添加”。
+
+### 选择与提交
+
+- 选择某条连接路径后，只应在当前 modal 内填充表单或加载设备状态，不应绕出 modal 或创建额外步骤。
+- 提交仍需用户显式点击主 CTA。
+- `Escape` 关闭 modal，不提交。
 
 ## 交互验收（Given/When/Then 模板）
 
 - Given：打开 Add device modal
   When：窗口高度较矮导致内容超出可视区域
-  Then：滚动发生在列内（列表/表单内容区），而不是整张 modal 滚动
-  And：`Cancel/Create` 仍可达
+  Then：滚动发生在面板内部，而不是整张 modal 滚动
+  And：主 CTA 仍可达
 
-- Given：打开任意页面（Dashboard / Device / About）
-  When：将视口宽度缩小到 360px
-  Then：页面不出现横向滚动条
-  And：主要 CTA（例如 `+ Add` / `Add device` / tabs）仍可点击
+- Given：浏览器不支持 Web Serial
+  When：用户切换到 Web Serial
+  Then：UI 给出可执行的 fallback 提示
+  And：用户仍可改走 Local USB 或 Wi-Fi
 
-- Given：用户在 Web 端执行 IP scan 且被 PNA/CORS preflight 阻断
-  When：扫描结束或错误出现
-  Then：UI 展示可读错误提示与下一步建议
-  And：Manual add 不受影响
+- Given：Local USB service 未启动
+  When：用户切换到 Local USB
+  Then：UI 在当前 modal 显示可读错误与重试入口
+
+- Given：设备已经通过 Wi‑Fi / LAN 保存
+  When：用户通过 Web Serial 或 Local USB 连接到相同 `device_id`
+  Then：Add device modal 关闭
+  And：设备列表不新增重复项
+  And：Dashboard 使用新的 USB 通道刷新数据
 
 ## 审计清单（Interaction audit checklist）
 
@@ -135,6 +143,9 @@
 - modal 是否支持 `Escape` / 点击遮罩关闭？
 - 打开 modal 是否自动聚焦首个字段？
 - 小高度窗口下滚动是否“列内滚动”，且 CTA 可达？
-- IP scan 默认是否折叠？30 秒无新增时是否按规则自动展开（Desktop）？
+- Add device 是否只暴露 `Wi-Fi / LAN`、`Web Serial`、`Local USB` 三种连接路径？
+- 是否不存在独立的硬件连接路由或第二套连接按钮？
+- Web Serial 不支持或无有效 JSONL 响应时是否给出可执行 fallback？
+- Local USB 端口列表是否先过滤 ESP32 串口候选？
 - 关键错误提示是否包含“原因 + 下一步”？
 - 视口在 360×640 / 768×800 / 1024×700 下是否仍无横向滚动？

@@ -84,6 +84,7 @@ jobs:
     env:
       ISOLAPURR_SKIP_WEB_BUILD: "1"
       ISOLAPURR_WEB_DIST_DIR: "web/dist"
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Checkout (macos/linux)
         if: matrix.name != 'windows'
@@ -140,7 +141,9 @@ jobs:
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
+            libudev-dev \
             librsvg2-dev \
+            pkg-config \
             patchelf \
             xvfb
 
@@ -326,6 +329,7 @@ jobs:
     env:
       ISOLAPURR_SKIP_WEB_BUILD: "1"
       ISOLAPURR_WEB_DIST_DIR: "web/dist"
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Checkout (linux)
         if: startsWith(matrix.os, 'ubuntu')
@@ -382,7 +386,9 @@ jobs:
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
+            libudev-dev \
             librsvg2-dev \
+            pkg-config \
             patchelf \
             xvfb
 

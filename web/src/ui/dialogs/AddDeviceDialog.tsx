@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   agentFetch,
   type DesktopAgent,
@@ -7,26 +8,52 @@ import {
 import { getDeviceInfo } from "../../domain/deviceApi";
 import type {
   AddDeviceInput,
-  AddDeviceValidationErrors,
   AddDeviceValidationResult,
 } from "../../domain/devices";
-import {
-  loadStoredDevices,
-  validateAddDeviceInput,
-} from "../../domain/devices";
+import { loadStoredDevices } from "../../domain/devices";
 import type { DiscoveredDevice, LanCandidate } from "../../domain/discovery";
 import {
-  applyDiscoveredDeviceToManualForm,
   createInitialDiscoverySnapshot,
   mergeDiscoveredDevice,
   parseCidr,
   parseDiscoveredDeviceFromApiInfo,
   reduceDiscoverySnapshot,
 } from "../../domain/discovery";
+import {
+  filterEsp32SerialPorts,
+  isWebSerialSupported,
+  listLocalUsbSerialPorts,
+  nextJsonlRequestId,
+  type SerialPortInfo,
+  sendLocalUsbJsonlRequest,
+  WebSerialJsonlTransport,
+} from "../../domain/hardwareConsole";
+import { announceLocalUsbDeviceLink } from "../../domain/localUsbLinks";
+import { announceWebSerialDeviceLink } from "../../domain/webSerialLinks";
 import { DeviceDiscoveryPanel } from "../panels/DeviceDiscoveryPanel";
+
+type AddDeviceMethod = "wifi" | "web_serial" | "local_usb";
+
+type UsbInfoEnvelope = {
+  ok?: boolean;
+  result?: {
+    device?: UsbDeviceInfo;
+  };
+  error?: { message?: string };
+};
+
+type UsbDeviceInfo = {
+  device_id?: string;
+  hostname?: string;
+  fqdn?: string;
+  mac?: string;
+  firmware?: { name?: string; version?: string };
+  wifi?: { ipv4?: string | null };
+};
 
 export type AddDeviceDialogProps = {
   open: boolean;
+  initialMethod?: AddDeviceMethod;
   existingDeviceIds?: string[];
   existingDeviceBaseUrls?: string[];
   onClose: () => void;
@@ -35,19 +62,25 @@ export type AddDeviceDialogProps = {
 
 export function AddDeviceDialog({
   open,
+  initialMethod = "wifi",
   existingDeviceIds,
   existingDeviceBaseUrls,
   onClose,
   onCreate,
 }: AddDeviceDialogProps) {
+  const navigate = useNavigate();
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
   const devicesCountRef = useRef(0);
   const ipScanExpandedRef = useRef(false);
-  const [name, setName] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [id, setId] = useState("");
-  const [errors, setErrors] = useState<AddDeviceValidationErrors>({});
+  const openRef = useRef(open);
+  const methodRef = useRef<AddDeviceMethod>(initialMethod);
+  const usbRunIdRef = useRef(0);
+  const [method, setMethod] = useState<AddDeviceMethod>(initialMethod);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [usbBusy, setUsbBusy] = useState(false);
+  const [usbStatus, setUsbStatus] = useState<string | null>(null);
+  const [localUsbPorts, setLocalUsbPorts] = useState<SerialPortInfo[]>([]);
+  const [selectedLocalUsbPort, setSelectedLocalUsbPort] = useState("");
   const [discoveryPanelKey, setDiscoveryPanelKey] = useState(0);
 
   const ids = useMemo(() => existingDeviceIds ?? [], [existingDeviceIds]);
@@ -72,6 +105,14 @@ export function AddDeviceDialog({
   const scanRunIdRef = useRef(0);
 
   useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    methodRef.current = method;
+  }, [method]);
+
+  useEffect(() => {
     devicesCountRef.current = snapshot.devices.length;
     ipScanExpandedRef.current = snapshot.ipScan?.expanded ?? false;
   }, [snapshot.devices.length, snapshot.ipScan?.expanded]);
@@ -85,14 +126,21 @@ export function AddDeviceDialog({
       if (!el.open) {
         el.showModal();
       }
-      setErrors({});
+      setAddError(null);
+      setUsbBusy(false);
+      setUsbStatus(null);
+      setLocalUsbPorts([]);
+      setSelectedLocalUsbPort("");
+      methodRef.current = initialMethod;
+      usbRunIdRef.current += 1;
+      setMethod(initialMethod);
       setDiscoveryPanelKey((v) => v + 1);
       dispatch({ type: "reset", status: "unavailable" });
-      window.setTimeout(() => nameRef.current?.focus(), 0);
       return;
     }
 
     scanRunIdRef.current += 1;
+    usbRunIdRef.current += 1;
     dispatch({ type: "scan_cancelled" });
     agentRef.current = null;
     if (agentPollRef.current) {
@@ -102,7 +150,7 @@ export function AddDeviceDialog({
     if (el.open) {
       el.close();
     }
-  }, [open]);
+  }, [initialMethod, open]);
 
   useEffect(() => {
     if (!open) {
@@ -322,28 +370,256 @@ export function AddDeviceDialog({
     return () => window.clearTimeout(timer);
   }, [open, snapshot.ipScan, snapshot.mode, snapshot.status]);
 
-  const submit = async () => {
-    const input: AddDeviceInput = {
-      name,
-      baseUrl,
-      id: id.trim() ? id : undefined,
-    };
-    const result = validateAddDeviceInput(input, ids, baseUrls);
-    if (!result.ok) {
-      setErrors(result.errors);
+  const addDiscoveredDevice = async (device: DiscoveredDevice) => {
+    if (!device.baseUrl) {
+      setAddError("Discovered hub did not include a network URL.");
       return;
     }
+    const input: AddDeviceInput = {
+      name:
+        device.hostname ??
+        device.fqdn ??
+        device.device_id ??
+        "IsolaPurr USB Hub",
+      baseUrl: device.baseUrl,
+      id: device.device_id,
+    };
     const saved = await onCreate(input);
     if (!saved.ok) {
-      setErrors(saved.errors);
+      setAddError(
+        saved.errors.baseUrl ??
+          saved.errors.id ??
+          saved.errors.name ??
+          "Could not add this hub.",
+      );
       return;
     }
-    setName("");
-    setBaseUrl("");
-    setId("");
-    setErrors({});
+    setAddError(null);
     onClose();
   };
+
+  const addUsbDevice = async (
+    envelope: unknown,
+    fallback?: {
+      serialNumber?: string | null;
+      portPath?: string;
+      webSerialTransport?: WebSerialJsonlTransport;
+    },
+    run?: { id: number; method: AddDeviceMethod },
+  ): Promise<boolean> => {
+    if (run && !isActiveUsbRun(run.id, run.method)) {
+      return false;
+    }
+
+    const parsed = parseUsbInfoEnvelope(envelope);
+    if (!parsed.ok) {
+      setAddError(parsed.error);
+      return false;
+    }
+
+    const device = parsed.device;
+    const id =
+      normalizeDeviceId(device.device_id) ??
+      shortIdFromMac(device.mac) ??
+      shortIdFromMac(fallback?.serialNumber ?? "");
+
+    if (!id) {
+      setAddError("Connected device did not report a stable device ID.");
+      return false;
+    }
+
+    const hostname = device.hostname?.trim() || `isolapurr-usb-hub-${id}`;
+    const baseUrl = device.wifi?.ipv4
+      ? `http://${device.wifi.ipv4}`
+      : `http://${device.fqdn?.trim() || `${hostname}.local`}`;
+
+    const saved = await onCreate({
+      id,
+      name: hostname,
+      baseUrl,
+    });
+    if (run && !isActiveUsbRun(run.id, run.method)) {
+      return false;
+    }
+    if (!saved.ok) {
+      if (saved.errors.id === "ID already exists") {
+        if (fallback?.portPath) {
+          announceLocalUsbDeviceLink({
+            deviceId: id,
+            portPath: fallback.portPath,
+          });
+        }
+        if (fallback?.webSerialTransport) {
+          announceWebSerialDeviceLink({
+            deviceId: id,
+            transport: fallback.webSerialTransport,
+          });
+        }
+        setAddError(null);
+        onClose();
+        navigate(`/devices/${id}`);
+        return true;
+      }
+      setAddError(
+        saved.errors.id ??
+          saved.errors.baseUrl ??
+          saved.errors.name ??
+          "Could not add this hub.",
+      );
+      return false;
+    }
+    if (fallback?.portPath) {
+      announceLocalUsbDeviceLink({ deviceId: id, portPath: fallback.portPath });
+    }
+    if (fallback?.webSerialTransport) {
+      announceWebSerialDeviceLink({
+        deviceId: id,
+        transport: fallback.webSerialTransport,
+      });
+    }
+    setAddError(null);
+    onClose();
+    return true;
+  };
+
+  const connectByLocalUsb = async () => {
+    const runId = startUsbRun("local_usb");
+    setUsbBusy(true);
+    setAddError(null);
+    setUsbStatus("Looking for Local USB ports...");
+    try {
+      const agent = await tryBootstrapDesktopAgent();
+      if (!isActiveUsbRun(runId, "local_usb")) {
+        return;
+      }
+      if (!agent) {
+        setAddError("Local USB service is not running.");
+        return;
+      }
+      const allPorts = await listLocalUsbSerialPorts(agent);
+      if (!isActiveUsbRun(runId, "local_usb")) {
+        return;
+      }
+      const ports = filterEsp32SerialPorts(allPorts);
+      setLocalUsbPorts(ports);
+      if (ports.length === 0) {
+        setAddError("No ESP32 USB serial ports found.");
+        return;
+      }
+
+      if (selectedLocalUsbPort) {
+        const port = ports.find((p) => p.path === selectedLocalUsbPort);
+        if (!port) {
+          setUsbStatus("Select the IsolaPurr ESP32 USB port, then connect.");
+          return;
+        }
+        const response = await readLocalUsbInfo(agent, port);
+        await addUsbDevice(
+          response,
+          { serialNumber: port.serialNumber, portPath: port.path },
+          { id: runId, method: "local_usb" },
+        );
+        return;
+      }
+
+      setUsbStatus("Identifying IsolaPurr USB hub...");
+      for (const port of ports) {
+        try {
+          const response = await readLocalUsbInfo(agent, port);
+          if (!isActiveUsbRun(runId, "local_usb")) {
+            return;
+          }
+          const parsed = parseUsbInfoEnvelope(response);
+          if (!parsed.ok || !isIsolaPurrDeviceInfo(parsed.device)) {
+            continue;
+          }
+          setSelectedLocalUsbPort(port.path);
+          await addUsbDevice(
+            response,
+            { serialNumber: port.serialNumber, portPath: port.path },
+            { id: runId, method: "local_usb" },
+          );
+          return;
+        } catch {
+          // Keep probing other ESP32 serial ports.
+        }
+      }
+
+      if (ports.length === 1) {
+        setAddError("The ESP32 USB port did not respond as IsolaPurr.");
+        return;
+      }
+      setUsbStatus("Select the IsolaPurr ESP32 USB port, then connect.");
+    } catch (err) {
+      if (isActiveUsbRun(runId, "local_usb")) {
+        setAddError(err instanceof Error ? err.message : "Local USB failed.");
+      }
+    } finally {
+      if (isActiveUsbRun(runId, "local_usb")) {
+        setUsbBusy(false);
+      }
+    }
+  };
+
+  const connectByWebSerial = async () => {
+    const runId = startUsbRun("web_serial");
+    setUsbBusy(true);
+    setAddError(null);
+    setUsbStatus("Requesting browser serial access...");
+    const transport = new WebSerialJsonlTransport();
+    let handedOff = false;
+    try {
+      await transport.connect();
+      if (!isActiveUsbRun(runId, "web_serial")) {
+        return;
+      }
+      setUsbStatus("Reading connected hub...");
+      const response = await readWebSerialInfo(transport);
+      handedOff = await addUsbDevice(
+        response,
+        { webSerialTransport: transport },
+        {
+          id: runId,
+          method: "web_serial",
+        },
+      );
+    } catch (err) {
+      if (isActiveUsbRun(runId, "web_serial")) {
+        setAddError(err instanceof Error ? err.message : "Web Serial failed.");
+      }
+    } finally {
+      if (!handedOff) {
+        await transport.disconnect().catch(() => undefined);
+      }
+      if (isActiveUsbRun(runId, "web_serial")) {
+        setUsbBusy(false);
+      }
+    }
+  };
+
+  const selectMethod = (nextMethod: AddDeviceMethod) => {
+    if (nextMethod === methodRef.current) {
+      return;
+    }
+    usbRunIdRef.current += 1;
+    methodRef.current = nextMethod;
+    setMethod(nextMethod);
+    setAddError(null);
+    setUsbStatus(null);
+    setUsbBusy(false);
+  };
+
+  const startUsbRun = (runMethod: AddDeviceMethod) => {
+    const runId = usbRunIdRef.current + 1;
+    usbRunIdRef.current = runId;
+    methodRef.current = runMethod;
+    return runId;
+  };
+
+  const isActiveUsbRun = (runId: number, runMethod: AddDeviceMethod) =>
+    openRef.current &&
+    usbRunIdRef.current === runId &&
+    methodRef.current === runMethod;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -356,12 +632,27 @@ export function AddDeviceDialog({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  const fieldBase = [
-    "h-[52px] w-full rounded-[12px] border border-[var(--border)] bg-[var(--panel-2)] px-5 text-[14px] font-medium text-[var(--text)] outline-none",
-    "placeholder:text-[var(--muted)]",
-  ].join(" ");
-
-  const fieldError = "border-[var(--error)]";
+  const methodOptions: Array<{
+    id: AddDeviceMethod;
+    title: string;
+    description: string;
+  }> = [
+    {
+      id: "wifi",
+      title: "Wi-Fi / LAN",
+      description: "Discover or add a hub already reachable on the network.",
+    },
+    {
+      id: "web_serial",
+      title: "Web Serial",
+      description: "Use the browser USB serial path to identify and add a hub.",
+    },
+    {
+      id: "local_usb",
+      title: "Local USB",
+      description: "Use the desktop app for local USB identification.",
+    },
+  ];
 
   return (
     <dialog
@@ -394,247 +685,358 @@ export function AddDeviceDialog({
           Store locally; used for Dashboard and device pages.
         </div>
 
-        <div className="mt-6 flex min-h-0 flex-1 flex-col gap-6 min-[980px]:flex-row">
+        <div
+          className="mt-6 grid grid-cols-1 gap-3 min-[760px]:grid-cols-3"
+          role="tablist"
+          aria-label="Connection method"
+        >
+          {methodOptions.map((option) => {
+            const selected = method === option.id;
+            return (
+              <button
+                key={option.id}
+                className={[
+                  "min-h-[86px] rounded-[14px] border px-4 py-3 text-left transition-colors",
+                  selected
+                    ? "border-[var(--primary)] bg-[var(--panel)] shadow-[inset_0_0_0_1px_var(--primary)]"
+                    : "border-[var(--border)] bg-[var(--panel-2)] hover:border-[var(--primary)]",
+                ].join(" ")}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => selectMethod(option.id)}
+              >
+                <div className="text-[14px] font-bold text-[var(--text)]">
+                  {option.title}
+                </div>
+                <div className="mt-2 text-[12px] font-semibold leading-5 text-[var(--muted)]">
+                  {option.description}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 flex min-h-0 flex-1 flex-col gap-6">
           <div className="min-h-0 min-w-0 flex-1">
-            <DeviceDiscoveryPanel
-              key={discoveryPanelKey}
-              snapshot={snapshot}
-              existingDeviceIds={ids}
-              existingDeviceBaseUrls={baseUrls}
-              onRefresh={() => {
-                scanRunIdRef.current += 1;
-                const agent = agentRef.current;
-                if (agent) {
-                  dispatch({ type: "reset", status: "scanning" });
-                  void agentFetch(agent, "/api/v1/discovery/refresh", {
-                    method: "POST",
-                    body: JSON.stringify({}),
-                  });
-                } else {
-                  dispatch({ type: "reset", status: "unavailable" });
-                }
-              }}
-              onToggleIpScan={(expanded) =>
-                dispatch({
-                  type: "toggle_ip_scan",
-                  expanded,
-                  expandedBy: "user",
-                })
-              }
-              onStartScan={(cidr) => {
-                const parsed = parseCidr(cidr);
-                if (!parsed.ok) {
-                  dispatch({ type: "set_error", error: parsed.error });
-                  return;
-                }
-
-                const agent = agentRef.current;
-                if (agent) {
-                  dispatch({
-                    type: "start_scan",
-                    cidr: parsed.cidr,
-                    total: parsed.hosts.length,
-                  });
-                  void agentFetch(agent, "/api/v1/discovery/ip-scan", {
-                    method: "POST",
-                    body: JSON.stringify({ cidr: parsed.cidr }),
-                  });
-                  return;
-                }
-
-                scanRunIdRef.current += 1;
-                const runId = scanRunIdRef.current;
-
-                dispatch({
-                  type: "start_scan",
-                  cidr: parsed.cidr,
-                  total: parsed.hosts.length,
-                });
-
-                const concurrency = 12;
-                let nextIndex = 0;
-                let done = 0;
-                let preflightBlocked = false;
-
-                const worker = async () => {
-                  for (;;) {
-                    if (scanRunIdRef.current !== runId) {
-                      return;
+            {method === "wifi" ? (
+              <>
+                <DeviceDiscoveryPanel
+                  key={discoveryPanelKey}
+                  snapshot={snapshot}
+                  existingDeviceIds={ids}
+                  existingDeviceBaseUrls={baseUrls}
+                  onRefresh={() => {
+                    scanRunIdRef.current += 1;
+                    const agent = agentRef.current;
+                    if (agent) {
+                      dispatch({ type: "reset", status: "scanning" });
+                      void agentFetch(agent, "/api/v1/discovery/refresh", {
+                        method: "POST",
+                        body: JSON.stringify({}),
+                      });
+                    } else {
+                      dispatch({ type: "reset", status: "unavailable" });
                     }
-                    const idx = nextIndex;
-                    nextIndex += 1;
-                    if (idx >= parsed.hosts.length) {
-                      return;
-                    }
-
-                    const ip = parsed.hosts[idx];
-                    const baseUrlByIp = `http://${ip}`;
-                    const res = await getDeviceInfo(baseUrlByIp);
-                    if (scanRunIdRef.current !== runId) {
-                      return;
-                    }
-                    done += 1;
-                    dispatch({ type: "scan_progress", done });
-
-                    if (!res.ok) {
-                      if (res.error.kind === "preflight_blocked") {
-                        preflightBlocked = true;
-                      }
-                      continue;
-                    }
-
-                    const nowIso = new Date().toISOString();
-                    const device = parseDiscoveredDeviceFromApiInfo(
-                      baseUrlByIp,
-                      res.value as unknown,
-                      ip,
-                      nowIso,
-                    );
-                    if (!device) {
-                      continue;
-                    }
-                    dispatch({ type: "scan_device", device });
-                  }
-                };
-
-                void (async () => {
-                  await Promise.all(
-                    Array.from({ length: concurrency }, () => worker()),
-                  );
-                  if (scanRunIdRef.current !== runId) {
-                    return;
-                  }
-                  if (preflightBlocked) {
+                  }}
+                  onToggleIpScan={(expanded) =>
                     dispatch({
-                      type: "set_error",
-                      error:
-                        "Local network access blocked (PNA/CORS preflight). Try allowing private network access, or use Manual add.",
-                    });
+                      type: "toggle_ip_scan",
+                      expanded,
+                      expandedBy: "user",
+                    })
                   }
-                  dispatch({ type: "scan_done" });
-                })();
-              }}
-              onCancelScan={() => {
-                scanRunIdRef.current += 1;
-                dispatch({ type: "scan_cancelled" });
-                const agent = agentRef.current;
-                if (agent) {
-                  void agentFetch(agent, "/api/v1/discovery/cancel", {
-                    method: "POST",
-                    body: JSON.stringify({}),
-                  });
-                }
-              }}
-              onSelect={(device: DiscoveredDevice) => {
-                const next = applyDiscoveredDeviceToManualForm(
-                  { name, baseUrl, id },
-                  device,
-                );
-                setName(next.name);
-                setBaseUrl(next.baseUrl);
-                setId(next.id);
-                setErrors({});
-              }}
-            />
-          </div>
+                  onStartScan={(cidr) => {
+                    const parsed = parseCidr(cidr);
+                    if (!parsed.ok) {
+                      dispatch({ type: "set_error", error: parsed.error });
+                      return;
+                    }
 
-          <div className="min-h-0 min-w-0 flex-1">
-            <div className="flex h-full min-h-0 flex-col">
-              <div>
-                <div className="text-[16px] font-bold">Manual add</div>
-                <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
-                  Always available; requires Name and Base URL.
-                </div>
-              </div>
+                    const agent = agentRef.current;
+                    if (agent) {
+                      dispatch({
+                        type: "start_scan",
+                        cidr: parsed.cidr,
+                        total: parsed.hosts.length,
+                      });
+                      void agentFetch(agent, "/api/v1/discovery/ip-scan", {
+                        method: "POST",
+                        body: JSON.stringify({ cidr: parsed.cidr }),
+                      });
+                      return;
+                    }
 
-              <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
-                <div className="flex flex-col gap-5 pr-1">
-                  <div>
-                    <div className="text-[12px] font-semibold text-[var(--muted)]">
-                      Name
-                    </div>
-                    <input
-                      ref={nameRef}
-                      className={[
-                        fieldBase,
-                        errors.name ? fieldError : "",
-                      ].join(" ")}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Desk Hub"
-                      autoComplete="off"
-                    />
-                    {errors.name ? (
-                      <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
-                        {errors.name}
-                      </div>
-                    ) : null}
+                    scanRunIdRef.current += 1;
+                    const runId = scanRunIdRef.current;
+
+                    dispatch({
+                      type: "start_scan",
+                      cidr: parsed.cidr,
+                      total: parsed.hosts.length,
+                    });
+
+                    const concurrency = 12;
+                    let nextIndex = 0;
+                    let done = 0;
+                    let preflightBlocked = false;
+
+                    const worker = async () => {
+                      for (;;) {
+                        if (scanRunIdRef.current !== runId) {
+                          return;
+                        }
+                        const idx = nextIndex;
+                        nextIndex += 1;
+                        if (idx >= parsed.hosts.length) {
+                          return;
+                        }
+
+                        const ip = parsed.hosts[idx];
+                        const baseUrlByIp = `http://${ip}`;
+                        const res = await getDeviceInfo(baseUrlByIp);
+                        if (scanRunIdRef.current !== runId) {
+                          return;
+                        }
+                        done += 1;
+                        dispatch({ type: "scan_progress", done });
+
+                        if (!res.ok) {
+                          if (res.error.kind === "preflight_blocked") {
+                            preflightBlocked = true;
+                          }
+                          continue;
+                        }
+
+                        const nowIso = new Date().toISOString();
+                        const device = parseDiscoveredDeviceFromApiInfo(
+                          baseUrlByIp,
+                          res.value as unknown,
+                          ip,
+                          nowIso,
+                        );
+                        if (!device) {
+                          continue;
+                        }
+                        dispatch({ type: "scan_device", device });
+                      }
+                    };
+
+                    void (async () => {
+                      await Promise.all(
+                        Array.from({ length: concurrency }, () => worker()),
+                      );
+                      if (scanRunIdRef.current !== runId) {
+                        return;
+                      }
+                      if (preflightBlocked) {
+                        dispatch({
+                          type: "set_error",
+                          error:
+                            "Local network access blocked (PNA/CORS preflight). Try allowing private network access, or connect by USB first.",
+                        });
+                      }
+                      dispatch({ type: "scan_done" });
+                    })();
+                  }}
+                  onCancelScan={() => {
+                    scanRunIdRef.current += 1;
+                    dispatch({ type: "scan_cancelled" });
+                    const agent = agentRef.current;
+                    if (agent) {
+                      void agentFetch(agent, "/api/v1/discovery/cancel", {
+                        method: "POST",
+                        body: JSON.stringify({}),
+                      });
+                    }
+                  }}
+                  onSelect={(device: DiscoveredDevice) => {
+                    void addDiscoveredDevice(device);
+                  }}
+                />
+                {addError ? <InlineAddError message={addError} /> : null}
+              </>
+            ) : (
+              <div className="flex min-h-[360px] flex-col justify-between rounded-[16px] border border-[var(--border)] bg-[var(--panel-2)] p-5">
+                <div>
+                  <div className="text-[16px] font-bold">
+                    {method === "web_serial"
+                      ? "Add by Web Serial"
+                      : "Add by Local USB"}
                   </div>
-
-                  <div>
-                    <div className="text-[12px] font-semibold text-[var(--muted)]">
-                      Base URL
+                  <div className="mt-3 text-[13px] font-semibold leading-6 text-[var(--muted)]">
+                    {method === "web_serial"
+                      ? "Select the hub in the browser serial picker. The app reads device info over USB and adds it here."
+                      : "Use the local desktop service to read the connected hub over USB and add it here."}
+                  </div>
+                  {method === "web_serial" && !isWebSerialSupported() ? (
+                    <div className="mt-4 rounded-[12px] border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold text-[var(--warning)]">
+                      This browser does not expose Web Serial. Use Chrome/Edge
+                      or Local USB.
                     </div>
-                    <input
-                      className={[
-                        fieldBase,
-                        "font-mono",
-                        errors.baseUrl ? fieldError : "",
-                      ].join(" ")}
-                      value={baseUrl}
-                      onChange={(e) => setBaseUrl(e.target.value)}
-                      placeholder="http://hub-a.local"
-                      autoComplete="off"
-                    />
-                    {errors.baseUrl ? (
-                      <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
-                        {errors.baseUrl}
-                      </div>
-                    ) : null}
+                  ) : null}
+                  {method === "local_usb" && localUsbPorts.length > 1 ? (
+                    <label className="mt-5 flex flex-col gap-2 text-[12px] font-bold text-[var(--muted)]">
+                      Hub port
+                      <select
+                        className="select select-sm w-full"
+                        value={selectedLocalUsbPort}
+                        onChange={(event) =>
+                          setSelectedLocalUsbPort(event.target.value)
+                        }
+                      >
+                        <option value="">Select the hub port</option>
+                        {localUsbPorts.map((port) => (
+                          <option key={port.path} value={port.path}>
+                            {port.label} ({port.path})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {usbStatus ? (
                     <div className="mt-4 text-[12px] font-semibold text-[var(--muted)]">
-                      Examples: http://&lt;hostname&gt;.local /
-                      http://192.168.1.42
+                      {usbStatus}
                     </div>
-                  </div>
+                  ) : null}
+                  {addError ? <InlineAddError message={addError} /> : null}
+                </div>
 
-                  <div>
-                    <div className="text-[12px] font-semibold text-[var(--muted)]">
-                      ID (optional)
-                    </div>
-                    <input
-                      className={[fieldBase, errors.id ? fieldError : ""].join(
-                        " ",
-                      )}
-                      value={id}
-                      onChange={(e) => setId(e.target.value)}
-                      placeholder="auto-generated if empty"
-                      autoComplete="off"
-                    />
-                    {errors.id ? (
-                      <div className="mt-2 text-[12px] font-semibold text-[var(--error)]">
-                        {errors.id}
-                      </div>
-                    ) : null}
-                  </div>
+                <div className="mt-8 grid gap-3">
+                  <button
+                    className="btn h-12 justify-center"
+                    type="button"
+                    disabled={
+                      usbBusy ||
+                      (method === "web_serial" && !isWebSerialSupported())
+                    }
+                    onClick={() =>
+                      void (method === "web_serial"
+                        ? connectByWebSerial()
+                        : connectByLocalUsb())
+                    }
+                  >
+                    {usbBusy
+                      ? "Connecting..."
+                      : method === "web_serial"
+                        ? "Connect and add"
+                        : "Connect Local USB and add"}
+                  </button>
                 </div>
               </div>
-
-              <div className="mt-6 flex items-center justify-end gap-[14px]">
-                <button className="btn" type="button" onClick={onClose}>
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  type="button"
-                  onClick={submit}
-                >
-                  Create
-                </button>
-              </div>
-            </div>
+            )}
           </div>
+        </div>
+
+        <div className="mt-6 flex items-center justify-end">
+          <button className="btn" type="button" onClick={onClose}>
+            Cancel
+          </button>
         </div>
       </div>
     </dialog>
   );
+}
+
+async function readLocalUsbInfo(
+  agent: DesktopAgent,
+  port: SerialPortInfo,
+): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await sendLocalUsbJsonlRequest(agent, port.path, {
+        id: nextJsonlRequestId(),
+        method: "info",
+        timeoutMs: 1_500,
+      });
+    } catch (err) {
+      lastError = err;
+      await delay(250 + attempt * 250);
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("USB info request failed.");
+}
+
+async function readWebSerialInfo(
+  transport: WebSerialJsonlTransport,
+): Promise<unknown> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await transport.request({
+        id: nextJsonlRequestId(),
+        method: "info",
+        timeoutMs: 2_500 + attempt * 1_000,
+      });
+    } catch (err) {
+      lastError = err;
+      await delay(250 + attempt * 250);
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Web Serial info request failed.");
+}
+
+function parseUsbInfoEnvelope(
+  value: unknown,
+): { ok: true; device: UsbDeviceInfo } | { ok: false; error: string } {
+  if (!value || typeof value !== "object") {
+    return { ok: false, error: "USB device returned an invalid response." };
+  }
+  const envelope = value as UsbInfoEnvelope;
+  if (envelope.ok === false) {
+    return {
+      ok: false,
+      error: envelope.error?.message ?? "USB device rejected info request.",
+    };
+  }
+  const device = envelope.result?.device;
+  if (!device || typeof device !== "object") {
+    return { ok: false, error: "USB device info response is missing device." };
+  }
+  return { ok: true, device };
+}
+
+function InlineAddError({ message }: { message: string }) {
+  return (
+    <div
+      className="mt-4 rounded-[12px] border border-[var(--error)] bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold text-[var(--error)]"
+      role="alert"
+    >
+      {message}
+    </div>
+  );
+}
+
+function isIsolaPurrDeviceInfo(device: UsbDeviceInfo): boolean {
+  return (
+    device.firmware?.name === "isolapurr-usb-hub" ||
+    device.hostname?.startsWith("isolapurr-usb-hub-") ||
+    device.fqdn?.startsWith("isolapurr-usb-hub-") ||
+    device.device_id !== undefined
+  );
+}
+
+function normalizeDeviceId(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function shortIdFromMac(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const hex = value.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
+  if (hex.length < 6) {
+    return null;
+  }
+  return hex.slice(-6);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
