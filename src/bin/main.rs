@@ -193,9 +193,11 @@ async fn handle_usb_jsonl_request(
         let state = { *api_state.lock().await };
         let _ = write!(
             body,
-            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{}}},\"ports\":[",
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{}}},\"ports\":[",
             id.as_str(),
-            state.hub.upstream_connected
+            state.hub.upstream_connected,
+            state.hub.isolated_downstream_connected,
+            state.hub.isolated_usb_ready
         );
         write_usb_port_json(&mut body, "port_a", "USB-A", &state.ports.port_a);
         let _ = body.push(',');

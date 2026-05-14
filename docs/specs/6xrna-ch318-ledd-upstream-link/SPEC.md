@@ -67,7 +67,7 @@
 
 ## 接口契约（Interfaces & Contracts）
 
-- `GET /api/v1/ports` 继续返回 `hub.upstream_connected: bool`，并新增 `hub.isolated_downstream_connected: bool` 与 `hub.isolated_usb_ready: bool`。
+- `GET /api/v1/ports` 与 USB JSONL `ports.get` 继续返回 `hub.upstream_connected: bool`，并新增 `hub.isolated_downstream_connected: bool` 与 `hub.isolated_usb_ready: bool`。
 - `hub.upstream_connected` 是兼容字段，值必须等于 `hub.isolated_usb_ready`。
 - `hub.isolated_downstream_connected` 字段语义：来自 `CH318T U2 IO1(UP0_PG)` 的 active-low 低频采样结果，表示隔离侧 USB 下行端口连接状态。
 - `hub.isolated_usb_ready` 字段语义：来自 `CH318T U2 LED/MODE(LEDD)` 的 active-low 低频采样结果，表示隔离侧 USB ready/link，不承诺 USB 枚举完成或速率细节。

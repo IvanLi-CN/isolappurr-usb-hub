@@ -13,7 +13,7 @@
 ## Coverage / Rollout
 
 - HTTP API 字段保持兼容：`GET /api/v1/ports` 仍返回 `hub.upstream_connected`。
-- HTTP API 新增 `hub.isolated_downstream_connected` 与 `hub.isolated_usb_ready`，Web Dashboard 优先显示这两个隔离侧语义字段。
+- HTTP API 与 USB JSONL `ports.get` 新增 `hub.isolated_downstream_connected` 与 `hub.isolated_usb_ready`，Web Dashboard 优先显示这两个隔离侧语义字段。
 - Web Storybook 覆盖当前固件新字段响应与旧固件缺少隔离侧字段的未知态。
 - 默认固件不会控制上游 USB 通断。
 
