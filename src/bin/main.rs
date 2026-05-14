@@ -196,16 +196,35 @@ async fn handle_usb_jsonl_request(
         || request.contains("\"method\":\"port.power_set\"")
         || request.contains("\"method\": \"port.power_set\"")
     {
-        let port_id = if request.contains("port_c") {
-            net::ApiPortId::PortC
-        } else {
-            net::ApiPortId::PortA
+        let Some(port_id) =
+            extract_json_string(request, "port").and_then(|port| match port.as_str() {
+                "port_a" => Some(net::ApiPortId::PortA),
+                "port_c" => Some(net::ApiPortId::PortC),
+                _ => None,
+            })
+        else {
+            write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "bad_request",
+                "missing or invalid port",
+                false,
+            );
+            return body;
         };
+
         let action = if request.contains("power_set") {
-            net::ApiPortAction::Power {
-                enabled: request.contains("\"enabled\":true")
-                    || request.contains("\"enabled\": true"),
-            }
+            let Some(enabled) = extract_json_bool(request, "enabled") else {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "bad_request",
+                    "missing enabled",
+                    false,
+                );
+                return body;
+            };
+            net::ApiPortAction::Power { enabled }
         } else {
             net::ApiPortAction::Replug
         };
@@ -362,6 +381,18 @@ fn wifi_credentials_cache() -> Option<provisioning::WifiCredentials> {
 fn extract_json_string(request: &str, key: &str) -> Option<alloc::string::String> {
     let rest = json_value_after_key(request, key)?;
     parse_json_string_value(rest).map(|(value, _)| value)
+}
+
+#[cfg(feature = "net_http")]
+fn extract_json_bool(request: &str, key: &str) -> Option<bool> {
+    let rest = json_value_after_key(request, key)?;
+    if rest.starts_with("true") {
+        Some(true)
+    } else if rest.starts_with("false") {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 #[cfg(feature = "net_http")]

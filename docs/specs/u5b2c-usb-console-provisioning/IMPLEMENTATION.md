@@ -11,6 +11,7 @@
 ## Coverage
 
 - Firmware USB JSONL: implemented for `info`, `ports.get`, `port.power_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, and `reboot`.
+- Firmware USB JSONL rejects malformed port actions instead of defaulting to a port or power state.
 - Firmware Wi-Fi HTTP fallback: implemented for `info`, `ports.get`, port power/replug actions, `wifi.get`, `wifi.set`, `wifi.clear`, and `reboot`.
 - EEPROM Wi-Fi config: implemented with magic/version/checksum record, SSID/PSK fields, optional static IPv4 fields, and queued runtime writes through the telemetry I2C bus.
 - Local USB: implemented for serial enumeration, JSONL request proxying, single-operation serial lock, and `espflash write-bin` execution using the user-selected app `.bin` and port path.
