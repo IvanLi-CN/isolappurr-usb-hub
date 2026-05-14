@@ -4,7 +4,14 @@ import {
   type DesktopAgent,
   tryBootstrapDesktopAgent,
 } from "../../domain/desktopAgent";
-import type { DeviceInfoResponse, Result } from "../../domain/deviceApi";
+import type {
+  DeviceInfoResponse,
+  RebootResponse,
+  Result,
+  WifiConfigInput,
+  WifiConfigResponse,
+  WifiMutationResponse,
+} from "../../domain/deviceApi";
 import type { StoredDevice } from "../../domain/devices";
 import {
   type FirmwareFlashProgress,
@@ -43,14 +50,37 @@ function transportLabel(transport: DeviceTransport | null): string {
 export function DeviceInfoPanel({
   device,
   transport,
+  wifiManagementTransport,
   loadInfo,
+  loadWifiConfig,
+  saveWifiConfig,
+  clearWifiConfig,
+  rebootDevice,
 }: {
   device: StoredDevice;
   transport: DeviceTransport | null;
+  wifiManagementTransport: DeviceTransport | null;
   loadInfo: () => Promise<Result<DeviceInfoResponse>>;
+  loadWifiConfig: () => Promise<Result<WifiConfigResponse>>;
+  saveWifiConfig: (
+    input: WifiConfigInput,
+  ) => Promise<Result<WifiMutationResponse>>;
+  clearWifiConfig: () => Promise<Result<WifiMutationResponse>>;
+  rebootDevice: () => Promise<Result<RebootResponse>>;
 }) {
   const [info, setInfo] = useState<DeviceInfoResponse | null>(null);
   const [infoError, setInfoError] = useState<string | null>(null);
+  const [wifiConfig, setWifiConfigState] = useState<WifiConfigResponse | null>(
+    null,
+  );
+  const [wifiBusy, setWifiBusy] = useState(false);
+  const [wifiSsid, setWifiSsid] = useState("");
+  const [wifiPsk, setWifiPsk] = useState("");
+  const [wifiOpenNetwork, setWifiOpenNetwork] = useState(false);
+  const [wifiStatus, setWifiStatus] = useState<string | null>(null);
+  const [wifiError, setWifiError] = useState<string | null>(null);
+  const [wifiRebootRequired, setWifiRebootRequired] = useState(false);
+  const [wifiClearConfirmOpen, setWifiClearConfirmOpen] = useState(false);
   const [firmwareFile, setFirmwareFile] = useState<File | null>(null);
   const [flashAddress, setFlashAddress] = useState("0x10000");
   const [flashBusy, setFlashBusy] = useState(false);
@@ -59,10 +89,33 @@ export function DeviceInfoPanel({
   const [flashProgress, setFlashProgress] =
     useState<FirmwareFlashProgress | null>(null);
   const loadInfoRef = useRef(loadInfo);
+  const loadWifiConfigRef = useRef(loadWifiConfig);
+  const wifiFormDirtyRef = useRef(false);
 
   useEffect(() => {
     loadInfoRef.current = loadInfo;
   }, [loadInfo]);
+
+  useEffect(() => {
+    loadWifiConfigRef.current = loadWifiConfig;
+  }, [loadWifiConfig]);
+
+  useEffect(() => {
+    if (device.id.length === 0) {
+      return;
+    }
+    setInfo(null);
+    setInfoError(null);
+    setWifiConfigState(null);
+    setWifiSsid("");
+    setWifiPsk("");
+    setWifiOpenNetwork(false);
+    setWifiStatus(null);
+    setWifiError(null);
+    setWifiRebootRequired(false);
+    setWifiClearConfirmOpen(false);
+    wifiFormDirtyRef.current = false;
+  }, [device.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +125,6 @@ export function DeviceInfoPanel({
 
     const load = async () => {
       if (!transport || activeDeviceId.length === 0) {
-        setInfo(null);
         setInfoError(null);
         return;
       }
@@ -94,6 +146,48 @@ export function DeviceInfoPanel({
       }
 
       const delayMs = res.ok ? 15_000 : 800 * 2 ** Math.min(retryCount, 3);
+      retryTimer = window.setTimeout(() => void load(), delayMs);
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [device.id, transport]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    const activeDeviceId = device.id;
+
+    const load = async () => {
+      if (!transport || activeDeviceId.length === 0) {
+        setWifiError(null);
+        return;
+      }
+      const res = await loadWifiConfigRef.current();
+      if (cancelled) {
+        return;
+      }
+      if (res.ok) {
+        setWifiConfigState(res.value);
+        if (!wifiFormDirtyRef.current) {
+          if (res.value.ssid !== undefined) {
+            setWifiSsid(res.value.ssid);
+          } else if (res.value.configured === false) {
+            setWifiSsid("");
+          }
+        }
+        setWifiError(null);
+      } else {
+        setWifiError(res.error.message);
+      }
+
+      const state = res.ok ? res.value.state : null;
+      const delayMs = state === "connecting" ? 2_000 : 5_000;
       retryTimer = window.setTimeout(() => void load(), delayMs);
     };
 
@@ -130,12 +224,164 @@ export function DeviceInfoPanel({
         ? "Connect this hub with Web Serial or Local USB to flash firmware."
         : null;
 
-  const wifiState = unknown(info?.device.wifi?.state);
-  const wifiIpv4 = unknown(info?.device.wifi?.ipv4 ?? undefined);
+  const wifiRuntimeState = wifiConfig?.state ?? info?.device.wifi?.state;
+  const wifiRuntimeIpv4 = wifiConfig?.ipv4 ?? info?.device.wifi?.ipv4;
+  const wifiRuntimeIsStatic =
+    wifiConfig?.is_static ?? info?.device.wifi?.is_static;
+  const wifiState = unknown(wifiRuntimeState);
+  const wifiIpv4 = unknown(wifiRuntimeIpv4 ?? undefined);
   const wifiIsStatic =
-    info?.device.wifi?.is_static === undefined
+    wifiRuntimeIsStatic === undefined ? "unknown" : String(wifiRuntimeIsStatic);
+  const wifiStorage = unknown(wifiConfig?.storage);
+  const wifiAddress = unknown(wifiConfig?.address);
+  const wifiConfigured =
+    wifiConfig?.configured === undefined
+      ? wifiConfig?.ssid
+        ? "yes"
+        : "unknown"
+      : wifiConfig.configured
+        ? "yes"
+        : "no";
+  const wifiPskConfigured =
+    wifiConfig?.psk_configured === undefined
       ? "unknown"
-      : String(info.device.wifi.is_static);
+      : wifiConfig.psk_configured
+        ? "yes"
+        : "no";
+  const wifiCanManage =
+    wifiManagementTransport === "web_serial" ||
+    wifiManagementTransport === "local_usb";
+  const wifiCanSubmit = wifiCanManage && !wifiBusy;
+
+  const saveWifi = async () => {
+    const nextPsk = wifiOpenNetwork ? "" : wifiPsk;
+    const nextSsid = wifiSsid.trim();
+    if (!wifiCanManage) {
+      setWifiError(
+        "Connect with Web Serial or Local USB before changing Wi-Fi configuration.",
+      );
+      return;
+    }
+    const validationError = validateWifiInput(wifiSsid, nextPsk);
+    if (validationError) {
+      setWifiError(validationError);
+      return;
+    }
+    if (
+      wifiConfig?.psk_configured === true &&
+      nextPsk.length === 0 &&
+      !wifiOpenNetwork
+    ) {
+      setWifiError(
+        "Enter the Wi-Fi PSK again before saving, or choose Open network to replace the stored PSK.",
+      );
+      return;
+    }
+
+    setWifiBusy(true);
+    setWifiError(null);
+    setWifiStatus(null);
+    try {
+      const res = await saveWifiConfig({
+        ssid: nextSsid,
+        psk: nextPsk,
+      });
+      if (res.ok) {
+        setWifiConfigState((prev) => ({
+          ...prev,
+          storage: prev?.storage ?? "eeprom",
+          address: prev?.address ?? "0x50",
+          configured: true,
+          ssid: nextSsid,
+          psk_configured: nextPsk.length > 0,
+          state: res.value.reboot_required ? prev?.state : "connecting",
+          ipv4: res.value.reboot_required ? prev?.ipv4 : null,
+          is_static: prev?.is_static,
+        }));
+        setWifiPsk("");
+        setWifiOpenNetwork(false);
+        wifiFormDirtyRef.current = false;
+        setWifiRebootRequired(res.value.reboot_required);
+        setWifiStatus(
+          res.value.reboot_required
+            ? "Wi-Fi configuration saved. Reboot this hub to apply it."
+            : "Wi-Fi configuration saved and applying now.",
+        );
+        return;
+      }
+      setWifiError(res.error.message);
+    } finally {
+      setWifiBusy(false);
+    }
+  };
+
+  const requestClearWifi = () => {
+    if (!wifiCanManage) {
+      setWifiError(
+        "Connect with Web Serial or Local USB before changing Wi-Fi configuration.",
+      );
+      return;
+    }
+    setWifiError(null);
+    setWifiClearConfirmOpen(true);
+  };
+
+  const clearWifi = async () => {
+    setWifiBusy(true);
+    setWifiError(null);
+    setWifiStatus(null);
+    setWifiClearConfirmOpen(false);
+    try {
+      const res = await clearWifiConfig();
+      if (res.ok) {
+        setWifiConfigState((prev) => ({
+          storage: prev?.storage ?? "eeprom",
+          address: prev?.address ?? "0x50",
+          configured: false,
+          psk_configured: false,
+          state: res.value.reboot_required ? prev?.state : "idle",
+          ipv4: res.value.reboot_required ? prev?.ipv4 : null,
+          is_static: res.value.reboot_required ? prev?.is_static : false,
+        }));
+        setWifiSsid("");
+        setWifiPsk("");
+        setWifiOpenNetwork(false);
+        wifiFormDirtyRef.current = false;
+        setWifiRebootRequired(res.value.reboot_required);
+        setWifiStatus(
+          res.value.reboot_required
+            ? "Wi-Fi configuration cleared. Reboot this hub to apply it."
+            : "Wi-Fi configuration cleared and Wi-Fi is stopping.",
+        );
+        return;
+      }
+      setWifiError(res.error.message);
+    } finally {
+      setWifiBusy(false);
+    }
+  };
+
+  const rebootForWifi = async () => {
+    if (!wifiCanManage) {
+      setWifiError(
+        "Connect with Web Serial or Local USB before applying Wi-Fi configuration changes.",
+      );
+      return;
+    }
+    setWifiBusy(true);
+    setWifiError(null);
+    try {
+      const res = await rebootDevice();
+      if (res.ok) {
+        setWifiRebootRequired(false);
+        setWifiStatus("Reboot accepted. The hub may disconnect briefly.");
+        return;
+      }
+      setWifiError(res.error.message);
+    } finally {
+      setWifiBusy(false);
+    }
+  };
 
   const resolveLocalUsbFlashPort = async (): Promise<{
     agent: DesktopAgent;
@@ -366,6 +612,197 @@ export function DeviceInfoPanel({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="text-[16px] font-bold leading-5">
+              Wi-Fi configuration
+            </div>
+            <div className="mt-2 text-[12px] font-semibold leading-5 text-[var(--muted)]">
+              Stored credentials live in EEPROM U21 and apply immediately.
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex min-h-8 items-center rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-3 text-[12px] font-bold text-[var(--muted)]">
+              Current: {transportLabel(transport)}
+            </div>
+            <div className="flex min-h-8 items-center rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-3 text-[12px] font-bold text-[var(--muted)]">
+              Manage: {transportLabel(wifiManagementTransport)}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <InfoPill label="state" value={wifiState} />
+          <InfoPill label="ipv4" value={wifiIpv4} />
+          <InfoPill label="static" value={wifiIsStatic} />
+          <InfoPill label="configured" value={wifiConfigured} />
+          <InfoPill label="psk" value={wifiPskConfigured} />
+          <InfoPill label="storage" value={wifiStorage} />
+          <InfoPill label="address" value={wifiAddress} />
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <label className="form-control min-w-0">
+            <div className="label px-0 pb-1 pt-0">
+              <span className="label-text text-[12px] font-bold text-[var(--muted)]">
+                SSID
+              </span>
+            </div>
+            <input
+              className="input input-sm w-full font-mono"
+              autoComplete="off"
+              value={wifiSsid}
+              disabled={!wifiCanManage || wifiBusy}
+              onChange={(event) => {
+                wifiFormDirtyRef.current = true;
+                setWifiSsid(event.target.value);
+              }}
+              placeholder="Network name"
+            />
+          </label>
+          <div className="min-w-0">
+            <label className="form-control min-w-0">
+              <div className="label px-0 pb-1 pt-0">
+                <span className="label-text text-[12px] font-bold text-[var(--muted)]">
+                  PSK
+                </span>
+              </div>
+              <input
+                className="input input-sm w-full font-mono"
+                type="password"
+                autoComplete="new-password"
+                value={wifiPsk}
+                disabled={!wifiCanManage || wifiBusy || wifiOpenNetwork}
+                onChange={(event) => {
+                  wifiFormDirtyRef.current = true;
+                  setWifiPsk(event.target.value);
+                  if (event.target.value.length > 0) {
+                    setWifiOpenNetwork(false);
+                  }
+                }}
+                placeholder="Blank means open network"
+              />
+            </label>
+            <label className="mt-2 flex min-h-6 items-center gap-2 text-[12px] font-semibold text-[var(--muted)]">
+              <input
+                className="checkbox checkbox-xs"
+                type="checkbox"
+                checked={wifiOpenNetwork}
+                disabled={!wifiCanManage || wifiBusy}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  wifiFormDirtyRef.current = true;
+                  setWifiOpenNetwork(checked);
+                  if (checked) {
+                    setWifiPsk("");
+                  }
+                }}
+              />
+              <span>Open network (no PSK)</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-[12px] font-semibold leading-5 text-[var(--muted)]">
+            {wifiCanManage
+              ? "Existing PSK is never shown. Re-enter it before saving a secured network, or choose Open network to replace it."
+              : "Wi-Fi/LAN is read-only for Wi-Fi settings. Connect with Web Serial or Local USB to change credentials."}
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:min-w-[260px]">
+            <button
+              className="btn btn-primary btn-sm min-h-10"
+              type="button"
+              disabled={!wifiCanSubmit}
+              onClick={() => void saveWifi()}
+            >
+              {wifiBusy ? "Saving..." : "Save Wi-Fi"}
+            </button>
+            <button
+              className="btn btn-outline btn-sm min-h-10"
+              type="button"
+              disabled={!wifiCanSubmit}
+              onClick={requestClearWifi}
+            >
+              Clear
+            </button>
+            {wifiRebootRequired ? (
+              <button
+                className="btn btn-outline btn-sm min-h-10"
+                type="button"
+                disabled={!wifiCanSubmit}
+                onClick={() => void rebootForWifi()}
+              >
+                Reboot
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {wifiStatus ? (
+          <div className="mt-4 rounded-[12px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-3 text-[12px] font-semibold text-[var(--muted)]">
+            {wifiStatus}
+          </div>
+        ) : null}
+
+        {wifiError ? (
+          <div
+            className="mt-4 rounded-[12px] border border-[var(--error)] bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold text-[var(--error)]"
+            role="alert"
+          >
+            Wi-Fi configuration failed: {wifiError}
+          </div>
+        ) : null}
+      </div>
+
+      {wifiClearConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6"
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-[440px] rounded-[14px] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-2xl"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="wifi-clear-title"
+            aria-describedby="wifi-clear-description"
+          >
+            <div
+              id="wifi-clear-title"
+              className="text-[15px] font-bold text-[var(--text)]"
+            >
+              Clear stored Wi-Fi configuration?
+            </div>
+            <div
+              id="wifi-clear-description"
+              className="mt-3 text-[13px] font-semibold leading-6 text-[var(--muted)]"
+            >
+              The hub will forget the saved SSID and PSK, and Wi-Fi will stop
+              immediately.
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                className="btn btn-outline btn-sm min-h-10 justify-center"
+                type="button"
+                disabled={wifiBusy}
+                onClick={() => setWifiClearConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary btn-sm min-h-10 justify-center"
+                type="button"
+                disabled={wifiBusy}
+                onClick={() => void clearWifi()}
+              >
+                Clear Wi-Fi
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-[16px] font-bold leading-5">
               Firmware update
             </div>
             <div className="mt-2 text-[12px] font-semibold leading-5 text-[var(--muted)]">
@@ -470,6 +907,42 @@ function parseFlashAddress(value: string): number | null {
   }
   const parsed = Number.parseInt(trimmed, 16);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function InfoPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-[12px] border border-[var(--border)] bg-[var(--panel-2)] px-3 py-2">
+      <div className="text-[11px] font-bold uppercase leading-4 text-[var(--muted)]">
+        {label}
+      </div>
+      <div className="min-w-0 truncate font-mono text-[12px] font-semibold leading-5">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function validateWifiInput(ssid: string, psk: string): string | null {
+  const ssidBytes = utf8ByteLength(ssid.trim());
+  if (ssidBytes === 0) {
+    return "SSID is required.";
+  }
+  if (ssidBytes > 32) {
+    return "SSID must be 32 bytes or fewer.";
+  }
+
+  const pskBytes = utf8ByteLength(psk);
+  if (pskBytes > 0 && pskBytes < 8) {
+    return "PSK must be blank or at least 8 bytes.";
+  }
+  if (pskBytes > 64) {
+    return "PSK must be 64 bytes or fewer.";
+  }
+  return null;
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
 }
 
 function delay(ms: number): Promise<void> {

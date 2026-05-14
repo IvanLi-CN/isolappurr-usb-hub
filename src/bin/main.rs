@@ -112,6 +112,7 @@ async fn usb_console_task(
     mut usb: UsbSerialJtag<'static, esp_hal::Async>,
     api_state: &'static net::ApiSharedMutex,
     device_names: Option<&'static net::DeviceNames>,
+    wifi_state: Option<&'static net::WifiStateMutex>,
 ) {
     use embedded_io_async::Read as _;
 
@@ -125,7 +126,9 @@ async fn usb_console_task(
             if *byte == b'\n' {
                 if len > 0 {
                     let request = core::str::from_utf8(&line[..len]).unwrap_or("");
-                    let response = handle_usb_jsonl_request(request, api_state, device_names).await;
+                    let response =
+                        handle_usb_jsonl_request(request, api_state, device_names, wifi_state)
+                            .await;
                     usb_console_write_line(&mut usb, response.as_bytes()).await;
                     len = 0;
                 }
@@ -166,12 +169,17 @@ async fn handle_usb_jsonl_request(
     request: &str,
     api_state: &'static net::ApiSharedMutex,
     device_names: Option<&'static net::DeviceNames>,
+    wifi_state: Option<&'static net::WifiStateMutex>,
 ) -> alloc::string::String {
     let id = parse_jsonl_id(request);
     let mut body = alloc::string::String::new();
 
     if request.contains("\"method\":\"info\"") || request.contains("\"method\": \"info\"") {
-        write_usb_info_json(&mut body, id.as_str(), device_names);
+        let wifi = match wifi_state {
+            Some(state) => Some(*state.lock().await),
+            None => None,
+        };
+        write_usb_info_json(&mut body, id.as_str(), device_names, wifi);
         return body;
     }
 
@@ -245,6 +253,10 @@ async fn handle_usb_jsonl_request(
     }
 
     if request.contains("\"method\":\"wifi.get\"") || request.contains("\"method\": \"wifi.get\"") {
+        let wifi = match wifi_state {
+            Some(state) => Some(*state.lock().await),
+            None => None,
+        };
         if let Some(credentials) = wifi_credentials_cache() {
             let _ = write!(
                 body,
@@ -252,18 +264,16 @@ async fn handle_usb_jsonl_request(
                 id.as_str()
             );
             write_json_string(&mut body, credentials.ssid());
-            let _ = write!(
-                body,
-                ",\"psk_configured\":{}}}}}",
-                credentials.psk_configured()
-            );
+            let _ = write!(body, ",\"psk_configured\":{}", credentials.psk_configured());
         } else {
             let _ = write!(
                 body,
-                "{{\"id\":{},\"ok\":true,\"result\":{{\"configured\":false,\"storage\":\"eeprom\",\"address\":\"0x50\"}}}}",
+                "{{\"id\":{},\"ok\":true,\"result\":{{\"configured\":false,\"storage\":\"eeprom\",\"address\":\"0x50\",\"psk_configured\":false",
                 id.as_str()
             );
         }
+        write_usb_wifi_runtime_fields(&mut body, wifi);
+        let _ = body.push_str("}}");
         return body;
     }
 
@@ -278,7 +288,7 @@ async fn handle_usb_jsonl_request(
                 if enqueue_wifi_provisioning(WifiProvisioningCommand::Store(credentials)).is_ok() {
                     let _ = write!(
                         body,
-                        "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":true}}}}",
+                        "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":false}}}}",
                         id.as_str()
                     );
                 } else {
@@ -308,7 +318,7 @@ async fn handle_usb_jsonl_request(
         if enqueue_wifi_provisioning(WifiProvisioningCommand::Clear).is_ok() {
             let _ = write!(
                 body,
-                "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":true}}}}",
+                "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":false}}}}",
                 id.as_str()
             );
         } else {
@@ -373,7 +383,7 @@ fn set_wifi_credentials_cache(credentials: Option<provisioning::WifiCredentials>
 }
 
 #[cfg(feature = "net_http")]
-fn wifi_credentials_cache() -> Option<provisioning::WifiCredentials> {
+pub(crate) fn wifi_credentials_cache() -> Option<provisioning::WifiCredentials> {
     critical_section::with(|cs| *WIFI_CREDENTIALS_CACHE.borrow_ref(cs))
 }
 
@@ -507,6 +517,7 @@ fn write_usb_info_json(
     body: &mut alloc::string::String,
     id: &str,
     device_names: Option<&net::DeviceNames>,
+    wifi: Option<net::WifiState>,
 ) {
     let _ = write!(
         body,
@@ -529,10 +540,13 @@ fn write_usb_info_json(
 
     let _ = write!(
         body,
-        "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}}}}}}}}",
+        "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}},\"uptime_ms\":{},",
         env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION")
+        env!("CARGO_PKG_VERSION"),
+        firmware_uptime_ms()
     );
+    write_usb_wifi_object(body, wifi);
+    let _ = body.push_str("}}}");
 }
 
 #[cfg(feature = "net_http")]
@@ -544,6 +558,67 @@ fn format_usb_mac_lower(mac: [u8; 6]) -> heapless::String<17> {
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
     out
+}
+
+#[cfg(feature = "net_http")]
+fn firmware_uptime_ms() -> u64 {
+    let now_us = Instant::now().duration_since_epoch().as_micros();
+    (now_us / 1_000) as u64
+}
+
+#[cfg(feature = "net_http")]
+fn usb_wifi_state_str(state: net::WifiConnectionState) -> &'static str {
+    match state {
+        net::WifiConnectionState::Idle => "idle",
+        net::WifiConnectionState::Connecting => "connecting",
+        net::WifiConnectionState::Connected => "connected",
+        net::WifiConnectionState::Error => "error",
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn write_usb_ipv4_json(body: &mut alloc::string::String, ip: Option<embassy_net::Ipv4Address>) {
+    match ip {
+        Some(ip) => {
+            let octets = ip.octets();
+            let _ = write!(
+                body,
+                "\"{}.{}.{}.{}\"",
+                octets[0], octets[1], octets[2], octets[3]
+            );
+        }
+        None => {
+            let _ = body.push_str("null");
+        }
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn write_usb_wifi_object(body: &mut alloc::string::String, wifi: Option<net::WifiState>) {
+    let state = wifi
+        .map(|wifi| usb_wifi_state_str(wifi.state))
+        .unwrap_or("idle");
+    let _ = write!(body, "\"wifi\":{{\"state\":\"{}\",\"ipv4\":", state);
+    write_usb_ipv4_json(body, wifi.and_then(|wifi| wifi.ipv4));
+    let _ = write!(
+        body,
+        ",\"is_static\":{}}}",
+        wifi.map(|wifi| wifi.is_static).unwrap_or(false)
+    );
+}
+
+#[cfg(feature = "net_http")]
+fn write_usb_wifi_runtime_fields(body: &mut alloc::string::String, wifi: Option<net::WifiState>) {
+    let state = wifi
+        .map(|wifi| usb_wifi_state_str(wifi.state))
+        .unwrap_or("idle");
+    let _ = write!(body, ",\"state\":\"{}\",\"ipv4\":", state);
+    write_usb_ipv4_json(body, wifi.and_then(|wifi| wifi.ipv4));
+    let _ = write!(
+        body,
+        ",\"is_static\":{}",
+        wifi.map(|wifi| wifi.is_static).unwrap_or(false)
+    );
 }
 
 #[cfg(feature = "net_http")]
@@ -1579,8 +1654,14 @@ async fn main(_spawner: Spawner) {
     {
         let usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
         let device_names = net_handles.as_ref().map(|handles| handles.device_names);
+        let wifi_state = net_handles.as_ref().map(|handles| handles.wifi_state);
         if _spawner
-            .spawn(usb_console_task(usb_serial, api_state, device_names))
+            .spawn(usb_console_task(
+                usb_serial,
+                api_state,
+                device_names,
+                wifi_state,
+            ))
             .is_err()
         {
             defmt::warn!("usb console: failed to spawn USB Serial/JTAG JSONL task");
@@ -1713,6 +1794,7 @@ async fn main(_spawner: Spawner) {
                     {
                         Ok(()) => {
                             set_wifi_credentials_cache(Some(credentials));
+                            net::request_wifi_runtime_apply();
                             info!("provisioning: Wi-Fi credentials saved to EEPROM U21")
                         }
                         Err(err) => defmt::warn!(
@@ -1725,6 +1807,7 @@ async fn main(_spawner: Spawner) {
                     match provisioning::clear_wifi_credentials(telemetry_sampler.i2c_mut()).await {
                         Ok(()) => {
                             set_wifi_credentials_cache(None);
+                            net::request_wifi_runtime_apply();
                             info!("provisioning: Wi-Fi credentials cleared from EEPROM U21")
                         }
                         Err(err) => defmt::warn!(

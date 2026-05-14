@@ -20,7 +20,9 @@ export type SerialPortInfo = {
 const ESPRESSIF_USB_VENDOR_ID = 0x303a;
 const ESP32_USB_SERIAL_JTAG_PRODUCT_ID = 0x1001;
 const DEFAULT_JSONL_TIMEOUT_MS = 5_000;
+const LOCAL_USB_BUSY_RETRIES = 5;
 let jsonlRequestSeq = 1;
+const localUsbRequestQueues: Record<string, Promise<void>> = {};
 
 export type HardwareTransportKind = "web_serial" | "local_usb";
 
@@ -167,6 +169,46 @@ function pairedDeviceKey(path: string): string {
 }
 
 export async function sendLocalUsbJsonlRequest(
+  agent: DesktopAgent,
+  portPath: string,
+  request: JsonlRequest,
+): Promise<unknown> {
+  const previous = localUsbRequestQueues[portPath] ?? Promise.resolve();
+  let releaseQueue: () => void = () => undefined;
+  const current = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+  const queued = previous.catch(() => undefined).then(() => current);
+  localUsbRequestQueues[portPath] = queued;
+  await previous.catch(() => undefined);
+  try {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= LOCAL_USB_BUSY_RETRIES; attempt += 1) {
+      try {
+        return await sendLocalUsbJsonlRequestNow(agent, portPath, request);
+      } catch (err) {
+        const error =
+          err instanceof Error ? err : new Error("Local USB request failed");
+        lastError = error;
+        if (!error.message.includes("serial port is busy")) {
+          throw error;
+        }
+        if (attempt >= LOCAL_USB_BUSY_RETRIES) {
+          throw error;
+        }
+        await delay(200 + attempt * 250);
+      }
+    }
+    throw lastError ?? new Error("Local USB request failed");
+  } finally {
+    releaseQueue();
+    if (localUsbRequestQueues[portPath] === queued) {
+      delete localUsbRequestQueues[portPath];
+    }
+  }
+}
+
+async function sendLocalUsbJsonlRequestNow(
   agent: DesktopAgent,
   portPath: string,
   request: JsonlRequest,

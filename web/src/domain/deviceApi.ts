@@ -34,6 +34,31 @@ export type Result<T> =
   | { ok: true; value: T }
   | { ok: false; error: DeviceApiError };
 
+export type WifiConfigResponse = {
+  configured?: boolean;
+  storage: "eeprom" | string;
+  address: string;
+  ssid?: string;
+  psk_configured?: boolean;
+  state?: DeviceInfoResponse["device"]["wifi"]["state"];
+  ipv4?: string | null;
+  is_static?: boolean;
+};
+
+export type WifiConfigInput = {
+  ssid: string;
+  psk: string;
+};
+
+export type WifiMutationResponse = {
+  accepted: true;
+  reboot_required: boolean;
+};
+
+export type RebootResponse = {
+  accepted: true;
+};
+
 type ErrorEnvelope = {
   error: {
     code: string;
@@ -219,5 +244,40 @@ export async function getDeviceInfo(
 ): Promise<Result<DeviceInfoResponse>> {
   return fetchJson<DeviceInfoResponse>(baseUrl, "/api/v1/info", {
     method: "GET",
+  });
+}
+
+export async function getWifiConfig(
+  baseUrl: string,
+): Promise<Result<WifiConfigResponse>> {
+  return fetchJson<WifiConfigResponse>(baseUrl, "/api/v1/wifi", {
+    method: "GET",
+  });
+}
+
+export async function setWifiConfig(
+  baseUrl: string,
+  input: WifiConfigInput,
+): Promise<Result<WifiMutationResponse>> {
+  return fetchJson<WifiMutationResponse>(baseUrl, "/api/v1/wifi/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function clearWifiConfig(
+  baseUrl: string,
+): Promise<Result<WifiMutationResponse>> {
+  return fetchJson<WifiMutationResponse>(baseUrl, "/api/v1/wifi/clear", {
+    method: "POST",
+  });
+}
+
+export async function rebootDevice(
+  baseUrl: string,
+): Promise<Result<RebootResponse>> {
+  return fetchJson<RebootResponse>(baseUrl, "/api/v1/reboot", {
+    method: "POST",
   });
 }

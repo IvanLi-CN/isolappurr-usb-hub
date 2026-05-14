@@ -334,6 +334,64 @@ export function AddDeviceDialog({
   }, [open]);
 
   useEffect(() => {
+    if (!open || method !== "local_usb") {
+      return;
+    }
+    let cancelled = false;
+
+    const loadLocalUsbPorts = async () => {
+      setAddError(null);
+      setUsbStatus("Looking for Local USB ports...");
+      try {
+        const agent = agentRef.current ?? (await tryBootstrapDesktopAgent());
+        agentRef.current = agent;
+        if (cancelled || methodRef.current !== "local_usb") {
+          return;
+        }
+        if (!agent) {
+          setLocalUsbPorts([]);
+          setSelectedLocalUsbPort("");
+          setAddError("Local USB service is not running.");
+          return;
+        }
+        const ports = filterEsp32SerialPorts(
+          await listLocalUsbSerialPorts(agent),
+        );
+        if (cancelled || methodRef.current !== "local_usb") {
+          return;
+        }
+        setLocalUsbPorts(ports);
+        setSelectedLocalUsbPort((current) =>
+          ports.some((port) => port.path === current) ? current : "",
+        );
+        if (ports.length === 0) {
+          setAddError("No ESP32 USB serial ports found.");
+          setUsbStatus(null);
+          return;
+        }
+        setUsbStatus(
+          ports.length === 1
+            ? "Local USB device ready. Click it to connect."
+            : "Choose a Local USB device to connect.",
+        );
+      } catch (err) {
+        if (!cancelled && methodRef.current === "local_usb") {
+          setLocalUsbPorts([]);
+          setSelectedLocalUsbPort("");
+          setAddError(
+            err instanceof Error ? err.message : "Local USB port list failed.",
+          );
+        }
+      }
+    };
+
+    void loadLocalUsbPorts();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, method]);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
@@ -482,13 +540,14 @@ export function AddDeviceDialog({
     return true;
   };
 
-  const connectByLocalUsb = async () => {
+  const connectByLocalUsb = async (portPath?: string) => {
     const runId = startUsbRun("local_usb");
     setUsbBusy(true);
     setAddError(null);
-    setUsbStatus("Looking for Local USB ports...");
+    setUsbStatus("Preparing Local USB connection...");
     try {
-      const agent = await tryBootstrapDesktopAgent();
+      const agent = agentRef.current ?? (await tryBootstrapDesktopAgent());
+      agentRef.current = agent;
       if (!isActiveUsbRun(runId, "local_usb")) {
         return;
       }
@@ -496,23 +555,28 @@ export function AddDeviceDialog({
         setAddError("Local USB service is not running.");
         return;
       }
-      const allPorts = await listLocalUsbSerialPorts(agent);
+      const ports =
+        localUsbPorts.length > 0
+          ? localUsbPorts
+          : filterEsp32SerialPorts(await listLocalUsbSerialPorts(agent));
+      setLocalUsbPorts(ports);
       if (!isActiveUsbRun(runId, "local_usb")) {
         return;
       }
-      const ports = filterEsp32SerialPorts(allPorts);
-      setLocalUsbPorts(ports);
       if (ports.length === 0) {
         setAddError("No ESP32 USB serial ports found.");
         return;
       }
 
-      if (selectedLocalUsbPort) {
-        const port = ports.find((p) => p.path === selectedLocalUsbPort);
+      const selectedPortPath = portPath ?? selectedLocalUsbPort;
+      if (selectedPortPath) {
+        setSelectedLocalUsbPort(selectedPortPath);
+        const port = ports.find((p) => p.path === selectedPortPath);
         if (!port) {
-          setUsbStatus("Select the IsolaPurr ESP32 USB port, then connect.");
+          setUsbStatus("Choose the IsolaPurr ESP32 USB device to connect.");
           return;
         }
+        setUsbStatus("Identifying IsolaPurr USB hub...");
         const response = await readLocalUsbInfo(agent, port);
         await addUsbDevice(
           response,
@@ -549,7 +613,7 @@ export function AddDeviceDialog({
         setAddError("The ESP32 USB port did not respond as IsolaPurr.");
         return;
       }
-      setUsbStatus("Select the IsolaPurr ESP32 USB port, then connect.");
+      setUsbStatus("Choose the IsolaPurr ESP32 USB device to connect.");
     } catch (err) {
       if (isActiveUsbRun(runId, "local_usb")) {
         setAddError(err instanceof Error ? err.message : "Local USB failed.");
@@ -875,24 +939,48 @@ export function AddDeviceDialog({
                       or Local USB.
                     </div>
                   ) : null}
-                  {method === "local_usb" && localUsbPorts.length > 1 ? (
-                    <label className="mt-5 flex flex-col gap-2 text-[12px] font-bold text-[var(--muted)]">
-                      Hub port
-                      <select
-                        className="select select-sm w-full"
-                        value={selectedLocalUsbPort}
-                        onChange={(event) =>
-                          setSelectedLocalUsbPort(event.target.value)
-                        }
-                      >
-                        <option value="">Select the hub port</option>
-                        {localUsbPorts.map((port) => (
-                          <option key={port.path} value={port.path}>
-                            {port.label} ({port.path})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                  {method === "local_usb" && localUsbPorts.length > 0 ? (
+                    <div className="mt-5">
+                      <div className="text-[12px] font-bold text-[var(--muted)]">
+                        Local USB devices
+                      </div>
+                      <div className="mt-2 grid gap-2">
+                        {localUsbPorts.map((port) => {
+                          const active = selectedLocalUsbPort === port.path;
+                          return (
+                            <button
+                              key={port.path}
+                              className={[
+                                "flex min-h-[58px] w-full items-center justify-between gap-4 rounded-[12px] border px-4 py-3 text-left",
+                                active
+                                  ? "border-[var(--primary)] bg-[var(--panel)]"
+                                  : "border-[var(--border)] bg-[var(--panel)]",
+                                usbBusy
+                                  ? "cursor-not-allowed opacity-70"
+                                  : "hover:border-[var(--primary)]",
+                              ].join(" ")}
+                              type="button"
+                              disabled={usbBusy}
+                              onClick={() => void connectByLocalUsb(port.path)}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-[13px] font-bold text-[var(--text)]">
+                                  {port.label}
+                                </span>
+                                <span className="mt-1 block truncate font-mono text-[12px] font-semibold text-[var(--muted)]">
+                                  {port.path}
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-[12px] font-bold text-[var(--muted)]">
+                                {usbBusy && active
+                                  ? "Connecting..."
+                                  : "Connect"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ) : null}
                   {usbStatus ? (
                     <div className="mt-4 text-[12px] font-semibold text-[var(--muted)]">
@@ -902,27 +990,18 @@ export function AddDeviceDialog({
                   {addError ? <InlineAddError message={addError} /> : null}
                 </div>
 
-                <div className="mt-8 grid gap-3">
-                  <button
-                    className="btn h-12 justify-center"
-                    type="button"
-                    disabled={
-                      usbBusy ||
-                      (method === "web_serial" && !isWebSerialSupported())
-                    }
-                    onClick={() =>
-                      void (method === "web_serial"
-                        ? connectByWebSerial()
-                        : connectByLocalUsb())
-                    }
-                  >
-                    {usbBusy
-                      ? "Connecting..."
-                      : method === "web_serial"
-                        ? "Connect and add"
-                        : "Connect Local USB and add"}
-                  </button>
-                </div>
+                {method === "web_serial" ? (
+                  <div className="mt-8 grid gap-3">
+                    <button
+                      className="btn h-12 justify-center"
+                      type="button"
+                      disabled={usbBusy || !isWebSerialSupported()}
+                      onClick={() => void connectByWebSerial()}
+                    >
+                      {usbBusy ? "Connecting..." : "Connect and add"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

@@ -1751,9 +1751,7 @@ async fn api_serial_request(
         return bad_request("portPath is required");
     }
 
-    let Ok(_guard) = state.serial_lock.try_lock() else {
-        return conflict("serial port is busy");
-    };
+    let _guard = state.serial_lock.lock().await;
 
     let result = tokio::task::spawn_blocking(move || run_serial_jsonl_request(req)).await;
     match result {
@@ -1827,9 +1825,7 @@ async fn api_firmware_flash(
         return bad_request("portPath is required");
     }
 
-    let Ok(_guard) = state.serial_lock.try_lock() else {
-        return conflict("serial port is busy");
-    };
+    let _guard = state.serial_lock.lock().await;
 
     let result = tokio::task::spawn_blocking(move || run_firmware_flash(req)).await;
     match result {
@@ -2031,13 +2027,18 @@ async fn ui_index() -> Response {
 async fn ui_asset(AxumPath(path): AxumPath<String>) -> Response {
     // Serve SPA assets; fall back to index.html for client-side routing.
     let path = path.trim_start_matches('/').to_string();
-    let asset = WebDist::get(&path).or_else(|| WebDist::get("index.html"));
-    let Some(asset) = asset else {
-        return StatusCode::NOT_FOUND.into_response();
+    let (asset, served_path) = match WebDist::get(&path) {
+        Some(asset) => (asset, path.as_str()),
+        None => {
+            let Some(asset) = WebDist::get("index.html") else {
+                return StatusCode::NOT_FOUND.into_response();
+            };
+            (asset, "index.html")
+        }
     };
 
     let body = asset.data;
-    let mime = mime_guess::from_path(&path).first_or_octet_stream();
+    let mime = mime_guess::from_path(served_path).first_or_octet_stream();
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CONTENT_TYPE,
