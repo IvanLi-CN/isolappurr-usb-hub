@@ -88,6 +88,39 @@ function upstreamBadge(upstreamConnected: boolean | null): {
   };
 }
 
+function isolatedBadge(
+  value: boolean | null,
+  labels: { unknown: string; on: string; off: string },
+): {
+  bg: string;
+  text: string;
+  width: string;
+  label: string;
+} {
+  if (value === null) {
+    return {
+      bg: "bg-[var(--badge-warning-bg)]",
+      text: "text-[var(--badge-warning-text)]",
+      width: "w-[112px]",
+      label: labels.unknown,
+    };
+  }
+  if (value) {
+    return {
+      bg: "bg-[var(--badge-success-bg)]",
+      text: "text-[var(--badge-success-text)]",
+      width: "w-[112px]",
+      label: labels.on,
+    };
+  }
+  return {
+    bg: "bg-[var(--badge-error-bg)]",
+    text: "text-[var(--badge-error-text)]",
+    width: "w-[112px]",
+    label: labels.off,
+  };
+}
+
 function transportLabel(transport: "http" | "local_usb" | "web_serial" | null) {
   if (transport === "http") {
     return "Wi-Fi / LAN";
@@ -116,10 +149,27 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
 
   const connectionState = runtime.connectionState(device.id);
   const badge = statusBadge(connectionState);
+  const hub = connectionState === "online" ? runtime.hub(device.id) : null;
   const upstream = upstreamBadge(
+    connectionState === "online" ? (hub?.upstream_connected ?? null) : null,
+  );
+  const isolatedPort = isolatedBadge(
     connectionState === "online"
-      ? (runtime.hub(device.id)?.upstream_connected ?? null)
+      ? (hub?.isolated_downstream_connected ?? null)
       : null,
+    {
+      unknown: "ISO PORT —",
+      on: "ISO PORT",
+      off: "NO ISO PORT",
+    },
+  );
+  const isolatedReady = isolatedBadge(
+    connectionState === "online" ? (hub?.isolated_usb_ready ?? null) : null,
+    {
+      unknown: "ISO READY —",
+      on: "ISO READY",
+      off: "ISO WAIT",
+    },
   );
 
   const lastOkAt = runtime.lastOkAt(device.id);
@@ -172,7 +222,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
 
   return (
     <div className="flex flex-col gap-6" data-testid="device-dashboard">
-      <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)] sm:h-[104px]">
+      <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)] sm:min-h-[116px]">
         <div className="grid grid-cols-1 gap-y-[10px] leading-4 sm:grid-cols-2 sm:gap-x-6">
           <div className="flex min-w-0 items-center">
             <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
@@ -200,6 +250,28 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
                 ].join(" ")}
               >
                 {upstream.label}
+              </div>
+              <div
+                className={[
+                  "flex h-[26px] items-center justify-center rounded-full",
+                  isolatedPort.width,
+                  isolatedPort.bg,
+                  isolatedPort.text,
+                  "text-[11px] font-semibold",
+                ].join(" ")}
+              >
+                {isolatedPort.label}
+              </div>
+              <div
+                className={[
+                  "flex h-[26px] items-center justify-center rounded-full",
+                  isolatedReady.width,
+                  isolatedReady.bg,
+                  isolatedReady.text,
+                  "text-[11px] font-semibold",
+                ].join(" ")}
+              >
+                {isolatedReady.label}
               </div>
             </div>
           </div>

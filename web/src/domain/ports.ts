@@ -3,7 +3,10 @@ export type PortId = "port_a" | "port_c";
 export type TelemetryStatus = "ok" | "not_inserted" | "error" | "overrange";
 
 export type HubState = {
+  // Backward-compat: older firmware and summary cards use this field.
   upstream_connected: boolean;
+  isolated_downstream_connected?: boolean;
+  isolated_usb_ready?: boolean;
 };
 
 export type PortTelemetry = {

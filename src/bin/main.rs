@@ -818,6 +818,8 @@ const TOAST_MS: u64 = 1500;
 const POWER_SWITCH_GUARD_MS: u64 = 350;
 #[cfg(feature = "net_http")]
 const LEDD_SAMPLE_MS: u64 = 1_000;
+#[cfg(feature = "net_http")]
+const UP0_PG_SAMPLE_MS: u64 = 1_000;
 
 const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
 const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
@@ -1247,21 +1249,36 @@ async fn main(_spawner: Spawner) {
         btn_raw_left_pressed, btn_raw_right_pressed
     );
 
-    // CH318T LEDD raw indicator (Plan 6xrna):
-    // - netlist (tps-sw): CH318T U2 pin13 (LEDD/LED-MODE) → MCU GPIO6 (direct net tie)
-    // - external pull-ups/downs exist (mode + LED load), so MCU must be hi-Z input (no pull).
+    // CH318T isolated-side indicators:
+    // - U2 pin10 IO1 = UP0_PG → MCU GPIO18, external 100k pull-up, active-low downstream port present.
+    // - U2 pin13 LED/MODE = LEDD → MCU GPIO6, active-low isolated USB ready/link indicator.
+    // Both signals are status inputs only; keep MCU pins hi-Z with no internal pulls.
+    #[cfg(feature = "net_http")]
+    let up0_pg_cfg = InputConfig::default().with_pull(Pull::None);
+    #[cfg(feature = "net_http")]
+    let up0_pg = Input::new(peripherals.GPIO18, up0_pg_cfg);
+    #[cfg(feature = "net_http")]
+    let mut api_isolated_downstream_connected = up0_pg.is_low();
+    #[cfg(feature = "net_http")]
+    let mut up0_pg_last_sample = Instant::now();
+    #[cfg(feature = "net_http")]
+    info!(
+        "isolated downstream io1: GPIO18 initial raw_low={} (active-low, hi-z input; no pull)",
+        up0_pg.is_low()
+    );
+
     #[cfg(feature = "net_http")]
     let ledd_cfg = InputConfig::default().with_pull(Pull::None);
     #[cfg(feature = "net_http")]
-    let ledd_usb_a = Input::new(peripherals.GPIO6, ledd_cfg);
+    let isolated_usb_ready = Input::new(peripherals.GPIO6, ledd_cfg);
     #[cfg(feature = "net_http")]
-    let mut api_upstream_connected = ledd_usb_a.is_low();
+    let mut api_isolated_usb_ready = isolated_usb_ready.is_low();
     #[cfg(feature = "net_http")]
     let mut ledd_last_sample = Instant::now();
     #[cfg(feature = "net_http")]
     info!(
-        "usb-a ledd: GPIO6 initial raw_low={} (active-low, hi-z input; no pull)",
-        ledd_usb_a.is_low()
+        "isolated usb ready ledd: GPIO6 initial raw_low={} (active-low, hi-z input; no pull)",
+        isolated_usb_ready.is_low()
     );
 
     let mut btn_left_pressed_at: Option<Instant> = None;
@@ -1866,15 +1883,29 @@ async fn main(_spawner: Spawner) {
         #[cfg(feature = "net_http")]
         if ledd_last_sample.elapsed() >= Duration::from_millis(LEDD_SAMPLE_MS) {
             ledd_last_sample = Instant::now();
-            let raw_low = ledd_usb_a.is_low();
-            let connected = raw_low;
-            if connected != api_upstream_connected {
+            let raw_low = isolated_usb_ready.is_low();
+            let ready = raw_low;
+            if ready != api_isolated_usb_ready {
                 debug!(
-                    "usb-a ledd: sampled_connected={} raw_low={} sample_ms={}",
-                    connected, raw_low, LEDD_SAMPLE_MS
+                    "isolated usb ready ledd: sampled_ready={} raw_low={} sample_ms={}",
+                    ready, raw_low, LEDD_SAMPLE_MS
                 );
             }
-            api_upstream_connected = connected;
+            api_isolated_usb_ready = ready;
+        }
+
+        #[cfg(feature = "net_http")]
+        if up0_pg_last_sample.elapsed() >= Duration::from_millis(UP0_PG_SAMPLE_MS) {
+            up0_pg_last_sample = Instant::now();
+            let raw_low = up0_pg.is_low();
+            let connected = raw_low;
+            if connected != api_isolated_downstream_connected {
+                debug!(
+                    "isolated downstream io1: sampled_connected={} raw_low={} sample_ms={}",
+                    connected, raw_low, UP0_PG_SAMPLE_MS
+                );
+            }
+            api_isolated_downstream_connected = connected;
         }
 
         let allow_sw2303_probe = !sw2303_error_latched
@@ -3027,7 +3058,9 @@ async fn main(_spawner: Spawner) {
 
             let mut guard = api_state.lock().await;
             guard.hub = net::ApiHubSnapshot {
-                upstream_connected: api_upstream_connected,
+                upstream_connected: api_isolated_usb_ready,
+                isolated_downstream_connected: api_isolated_downstream_connected,
+                isolated_usb_ready: api_isolated_usb_ready,
             };
             guard.ports = ports;
         }
