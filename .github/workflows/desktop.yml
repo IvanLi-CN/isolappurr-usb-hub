@@ -84,6 +84,7 @@ jobs:
     env:
       ISOLAPURR_SKIP_WEB_BUILD: "1"
       ISOLAPURR_WEB_DIST_DIR: "web/dist"
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Checkout (macos/linux)
         if: matrix.name != 'windows'
@@ -328,6 +329,7 @@ jobs:
     env:
       ISOLAPURR_SKIP_WEB_BUILD: "1"
       ISOLAPURR_WEB_DIST_DIR: "web/dist"
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - name: Checkout (linux)
         if: startsWith(matrix.os, 'ubuntu')
