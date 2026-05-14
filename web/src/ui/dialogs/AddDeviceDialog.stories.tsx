@@ -1,5 +1,6 @@
 import type { Decorator, Meta, StoryObj } from "@storybook/react";
 import { useEffect } from "react";
+import { MemoryRouter } from "react-router";
 
 import type { DiscoveredDevice } from "../../domain/discovery";
 import {
@@ -102,6 +103,13 @@ const meta: Meta<typeof AddDeviceDialog> = {
       device: { id: "demo", name: "Demo", baseUrl: "http://192.168.1.10" },
     }),
   },
+  decorators: [
+    (Story) => (
+      <MemoryRouter>
+        <Story />
+      </MemoryRouter>
+    ),
+  ],
 };
 
 export default meta;
@@ -193,7 +201,42 @@ export const IpScanExpanded: Story = {
   ],
 };
 
-export const FormErrors: Story = {
+export const AddFailure: Story = {
+  args: {
+    onCreate: async () => ({
+      ok: false,
+      errors: { baseUrl: "Device already exists." },
+    }),
+  },
+  decorators: [
+    mockFetchDecorator(
+      mockAgent({
+        mode: "service",
+        status: "ready",
+        devices: [
+          {
+            device_id: "isolapurr-hub-2",
+            hostname: "hub-2",
+            fqdn: "hub-2.local",
+            ipv4: "192.168.1.42",
+            baseUrl: "http://hub-2.local",
+            firmware: { name: "isolapurr", version: "0.1.2" },
+            variant: "tps-sw",
+          },
+        ],
+      }),
+    ),
+    autoClickDecorator(() => {
+      const buttons = Array.from(document.querySelectorAll("button"));
+      return buttons.find((b) => b.textContent?.trim() === "Add") ?? null;
+    }),
+  ],
+};
+
+export const WebSerialSetup: Story = {
+  args: {
+    initialMethod: "web_serial",
+  },
   decorators: [
     mockFetchDecorator(
       mockAgent({
@@ -202,9 +245,20 @@ export const FormErrors: Story = {
         devices: [],
       }),
     ),
-    autoClickDecorator(() => {
-      const buttons = Array.from(document.querySelectorAll("button"));
-      return buttons.find((b) => b.textContent?.trim() === "Create") ?? null;
-    }),
+  ],
+};
+
+export const LocalUsbSetup: Story = {
+  args: {
+    initialMethod: "local_usb",
+  },
+  decorators: [
+    mockFetchDecorator(
+      mockAgent({
+        mode: "service",
+        status: "ready",
+        devices: [],
+      }),
+    ),
   ],
 };

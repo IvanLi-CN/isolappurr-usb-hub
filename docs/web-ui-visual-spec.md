@@ -23,7 +23,7 @@
 ### Non-goals
 
 - 不引入新的 UI 框架/依赖（沿用 React + Tailwind + DaisyUI + 现有 `iso-*` 组件风格）。
-- 不定义业务规则（例如 discovery 逻辑、IP scan 策略、设备 API 行为等）。
+- 不定义业务规则（例如连接协议、串口筛选、HTTP fallback、设备 API 行为等）。
 
 ## 自适应与多尺寸（Responsive）
 
@@ -53,8 +53,9 @@
   - `xl` 及以上：Sidebar 固定在左侧，Main 右侧自适应。
   - `xl` 以下：Sidebar 与 Main 纵向堆叠（先 Sidebar 后 Main），避免强行两列导致拥挤。
 - Add device dialog：
-  - `min-[980px]` 及以上：左右两列（Discovery / Manual）。
-  - 小于该宽度：单列堆叠（先 Discovery 后 Manual），并保持 CTA 可达。
+  - 当前交互以 `Wi-Fi / LAN`、`Web Serial`、`Local USB` 三种连接方式为首要分组。
+  - `min-[980px]` 及以上：连接方式与当前面板应保持清晰对齐，错误提示贴近当前活跃面板。
+  - 小于该宽度：单列堆叠，并保持 CTA 可达。
 
 ## 视觉基线（Theme / Tokens）
 
@@ -153,4 +154,4 @@
 
 - UI tokens 与主题：`docs/plan/0006:web-ui-screens-and-theme/contracts/config.md`
 - 低保真布局参考：`docs/plan/0006:web-ui-screens-and-theme/references/wireframes.md`
-- Add device 交互口径：`docs/plan/0007:add-device-discovery/PLAN.md`
+- Add device 交互口径：`docs/specs/u5b2c-usb-console-provisioning/SPEC.md`

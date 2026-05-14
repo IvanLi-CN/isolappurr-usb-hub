@@ -100,6 +100,10 @@ static WIFI_PROVISIONING_PENDING: Mutex<RefCell<Option<WifiProvisioningCommand>>
     Mutex::new(RefCell::new(None));
 
 #[cfg(feature = "net_http")]
+static WIFI_CREDENTIALS_CACHE: Mutex<RefCell<Option<provisioning::WifiCredentials>>> =
+    Mutex::new(RefCell::new(None));
+
+#[cfg(feature = "net_http")]
 static REBOOT_PENDING: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "net_http")]
@@ -107,6 +111,7 @@ static REBOOT_PENDING: AtomicBool = AtomicBool::new(false);
 async fn usb_console_task(
     mut usb: UsbSerialJtag<'static, esp_hal::Async>,
     api_state: &'static net::ApiSharedMutex,
+    device_names: Option<&'static net::DeviceNames>,
 ) {
     use embedded_io_async::Read as _;
 
@@ -120,10 +125,8 @@ async fn usb_console_task(
             if *byte == b'\n' {
                 if len > 0 {
                     let request = core::str::from_utf8(&line[..len]).unwrap_or("");
-                    let response = handle_usb_jsonl_request(request, api_state).await;
-                    let _ = embedded_io_async::Write::write(&mut usb, response.as_bytes()).await;
-                    let _ = embedded_io_async::Write::write(&mut usb, b"\n").await;
-                    let _ = embedded_io_async::Write::flush(&mut usb).await;
+                    let response = handle_usb_jsonl_request(request, api_state, device_names).await;
+                    usb_console_write_line(&mut usb, response.as_bytes()).await;
                     len = 0;
                 }
             } else if *byte != b'\r' && len < line.len() {
@@ -131,33 +134,44 @@ async fn usb_console_task(
                 len += 1;
             } else if len >= line.len() {
                 len = 0;
-                let _ = embedded_io_async::Write::write(
+                usb_console_write_line(
                     &mut usb,
-                    b"{\"id\":null,\"ok\":false,\"error\":{\"code\":\"frame_too_large\",\"message\":\"JSONL frame too large\",\"retryable\":false}}\n",
+                    b"{\"id\":null,\"ok\":false,\"error\":{\"code\":\"frame_too_large\",\"message\":\"JSONL frame too large\",\"retryable\":false}}",
                 )
                 .await;
-                let _ = embedded_io_async::Write::flush(&mut usb).await;
             }
         }
     }
 }
 
 #[cfg(feature = "net_http")]
+async fn usb_console_write_line(
+    usb: &mut UsbSerialJtag<'static, esp_hal::Async>,
+    mut bytes: &[u8],
+) {
+    while !bytes.is_empty() {
+        let end = bytes.len().min(32);
+        match embedded_io_async::Write::write(usb, &bytes[..end]).await {
+            Ok(0) => Timer::after_millis(1).await,
+            Ok(n) => bytes = &bytes[n.min(end)..],
+            Err(_) => return,
+        }
+    }
+    let _ = embedded_io_async::Write::write(usb, b"\n").await;
+    let _ = embedded_io_async::Write::flush(usb).await;
+}
+
+#[cfg(feature = "net_http")]
 async fn handle_usb_jsonl_request(
     request: &str,
     api_state: &'static net::ApiSharedMutex,
+    device_names: Option<&'static net::DeviceNames>,
 ) -> alloc::string::String {
     let id = parse_jsonl_id(request);
     let mut body = alloc::string::String::new();
 
     if request.contains("\"method\":\"info\"") || request.contains("\"method\": \"info\"") {
-        let _ = write!(
-            body,
-            "{{\"id\":{},\"ok\":true,\"result\":{{\"device\":{{\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}}}}}}}}",
-            id.as_str(),
-            env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION")
-        );
+        write_usb_info_json(&mut body, id.as_str(), device_names);
         return body;
     }
 
@@ -173,7 +187,7 @@ async fn handle_usb_jsonl_request(
         write_usb_port_json(&mut body, "port_a", "USB-A", &state.ports.port_a);
         let _ = body.push(',');
         write_usb_port_json(&mut body, "port_c", "USB-C", &state.ports.port_c);
-        let _ = body.push_str("]}}}");
+        let _ = body.push_str("]}}");
         return body;
     }
 
@@ -212,11 +226,25 @@ async fn handle_usb_jsonl_request(
     }
 
     if request.contains("\"method\":\"wifi.get\"") || request.contains("\"method\": \"wifi.get\"") {
-        let _ = write!(
-            body,
-            "{{\"id\":{},\"ok\":true,\"result\":{{\"configured\":null,\"storage\":\"eeprom\",\"address\":\"0x50\"}}}}",
-            id.as_str()
-        );
+        if let Some(credentials) = wifi_credentials_cache() {
+            let _ = write!(
+                body,
+                "{{\"id\":{},\"ok\":true,\"result\":{{\"configured\":true,\"storage\":\"eeprom\",\"address\":\"0x50\",\"ssid\":",
+                id.as_str()
+            );
+            write_json_string(&mut body, credentials.ssid());
+            let _ = write!(
+                body,
+                ",\"psk_configured\":{}}}}}",
+                credentials.psk_configured()
+            );
+        } else {
+            let _ = write!(
+                body,
+                "{{\"id\":{},\"ok\":true,\"result\":{{\"configured\":false,\"storage\":\"eeprom\",\"address\":\"0x50\"}}}}",
+                id.as_str()
+            );
+        }
         return body;
     }
 
@@ -316,6 +344,18 @@ fn take_wifi_provisioning() -> Option<WifiProvisioningCommand> {
 #[cfg(feature = "net_http")]
 fn has_wifi_provisioning_pending() -> bool {
     critical_section::with(|cs| WIFI_PROVISIONING_PENDING.borrow_ref(cs).is_some())
+}
+
+#[cfg(feature = "net_http")]
+fn set_wifi_credentials_cache(credentials: Option<provisioning::WifiCredentials>) {
+    critical_section::with(|cs| {
+        *WIFI_CREDENTIALS_CACHE.borrow_ref_mut(cs) = credentials;
+    });
+}
+
+#[cfg(feature = "net_http")]
+fn wifi_credentials_cache() -> Option<provisioning::WifiCredentials> {
+    critical_section::with(|cs| *WIFI_CREDENTIALS_CACHE.borrow_ref(cs))
 }
 
 #[cfg(feature = "net_http")]
@@ -429,6 +469,81 @@ fn write_usb_u32_or_null(body: &mut alloc::string::String, value: Option<u32>) {
             let _ = body.push_str("null");
         }
     }
+}
+
+#[cfg(feature = "net_http")]
+fn write_usb_info_json(
+    body: &mut alloc::string::String,
+    id: &str,
+    device_names: Option<&net::DeviceNames>,
+) {
+    let _ = write!(
+        body,
+        "{{\"id\":{},\"ok\":true,\"result\":{{\"device\":{{",
+        id
+    );
+
+    if let Some(names) = device_names {
+        let mac = format_usb_mac_lower(names.mac);
+        let _ = write!(body, "\"device_id\":");
+        write_json_string(body, names.short_id.as_str());
+        let _ = write!(body, ",\"hostname\":");
+        write_json_string(body, names.hostname.as_str());
+        let _ = write!(body, ",\"fqdn\":");
+        write_json_string(body, names.hostname_fqdn.as_str());
+        let _ = write!(body, ",\"mac\":");
+        write_json_string(body, mac.as_str());
+        let _ = body.push(',');
+    }
+
+    let _ = write!(
+        body,
+        "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}}}}}}}}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
+#[cfg(feature = "net_http")]
+fn format_usb_mac_lower(mac: [u8; 6]) -> heapless::String<17> {
+    let mut out = heapless::String::<17>::new();
+    let _ = write!(
+        out,
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    );
+    out
+}
+
+#[cfg(feature = "net_http")]
+fn write_json_string(body: &mut alloc::string::String, value: &str) {
+    let _ = body.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => {
+                let _ = body.push_str("\\\"");
+            }
+            '\\' => {
+                let _ = body.push_str("\\\\");
+            }
+            '\n' => {
+                let _ = body.push_str("\\n");
+            }
+            '\r' => {
+                let _ = body.push_str("\\r");
+            }
+            '\t' => {
+                let _ = body.push_str("\\t");
+            }
+            ch if ch < ' ' => {
+                let _ = write!(body, "\\u{:04x}", ch as u32);
+            }
+            ch => {
+                let _ = body.push(ch);
+            }
+        }
+    }
+    let _ = body.push('"');
 }
 
 #[cfg(feature = "net_http")]
@@ -1021,18 +1136,6 @@ async fn main(_spawner: Spawner) {
     // Optional HTTP API state is shared by Wi-Fi and USB/native transports.
     #[cfg(feature = "net_http")]
     let api_state = net::init_http_api_state();
-    #[cfg(feature = "net_http")]
-    {
-        let usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
-        if _spawner
-            .spawn(usb_console_task(usb_serial, api_state))
-            .is_err()
-        {
-            defmt::warn!("usb console: failed to spawn USB Serial/JTAG JSONL task");
-        } else {
-            info!("usb console: USB Serial/JTAG JSONL task started");
-        }
-    }
 
     let buzzer = LedcBuzzer::new(peripherals.LEDC, peripherals.GPIO21).expect("buzzer LEDC init");
     let mut prompt_tone = PromptToneManager::new(buzzer);
@@ -1471,6 +1574,7 @@ async fn main(_spawner: Spawner) {
     #[cfg(feature = "net_http")]
     let wifi_credentials = match provisioning::load_wifi_credentials(&mut telemetry_i2c).await {
         Ok(value) => {
+            set_wifi_credentials_cache(value);
             if value.is_some() {
                 info!("provisioning: Wi-Fi credentials loaded from EEPROM U21");
             } else {
@@ -1489,6 +1593,19 @@ async fn main(_spawner: Spawner) {
     #[cfg(feature = "net_http")]
     let net_handles =
         net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state, wifi_credentials);
+    #[cfg(feature = "net_http")]
+    {
+        let usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
+        let device_names = net_handles.as_ref().map(|handles| handles.device_names);
+        if _spawner
+            .spawn(usb_console_task(usb_serial, api_state, device_names))
+            .is_err()
+        {
+            defmt::warn!("usb console: failed to spawn USB Serial/JTAG JSONL task");
+        } else {
+            info!("usb console: USB Serial/JTAG JSONL task started");
+        }
+    }
 
     let mut telemetry_sampler = NormalUiTelemetrySampler::new_with_allowlist(telemetry_i2c);
     match telemetry_sampler.init().await {
@@ -1612,7 +1729,10 @@ async fn main(_spawner: Spawner) {
                     )
                     .await
                     {
-                        Ok(()) => info!("provisioning: Wi-Fi credentials saved to EEPROM U21"),
+                        Ok(()) => {
+                            set_wifi_credentials_cache(Some(credentials));
+                            info!("provisioning: Wi-Fi credentials saved to EEPROM U21")
+                        }
                         Err(err) => defmt::warn!(
                             "provisioning: failed to save Wi-Fi credentials to EEPROM U21: {:?}",
                             defmt::Debug2Format(&err)
@@ -1621,7 +1741,10 @@ async fn main(_spawner: Spawner) {
                 }
                 WifiProvisioningCommand::Clear => {
                     match provisioning::clear_wifi_credentials(telemetry_sampler.i2c_mut()).await {
-                        Ok(()) => info!("provisioning: Wi-Fi credentials cleared from EEPROM U21"),
+                        Ok(()) => {
+                            set_wifi_credentials_cache(None);
+                            info!("provisioning: Wi-Fi credentials cleared from EEPROM U21")
+                        }
                         Err(err) => defmt::warn!(
                             "provisioning: failed to clear Wi-Fi credentials from EEPROM U21: {:?}",
                             defmt::Debug2Format(&err)

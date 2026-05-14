@@ -88,6 +88,29 @@ function upstreamBadge(upstreamConnected: boolean | null): {
   };
 }
 
+function transportLabel(transport: "http" | "local_usb" | "web_serial" | null) {
+  if (transport === "http") {
+    return "Wi-Fi / LAN";
+  }
+  if (transport === "web_serial") {
+    return "Web Serial";
+  }
+  if (transport === "local_usb") {
+    return "Local USB";
+  }
+  return "—";
+}
+
+function shortChannelState(state: "online" | "offline" | "unknown"): string {
+  if (state === "online") {
+    return "on";
+  }
+  if (state === "offline") {
+    return "off";
+  }
+  return "—";
+}
+
 export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const runtime = useDeviceRuntime();
 
@@ -107,7 +130,13 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const buildSha =
     rawBuildSha && rawBuildSha !== "dev" ? rawBuildSha.slice(0, 7) : "—";
 
-  const notes = runtime.lastErrorLabel(device.id) ?? "—";
+  const transport = runtime.transport(device.id);
+  const wifiState = runtime.channelState(device.id, "http");
+  const webSerialState = runtime.channelState(device.id, "web_serial");
+  const localUsbState = runtime.channelState(device.id, "local_usb");
+  const notes =
+    runtime.lastErrorLabel(device.id) ??
+    `Primary: ${transportLabel(transport)} · Wi-Fi ${shortChannelState(wifiState)} · Web Serial ${shortChannelState(webSerialState)} · Local USB ${shortChannelState(localUsbState)}`;
 
   const writeDisabled = connectionState !== "online";
 

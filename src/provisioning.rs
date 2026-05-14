@@ -36,7 +36,11 @@ impl WifiCredentials {
     pub fn new(ssid: &str, psk: &str) -> Result<Self, ProvisioningError<()>> {
         let ssid_b = ssid.as_bytes();
         let psk_b = psk.as_bytes();
-        if ssid_b.is_empty() || ssid_b.len() > 32 || psk_b.len() > 64 {
+        if ssid_b.is_empty()
+            || ssid_b.len() > 32
+            || (!psk_b.is_empty() && psk_b.len() < 8)
+            || psk_b.len() > 64
+        {
             return Err(ProvisioningError::InvalidInput);
         }
 

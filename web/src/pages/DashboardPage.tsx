@@ -6,7 +6,6 @@ import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
 import type { PortId, PortState, PortTelemetry } from "../domain/ports";
 import { DeviceSummaryCard } from "../ui/cards/DeviceSummaryCard";
-import { HardwareConsolePanel } from "../ui/panels/HardwareConsolePanel";
 
 const fallbackTelemetry: PortTelemetry = {
   status: "error",
@@ -99,8 +98,6 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <HardwareConsolePanel />
-
       <div className="grid grid-cols-1 gap-6 min-[1600px]:grid-cols-2">
         {items.map((item) => (
           <DeviceSummaryCard
@@ -138,6 +135,10 @@ export function DashboardPage() {
             Create a new hub entry
           </div>
         </button>
+      </div>
+
+      <div className="text-[12px] font-semibold text-[var(--muted)]">
+        Note: mockup only — real data/actions follow Plan #0005 contracts.
       </div>
     </div>
   );

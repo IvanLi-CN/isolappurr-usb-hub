@@ -15,6 +15,7 @@ const meta: Meta<typeof DeviceCard> = {
   args: {
     device: demoDevice,
     status: "online",
+    transportBadges: [{ transport: "http", state: "primary" }],
     unselectedFill: "panel",
     onSelect: () => {},
   },
@@ -26,12 +27,12 @@ type Story = StoryObj<typeof DeviceCard>;
 
 export const Default: Story = {};
 
-export const LongBaseUrl: Story = {
+export const ConnectedAndHistory: Story = {
   args: {
-    device: {
-      ...demoDevice,
-      baseUrl:
-        "http://hub-a.local/this/is/a/very/long/path/to/ensure/baseUrl/truncates/in/narrow/sidebars",
-    },
+    transportBadges: [
+      { transport: "web_serial", state: "primary" },
+      { transport: "http", state: "connected" },
+      { transport: "local_usb", state: "history" },
+    ],
   },
 };

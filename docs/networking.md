@@ -1,4 +1,6 @@
-# Networking (Wi‑Fi + mDNS + HTTP)
+# Networking (Wi‑Fi + mDNS + HTTP fallback)
+
+This page documents the device networking runtime and HTTP fallback. The product Web App uses Add device for Wi-Fi / LAN, Web Serial, and Local USB connection, then uses the saved device pages for Wi-Fi maintenance, telemetry, controls, and firmware update. A saved hub may have Wi-Fi and USB channels active at the same time; the runtime promotes an available channel when the current primary fails. Treat the flashing notes below as a developer maintenance path, not the user-facing onboarding path.
 
 This project includes an **experimental** networking feature (`net_http`) that enables:
 
@@ -11,36 +13,17 @@ This project includes an **experimental** networking feature (`net_http`) that e
   - CORS allowlist (dev): `http://localhost:*` / `http://127.0.0.1:*`
   - Private Network Access (PNA) preflight support for Chrome/Chromium HTTPS → HTTP device access
 
-## Build & flash
+## Build
 
-Networking is behind a Cargo feature gate, and requires compile-time config injection:
+Networking is behind a Cargo feature gate. Wi-Fi credentials are not supplied at build time; the Web App provisions them at runtime and the firmware stores them in EEPROM U21 (`0x50`).
 
-1) Create a local `.env` (do not commit):
-
-```sh
-USB_HUB_WIFI_SSID=your_ssid
-USB_HUB_WIFI_PSK=your_psk
-
-# Optional
-USB_HUB_WIFI_HOSTNAME=isolapurr-usb-hub-dev
-USB_HUB_WIFI_STATIC_IP=192.168.1.42
-USB_HUB_WIFI_NETMASK=255.255.255.0
-USB_HUB_WIFI_GATEWAY=192.168.1.1
-USB_HUB_WIFI_DNS=192.168.1.1
-```
-
-2) Build with networking enabled:
+Build with networking enabled:
 
 ```sh
 cargo build --release --features net_http
 ```
 
-3) Flash via `mcu-agentd` (uses the already-built ELF):
-
-```sh
-mcu-agentd flash usb_hub
-mcu-agentd monitor usb_hub --reset
-```
+For firmware maintenance in a developer checkout, use the repo's owner-confirmed flashing workflow. Do not treat developer flashing commands as the product connection, provisioning, or update flow.
 
 ## Hostname rule
 
@@ -134,11 +117,11 @@ curl -i -X OPTIONS \
 ## Known limitations
 
 - IPv4 only (no IPv6 / mDNS over IPv6 yet).
-- No provisioning flow (SSID/PSK are compile-time injected via `.env` or environment variables).
+- Provisioning is handled by the Web App; this page only covers the runtime networking and HTTP fallback surface.
 
-## Desktop App: IP scan LAN candidates (Plan #0013)
+## Wi‑Fi / LAN discovery helper
 
-The Desktop local agent can help users fill the `CIDR` for **IP scan (advanced)** without starting a scan automatically.
+The legacy Desktop local agent can help the Wi-Fi / LAN path fill the `CIDR` for **IP scan (advanced)** without starting a scan automatically. This helper is not a USB connection path; USB setup uses Web Serial or Local USB in Add device, while firmware update belongs to the saved device's Hardware page.
 
 Where it shows up:
 

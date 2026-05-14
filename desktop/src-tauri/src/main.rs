@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{BufRead as _, BufReader, Write as _},
+    io::{Read as _, Write as _},
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     process::Command,
@@ -8,14 +8,14 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration as StdDuration,
+    time::{Duration as StdDuration, Instant as StdInstant},
 };
 
 use anyhow::{Context as _, anyhow};
 use axum::{
     Json, Router,
-    extract::{Path as AxumPath, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    extract::{DefaultBodyLimit, Path as AxumPath, State},
+    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
@@ -27,16 +27,19 @@ use futures::{StreamExt as _, stream};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
+use serialport::ClearBuffer;
 use time::format_description::well_known::Rfc3339;
 use tokio::{
     net::TcpListener,
     sync::{Mutex as TokioMutex, RwLock},
 };
 use tokio_util::sync::CancellationToken;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use url::Url;
 
 const DEFAULT_PORT_RANGE_START: u16 = 51200;
 const DEFAULT_PORT_RANGE_END: u16 = 51299;
+const LOCAL_WEB_ALLOWED_PORTS: &[u16] = &[45173, 45175];
 const STORAGE_SCHEMA_VERSION: u8 = 1;
 const STORAGE_FILE_NAME: &str = "storage.json";
 
@@ -809,7 +812,11 @@ async fn start_agent_server(
         .route("/api/v1/storage/reset", post(api_storage_reset))
         .route("/", get(ui_index))
         .route("/*path", get(ui_asset))
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
+        .layer(local_web_cors_layer(
+            agent_base_url.port().unwrap_or(DEFAULT_PORT_RANGE_START),
+        ));
 
     let shutdown = CancellationToken::new();
     let shutdown_clone = shutdown.clone();
@@ -1437,6 +1444,25 @@ fn is_origin_allowed(headers: &HeaderMap, port: u16) -> bool {
     let Some(origin) = headers.get(header::ORIGIN) else {
         return true;
     };
+    is_local_web_origin(origin, port)
+}
+
+fn local_web_cors_layer(agent_port: u16) -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(move |origin, _| {
+            is_local_web_origin(origin, agent_port)
+        }))
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+}
+
+fn is_local_web_origin(origin: &HeaderValue, agent_port: u16) -> bool {
     let Ok(origin) = origin.to_str() else {
         return false;
     };
@@ -1444,8 +1470,17 @@ fn is_origin_allowed(headers: &HeaderMap, port: u16) -> bool {
         return false;
     };
     let host = url.host_str().unwrap_or_default();
-    let allowed_host = host == "127.0.0.1" || host == "localhost" || host == "::1";
-    allowed_host && url.port() == Some(port)
+    let loopback_host = host == "127.0.0.1" || host == "localhost" || host == "::1";
+    if url.scheme() == "tauri" {
+        return loopback_host;
+    }
+    if !matches!(url.scheme(), "http" | "https") || !loopback_host {
+        return false;
+    }
+    let Some(port) = url.port() else {
+        return false;
+    };
+    port == agent_port || LOCAL_WEB_ALLOWED_PORTS.contains(&port)
 }
 
 fn unauthorized(message: &str) -> Response {
@@ -1731,9 +1766,13 @@ async fn api_serial_request(
 fn run_serial_jsonl_request(req: SerialJsonlRequest) -> Result<SerialJsonlResponse, String> {
     let timeout = StdDuration::from_millis(req.timeout_ms.clamp(250, 10_000));
     let mut port = serialport::new(&req.port_path, req.baud_rate)
-        .timeout(timeout)
+        .timeout(StdDuration::from_millis(50))
         .open()
         .map_err(|err| format!("open {} failed: {err}", req.port_path))?;
+    port.write_data_terminal_ready(true)
+        .map_err(|err| format!("serial DTR setup failed: {err}"))?;
+    std::thread::sleep(StdDuration::from_millis(150));
+    let _ = port.clear(ClearBuffer::Input);
 
     let mut line = serde_json::to_string(&req.request).map_err(|err| err.to_string())?;
     line.push('\n');
@@ -1742,17 +1781,35 @@ fn run_serial_jsonl_request(req: SerialJsonlRequest) -> Result<SerialJsonlRespon
     port.flush()
         .map_err(|err| format!("serial flush failed: {err}"))?;
 
-    let mut reader = BufReader::new(port);
     let mut raw = String::new();
-    reader
-        .read_line(&mut raw)
-        .map_err(|err| format!("serial read failed: {err}"))?;
-    if raw.trim().is_empty() {
-        return Err("serial response timed out".to_string());
+    let mut pending = Vec::<u8>::new();
+    let mut buf = [0u8; 64];
+    let deadline = StdInstant::now() + timeout;
+    while StdInstant::now() < deadline {
+        match port.read(&mut buf) {
+            Ok(0) => continue,
+            Ok(n) => {
+                let chunk = &buf[..n];
+                pending.extend_from_slice(chunk);
+                while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
+                    let line: Vec<u8> = pending.drain(..=newline).collect();
+                    let line = String::from_utf8_lossy(&line);
+                    raw.push_str(&line);
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str(trimmed) {
+                        Ok(response) => return Ok(SerialJsonlResponse { response, raw }),
+                        Err(_) => continue,
+                    }
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::TimedOut => continue,
+            Err(err) => return Err(format!("serial read failed: {err}")),
+        }
     }
-    let response = serde_json::from_str(raw.trim())
-        .map_err(|err| format!("serial response was not JSON: {err}"))?;
-    Ok(SerialJsonlResponse { response, raw })
+    Err("serial response timed out".to_string())
 }
 
 async fn api_firmware_flash(
@@ -1786,6 +1843,12 @@ fn run_firmware_flash(req: FirmwareFlashRequest) -> Result<FirmwareFlashResponse
     let firmware = base64::engine::general_purpose::STANDARD
         .decode(req.file_base64.trim())
         .map_err(|err| format!("firmware payload was not valid base64: {err}"))?;
+    struct TempFirmwareFile(PathBuf);
+    impl Drop for TempFirmwareFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
     let temp_path = {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1797,10 +1860,12 @@ fn run_firmware_flash(req: FirmwareFlashRequest) -> Result<FirmwareFlashResponse
             .unwrap_or("firmware.bin");
         std::env::temp_dir().join(format!("isolapurr-flash-{stamp}-{file_name}"))
     };
+    let _temp_file = TempFirmwareFile(temp_path.clone());
     std::fs::write(&temp_path, firmware)
         .map_err(|err| format!("failed to write temp firmware image: {err}"))?;
 
     let output = Command::new("espflash")
+        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
         .arg("write-bin")
         .arg("--chip")
         .arg("esp32s3")
@@ -1810,7 +1875,6 @@ fn run_firmware_flash(req: FirmwareFlashRequest) -> Result<FirmwareFlashResponse
         .arg(&temp_path)
         .output()
         .map_err(|err| format!("failed to start espflash: {err}"))?;
-    let _ = std::fs::remove_file(&temp_path);
 
     let mut log = String::new();
     log.push_str(&String::from_utf8_lossy(&output.stdout));
@@ -2945,6 +3009,7 @@ mod tests {
             mode: "test",
             discovery: Arc::new(make_controller(200, None)),
             storage: Arc::new(manager),
+            serial_lock: Arc::new(TokioMutex::new(())),
         };
 
         let mut headers = HeaderMap::new();
@@ -2958,6 +3023,40 @@ mod tests {
         let parsed: DevicesResponse = serde_json::from_slice(&body).expect("parse response");
         assert_eq!(parsed.devices.len(), 1);
         assert_eq!(parsed.devices[0].id, "dev-1");
+    }
+
+    #[test]
+    fn local_web_origin_allows_only_product_web_ports() {
+        let agent_port = 51234;
+        for origin in [
+            format!("http://127.0.0.1:{agent_port}"),
+            "http://127.0.0.1:45173".to_string(),
+            "http://localhost:45175".to_string(),
+            "tauri://localhost".to_string(),
+        ] {
+            let header = HeaderValue::from_str(&origin).expect("origin header");
+            assert!(
+                is_local_web_origin(&header, agent_port),
+                "expected allowed origin: {origin}",
+            );
+        }
+    }
+
+    #[test]
+    fn local_web_origin_rejects_untrusted_loopback_ports() {
+        let agent_port = 51234;
+        for origin in [
+            "http://127.0.0.1:3000",
+            "http://localhost:8080",
+            "http://[::1]:5173",
+            "https://example.com",
+        ] {
+            let header = HeaderValue::from_str(origin).expect("origin header");
+            assert!(
+                !is_local_web_origin(&header, agent_port),
+                "expected rejected origin: {origin}",
+            );
+        }
     }
 
     fn test_iface(

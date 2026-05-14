@@ -4,6 +4,8 @@
 
 > 历史说明：`docs/plan/**` 保留 legacy 计划记录，也兼容尚未迁移到 `docs/specs/**/SPEC.md` 的既有工作项；已迁移的工作项继续以对应 `SPEC.md` 为准。
 
+> 当前真相：USB 通信、固件更新、Wi-Fi provisioning、以及 Add device 的 `Wi-Fi / LAN`、`Web Serial`、`Local USB` 三路径交互，以 `docs/specs/u5b2c-usb-console-provisioning/SPEC.md` 为准。旧的 `0007` / `0008` / `0013` 只保留历史追溯，不应作为当前实现依据。
+
 ## 新工作项入口
 
 - 新增规格：请改用 `docs/specs/README.md`
