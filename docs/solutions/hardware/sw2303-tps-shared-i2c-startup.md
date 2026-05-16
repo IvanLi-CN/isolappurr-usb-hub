@@ -10,6 +10,7 @@ tags:
   - startup
 status: active
 related_specs: []
+applicability: Applies only to hardware where SW2303 and TPS55288 share SDA_TPS/SCL_TPS; the tps-sw netlist uses SDA_SW/SCL_SW for SW2303 and SDA/SCL for TPS55288, so SW2303 bus faults should not block TPS boot writes.
 symptoms:
   - TPS55288 can be configured only when SDA_TPS/SCL_TPS are released.
   - After TPS active discharge, SDA_TPS/SCL_TPS can both read low.
@@ -25,10 +26,16 @@ resolution_type: firmware-guardrail
 
 ## Context
 
-The `tps-sw` topology powers `SW2303` from `TPS55288 VOUT_TPS`. Both chips share
-`SDA_TPS/SCL_TPS` with 4.7 kΩ pull-ups to `3V3`. Firmware must program
+This startup guardrail applies to hardware where `SW2303` is powered from
+`TPS55288 VOUT_TPS` and both chips share `SDA_TPS/SCL_TPS` with 4.7 kΩ pull-ups
+to `3V3`. Firmware must program
 `TPS55288` to 5 V before it can safely talk to `SW2303`, but `SW2303` is not a
 valid I2C target until its POR window has completed with the bus released.
+
+For the `tps-sw` netlist, `SW2303` is on `SDA_SW/SCL_SW` and `TPS55288` is on
+`SDA/SCL`. Keep the SW2303 POR wait, but do not use `SDA_SW/SCL_SW` stuck-low as
+a reason to hard-start `TPS55288`; TPS boot writes remain on the separate system
+I2C bus.
 
 ## Symptoms
 

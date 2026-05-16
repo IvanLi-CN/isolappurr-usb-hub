@@ -81,25 +81,33 @@
 
 ## 5. 总线/地址/GPIO（必须钉死）
 
-### 5.1 PD 协同 I2C（I2C0，总线 `SDA_TPS/SCL_TPS`）
+### 5.1 PD 协同 I2C
 
-来自固件与设计文档（`src/bin/main.rs`、`src/pd_i2c/mod.rs`、`docs/pd-i2c-coordinator-design.md`）：
+来自网表 `hardware/tps-sw/netlist.enet` 与设计文档 `docs/pd-i2c-coordinator-design.md`：
 
-- I2C 控制器：`I2C0`
-- 频率：`400 kHz`
-- 引脚：
-  - `SDA_TPS`：GPIO39（U19 pin44 / `MTCK`）
-  - `SCL_TPS`：GPIO40（U19 pin45 / `MTDO`）
-- 设备与地址（7-bit）：
-  - `SW2303`：`0x3C`
-  - `TPS55288`：`0x74`
+- TPS55288 访问总线：`SDA/SCL`
+  - 建议 I2C 控制器：`I2C1` 或系统 I2C 实例
+  - 频率：`400 kHz`
+  - 引脚：
+    - `SDA`：GPIO8（U19 pin13）
+    - `SCL`：GPIO9（U19 pin14）
+  - 设备与地址（7-bit）：
+    - `TPS55288`：`0x74`
+- SW2303 访问总线：`SDA_SW/SCL_SW`
+  - 建议 I2C 控制器：`I2C0`
+  - 频率：`400 kHz`
+  - 引脚：
+    - `SDA_SW`：GPIO39（U19 pin44 / `MTCK`）
+    - `SCL_SW`：GPIO40（U19 pin45 / `MTDO`）
+  - 设备与地址（7-bit）：
+    - `SW2303`：`0x3C`
 
-### 5.2 遥测 I2C（I2C1，总线 `SDA/SCL`）
+### 5.2 遥测 I2C（系统总线 `SDA/SCL`）
 
 来自网表 `hardware/tps-sw/netlist.enet`：
 
-- I2C 控制器：**建议使用 `I2C1`**（与 PD 总线隔离）
-- 频率：建议 `400 kHz`（与 INA226 Fast‑mode 匹配）
+- I2C 控制器：与 `TPS55288` 同属系统 I2C 总线；固件可按驱动架构选择共享实例或仲裁层
+- 频率：`400 kHz`
 - 引脚：
   - `SDA`：U19 pin13 → GPIO8
   - `SCL`：U19 pin14 → GPIO9
@@ -108,7 +116,8 @@
   - `INA226 (U17)`：`0x41`（A1=GND、A0=3V3）
   - `EEPROM (U21)`：`0x50`（同总线存在，必须避免误访问）
   - `TMP112 (U23)`：同总线存在，`SDA/SCL/INT` 已接入；启用温度遥测前必须补充地址确认、allowlist 与采样策略
-- 约束（冻结）：**禁止扫描**；遥测 I2C 必须按 allowlist **仅允许访问 `0x41`**。
+  - `TPS55288 (U14)`：`0x74`（PD 协同使用）
+- 约束（冻结）：**禁止扫描**；遥测路径必须按 allowlist 访问已声明地址，不得误触碰 `TPS55288(0x74)` 的 PD 控制寄存器。
 
 ### 5.3 屏幕 SPI 与控制脚
 

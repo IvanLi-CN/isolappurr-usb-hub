@@ -12,6 +12,7 @@ tags:
   - loadlynx
 status: active
 related_specs: []
+applicability: Sink-side voltage verification applies to all tps-sw hardware; shared SDA_TPS/SCL_TPS recovery notes apply only to hardware where SW2303 and TPS55288 share one I2C bus.
 symptoms:
   - TPS output telemetry reports the requested voltage, but the USB-C sink may still see no or wrong output.
   - A PD sink reports a contract that can differ from the voltage measured at the sink terminals.
@@ -28,6 +29,10 @@ The `tps-sw` power path is `TPS55288 VOUT_TPS -> Q7 -> VBUS_TPS -> USB-C connect
 `SW2303` controls the pass path and negotiates USB-PD. `INA226 U17` is on
 `VOUT_TPS`, so it can confirm the TPS front-end voltage/current but cannot prove
 that the USB-C sink actually receives `VBUS_TPS`.
+
+In the `tps-sw` netlist, `SW2303` uses `SDA_SW/SCL_SW` and `TPS55288` uses
+`SDA/SCL`. The sink-side measurement procedure still applies, but SW2303 bus
+faults should be handled as SW read faults rather than as TPS boot-bus faults.
 
 ## Symptoms
 
@@ -62,11 +67,12 @@ Therefore a firmware log such as TPS output telemetry at 7 V is not sufficient
 evidence that the USB-C port is outputting 7 V.
 
 A separate control-loop trap is assuming SW2303 can always be polled after TPS
-VOUT is enabled. On this topology, `SW2303` and `TPS55288` share
+VOUT is enabled. On shared-bus hardware, `SW2303` and `TPS55288` share
 `SDA_TPS/SCL_TPS`, while SW2303 VIN is powered by TPS VOUT. If SW2303 holds SDA
 low after VOUT is established, both SW2303 and TPS55288 become inaccessible on
-that bus. Firmware should avoid extra TPS writes in that state and keep the last
-known TPS setpoint stable while polling for bus release.
+that bus. On the `tps-sw` netlist, SW2303 is isolated onto `SDA_SW/SCL_SW`, so
+firmware should keep the last known TPS setpoint stable while reporting SW bus
+read faults, without treating that condition as a TPS I2C boot failure.
 
 ## Resolution
 
