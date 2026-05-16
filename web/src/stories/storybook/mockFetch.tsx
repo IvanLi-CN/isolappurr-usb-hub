@@ -49,7 +49,7 @@ export function mockFetchDecorator(mock: MockFetch): Decorator {
       return () => {
         globalThis.fetch = original;
       };
-    }, [mock]);
+    });
 
     return <Story />;
   };

@@ -5,6 +5,7 @@ export type TelemetryStatus = "ok" | "not_inserted" | "error" | "overrange";
 export type HubState = {
   // Backward-compat: older firmware and summary cards use this field.
   upstream_connected: boolean;
+  isolated_usb_fault?: boolean;
   isolated_downstream_connected?: boolean;
   isolated_usb_ready?: boolean;
 };

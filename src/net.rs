@@ -162,6 +162,7 @@ pub struct ApiPortState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ApiHubSnapshot {
     pub upstream_connected: bool,
+    pub isolated_usb_fault: bool,
     pub isolated_downstream_connected: bool,
     pub isolated_usb_ready: bool,
 }
@@ -170,6 +171,7 @@ impl ApiHubSnapshot {
     pub const fn unknown() -> Self {
         Self {
             upstream_connected: false,
+            isolated_usb_fault: false,
             isolated_downstream_connected: false,
             isolated_usb_ready: false,
         }
@@ -880,6 +882,12 @@ async fn handle_api_request(
             let mut body = String::new();
             let _ = body.push_str("{\"hub\":{\"upstream_connected\":");
             let _ = body.push_str(if state.hub.upstream_connected {
+                "true"
+            } else {
+                "false"
+            });
+            let _ = body.push_str(",\"isolated_usb_fault\":");
+            let _ = body.push_str(if state.hub.isolated_usb_fault {
                 "true"
             } else {
                 "false"

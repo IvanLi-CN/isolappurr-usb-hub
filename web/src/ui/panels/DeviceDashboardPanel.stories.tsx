@@ -45,6 +45,7 @@ const mockDeviceApi = async (
         ? { upstream_connected: true }
         : {
             upstream_connected: true,
+            isolated_usb_fault: false,
             isolated_downstream_connected: true,
             isolated_usb_ready: true,
           };

@@ -121,6 +121,36 @@ function isolatedBadge(
   };
 }
 
+function isolatedFaultBadge(value: boolean | null): {
+  bg: string;
+  text: string;
+  width: string;
+  label: string;
+} {
+  if (value === null) {
+    return {
+      bg: "bg-[var(--badge-warning-bg)]",
+      text: "text-[var(--badge-warning-text)]",
+      width: "w-[112px]",
+      label: "ISO FAULT —",
+    };
+  }
+  if (value) {
+    return {
+      bg: "bg-[var(--badge-error-bg)]",
+      text: "text-[var(--badge-error-text)]",
+      width: "w-[112px]",
+      label: "ISO FAULT",
+    };
+  }
+  return {
+    bg: "bg-[var(--badge-success-bg)]",
+    text: "text-[var(--badge-success-text)]",
+    width: "w-[112px]",
+    label: "ISO OK",
+  };
+}
+
 function transportLabel(transport: "http" | "local_usb" | "web_serial" | null) {
   if (transport === "http") {
     return "Wi-Fi / LAN";
@@ -153,15 +183,8 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const upstream = upstreamBadge(
     connectionState === "online" ? (hub?.upstream_connected ?? null) : null,
   );
-  const isolatedPort = isolatedBadge(
-    connectionState === "online"
-      ? (hub?.isolated_downstream_connected ?? null)
-      : null,
-    {
-      unknown: "ISO PORT —",
-      on: "ISO PORT",
-      off: "NO ISO PORT",
-    },
+  const isolatedFault = isolatedFaultBadge(
+    connectionState === "online" ? (hub?.isolated_usb_fault ?? null) : null,
   );
   const isolatedReady = isolatedBadge(
     connectionState === "online" ? (hub?.isolated_usb_ready ?? null) : null,
@@ -254,13 +277,13 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
               <div
                 className={[
                   "flex h-[26px] items-center justify-center rounded-full",
-                  isolatedPort.width,
-                  isolatedPort.bg,
-                  isolatedPort.text,
+                  isolatedFault.width,
+                  isolatedFault.bg,
+                  isolatedFault.text,
                   "text-[11px] font-semibold",
                 ].join(" ")}
               >
-                {isolatedPort.label}
+                {isolatedFault.label}
               </div>
               <div
                 className={[

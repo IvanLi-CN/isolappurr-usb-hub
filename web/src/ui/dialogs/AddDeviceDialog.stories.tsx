@@ -17,7 +17,7 @@ function autoClickDecorator(find: () => HTMLElement | null): Decorator {
         find()?.click();
       }, 0);
       return () => window.clearTimeout(id);
-    }, [find]);
+    });
     return <Story />;
   };
 }

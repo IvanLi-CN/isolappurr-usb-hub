@@ -193,9 +193,10 @@ async fn handle_usb_jsonl_request(
         let state = { *api_state.lock().await };
         let _ = write!(
             body,
-            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{}}},\"ports\":[",
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{},\"isolated_usb_fault\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{}}},\"ports\":[",
             id.as_str(),
             state.hub.upstream_connected,
+            state.hub.isolated_usb_fault,
             state.hub.isolated_downstream_connected,
             state.hub.isolated_usb_ready
         );
@@ -1251,8 +1252,8 @@ async fn main(_spawner: Spawner) {
         btn_raw_left_pressed, btn_raw_right_pressed
     );
 
-    // CH318T isolated-side indicators:
-    // - U2 pin10 IO1 = UP0_PG → MCU GPIO18, external 100k pull-up, active-low downstream port present.
+    // Isolated-side USB indicators:
+    // - HUSB305-01 STAT/UP0_PG → MCU GPIO18, external 100k pull-up, active-high fault indication.
     // - U2 pin13 LED/MODE = LEDD → MCU GPIO6, active-low isolated USB ready/link indicator.
     // Both signals are status inputs only; keep MCU pins hi-Z with no internal pulls.
     #[cfg(feature = "net_http")]
@@ -1260,13 +1261,13 @@ async fn main(_spawner: Spawner) {
     #[cfg(feature = "net_http")]
     let up0_pg = Input::new(peripherals.GPIO18, up0_pg_cfg);
     #[cfg(feature = "net_http")]
-    let mut api_isolated_downstream_connected = up0_pg.is_low();
+    let mut api_isolated_usb_fault = up0_pg.is_high();
     #[cfg(feature = "net_http")]
     let mut up0_pg_last_sample = Instant::now();
     #[cfg(feature = "net_http")]
     info!(
-        "isolated downstream io1: GPIO18 initial raw_low={} (active-low, hi-z input; no pull)",
-        up0_pg.is_low()
+        "isolated usb fault io1: GPIO18 initial raw_high={} (active-high, hi-z input; no pull)",
+        up0_pg.is_high()
     );
 
     #[cfg(feature = "net_http")]
@@ -1899,15 +1900,15 @@ async fn main(_spawner: Spawner) {
         #[cfg(feature = "net_http")]
         if up0_pg_last_sample.elapsed() >= Duration::from_millis(UP0_PG_SAMPLE_MS) {
             up0_pg_last_sample = Instant::now();
-            let raw_low = up0_pg.is_low();
-            let connected = raw_low;
-            if connected != api_isolated_downstream_connected {
+            let raw_high = up0_pg.is_high();
+            let fault = raw_high;
+            if fault != api_isolated_usb_fault {
                 debug!(
-                    "isolated downstream io1: sampled_connected={} raw_low={} sample_ms={}",
-                    connected, raw_low, UP0_PG_SAMPLE_MS
+                    "isolated usb fault io1: sampled_fault={} raw_high={} sample_ms={}",
+                    fault, raw_high, UP0_PG_SAMPLE_MS
                 );
             }
-            api_isolated_downstream_connected = connected;
+            api_isolated_usb_fault = fault;
         }
 
         let allow_sw2303_probe = !sw2303_error_latched
@@ -3061,7 +3062,8 @@ async fn main(_spawner: Spawner) {
             let mut guard = api_state.lock().await;
             guard.hub = net::ApiHubSnapshot {
                 upstream_connected: api_isolated_usb_ready,
-                isolated_downstream_connected: api_isolated_downstream_connected,
+                isolated_usb_fault: api_isolated_usb_fault,
+                isolated_downstream_connected: !api_isolated_usb_fault,
                 isolated_usb_ready: api_isolated_usb_ready,
             };
             guard.ports = ports;
