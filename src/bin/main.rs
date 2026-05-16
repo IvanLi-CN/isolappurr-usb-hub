@@ -36,6 +36,8 @@ use critical_section::Mutex;
 use defmt::debug;
 use defmt::info;
 use embassy_executor::Spawner;
+#[cfg(feature = "net_http")]
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Timer;
 use esp_hal::clock::CpuClock;
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
@@ -98,6 +100,9 @@ enum WifiProvisioningCommand {
 #[cfg(feature = "net_http")]
 static WIFI_PROVISIONING_PENDING: Mutex<RefCell<Option<WifiProvisioningCommand>>> =
     Mutex::new(RefCell::new(None));
+
+#[cfg(feature = "net_http")]
+static WIFI_PROVISIONING_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
 #[cfg(feature = "net_http")]
 static WIFI_CREDENTIALS_CACHE: Mutex<RefCell<Option<provisioning::WifiCredentials>>> =
@@ -286,11 +291,21 @@ async fn handle_usb_jsonl_request(
         match provisioning::WifiCredentials::new(ssid.as_str(), psk.as_str()) {
             Ok(credentials) => {
                 if enqueue_wifi_provisioning(WifiProvisioningCommand::Store(credentials)).is_ok() {
-                    let _ = write!(
-                        body,
-                        "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":false}}}}",
-                        id.as_str()
-                    );
+                    if wait_wifi_provisioning_result().await {
+                        let _ = write!(
+                            body,
+                            "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":false}}}}",
+                            id.as_str()
+                        );
+                    } else {
+                        write_jsonl_error(
+                            &mut body,
+                            id.as_str(),
+                            "provisioning_failed",
+                            "wifi credentials could not be saved to EEPROM U21",
+                            true,
+                        );
+                    }
                 } else {
                     write_jsonl_error(
                         &mut body,
@@ -316,11 +331,21 @@ async fn handle_usb_jsonl_request(
         || request.contains("\"method\": \"wifi.clear\"")
     {
         if enqueue_wifi_provisioning(WifiProvisioningCommand::Clear).is_ok() {
-            let _ = write!(
-                body,
-                "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":false}}}}",
-                id.as_str()
-            );
+            if wait_wifi_provisioning_result().await {
+                let _ = write!(
+                    body,
+                    "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"reboot_required\":false}}}}",
+                    id.as_str()
+                );
+            } else {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "provisioning_failed",
+                    "wifi credentials could not be cleared from EEPROM U21",
+                    true,
+                );
+            }
         } else {
             write_jsonl_error(
                 &mut body,
@@ -363,6 +388,11 @@ fn enqueue_wifi_provisioning(command: WifiProvisioningCommand) -> Result<(), ()>
         *slot = Some(command);
         Ok(())
     })
+}
+
+#[cfg(feature = "net_http")]
+async fn wait_wifi_provisioning_result() -> bool {
+    WIFI_PROVISIONING_RESULT.wait().await
 }
 
 #[cfg(feature = "net_http")]
@@ -1795,12 +1825,16 @@ async fn main(_spawner: Spawner) {
                         Ok(()) => {
                             set_wifi_credentials_cache(Some(credentials));
                             net::request_wifi_runtime_apply();
+                            WIFI_PROVISIONING_RESULT.signal(true);
                             info!("provisioning: Wi-Fi credentials saved to EEPROM U21")
                         }
-                        Err(err) => defmt::warn!(
-                            "provisioning: failed to save Wi-Fi credentials to EEPROM U21: {:?}",
-                            defmt::Debug2Format(&err)
-                        ),
+                        Err(err) => {
+                            WIFI_PROVISIONING_RESULT.signal(false);
+                            defmt::warn!(
+                                "provisioning: failed to save Wi-Fi credentials to EEPROM U21: {:?}",
+                                defmt::Debug2Format(&err)
+                            );
+                        }
                     }
                 }
                 WifiProvisioningCommand::Clear => {
@@ -1808,12 +1842,16 @@ async fn main(_spawner: Spawner) {
                         Ok(()) => {
                             set_wifi_credentials_cache(None);
                             net::request_wifi_runtime_apply();
+                            WIFI_PROVISIONING_RESULT.signal(true);
                             info!("provisioning: Wi-Fi credentials cleared from EEPROM U21")
                         }
-                        Err(err) => defmt::warn!(
-                            "provisioning: failed to clear Wi-Fi credentials from EEPROM U21: {:?}",
-                            defmt::Debug2Format(&err)
-                        ),
+                        Err(err) => {
+                            WIFI_PROVISIONING_RESULT.signal(false);
+                            defmt::warn!(
+                                "provisioning: failed to clear Wi-Fi credentials from EEPROM U21: {:?}",
+                                defmt::Debug2Format(&err)
+                            );
+                        }
                     }
                 }
             }

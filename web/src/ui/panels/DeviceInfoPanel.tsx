@@ -255,7 +255,7 @@ export function DeviceInfoPanel({
 
   const saveWifi = async () => {
     const nextPsk = wifiOpenNetwork ? "" : wifiPsk;
-    const nextSsid = wifiSsid.trim();
+    const nextSsid = wifiSsid;
     if (!wifiCanManage) {
       setWifiError(
         "Connect with Web Serial or Local USB before changing Wi-Fi configuration.",
@@ -923,7 +923,7 @@ function InfoPill({ label, value }: { label: string; value: string }) {
 }
 
 function validateWifiInput(ssid: string, psk: string): string | null {
-  const ssidBytes = utf8ByteLength(ssid.trim());
+  const ssidBytes = utf8ByteLength(ssid);
   if (ssidBytes === 0) {
     return "SSID is required.";
   }
