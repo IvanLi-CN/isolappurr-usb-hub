@@ -71,6 +71,9 @@ test("opens add device modal with supported connection methods (web)", async ({
     dialog.getByText("Add by Local USB", { exact: true }),
   ).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Connect Local USB and add" }),
+    dialog.getByText(
+      "Use the local desktop service to read the connected hub over USB and add it here.",
+      { exact: true },
+    ),
   ).toBeVisible();
 });
