@@ -49,7 +49,12 @@ export function DeviceInfoPage() {
         <DeviceInfoPanel
           device={device}
           transport={runtime.transport(device.id)}
+          wifiManagementTransport={runtime.wifiManagementTransport(device.id)}
           loadInfo={() => runtime.deviceInfo(device.id)}
+          loadWifiConfig={() => runtime.wifiConfig(device.id)}
+          saveWifiConfig={(input) => runtime.saveWifiConfig(device.id, input)}
+          clearWifiConfig={() => runtime.clearWifiConfig(device.id)}
+          rebootDevice={() => runtime.rebootDevice(device.id)}
         />
       </div>
     </div>

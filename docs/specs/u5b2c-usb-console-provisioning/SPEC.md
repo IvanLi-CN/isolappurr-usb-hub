@@ -82,7 +82,7 @@ The stored record contains:
 - optional hostname/static IPv4 fields
 - checksum
 
-The product UI should label writes as Wi-Fi configuration. After a successful `wifi.set`, the firmware may require reboot before Wi-Fi reconnects with the new settings.
+The product UI should label writes as Wi-Fi configuration. After a successful `wifi.set`, firmware writes EEPROM and immediately reconnects Wi-Fi with the new credentials. After a successful `wifi.clear`, firmware clears EEPROM and immediately stops the Wi-Fi station. When the current device channel is Wi-Fi / LAN, Wi-Fi configuration is read-only; writes and clears require Web Serial or Local USB so the user cannot accidentally strand the hub from the same network path being edited.
 
 ## UI Design Brief
 
@@ -100,6 +100,9 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given a browser with Web Serial support, when the user connects over USB, then the app can fetch info/ports and run supported controls via JSONL.
 - Given a device already exists from Wi-Fi / LAN, when USB connects with the same `device_id`, then the app updates the saved device runtime channel state and telemetry instead of creating a duplicate.
 - Given the active runtime channel fails while another channel remains available, when the next control or polling operation runs, then the available channel becomes primary.
+- Given a device is currently managed through Wi-Fi / LAN, when the Hardware page renders Wi-Fi configuration, then stored settings are readable but save and clear controls are disabled until Web Serial or Local USB is active.
+- Given Wi-Fi credentials are saved through Web Serial or Local USB, when EEPROM write succeeds, then firmware immediately reconnects Wi-Fi with the new credentials and reports no reboot requirement.
+- Given Wi-Fi credentials are cleared through Web Serial or Local USB, when EEPROM clear succeeds, then firmware immediately stops the Wi-Fi station and reports no reboot requirement.
 - Given Web Serial is unsupported, when the user opens Add device, then the UI offers Local USB or Wi-Fi/HTTP alternatives.
 - Given the Desktop agent is running, when the user lists serial ports or proxies a command, then requests require the existing bearer token and origin policy.
 - Given UI changes are complete, when Storybook renders the console states, then desktop and mobile evidence show no text overlap, clipping, or incoherent layout.
@@ -129,3 +132,21 @@ Device list connection badges:
 PR: include
 
 ![Device connection badges](assets/device-card-connection-badges.png)
+
+Device Hardware Wi-Fi configuration:
+
+PR: include
+
+![Device Hardware Wi-Fi configuration](assets/wifi-config-hardware-default.png)
+
+Device Hardware Wi-Fi immediate apply:
+
+PR: include
+
+![Device Hardware Wi-Fi immediate apply](assets/wifi-config-immediate-apply.png)
+
+Device Hardware Wi-Fi configuration mobile:
+
+PR: include
+
+![Device Hardware Wi-Fi configuration mobile](assets/wifi-config-narrow.png)

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { expect, userEvent, within } from "@storybook/test";
 
 import type { StoredDevice } from "../../domain/devices";
 import { DeviceInfoPanel } from "./DeviceInfoPanel";
@@ -22,16 +23,43 @@ const mockInfo = {
   },
 };
 
+const mockWifiConfigured = {
+  configured: true,
+  storage: "eeprom",
+  address: "0x50",
+  ssid: "Bench WiFi",
+  psk_configured: true,
+};
+
+const mockWifiEmpty = {
+  configured: false,
+  storage: "eeprom",
+  address: "0x50",
+  psk_configured: false,
+};
+
 const meta: Meta<typeof DeviceInfoPanel> = {
   title: "Panels/DeviceInfoPanel",
   component: DeviceInfoPanel,
+  tags: ["autodocs"],
   parameters: {
     layout: "padded",
   },
   args: {
     device: demoDevice,
     transport: "http",
+    wifiManagementTransport: null,
     loadInfo: async () => ({ ok: true, value: mockInfo }),
+    loadWifiConfig: async () => ({ ok: true, value: mockWifiConfigured }),
+    saveWifiConfig: async () => ({
+      ok: true,
+      value: { accepted: true, reboot_required: false },
+    }),
+    clearWifiConfig: async () => ({
+      ok: true,
+      value: { accepted: true, reboot_required: false },
+    }),
+    rebootDevice: async () => ({ ok: true, value: { accepted: true } }),
   },
 };
 
@@ -41,14 +69,131 @@ type Story = StoryObj<typeof DeviceInfoPanel>;
 
 export const Default: Story = {};
 
+export const EmptyWifiConfig: Story = {
+  args: {
+    transport: "web_serial",
+    wifiManagementTransport: "web_serial",
+    loadWifiConfig: async () => ({ ok: true, value: mockWifiEmpty }),
+  },
+};
+
+export const WifiConfigError: Story = {
+  args: {
+    transport: "local_usb",
+    wifiManagementTransport: "local_usb",
+    loadWifiConfig: async () => ({
+      ok: false,
+      error: { kind: "offline", message: "Local USB device not found" },
+    }),
+  },
+};
+
+export const HttpWithUsbManagement: Story = {
+  args: {
+    transport: "http",
+    wifiManagementTransport: "web_serial",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getAllByText("Current: Wi-Fi / LAN")[0]).toBeVisible();
+    await expect(canvas.getByText("Manage: Web Serial")).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Save Wi-Fi" }),
+    ).toBeEnabled();
+  },
+};
+
+export const ImmediateApplyFlow: Story = {
+  args: {
+    transport: "web_serial",
+    wifiManagementTransport: "web_serial",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const pskInput = await canvas.findByLabelText("PSK");
+    await userEvent.clear(pskInput);
+    await userEvent.type(pskInput, "newpassword");
+    await userEvent.click(canvas.getByRole("button", { name: "Save Wi-Fi" }));
+    await expect(
+      await canvas.findByText(/saved and applying now/),
+    ).toBeVisible();
+    await expect(
+      canvas.queryByRole("button", { name: "Reboot" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const InvalidShortPsk: Story = {
+  args: {
+    transport: "web_serial",
+    wifiManagementTransport: "web_serial",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const pskInput = await canvas.findByLabelText("PSK");
+    await userEvent.clear(pskInput);
+    await userEvent.type(pskInput, "short");
+    await userEvent.click(canvas.getByRole("button", { name: "Save Wi-Fi" }));
+    await expect(
+      await canvas.findByText(/PSK must be blank or at least 8 bytes/),
+    ).toBeVisible();
+  },
+};
+
+export const ExistingPskRequiresReentry: Story = {
+  args: {
+    transport: "web_serial",
+    wifiManagementTransport: "web_serial",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByDisplayValue("Bench WiFi");
+    await userEvent.click(canvas.getByRole("button", { name: "Save Wi-Fi" }));
+    await expect(
+      await canvas.findByText(/choose Open network to replace the stored PSK/),
+    ).toBeVisible();
+  },
+};
+
+export const OpenNetworkReplacement: Story = {
+  args: {
+    transport: "web_serial",
+    wifiManagementTransport: "web_serial",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByDisplayValue("Bench WiFi");
+    await userEvent.click(
+      canvas.getByRole("checkbox", { name: "Open network (no PSK)" }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Save Wi-Fi" }));
+    await expect(
+      await canvas.findByText(/saved and applying now/),
+    ).toBeVisible();
+  },
+};
+
+export const NarrowWifiConfig: Story = {
+  parameters: {
+    viewport: { defaultViewport: "isolapurrNarrow" },
+  },
+  args: {
+    transport: "web_serial",
+    wifiManagementTransport: "web_serial",
+    loadWifiConfig: async () => ({ ok: true, value: mockWifiConfigured }),
+  },
+};
+
 export const LocalUsbFlashing: Story = {
   args: {
     transport: "local_usb",
+    wifiManagementTransport: "local_usb",
   },
 };
 
 export const WebSerialFlashing: Story = {
   args: {
     transport: "web_serial",
+    wifiManagementTransport: "web_serial",
   },
 };

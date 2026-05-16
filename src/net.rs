@@ -1,16 +1,15 @@
 #![allow(dead_code)]
 
-use core::fmt::Write as _;
-use core::sync::atomic::Ordering;
-
 use alloc::string::String;
+use core::fmt::Write as _;
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_futures::select::{Either, select};
 use embassy_net::{
     Config as NetConfig, DhcpConfig, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
     tcp::TcpSocket,
 };
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Timer};
 use esp_hal::{peripherals::WIFI, rng::Rng, time::Instant as HalInstant};
 use esp_radio::{
@@ -93,6 +92,7 @@ static DEVICE_NAMES_CELL: StaticCell<DeviceNames> = StaticCell::new();
 static RADIO_CONTROLLER: StaticCell<RadioController<'static>> = StaticCell::new();
 static NET_RESOURCES: StaticCell<StackResources<8>> = StaticCell::new();
 static API_STATE_CELL: StaticCell<ApiSharedMutex> = StaticCell::new();
+static WIFI_APPLY_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
 // --- HTTP API (Plan #0005) -------------------------------------------------
 
@@ -251,6 +251,10 @@ pub fn init_http_api_state() -> &'static ApiSharedMutex {
     API_STATE_CELL.init(Mutex::new(ApiSharedState::new()))
 }
 
+pub(crate) fn request_wifi_runtime_apply() {
+    WIFI_APPLY_SIGNAL.signal(());
+}
+
 pub fn spawn_wifi_mdns_http(
     spawner: &Spawner,
     wifi_peripheral: WIFI<'static>,
@@ -288,15 +292,11 @@ pub fn spawn_wifi_mdns_http(
     let wifi_mac = wifi_device.mac_address();
     let device_names = DEVICE_NAMES_CELL.init(derive_device_names(wifi_mac));
 
-    let Some(credentials) = credentials else {
-        info!("Wi-Fi credentials not configured in EEPROM; network services remain offline");
-        return Some(NetHandles {
-            device_names,
-            wifi_state,
-        });
-    };
+    if credentials.is_none() {
+        info!("Wi-Fi credentials not configured in EEPROM; network services idle until configured");
+    }
 
-    let (net_cfg, is_static) = build_net_config_from_env(Some(&credentials));
+    let (net_cfg, is_static) = build_net_config_from_env(credentials.as_ref());
 
     let rng = Rng::new();
     let seed = (rng.random() as u64) << 32 | rng.random() as u64;
@@ -311,8 +311,7 @@ pub fn spawn_wifi_mdns_http(
             wifi_state,
             is_static,
             wifi_mac,
-            String::from(credentials.ssid()),
-            String::from(credentials.psk()),
+            credentials,
         ))
         .ok()?;
 
@@ -396,23 +395,62 @@ async fn wifi_task(
     mut controller: WifiController<'static>,
     stack: Stack<'static>,
     state: &'static WifiStateMutex,
-    is_static_ip: bool,
+    initial_is_static_ip: bool,
     mac: [u8; 6],
-    ssid: String,
-    password: String,
+    initial_credentials: Option<WifiCredentials>,
 ) {
-    info!(
-        "Wi-Fi task starting (ssid=\"{}\", static_ip={})",
-        ssid.as_str(),
-        is_static_ip,
-    );
+    info!("Wi-Fi task starting (static_ip={})", initial_is_static_ip);
+    let mut active_credentials = initial_credentials;
 
-    loop {
+    'wifi: loop {
+        let Some(credentials) = active_credentials else {
+            if matches!(controller.is_started(), Ok(true)) {
+                if let Err(err) = controller.stop_async().await {
+                    warn!("Wi-Fi stop_async while unconfigured failed: {:?}", err);
+                }
+            }
+            {
+                let mut guard = state.lock().await;
+                guard.state = WifiConnectionState::Idle;
+                guard.ipv4 = None;
+                guard.gateway = None;
+                guard.is_static = false;
+                guard.last_error = None;
+                guard.mac = Some(mac);
+            }
+            WIFI_APPLY_SIGNAL.wait().await;
+            active_credentials = crate::wifi_credentials_cache();
+            continue;
+        };
+
+        let ssid = String::from(credentials.ssid());
+        let password = String::from(credentials.psk());
+        let (net_cfg, is_static_ip) = build_net_config_from_env(Some(&credentials));
+        stack.set_config_v4(net_cfg.ipv4);
+
         {
             let mut guard = state.lock().await;
             guard.state = WifiConnectionState::Connecting;
+            guard.ipv4 = None;
+            guard.gateway = None;
             guard.last_error = None;
             guard.mac = Some(mac);
+        }
+
+        if matches!(controller.is_started(), Ok(true)) {
+            if let Err(err) = controller.stop_async().await {
+                warn!("Wi-Fi stop_async before reconfigure failed: {:?}", err);
+                match select(
+                    Timer::after(Duration::from_secs(2)),
+                    WIFI_APPLY_SIGNAL.wait(),
+                )
+                .await
+                {
+                    Either::First(()) => {}
+                    Either::Second(()) => active_credentials = crate::wifi_credentials_cache(),
+                }
+                continue;
+            }
         }
 
         let client_config = ModeConfig::Client(
@@ -421,29 +459,43 @@ async fn wifi_task(
                 .with_password(password.clone()),
         );
 
-        if !matches!(controller.is_started(), Ok(true)) {
-            if let Err(err) = controller.set_config(&client_config) {
-                warn!("Wi-Fi set_config error: {:?}", err);
-                {
-                    let mut guard = state.lock().await;
-                    guard.state = WifiConnectionState::Error;
-                    guard.last_error = Some(WifiErrorKind::ConnectFailed);
-                }
-                Timer::after(Duration::from_secs(10)).await;
-                continue;
+        if let Err(err) = controller.set_config(&client_config) {
+            warn!("Wi-Fi set_config error: {:?}", err);
+            {
+                let mut guard = state.lock().await;
+                guard.state = WifiConnectionState::Error;
+                guard.last_error = Some(WifiErrorKind::ConnectFailed);
             }
+            match select(
+                Timer::after(Duration::from_secs(10)),
+                WIFI_APPLY_SIGNAL.wait(),
+            )
+            .await
+            {
+                Either::First(()) => {}
+                Either::Second(()) => active_credentials = crate::wifi_credentials_cache(),
+            }
+            continue;
+        }
 
-            info!("Starting Wi-Fi STA");
-            if let Err(err) = controller.start_async().await {
-                warn!("Wi-Fi start_async error: {:?}", err);
-                {
-                    let mut guard = state.lock().await;
-                    guard.state = WifiConnectionState::Error;
-                    guard.last_error = Some(WifiErrorKind::ConnectFailed);
-                }
-                Timer::after(Duration::from_secs(10)).await;
-                continue;
+        info!("Starting Wi-Fi STA");
+        if let Err(err) = controller.start_async().await {
+            warn!("Wi-Fi start_async error: {:?}", err);
+            {
+                let mut guard = state.lock().await;
+                guard.state = WifiConnectionState::Error;
+                guard.last_error = Some(WifiErrorKind::ConnectFailed);
             }
+            match select(
+                Timer::after(Duration::from_secs(10)),
+                WIFI_APPLY_SIGNAL.wait(),
+            )
+            .await
+            {
+                Either::First(()) => {}
+                Either::Second(()) => active_credentials = crate::wifi_credentials_cache(),
+            }
+            continue;
         }
 
         info!("Connecting to Wi-Fi SSID=\"{}\"", ssid.as_str());
@@ -466,11 +518,35 @@ async fn wifi_task(
                         break;
                     }
                     retries = retries.saturating_add(1);
-                    Timer::after(Duration::from_millis(500)).await;
+                    match select(
+                        Timer::after(Duration::from_millis(500)),
+                        WIFI_APPLY_SIGNAL.wait(),
+                    )
+                    .await
+                    {
+                        Either::First(()) => {}
+                        Either::Second(()) => {
+                            active_credentials = crate::wifi_credentials_cache();
+                            let _ = controller.disconnect_async().await;
+                            continue 'wifi;
+                        }
+                    }
                 }
 
                 if !stack.is_config_up() {
-                    Timer::after(Duration::from_secs(5)).await;
+                    match select(
+                        Timer::after(Duration::from_secs(5)),
+                        WIFI_APPLY_SIGNAL.wait(),
+                    )
+                    .await
+                    {
+                        Either::First(()) => {}
+                        Either::Second(()) => {
+                            active_credentials = crate::wifi_credentials_cache();
+                            let _ = controller.disconnect_async().await;
+                            continue 'wifi;
+                        }
+                    }
                     continue;
                 }
 
@@ -489,15 +565,44 @@ async fn wifi_task(
                     }
                 }
 
-                // Wait for disconnect; then loop to reconnect.
-                controller.wait_for_event(WifiEvent::StaDisconnected).await;
-                warn!("Wi-Fi STA disconnected; will retry");
+                match select(
+                    controller.wait_for_event(WifiEvent::StaDisconnected),
+                    WIFI_APPLY_SIGNAL.wait(),
+                )
+                .await
                 {
-                    let mut guard = state.lock().await;
-                    guard.state = WifiConnectionState::Error;
-                    guard.last_error = Some(WifiErrorKind::LinkLost);
+                    Either::First(()) => {
+                        warn!("Wi-Fi STA disconnected; will retry");
+                        {
+                            let mut guard = state.lock().await;
+                            guard.state = WifiConnectionState::Error;
+                            guard.last_error = Some(WifiErrorKind::LinkLost);
+                        }
+                        active_credentials = crate::wifi_credentials_cache();
+                        match select(
+                            Timer::after(Duration::from_secs(5)),
+                            WIFI_APPLY_SIGNAL.wait(),
+                        )
+                        .await
+                        {
+                            Either::First(()) => {}
+                            Either::Second(()) => {
+                                active_credentials = crate::wifi_credentials_cache();
+                                continue 'wifi;
+                            }
+                        }
+                    }
+                    Either::Second(()) => {
+                        info!("Wi-Fi runtime configuration changed; reconnecting");
+                        active_credentials = crate::wifi_credentials_cache();
+                        if let Err(err) = controller.disconnect_async().await {
+                            warn!(
+                                "Wi-Fi disconnect_async during reconfigure failed: {:?}",
+                                err
+                            );
+                        }
+                    }
                 }
-                Timer::after(Duration::from_secs(5)).await;
             }
             Err(err) => {
                 warn!("Wi-Fi connect_async error: {:?}", err);
@@ -506,7 +611,15 @@ async fn wifi_task(
                     guard.state = WifiConnectionState::Error;
                     guard.last_error = Some(WifiErrorKind::ConnectFailed);
                 }
-                Timer::after(Duration::from_secs(10)).await;
+                match select(
+                    Timer::after(Duration::from_secs(10)),
+                    WIFI_APPLY_SIGNAL.wait(),
+                )
+                .await
+                {
+                    Either::First(()) => active_credentials = crate::wifi_credentials_cache(),
+                    Either::Second(()) => active_credentials = crate::wifi_credentials_cache(),
+                }
             }
         }
 
@@ -710,7 +823,7 @@ async fn handle_api_request(
     method: &str,
     path: &str,
     query: &str,
-    body: &str,
+    _body: &str,
     origin: Option<&str>,
     device_names: &'static DeviceNames,
     wifi_state: &'static WifiStateMutex,
@@ -885,10 +998,27 @@ async fn handle_api_request(
 
     if method == "GET" && path == "/api/v1/wifi" {
         let wifi = { *wifi_state.lock().await };
+        let credentials = crate::wifi_credentials_cache();
         let mut body = String::new();
         let _ = core::write!(
             body,
-            "{{\"storage\":\"eeprom\",\"address\":\"0x50\",\"state\":\"{}\",\"ipv4\":",
+            "{{\"storage\":\"eeprom\",\"address\":\"0x50\",\"configured\":{}",
+            if credentials.is_some() {
+                "true"
+            } else {
+                "false"
+            },
+        );
+        if let Some(credentials) = credentials {
+            let _ = body.push_str(",\"ssid\":");
+            write_json_string(&mut body, credentials.ssid());
+            let _ = core::write!(body, ",\"psk_configured\":{}", credentials.psk_configured(),);
+        } else {
+            let _ = body.push_str(",\"psk_configured\":false");
+        }
+        let _ = core::write!(
+            body,
+            ",\"state\":\"{}\",\"ipv4\":",
             wifi_state_str(wifi.state),
         );
         match wifi.ipv4 {
@@ -905,87 +1035,41 @@ async fn handle_api_request(
     }
 
     if method == "POST" && path == "/api/v1/wifi/set" {
-        let payload = if body.trim().is_empty() { query } else { body };
-        let Some(ssid) = crate::extract_json_string(payload, "ssid") else {
-            write_api_error(
-                socket,
-                "400 Bad Request",
-                allow_origin,
-                "bad_request",
-                "missing ssid",
-                false,
-            )
-            .await?;
-            return Ok(());
-        };
-        let psk = crate::extract_json_string(payload, "psk").unwrap_or_default();
-        match WifiCredentials::new(ssid.as_str(), psk.as_str()) {
-            Ok(credentials) => {
-                if crate::enqueue_wifi_provisioning(crate::WifiProvisioningCommand::Store(
-                    credentials,
-                ))
-                .is_ok()
-                {
-                    write_json_response(
-                        socket,
-                        "202 Accepted",
-                        allow_origin,
-                        "{\"accepted\":true,\"reboot_required\":true}",
-                    )
-                    .await?;
-                } else {
-                    write_api_error(
-                        socket,
-                        "409 Conflict",
-                        allow_origin,
-                        "busy",
-                        "wifi provisioning command is already pending",
-                        true,
-                    )
-                    .await?;
-                }
-            }
-            Err(_) => {
-                write_api_error(
-                    socket,
-                    "400 Bad Request",
-                    allow_origin,
-                    "bad_request",
-                    "ssid or psk length is invalid",
-                    false,
-                )
-                .await?;
-            }
-        }
+        write_api_error(
+            socket,
+            "403 Forbidden",
+            allow_origin,
+            "unsafe_transport",
+            "Wi-Fi configuration changes require Web Serial or Local USB",
+            false,
+        )
+        .await?;
         return Ok(());
     }
 
     if method == "POST" && path == "/api/v1/wifi/clear" {
-        if crate::enqueue_wifi_provisioning(crate::WifiProvisioningCommand::Clear).is_ok() {
-            write_json_response(
-                socket,
-                "202 Accepted",
-                allow_origin,
-                "{\"accepted\":true,\"reboot_required\":true}",
-            )
-            .await?;
-        } else {
-            write_api_error(
-                socket,
-                "409 Conflict",
-                allow_origin,
-                "busy",
-                "wifi provisioning command is already pending",
-                true,
-            )
-            .await?;
-        }
+        write_api_error(
+            socket,
+            "403 Forbidden",
+            allow_origin,
+            "unsafe_transport",
+            "Wi-Fi configuration changes require Web Serial or Local USB",
+            false,
+        )
+        .await?;
         return Ok(());
     }
 
     if method == "POST" && path == "/api/v1/reboot" {
-        crate::REBOOT_PENDING.store(true, Ordering::Release);
-        write_json_response(socket, "202 Accepted", allow_origin, "{\"accepted\":true}").await?;
+        write_api_error(
+            socket,
+            "403 Forbidden",
+            allow_origin,
+            "unsafe_transport",
+            "Reboot to apply Wi-Fi changes requires Web Serial or Local USB",
+            false,
+        )
+        .await?;
         return Ok(());
     }
 
@@ -1114,6 +1198,36 @@ fn write_json_u32_or_null(body: &mut String, v: Option<u32>) {
             let _ = core::write!(body, "{}", v);
         }
     }
+}
+
+fn write_json_string(body: &mut String, value: &str) {
+    let _ = body.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => {
+                let _ = body.push_str("\\\"");
+            }
+            '\\' => {
+                let _ = body.push_str("\\\\");
+            }
+            '\n' => {
+                let _ = body.push_str("\\n");
+            }
+            '\r' => {
+                let _ = body.push_str("\\r");
+            }
+            '\t' => {
+                let _ = body.push_str("\\t");
+            }
+            ch if ch < ' ' => {
+                let _ = core::write!(body, "\\u{:04x}", ch as u32);
+            }
+            ch => {
+                let _ = body.push(ch);
+            }
+        }
+    }
+    let _ = body.push('"');
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
