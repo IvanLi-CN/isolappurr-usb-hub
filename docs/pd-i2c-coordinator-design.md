@@ -1,10 +1,10 @@
 # USB-PD I2C 协同（SW2303 → TPS55288）需求分析与概要设计
 
-本文档用于 **设计阶段**：规划如何在本项目中使用 **同一条 I2C 总线**，由 MCU **轮询 SW2303** 获取协商后的目标参数，并将其 **转换/量化后写入 TPS55288**，从而实现 USB‑PD 输出电压/电流的协同控制。
+本文档用于规划 MCU 如何轮询 `SW2303` 获取协商后的目标参数，并将其转换/量化后写入 `TPS55288`，从而实现 USB‑PD 输出电压/电流的协同控制。
 
 适用硬件：`tps-sw`（`SW2303 + TPS55288`，见 `docs/hardware-variants.md`）。
 
-> 重要范围约束：本次工作 **只允许** MCU 与 `SW2303`、`TPS55288` 两个 I2C 从设备通信；不得与其他 I2C 设备通信，也不得做 I2C 地址扫描。
+> 重要范围约束：PD 协同逻辑只允许访问 `SW2303(0x3C)` 与 `TPS55288(0x74)`；不得做 I2C 地址扫描。由于 `TPS55288` 所在 `SDA/SCL` 总线还包含遥测/配置设备，固件必须用地址白名单隔离访问范围。
 
 ---
 
@@ -22,7 +22,7 @@
   - 当前目标电压（`dac_vol`）
   - 当前目标限流（`ctrl_icc`）
 - MCU 将上述信息转换为 `TPS55288` 可接受的 setpoint，并仅在变化时写入，保持输出与协商一致。
-- 固件层面 **严格限制**：I2C 只允许访问 `SW2303 (0x3C)` 与 `TPS55288 (0x74)`，禁止扫描与“误触碰其他地址”。（依据：网表 `R35=75kΩ` 连接 TPS55288 `MODE/RMODE` 到 `AGND_TPS`，对应 I2C 地址为 `74h`）
+- 固件层面严格限制：PD 协同代码只允许访问 `SW2303 (0x3C)` 与 `TPS55288 (0x74)`，禁止扫描与误触碰其他地址。（依据：网表 `R35=75kΩ` 连接 TPS55288 `MODE/RMODE` 到 `AGND_TPS`，对应 I2C 地址为 `74h`）
 
 ---
 
@@ -30,7 +30,8 @@
 
 ### 2.1 范围（In Scope）
 
-- `SCL_TPS/SDA_TPS` 总线初始化（400 kHz）与 I2C 事务白名单约束。
+- `SDA/SCL` 上 `TPS55288` 访问路径与 I2C 事务白名单约束。
+- `SDA_SW/SCL_SW` 上 `SW2303` 访问路径与 I2C 事务白名单约束。
 - `SW2303` 的轮询读取与寄存器解码（只读路径）。
 - `TPS55288` 的 setpoint 下发策略（电压/电流/使能/斜率，按需最小写入）。
 - 协调状态机（协议激活、故障、I2C 异常恢复的基本策略）。
@@ -38,7 +39,7 @@
 
 ### 2.2 非目标（Out of Scope）
 
-- 在 PD 总线（`SCL_TPS/SDA_TPS`）上与 `INA226` 或其他器件通信（明确禁止；遥测应使用独立的 `I2C1`）。
+- 在 PD 协同逻辑中访问 `INA226`、`TMP112`、`EEPROM`、`CH224Q` 或其他非白名单器件。
 - 任何 I2C 地址扫描、总线探测工具、或对“未知地址”的容错访问。
 - Web UI、配置持久化、远程控制等非电源协同核心功能。
 - `SW2303` 的协商策略“深度定制”（例如自定义 PDO 内容、VID/XID、异常策略等），除非后续明确新增需求。
@@ -48,33 +49,38 @@
 
 ## 3. 硬件与网表确认（总线/引脚/上拉）
 
-本项目 PD 协同 I2C 总线网名为：
+本项目 PD 协同涉及两条 I2C 总线：
 
-- `SCL_TPS`
-- `SDA_TPS`
+- 系统 I2C：`SDA/SCL`，用于 `TPS55288` 与遥测/配置设备。
+- SW2303 I2C：`SDA_SW/SCL_SW`，仅用于 `SW2303`。
 
 来自网表 `hardware/tps-sw/netlist.enet` 的关键连接：
 
 - MCU（U19，ESP32‑S3R2）：
-  - pin44（GPIO39 / `MTCK`）→ `SDA_TPS`
-  - pin45（GPIO40 / `MTDO`）→ `SCL_TPS`
+  - pin13（GPIO8）→ `SDA`
+  - pin14（GPIO9）→ `SCL`
+  - pin44（GPIO39 / `MTCK`）→ `SDA_SW`
+  - pin45（GPIO40 / `MTDO`）→ `SCL_SW`
   - pin42（GPIO37）→ `CE_TPS`
-  - pin43（GPIO38）→ `INT_TPS`
+  - pin12（GPIO7）→ `INT`
 - TPS55288（U14）：
-  - pin5 → `SCL_TPS`
-  - pin6 → `SDA_TPS`
-  - pin14 → `INT_TPS`
+  - pin5 → `SCL`
+  - pin6 → `SDA`
+  - pin14 → `INT`
   - pin15 → `$1N57`，并通过 `R35=75kΩ` 连接到 `AGND_TPS`
 - SW2303（U16）：
-  - pin1  → `SDA_TPS`
-  - pin16 → `SCL_TPS`
+  - pin1  → `SDA_SW`
+  - pin16 → `SCL_SW`
   - pin13 → `VBUS_TPS`
   - pin14 → 悬空
   - pin15 → `VOUT_TPS`
 - 供电/启动依赖：
   - `TPS55288(U14)` 的 `VIN` 接 `VIN`，`VCC` 接 `+5V`
   - `SW2303(U16)` 的 `VIN` 接 `VOUT_TPS`
-- 上拉：`RN2` 为 `SCL_TPS/SDA_TPS`（以及 `INT_TPS`）提供到 `3V3` 的 4.7 kΩ 上拉。
+- 上拉：
+  - `RN1=4.7kΩ` 为 `SDA/SCL/INT` 提供到 `3V3` 的上拉。
+  - `R13/R3=4.7kΩ` 为 `SDA_SW/SCL_SW` 提供到 `3V3` 的上拉。
+  - `RN3=10kΩ` 为 `P2_CED/P1_CED/P1_ESP` 提供到 `GND` 的下拉。
 
 ### 3.1 引脚复用风险（ESP32‑S3）
 
@@ -89,12 +95,13 @@
 
 ### 4.1 总线速率
 
-- `SW2303` 支持 100k/400k；当前实机启动恢复路径使用 **400 kHz**。固件必须高频读取 SW2303 目标电压/限流寄存器，不能用协议枚举、`fast_protocol` 或 `fast_voltage` 作为是否读取目标值的门槛。
+- `SW2303` 支持 100k/400k；当前设计可继续使用 400 kHz。固件必须固定周期读取 SW2303 目标电压/限流寄存器，不能用协议枚举、`fast_protocol` 或 `fast_voltage` 作为是否读取目标值的门槛。
+- `TPS55288` 位于系统 `SDA/SCL` 总线；若与遥测设备共享同一 I2C 外设实例，固件仍必须通过白名单限制 PD 协同访问地址。
 
 ### 4.2 地址白名单（强约束）
 
-- `SW2303`：`0x3C`
-  - `TPS55288`：`0x74`
+- `SW2303`：`0x3C`（`SDA_SW/SCL_SW`）
+- `TPS55288`：`0x74`（`SDA/SCL`）
   依据：网表显示 `TPS55288 MODE/RMODE`（pin15）通过 `R35=75kΩ` 接到 `AGND_TPS`，按数据手册 MODE 电阻配置表，对应 external VCC、I2C 地址 `74h`、PFM。
 
 固件必须实现 **allowlist wrapper**：任何对非白名单地址的 `write/write_read` 直接拒绝并记录错误（用于保证“不得与其他设备通信”的范围要求）。
@@ -105,20 +112,16 @@
 
 ### 5.1 上电到可输出
 
-1) MCU 先以 open-drain 释放 `SCL_TPS/SDA_TPS`，并保持 `CE_TPS` 为高电平，使 TPS/SW 电源域在 GPIO 初始化期间关闭。
-2) 释放 `CE_TPS` 后初始化 `SCL_TPS/SDA_TPS` I2C（400 kHz）与地址白名单。
-3) 通过 `TPS55288` 的 `OE` 寄存器关闭输出并开启主动放电，延迟约 1 秒。
-4) 放电窗口结束后释放并读取 `SCL_TPS/SDA_TPS`。若总线被拉低，说明 `OE` 路径之后的共享总线不可用；此时允许短暂拉高 `CE_TPS` 做一次 hard-start，释放后等待总线恢复高电平。
-5) MCU 向 `TPS55288` 写入 5V boot setpoint；该步骤不得等待遥测、屏幕或其他无关初始化完成。若上一步刚发生 hard-start，允许对 POR 后首笔 TPS I2C 做受控重试。
-6) 5V boot setpoint 写入成功后，固件继续以 open-drain 释放 `SCL_TPS/SDA_TPS` 并等待约 1.005 秒，再允许任何 `SW2303` I2C 事务；等待窗口内也不得执行非必要 PD I2C 事务，包括 TPS status/fault 读取。
-7) 若首次 `SW2303` 读取前出现 stuck-low，固件保持 TPS boot 输出并等待总线释放，不反复拉高 `CE_TPS`。
-8) 等待窗口结束后，以固定周期轮询 `SW2303` 当前请求；每次读取目标电压/限流字段，并以该目标字段作为 TPS 跟随依据。
-9) 读取 `SW2303` 当前设置（目标电压/限流/协议），转换成 TPS setpoint。
-10) 写入 `TPS55288`（先限流、后电压、最后使能）。
+1. 初始化 `SDA/SCL` 与地址白名单，允许访问 `TPS55288(0x74)`，但禁止扫描和访问非白名单地址。
+2. 初始化 `SDA_SW/SCL_SW` 与地址白名单，允许访问 `SW2303(0x3C)`，但在 `TPS55288` 输出建立前不得主动访问 SW2303。
+3. 通过 `TPS55288` 的 `OE` 寄存器关闭输出并按需要开启主动放电。
+4. MCU 向 `TPS55288` 写入 5V boot setpoint；该步骤不得等待遥测、屏幕或其他无关初始化完成。TPS 是否进入 5V 输出设定不得根据 INA226 遥测读数判断。
+5. `TPS55288` 5V boot setpoint 写入成功后，等待 `SW2303` 供电与 POR 窗口，再允许 `SDA_SW/SCL_SW` 上的 `SW2303` I2C 事务。
+6. 等待窗口结束后，以固定周期轮询 `SW2303` 当前请求；每次读取目标电压/限流字段，并以该目标字段作为 TPS 跟随依据。
+7. 读取 `SW2303` 当前设置（目标电压/限流/协议），转换成 TPS setpoint。
+8. 写入 `TPS55288`（先限流、后电压、最后使能）。
 
-约束：`SW2303` 与 `TPS55288` 共用 `SDA_TPS/SCL_TPS`，而 `SW2303` 的 `VIN` 来自 `VOUT_TPS`。如果 `VOUT_TPS` 建立前或建立后 `SW2303` 将 SDA 拉低，MCU 无法通过同一条 I2C 总线完成对应阶段的配置或读取。这类问题需要硬件上保证 `SW2303` 不持续箝位总线，或为 `SW2303` 增加总线隔离/调整供电与模式脚连接。
-
-启动期不对 `SW2303` 立即执行 enable profile 写入。TPS 是否进入 5V 输出设定不得根据 INA226 遥测读数判断；固件必须以 `TPS55288` I2C boot setpoint 写入成功为依据。boot setpoint 写入成功后，固件继续释放 `SDA_TPS/SCL_TPS` 并等待约 1.005 秒，再允许任何 `SW2303` I2C 事务。等待窗口内不得执行非必要 PD I2C 事务，包括 TPS status/fault 读取。若 `TPS55288` apply 失败或 TPS fault，则清除 SW 访问许可，重新等待下一次 TPS 5V setpoint 成功写入后的 POR 窗口。常规 USB-C 电源开关、恢复和停机优先通过 TPS55288 `OE` 寄存器完成。`CE_TPS` 只允许用于 TPS I2C 不可达时的 hard-start 或调用方明确接受 `SW2303` 掉电副作用的硬关断。若 `SW2303` 上电后仍持续拉低 SDA，固件不得继续制造 I2C 超时或反复掉电，应保持 TPS boot 输出并等待总线电平恢复。`SW2303` 启动恢复阶段先只读取目标电压/限流；在首次稳定读通后，固件应执行一次启动 `Enable Profile`，把协议/档位恢复到已知配置，再进入常规轮询。若 profile 写入失败，继续保持只读协同，但要把该状态明确记入日志。
+启动期不对 `SW2303` 立即执行 enable profile 写入。`SW2303` 启动恢复阶段先只读取目标电压/限流；在首次稳定读通后，固件应执行一次启动 `Enable Profile`，把协议/档位恢复到已知配置，再进入常规轮询。若 profile 写入失败，继续保持只读协同，但要把该状态明确记入日志。
 
 ### 5.2 协商变化 / PPS 调节
 
@@ -225,13 +228,13 @@ TPS55288 驱动（`tps55288-rs` 仓库）的抽象假定：
 
 ### 9.1 软关断：TPS `OE`
 
-正常流程中，固件必须优先通过 I2C 清 `OE` 实现 TPS 输出停机；USB-C 软件断电、无协议 boot setpoint 保持都不得主动拉高 `CE_TPS`。若共享 I2C 总线已经 stuck-low，TPS `OE` 不可达，才允许使用 `CE_TPS` 硬复位恢复上电状态；复位后必须重新配置 TPS boot setpoint，并重新等待 SW 访问窗口。启动放电窗口结束后若 `SDA_TPS/SCL_TPS` 仍为低，也按 stuck-low 处理。
+正常流程中，固件必须优先通过 `SDA/SCL` 上的 I2C 清 `OE` 实现 TPS 输出停机；USB-C 软件断电、无协议 boot setpoint 保持都不得主动拉高 `CE_TPS`。只有当 `TPS55288(0x74)` I2C/OE 路径不可达，或继续输出存在明确安全风险时，才允许使用 `CE_TPS` 硬复位恢复上电状态；复位后必须重新配置 TPS boot setpoint，并重新等待 SW2303 访问窗口。
 
 ### 9.2 硬关断：`CE_TPS`
 
-网表显示 MCU 有 `CE_TPS` 控制链路（经 `Q9` 下拉 TPS `EN/UVLO` 节点）。该信号只能作为最后兜底硬关断：
+网表显示 MCU 有 `CE_TPS` 控制链路（经 `Q5` 控制 TPS `EN/UVLO` 节点）。该信号只能作为最后兜底硬关断：
 
-- TPS `OE` 路径因共享 I2C stuck-low 不可用。
+- TPS `OE` 路径不可用，例如 `SDA/SCL` 总线或 `TPS55288(0x74)` 事务持续失败。
 - TPS `OE` 路径不可用，且继续输出存在明确安全风险。
 - 需要主动硬关断 USB-C 电源，且调用方明确接受 `SW2303` 掉电副作用。
 
@@ -253,15 +256,15 @@ TPS55288 驱动（`tps55288-rs` 仓库）的抽象假定：
 
 ### 10.2 ESP32‑S3 调试接口占用
 
-`SDA_TPS/SCL_TPS` 使用物理 pin44/pin45（复用 `MTCK/MTDO`），需确认调试方案（USB‑Serial‑JTAG vs 传统 JTAG）。
+`SDA_SW/SCL_SW` 使用物理 pin44/pin45（复用 `MTCK/MTDO`），需确认调试方案（USB‑Serial‑JTAG vs 传统 JTAG）。`TPS55288` 不再使用这两个引脚，而是位于系统 `SDA/SCL`（GPIO8/GPIO9）。
 
-### 10.3 PD I2C 启动死锁
+### 10.3 SW2303 I2C 启动窗口
 
-实测要求：`SW2303` 在 `VOUT_TPS` 建立前后都不应持续拉低 `SDA_TPS`。当前实测显示，TPS 主动放电约 1 秒后 `SDA_TPS/SCL_TPS` 可同时为低；此时应先把总线按 open-drain 释放并检查，必要时用一次 `CE_TPS` hard-start 恢复电源域，再配置 TPS 5V boot setpoint。若 TPS 输出打开后出现 `SDA_TPS` 低、`SCL_TPS` 高，且 open-drain 释放窗口后 SDA 仍不能释放，则 MCU 无法访问 `SW2303(0x3C)`，也无法在同一条总线上继续可靠访问 `TPS55288(0x74)`。可选处理方向：
+新网表已将 `SW2303` 从 TPS 控制总线拆出：`SW2303` 位于 `SDA_SW/SCL_SW`，`TPS55288` 位于 `SDA/SCL`。因此 `SW2303` 上电窗口或 `SDA_SW` 异常不应再阻塞 `TPS55288(0x74)` 的 boot setpoint 写入。固件仍需遵守以下约束：
 
-- 确认 `U16` 的实际料号、焊接方向、pin1/pin16 连接和模式脚状态与 I2C 模式一致。
-- 在 `SW2303` 与 `SDA_TPS/SCL_TPS` 之间增加总线隔离，使其上电异常时不拖住 TPS I2C。
-- 调整 `SW2303` 供电路径，使其满足数据手册约束且不会在 MCU 访问窗口内箝位 SDA。
+- `VOUT_TPS` 建立并等待 SW2303 POR 窗口结束前，不访问 `SW2303(0x3C)`。
+- 若 `SDA_SW/SCL_SW` 持续低电平或 `SW2303(0x3C)` 事务失败，保持 TPS boot 输出，记录 SW bus fault，不反复拉高 `CE_TPS`。
+- `TPS55288` 所在 `SDA/SCL` 仍与其他系统 I2C 设备共享，PD 协同代码必须继续使用地址白名单，禁止扫描。
 
 ### 10.4 SW2303 数据手册中的 I2C “Register address = 0xB0” 表述歧义
 
