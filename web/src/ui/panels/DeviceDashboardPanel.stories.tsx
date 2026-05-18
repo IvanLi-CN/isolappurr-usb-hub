@@ -16,6 +16,12 @@ const demoDevice: StoredDevice = {
   baseUrl: "http://hub-a.local",
 };
 
+const legacyDevice: StoredDevice = {
+  id: "hub-legacy",
+  name: "Legacy Hub",
+  baseUrl: "http://hub-legacy.local",
+};
+
 const mockDeviceApi = async (
   input: Parameters<typeof fetch>[0],
   init: Parameters<typeof fetch>[1],
@@ -29,13 +35,23 @@ const mockDeviceApi = async (
         : input.toString(),
   );
 
-  if (url.hostname !== "hub-a.local") {
+  if (url.hostname !== "hub-a.local" && url.hostname !== "hub-legacy.local") {
     return original(input, init);
   }
 
   if (url.pathname === "/api/v1/ports") {
+    const hub =
+      url.hostname === "hub-legacy.local"
+        ? { upstream_connected: true }
+        : {
+            upstream_connected: true,
+            isolated_usb_fault: false,
+            isolated_downstream_connected: true,
+            isolated_usb_ready: true,
+          };
+
     return jsonResponse({
-      hub: { upstream_connected: true },
+      hub,
       ports: [
         {
           portId: "port_a",
@@ -92,14 +108,15 @@ const mockDeviceApi = async (
 const meta: Meta<typeof DeviceDashboardPanel> = {
   title: "Panels/DeviceDashboardPanel",
   component: DeviceDashboardPanel,
+  tags: ["autodocs"],
   parameters: {
     layout: "padded",
   },
   decorators: [
     mockFetchDecorator(mockDeviceApi),
-    (Story) => (
+    (Story, context) => (
       <ToastProvider>
-        <DevicesProvider initialDevices={[demoDevice]}>
+        <DevicesProvider initialDevices={[context.args.device ?? demoDevice]}>
           <DeviceRuntimeProvider>
             <div className="max-w-[980px]">
               <Story />
@@ -119,3 +136,17 @@ export default meta;
 type Story = StoryObj<typeof DeviceDashboardPanel>;
 
 export const Default: Story = {};
+
+export const LegacyFirmwareUnknownIsolation: Story = {
+  args: {
+    device: legacyDevice,
+  },
+};
+
+export const MobileIsolationBadges: Story = {
+  parameters: {
+    viewport: {
+      defaultViewport: "isolapurrNarrow",
+    },
+  },
+};
