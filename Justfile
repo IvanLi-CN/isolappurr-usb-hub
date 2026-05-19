@@ -26,10 +26,10 @@ sw2303-test:
 _desktop-dist:
 	@if [ ! -f desktop/dist/index.html ]; then \
 		if [ ! -d web/node_modules ]; then \
-			cd web && bun install; \
+			(cd web && bun install); \
 		fi; \
-		cd web && bun run build; \
-			cd ../desktop && ISOLAPURR_SKIP_WEB_BUILD=1 bun scripts/tauri-before-build.ts; \
+		(cd web && bun run build); \
+		(cd desktop && ISOLAPURR_SKIP_WEB_BUILD=1 bun scripts/tauri-before-build.ts); \
 		fi
 
 desktop-agent-build:

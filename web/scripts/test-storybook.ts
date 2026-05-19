@@ -79,8 +79,8 @@ try {
   });
   const code = await tests.exited;
   stopServer();
-  const serverCode = await server.exited;
-  process.exit(code || serverCode || 0);
+  await server.exited.catch(() => undefined);
+  process.exit(code);
 } catch (error) {
   stopServer();
   await server.exited.catch(() => undefined);
