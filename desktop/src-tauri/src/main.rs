@@ -44,7 +44,6 @@ const LOCAL_WEB_ALLOWED_PORTS: &[u16] = &[45173, 45175];
 const STORAGE_SCHEMA_VERSION: u8 = 1;
 const STORAGE_FILE_NAME: &str = "storage.json";
 const PORT_CACHE_FILE_NAME: &str = ".esp32-port";
-const PORT_IDENTITY_CACHE_FILE_NAME: &str = ".esp32-port.identity.json";
 const DEFAULT_FLASH_ADDRESS: u32 = 0x10000;
 
 const EXIT_SERVER_FAILED: i32 = 10;
@@ -2280,30 +2279,13 @@ fn write_port_preference_cache(identity: &PortIdentityCache) -> anyhow::Result<(
     std::fs::write(local_project_file(PORT_CACHE_FILE_NAME), body).context("write .esp32-port")
 }
 
-#[allow(dead_code)]
-fn write_identity_cache(identity: &PortIdentityCache) -> anyhow::Result<()> {
-    std::fs::write(
-        local_project_file(PORT_IDENTITY_CACHE_FILE_NAME),
-        format!("{}\n", serde_json::to_string_pretty(identity)?),
-    )
-    .context("write .esp32-port.identity.json")
-}
-
 fn read_identity_cache() -> anyhow::Result<PortIdentityCache> {
     if let Some(cache) = read_port_preference_cache()? {
         return Ok(cache);
     }
-
-    let identity_path = local_project_file(PORT_IDENTITY_CACHE_FILE_NAME);
-    let bytes = std::fs::read(&identity_path).with_context(|| {
-        format!(
-            "no confirmed device identity found in {PORT_CACHE_FILE_NAME}; run PORT=/dev/cu.xxx just local-identify"
-        )
-    })?;
-    let cache: PortIdentityCache = serde_json::from_slice(&bytes)
-        .with_context(|| format!("{PORT_IDENTITY_CACHE_FILE_NAME} is not valid JSON"))?;
-    validate_port_identity_cache(&cache, PORT_IDENTITY_CACHE_FILE_NAME)?;
-    Ok(cache)
+    Err(anyhow!(
+        "no confirmed device identity found in {PORT_CACHE_FILE_NAME}; run just ports and then PORT=/dev/cu.xxx just identify"
+    ))
 }
 
 fn read_port_preference_cache() -> anyhow::Result<Option<PortIdentityCache>> {

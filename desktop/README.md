@@ -59,7 +59,7 @@ isolapurr-desktop
 - `serve`：仅启动 localhost agent（进程保持运行）
 - `discover --json`：一次性发现并输出
 - `serial ports [--json]`：列出 ESP32-S3 USB Serial/JTAG 候选
-- `serial identify --port <path> [--write-cache] [--json]`：读取 JSONL `info`；带 `--write-cache` 时写入 `.esp32-port` 与 `.esp32-port.identity.json`
+- `serial identify --port <path> [--write-cache] [--json]`：读取 JSONL `info`；带 `--write-cache` 时写入 `.esp32-port`
 - `serial request --port <path> --method <method> [--params json] [--json]`：发送 JSONL request 并输出响应
 - `firmware make-bin --elf <path> --out <path> [--json]`：从 release ELF 生成 app `.bin`
 - `firmware flash --port <path> --bin <path> --address 0x10000 [--json]`：校验缓存身份后写 app 分区
