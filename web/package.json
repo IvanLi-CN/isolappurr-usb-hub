@@ -13,7 +13,7 @@
     "test:unit": "bun test ./src",
     "storybook": "storybook dev -p 46006",
     "build-storybook": "storybook build",
-    "test:storybook": "concurrently -k -s first -n \"SB,TEST\" -c \"magenta,blue\" \"http-server storybook-static --port 46106 --silent\" \"wait-on http://127.0.0.1:46106 && test-storybook --url http://127.0.0.1:46106 --ci\"",
+    "test:storybook": "bun scripts/test-storybook.ts",
     "test:e2e": "playwright test",
     "preview": "vite preview --host 127.0.0.1 --port 45175 --strictPort"
   },

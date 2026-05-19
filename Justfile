@@ -38,12 +38,13 @@ desktop-agent-build:
 	cd {{DESKTOP_DIR}} && cargo build --target "$host"
 
 _desktop-agent-bin:
-	@bin=""; \
+	@host="$(rustc -vV | sed -n 's/^host: //p')"; \
+	bin=""; \
 	for candidate in \
+		{{DESKTOP_DIR}}/target/$host/debug/isolapurr-desktop \
+		{{DESKTOP_DIR}}/target/$host/release/isolapurr-desktop \
 		{{DESKTOP_DIR}}/target/debug/isolapurr-desktop \
-		{{DESKTOP_DIR}}/target/*/debug/isolapurr-desktop \
-		{{DESKTOP_DIR}}/target/release/isolapurr-desktop \
-		{{DESKTOP_DIR}}/target/*/release/isolapurr-desktop; do \
+		{{DESKTOP_DIR}}/target/release/isolapurr-desktop; do \
 		if [ -x "$candidate" ]; then \
 			bin="$candidate"; \
 			break; \
