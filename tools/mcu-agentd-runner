@@ -7,6 +7,7 @@ PORT_FILE="$REPO_ROOT/.esp32-port"
 DESKTOP_DIR="$REPO_ROOT/desktop/src-tauri"
 APP_BIN="$REPO_ROOT/target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub.app.bin"
 DESKTOP_DIST_INDEX="$REPO_ROOT/desktop/dist/index.html"
+HOST_TARGET=$(rustc -vV | sed -n 's/^host: //p')
 
 err() { printf '%s\n' "$1" >&2; }
 
@@ -50,7 +51,7 @@ if [[ ! -f "$DESKTOP_DIST_INDEX" ]]; then
   (cd "$REPO_ROOT/web" && bun run build)
   (cd "$REPO_ROOT/desktop" && ISOLAPURR_SKIP_WEB_BUILD=1 bun scripts/tauri-before-build.ts)
 fi
-(cd "$DESKTOP_DIR" && ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run -- firmware make-bin --elf "$ELF_PATH" --out "$APP_BIN")
-(cd "$DESKTOP_DIR" && ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run -- firmware flash --port "$PORT_VALUE" --bin "$APP_BIN" --address 0x10000)
+(cd "$DESKTOP_DIR" && ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run --target "$HOST_TARGET" -- firmware make-bin --elf "$ELF_PATH" --out "$APP_BIN")
+(cd "$DESKTOP_DIR" && ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run --target "$HOST_TARGET" -- firmware flash --port "$PORT_VALUE" --bin "$APP_BIN" --address 0x10000)
 cd "$DESKTOP_DIR"
-exec env ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run -- firmware monitor --port "$PORT_VALUE" --elf "$ELF_PATH" --reset
+exec env ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run --target "$HOST_TARGET" -- firmware monitor --port "$PORT_VALUE" --elf "$ELF_PATH" --reset

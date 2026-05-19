@@ -34,7 +34,8 @@ _desktop-dist:
 
 desktop-agent-build:
 	@just _desktop-dist
-	@cd {{DESKTOP_DIR}} && cargo build
+	@host="$(rustc -vV | sed -n 's/^host: //p')"; \
+	cd {{DESKTOP_DIR}} && cargo build --target "$host"
 
 _desktop-agent-bin:
 	@bin=""; \
