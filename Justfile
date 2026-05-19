@@ -127,7 +127,7 @@ flash-monitor:
 select-port:
 	@tmp="$(mktemp)"; \
 	trap 'rm -f "$tmp"' EXIT HUP INT TERM; \
-	if ! just ports >"$tmp"; then \
+	if ! just ports | awk -F '\t' '$1 ~ /^\/dev\// || $1 ~ /^[Cc][Oo][Mm][0-9]+$/ { print }' >"$tmp"; then \
 		exit $?; \
 	fi; \
 	if [ ! -s "$tmp" ]; then \
