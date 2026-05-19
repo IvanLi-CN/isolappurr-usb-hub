@@ -64,7 +64,7 @@ isolapurr-desktop
 - `firmware make-bin --elf <path> --out <path> [--json]`：从 release ELF 生成 app `.bin`
 - `firmware flash --port <path> --bin <path> --address 0x10000 [--json]`：校验缓存身份后写 app 分区
 - `firmware reset --port <path> [--json]`：执行 ESP32-S3 USB Serial/JTAG hard reset 并返回证据
-- `firmware monitor --port <path> [--reset] [--json]`：持续输出串口日志，标注 boot / JSONL / panic / log
+- `firmware monitor --port <path> [--elf <release-elf>] [--reset] [--json]`：human 模式带 ELF 时通过 `espflash monitor` 解码 defmt；JSON 模式保留原始串口分类输出
 
 ## Cross-platform notes (Plan `#0009`)
 

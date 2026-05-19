@@ -110,7 +110,7 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given Wi-Fi credentials are cleared through Web Serial or Local USB, when EEPROM clear succeeds, then firmware immediately stops the Wi-Fi station and reports no reboot requirement.
 - Given Web Serial is unsupported, when the user opens Add device, then the UI offers Local USB or Wi-Fi/HTTP alternatives.
 - Given the Desktop agent is running, when the user lists serial ports or proxies a command, then requests require the existing bearer token and origin policy.
-- Given `mcu-agentd` is not installed, when a developer runs the Local USB Justfile flow, then they can list ports, identify a hub, generate an app `.bin`, flash `0x10000`, reset, and monitor using `isolapurr-desktop`.
+- Given `mcu-agentd` is not installed, when a developer runs `just desktop-agent-build` once and then the Local USB Justfile flow, then they can list ports, identify a hub, generate an app `.bin`, flash `0x10000`, reset, and monitor using `isolapurr-desktop`.
 - Given `.esp32-port` is missing or lacks `device_id`/`mac`, when a developer runs a flash/reset/monitor command that depends on the confirmed port, then it fails with instructions to run `just ports` and `PORT=/dev/cu.xxx just identify`.
 - Given JSONL `info` returns a different `device_id` or `mac`, when Local USB flash runs, then it fails before writing flash.
 - Given UI changes are complete, when Storybook renders the console states, then desktop and mobile evidence show no text overlap, clipping, or incoherent layout.

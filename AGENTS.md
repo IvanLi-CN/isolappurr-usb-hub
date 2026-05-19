@@ -13,6 +13,7 @@
 Prefer `Justfile`:
 
 - `just build` — build firmware with the Local USB JSONL console (`cargo build --release`)
+- `just desktop-agent-build` — build the project-local `isolapurr-desktop` CLI once before using `just ports` on a fresh checkout
 - `just desktop-agent` — run the project-local `isolapurr-desktop` CLI
 - `just ports` — list ESP32-S3 USB Serial/JTAG candidates
 - `PORT=/dev/cu.xxx just identify` — read JSONL `info` and persist the owner-confirmed port plus identity into `.esp32-port`
