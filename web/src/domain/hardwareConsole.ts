@@ -19,12 +19,18 @@ export type SerialPortInfo = {
 
 const ESPRESSIF_USB_VENDOR_ID = 0x303a;
 const ESP32_USB_SERIAL_JTAG_PRODUCT_ID = 0x1001;
+export const DEFAULT_LOCAL_USB_FLASH_ADDRESS = 0x10000;
 const DEFAULT_JSONL_TIMEOUT_MS = 5_000;
 const LOCAL_USB_BUSY_RETRIES = 5;
 let jsonlRequestSeq = 1;
 const localUsbRequestQueues: Record<string, Promise<void>> = {};
 
 export type HardwareTransportKind = "web_serial" | "local_usb";
+
+export type DeviceIdentityExpectation = {
+  deviceId?: string | null;
+  mac?: string | null;
+};
 
 export type FirmwareFlashProgress = {
   stage: "connecting" | "writing" | "done";
@@ -238,22 +244,58 @@ export async function flashWithLocalUsb(
   portPath: string,
   file: File,
   address: number,
+  expectedIdentity: DeviceIdentityExpectation,
 ): Promise<string> {
+  if (address !== DEFAULT_LOCAL_USB_FLASH_ADDRESS) {
+    throw new Error(
+      "Local USB firmware flashing writes the app image at 0x10000.",
+    );
+  }
   const firmware = await fileToBase64(file);
   const res = await agentFetch(agent, "/api/v1/firmware/flash", {
     method: "POST",
-    body: JSON.stringify({
-      portPath,
-      address,
-      fileName: file.name,
-      fileBase64: firmware,
-    }),
+    body: JSON.stringify(
+      buildLocalUsbFlashRequestBody({
+        portPath,
+        address,
+        fileName: file.name,
+        fileBase64: firmware,
+        expectedIdentity,
+      }),
+    ),
   });
-  const json = (await res.json()) as { ok?: boolean; log?: string };
+  const json = (await res.json()) as {
+    ok?: boolean;
+    log?: string;
+    error?: { message?: string };
+  };
   if (!res.ok || !json.ok) {
-    throw new Error(json.log || `Local USB flash failed (${res.status})`);
+    throw new Error(
+      json.error?.message ||
+        json.log ||
+        `Local USB flash failed (${res.status})`,
+    );
   }
   return json.log ?? "";
+}
+
+export function buildLocalUsbFlashRequestBody(input: {
+  portPath: string;
+  address: number;
+  fileName: string;
+  fileBase64: string;
+  expectedIdentity: DeviceIdentityExpectation;
+}) {
+  return {
+    portPath: input.portPath,
+    address: input.address,
+    fileName: input.fileName,
+    fileBase64: input.fileBase64,
+    expectedIdentity: {
+      deviceId: input.expectedIdentity.deviceId ?? undefined,
+      mac: input.expectedIdentity.mac ?? undefined,
+    },
+  };
 }
 
 export class WebSerialJsonlTransport {

@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    env,
     io::{Read as _, Write as _},
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
@@ -42,8 +43,9 @@ const DEFAULT_PORT_RANGE_END: u16 = 51299;
 const LOCAL_WEB_ALLOWED_PORTS: &[u16] = &[45173, 45175];
 const STORAGE_SCHEMA_VERSION: u8 = 1;
 const STORAGE_FILE_NAME: &str = "storage.json";
+const PORT_CACHE_FILE_NAME: &str = ".esp32-port";
+const DEFAULT_FLASH_ADDRESS: u32 = 0x10000;
 
-const EXIT_BAD_ARGS: i32 = 2;
 const EXIT_SERVER_FAILED: i32 = 10;
 const EXIT_DISCOVERY_UNAVAILABLE: i32 = 20;
 
@@ -67,6 +69,80 @@ enum Cmd {
     Open,
     Serve,
     Discover {
+        #[arg(long)]
+        json: bool,
+    },
+    Serial {
+        #[command(subcommand)]
+        cmd: SerialCmd,
+    },
+    Firmware {
+        #[command(subcommand)]
+        cmd: FirmwareCmd,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum SerialCmd {
+    Ports {
+        #[arg(long)]
+        json: bool,
+    },
+    Request {
+        #[arg(long)]
+        port: String,
+        #[arg(long)]
+        method: String,
+        #[arg(long)]
+        params: Option<String>,
+        #[arg(long, default_value_t = default_serial_timeout_ms())]
+        timeout_ms: u64,
+        #[arg(long)]
+        json: bool,
+    },
+    Identify {
+        #[arg(long)]
+        port: String,
+        #[arg(long)]
+        write_cache: bool,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum FirmwareCmd {
+    MakeBin {
+        #[arg(long)]
+        elf: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    Flash {
+        #[arg(long)]
+        port: String,
+        #[arg(long)]
+        bin: PathBuf,
+        #[arg(long, default_value = "0x10000")]
+        address: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Reset {
+        #[arg(long)]
+        port: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Monitor {
+        #[arg(long)]
+        port: String,
+        #[arg(long)]
+        elf: Option<PathBuf>,
+        #[arg(long)]
+        reset: bool,
         #[arg(long)]
         json: bool,
     },
@@ -128,6 +204,7 @@ struct IpScanSnapshot {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 enum IpScanExpandedBy {
     User,
     Auto,
@@ -234,7 +311,7 @@ struct SerialPortsResponse {
     ports: Vec<SerialPortInfo>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SerialJsonlRequest {
     port_path: String,
@@ -252,13 +329,15 @@ struct SerialJsonlResponse {
     raw: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FirmwareFlashRequest {
     port_path: String,
     address: u32,
     file_name: String,
     file_base64: String,
+    #[serde(default)]
+    expected_identity: Option<DeviceIdentityExpectation>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -267,6 +346,47 @@ struct FirmwareFlashResponse {
     ok: bool,
     exit_code: Option<i32>,
     log: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct DeviceIdentityExpectation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mac: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct PortIdentityCache {
+    port: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mac: Option<String>,
+    confirmed_at: String,
+    source: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FirmwareMakeBinResponse {
+    ok: bool,
+    exit_code: Option<i32>,
+    elf: String,
+    out: String,
+    log: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FirmwareResetResponse {
+    ok: bool,
+    port: String,
+    method: &'static str,
+    port_available: bool,
+    evidence: Vec<String>,
 }
 
 struct DiscoveryController {
@@ -523,9 +643,24 @@ struct WebDist;
 #[tokio::main]
 async fn main() {
     if let Err(err) = run().await {
-        eprintln!("{err:#}");
+        if cli_error_as_json() {
+            let _ = print_json(&serde_json::json!({
+                "ok": false,
+                "error": {
+                    "code": "cli_error",
+                    "message": err.to_string(),
+                    "retryable": false
+                }
+            }));
+        } else {
+            eprintln!("{err:#}");
+        }
         std::process::exit(1);
     }
+}
+
+fn cli_error_as_json() -> bool {
+    env::args_os().any(|arg| arg == "--json")
 }
 
 async fn run() -> anyhow::Result<()> {
@@ -533,10 +668,7 @@ async fn run() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let cli = Cli::try_parse().unwrap_or_else(|e| {
-        eprintln!("{e}");
-        std::process::exit(EXIT_BAD_ARGS);
-    });
+    let cli = Cli::try_parse().unwrap_or_else(|e| e.exit());
     let cmd = cli.cmd.clone().unwrap_or(Cmd::Gui);
 
     match cmd {
@@ -550,10 +682,177 @@ async fn run() -> anyhow::Result<()> {
                 }
             }
         }
+        Cmd::Serial { cmd } => run_serial_cli(cmd).await,
+        Cmd::Firmware { cmd } => run_firmware_cli(cmd).await,
         Cmd::Gui => run_gui(cli).await,
         Cmd::Tray => run_tray(cli).await,
         Cmd::Open => run_open(cli).await,
         Cmd::Serve => run_serve(cli).await,
+    }
+}
+
+async fn run_serial_cli(cmd: SerialCmd) -> anyhow::Result<()> {
+    match cmd {
+        SerialCmd::Ports { json } => {
+            let ports = list_serial_ports()
+                .map_err(|err| anyhow!("serial port enumeration failed: {err}"))?;
+            let ports = filter_esp32_serial_ports(ports);
+            if json {
+                print_json(&SerialPortsResponse { ports })?;
+            } else if ports.is_empty() {
+                println!("No ESP32-S3 USB Serial/JTAG candidates found.");
+            } else {
+                for port in ports {
+                    println!(
+                        "{}\t{}\tserial={}\tvid={}\tpid={}",
+                        port.path,
+                        port.label,
+                        port.serial_number.as_deref().unwrap_or("unknown"),
+                        format_optional_hex(port.vendor_id),
+                        format_optional_hex(port.product_id)
+                    );
+                }
+            }
+            Ok(())
+        }
+        SerialCmd::Request {
+            port,
+            method,
+            params,
+            timeout_ms,
+            json,
+        } => {
+            let params = parse_json_params(params.as_deref())?;
+            let request = serde_json::json!({
+                "id": 1,
+                "method": method,
+                "params": params,
+            });
+            let response = run_serial_jsonl_request(SerialJsonlRequest {
+                port_path: port,
+                baud_rate: default_serial_baud_rate(),
+                timeout_ms,
+                request,
+            })
+            .map_err(anyhow::Error::msg)?;
+            if json {
+                print_json(&response)?;
+            } else {
+                println!("{}", response.raw.trim_end());
+            }
+            Ok(())
+        }
+        SerialCmd::Identify {
+            port,
+            write_cache,
+            json,
+        } => {
+            let identity = identify_port(&port).map_err(anyhow::Error::msg)?;
+            if write_cache {
+                write_port_preference_cache(&identity)?;
+            }
+            if json {
+                print_json(&identity)?;
+            } else {
+                println!("port: {}", identity.port);
+                println!(
+                    "device_id: {}",
+                    identity.device_id.as_deref().unwrap_or("unknown")
+                );
+                println!("mac: {}", identity.mac.as_deref().unwrap_or("unknown"));
+                if write_cache {
+                    println!("cached: {PORT_CACHE_FILE_NAME}");
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
+    match cmd {
+        FirmwareCmd::MakeBin { elf, out, json } => {
+            let response = run_firmware_make_bin(&elf, &out).map_err(anyhow::Error::msg)?;
+            if json {
+                print_json(&response)?;
+            } else {
+                print!("{}", response.log);
+                if response.ok {
+                    println!("Wrote app image: {}", response.out);
+                }
+            }
+            if response.ok {
+                Ok(())
+            } else {
+                Err(anyhow!("espflash save-image failed"))
+            }
+        }
+        FirmwareCmd::Flash {
+            port,
+            bin,
+            address,
+            json,
+        } => {
+            let address = parse_flash_address(&address)?;
+            let cache = read_identity_cache()?;
+            if cache.port != port {
+                return Err(anyhow!(
+                    "selected port does not match confirmed identity cache: expected {}, got {}",
+                    cache.port,
+                    port
+                ));
+            }
+            let expected_identity = Some(DeviceIdentityExpectation {
+                device_id: cache.device_id.clone(),
+                mac: cache.mac.clone(),
+            });
+            let response = run_firmware_flash_file(&port, &bin, address, expected_identity)
+                .map_err(anyhow::Error::msg)?;
+            if json {
+                print_json(&response)?;
+            } else {
+                print!("{}", response.log);
+            }
+            if response.ok {
+                Ok(())
+            } else {
+                Err(anyhow!("espflash write-bin failed"))
+            }
+        }
+        FirmwareCmd::Reset { port, json } => {
+            let response = run_firmware_reset(&port).map_err(anyhow::Error::msg)?;
+            if json {
+                print_json(&response)?;
+            } else {
+                for line in &response.evidence {
+                    println!("{line}");
+                }
+            }
+            if response.ok {
+                Ok(())
+            } else {
+                Err(anyhow!("firmware reset failed"))
+            }
+        }
+        FirmwareCmd::Monitor {
+            port,
+            elf,
+            reset,
+            json,
+        } => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({
+                    "port": port,
+                    "elf": elf.as_ref().map(|path| path.display().to_string()),
+                    "reset": reset,
+                    "status": "starting"
+                    }))?
+                );
+            }
+            run_firmware_monitor(&port, elf.as_deref(), reset, json).map_err(anyhow::Error::msg)
+        }
     }
 }
 
@@ -1686,6 +1985,124 @@ fn default_serial_timeout_ms() -> u64 {
     1_500
 }
 
+fn print_json<T: Serialize>(value: &T) -> anyhow::Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
+}
+
+fn format_optional_hex(value: Option<u16>) -> String {
+    value
+        .map(|value| format!("0x{value:04x}"))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn parse_json_params(value: Option<&str>) -> anyhow::Result<serde_json::Value> {
+    match value {
+        Some(value) if !value.trim().is_empty() => {
+            serde_json::from_str(value).context("--params must be valid JSON")
+        }
+        _ => Ok(serde_json::Value::Object(Default::default())),
+    }
+}
+
+fn parse_flash_address(value: &str) -> anyhow::Result<u32> {
+    let value = value.trim();
+    let parsed = if let Some(hex) = value.strip_prefix("0x") {
+        u32::from_str_radix(hex, 16)
+    } else {
+        value.parse()
+    }
+    .with_context(|| format!("invalid flash address: {value}"))?;
+    if parsed != DEFAULT_FLASH_ADDRESS {
+        return Err(anyhow!(
+            "only the ESP32-S3 app partition address 0x10000 is supported by default"
+        ));
+    }
+    Ok(parsed)
+}
+
+fn list_serial_ports() -> serialport::Result<Vec<SerialPortInfo>> {
+    serialport::available_ports().map(|ports| {
+        ports
+            .into_iter()
+            .map(|port| {
+                let (vendor_id, product_id, serial_number, manufacturer, product) =
+                    match port.port_type {
+                        serialport::SerialPortType::UsbPort(info) => (
+                            Some(info.vid),
+                            Some(info.pid),
+                            info.serial_number,
+                            info.manufacturer,
+                            info.product,
+                        ),
+                        _ => (None, None, None, None, None),
+                    };
+                let label = product
+                    .clone()
+                    .or_else(|| manufacturer.clone())
+                    .unwrap_or_else(|| port.port_name.clone());
+                SerialPortInfo {
+                    path: port.port_name,
+                    label,
+                    vendor_id,
+                    product_id,
+                    serial_number,
+                    manufacturer,
+                    product,
+                }
+            })
+            .collect::<Vec<_>>()
+    })
+}
+
+fn filter_esp32_serial_ports(mut ports: Vec<SerialPortInfo>) -> Vec<SerialPortInfo> {
+    ports.retain(is_esp32_serial_port);
+    ports.sort_by(|a, b| {
+        let a_cu = if a.path.starts_with("/dev/cu.") { 0 } else { 1 };
+        let b_cu = if b.path.starts_with("/dev/cu.") { 0 } else { 1 };
+        a_cu.cmp(&b_cu).then_with(|| a.path.cmp(&b.path))
+    });
+    let mut seen = std::collections::HashSet::new();
+    ports
+        .into_iter()
+        .filter(|port| {
+            let key = port
+                .serial_number
+                .clone()
+                .unwrap_or_else(|| port.path.replace("/dev/tty.", "/dev/cu."));
+            seen.insert(key)
+        })
+        .collect()
+}
+
+fn is_esp32_serial_port(port: &SerialPortInfo) -> bool {
+    let path = port.path.to_lowercase();
+    if path.contains("bluetooth") || path.contains("debug-console") {
+        return false;
+    }
+    let manufacturer = port.manufacturer.as_deref().unwrap_or("").to_lowercase();
+    let product = port
+        .product
+        .as_deref()
+        .unwrap_or(&port.label)
+        .to_lowercase();
+    let vendor_matches = port.vendor_id == Some(0x303a);
+    if vendor_matches && port.product_id == Some(0x1001) {
+        return true;
+    }
+    let path_looks_like_usb_serial = path.contains("usbmodem")
+        || path.contains("usbserial")
+        || path.contains("ttyacm")
+        || (path.len() > 3
+            && path.starts_with("com")
+            && path[3..].chars().all(|c| c.is_ascii_digit()));
+    let espressif_text_matches = manufacturer.contains("espressif")
+        || product.contains("esp32")
+        || product.contains("jtag/serial")
+        || product.contains("usb jtag");
+    path_looks_like_usb_serial && espressif_text_matches
+}
+
 async fn api_serial_ports(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
         return forbidden("origin not allowed");
@@ -1694,40 +2111,7 @@ async fn api_serial_ports(State(state): State<AppState>, headers: HeaderMap) -> 
         return unauthorized("missing/invalid bearer token");
     }
 
-    let result = tokio::task::spawn_blocking(|| {
-        serialport::available_ports().map(|ports| {
-            ports
-                .into_iter()
-                .map(|port| {
-                    let (vendor_id, product_id, serial_number, manufacturer, product) =
-                        match port.port_type {
-                            serialport::SerialPortType::UsbPort(info) => (
-                                Some(info.vid),
-                                Some(info.pid),
-                                info.serial_number,
-                                info.manufacturer,
-                                info.product,
-                            ),
-                            _ => (None, None, None, None, None),
-                        };
-                    let label = product
-                        .clone()
-                        .or_else(|| manufacturer.clone())
-                        .unwrap_or_else(|| port.port_name.clone());
-                    SerialPortInfo {
-                        path: port.port_name,
-                        label,
-                        vendor_id,
-                        product_id,
-                        serial_number,
-                        manufacturer,
-                        product,
-                    }
-                })
-                .collect::<Vec<_>>()
-        })
-    })
-    .await;
+    let result = tokio::task::spawn_blocking(list_serial_ports).await;
 
     match result {
         Ok(Ok(ports)) => Json(SerialPortsResponse { ports }).into_response(),
@@ -1763,6 +2147,7 @@ async fn api_serial_request(
 
 fn run_serial_jsonl_request(req: SerialJsonlRequest) -> Result<SerialJsonlResponse, String> {
     let timeout = StdDuration::from_millis(req.timeout_ms.clamp(250, 10_000));
+    let expected_id = req.request.get("id").cloned();
     let mut port = serialport::new(&req.port_path, req.baud_rate)
         .timeout(StdDuration::from_millis(50))
         .open()
@@ -1798,7 +2183,10 @@ fn run_serial_jsonl_request(req: SerialJsonlRequest) -> Result<SerialJsonlRespon
                         continue;
                     }
                     match serde_json::from_str(trimmed) {
-                        Ok(response) => return Ok(SerialJsonlResponse { response, raw }),
+                        Ok(response) if jsonl_response_matches(&response, expected_id.as_ref()) => {
+                            return Ok(SerialJsonlResponse { response, raw });
+                        }
+                        Ok(_) => continue,
                         Err(_) => continue,
                     }
                 }
@@ -1808,6 +2196,189 @@ fn run_serial_jsonl_request(req: SerialJsonlRequest) -> Result<SerialJsonlRespon
         }
     }
     Err("serial response timed out".to_string())
+}
+
+fn jsonl_response_matches(
+    response: &serde_json::Value,
+    expected_id: Option<&serde_json::Value>,
+) -> bool {
+    let Some(expected_id) = expected_id else {
+        return true;
+    };
+    match response.get("id") {
+        Some(actual) if actual == expected_id => true,
+        Some(actual) => {
+            actual.to_string().trim_matches('"') == expected_id.to_string().trim_matches('"')
+        }
+        None => false,
+    }
+}
+
+fn identify_port(port_path: &str) -> Result<PortIdentityCache, String> {
+    let response = run_serial_jsonl_request(SerialJsonlRequest {
+        port_path: port_path.to_string(),
+        baud_rate: default_serial_baud_rate(),
+        timeout_ms: 2_500,
+        request: serde_json::json!({
+            "id": 1,
+            "method": "info",
+            "params": {},
+        }),
+    })?;
+    let identity = extract_device_identity(&response.response)
+        .ok_or_else(|| "info response did not include device_id or mac".to_string())?;
+    Ok(PortIdentityCache {
+        port: port_path.to_string(),
+        device_id: identity.device_id,
+        mac: identity.mac,
+        confirmed_at: time::OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "unknown".to_string()),
+        source: "isolapurr-desktop serial identify".to_string(),
+    })
+}
+
+fn extract_device_identity(value: &serde_json::Value) -> Option<DeviceIdentityExpectation> {
+    let candidates = [
+        value.pointer("/result/device"),
+        value.pointer("/device"),
+        value.pointer("/result"),
+        Some(value),
+    ];
+    for candidate in candidates.into_iter().flatten() {
+        let device_id = candidate
+            .get("device_id")
+            .or_else(|| candidate.get("deviceId"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        let mac = candidate
+            .get("mac")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        if device_id.is_some() || mac.is_some() {
+            return Some(DeviceIdentityExpectation { device_id, mac });
+        }
+    }
+    None
+}
+
+fn write_port_preference_cache(identity: &PortIdentityCache) -> anyhow::Result<()> {
+    let mut body = format!("{}\n", identity.port.trim());
+    if let Some(device_id) = identity.device_id.as_deref() {
+        body.push_str(&format!("device_id={}\n", device_id.trim()));
+    }
+    if let Some(mac) = identity.mac.as_deref() {
+        body.push_str(&format!("mac={}\n", mac.trim()));
+    }
+    body.push_str(&format!("confirmed_at={}\n", identity.confirmed_at.trim()));
+    body.push_str(&format!("source={}\n", identity.source.trim()));
+    std::fs::write(local_project_file(PORT_CACHE_FILE_NAME), body).context("write .esp32-port")
+}
+
+fn read_identity_cache() -> anyhow::Result<PortIdentityCache> {
+    if let Some(cache) = read_port_preference_cache()? {
+        return Ok(cache);
+    }
+    Err(anyhow!(
+        "no confirmed device identity found in {PORT_CACHE_FILE_NAME}; run just ports and then PORT=/dev/cu.xxx just identify"
+    ))
+}
+
+fn read_port_preference_cache() -> anyhow::Result<Option<PortIdentityCache>> {
+    let path = local_project_file(PORT_CACHE_FILE_NAME);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).context("read .esp32-port"),
+    };
+    parse_port_preference_cache(&raw)
+}
+
+fn parse_port_preference_cache(raw: &str) -> anyhow::Result<Option<PortIdentityCache>> {
+    let mut lines = raw.lines().map(str::trim).filter(|line| !line.is_empty());
+    let Some(port) = lines.next() else {
+        return Ok(None);
+    };
+    let mut cache = PortIdentityCache {
+        port: port.to_string(),
+        device_id: None,
+        mac: None,
+        confirmed_at: "unknown".to_string(),
+        source: "isolapurr .esp32-port".to_string(),
+    };
+    for line in lines {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        match key.trim() {
+            "device_id" | "deviceId" => cache.device_id = Some(value.to_string()),
+            "mac" => cache.mac = Some(value.to_string()),
+            "confirmed_at" | "confirmedAt" => cache.confirmed_at = value.to_string(),
+            "source" => cache.source = value.to_string(),
+            _ => {}
+        }
+    }
+    validate_port_identity_cache(&cache, PORT_CACHE_FILE_NAME)?;
+    Ok(Some(cache))
+}
+
+fn validate_port_identity_cache(cache: &PortIdentityCache, label: &str) -> anyhow::Result<()> {
+    if cache.port.trim().is_empty() || (cache.device_id.is_none() && cache.mac.is_none()) {
+        return Err(anyhow!(
+            "{label} must include port and at least one of device_id/mac"
+        ));
+    }
+    Ok(())
+}
+
+fn local_project_file(name: &str) -> PathBuf {
+    std::env::var_os("ISOLAPURR_REPO_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(name)
+}
+
+fn validate_flash_identity(
+    port_path: &str,
+    expected: &DeviceIdentityExpectation,
+) -> Result<PortIdentityCache, String> {
+    if expected.device_id.is_none() && expected.mac.is_none() {
+        return Err("firmware flash requires an expected device_id or mac".to_string());
+    }
+    let actual = identify_port(port_path)?;
+    ensure_identity_matches(&actual, expected)?;
+    Ok(actual)
+}
+
+fn ensure_identity_matches(
+    actual: &PortIdentityCache,
+    expected: &DeviceIdentityExpectation,
+) -> Result<(), String> {
+    if let Some(expected_device_id) = expected.device_id.as_deref() {
+        if actual.device_id.as_deref() != Some(expected_device_id) {
+            return Err(format!(
+                "device identity mismatch: expected device_id {expected_device_id}, got {}",
+                actual.device_id.as_deref().unwrap_or("unknown")
+            ));
+        }
+    }
+    if let Some(expected_mac) = expected.mac.as_deref() {
+        let actual_mac = actual.mac.as_deref().unwrap_or("unknown");
+        if !actual_mac.eq_ignore_ascii_case(expected_mac) {
+            return Err(format!(
+                "device identity mismatch: expected mac {expected_mac}, got {actual_mac}"
+            ));
+        }
+    }
+    Ok(())
 }
 
 async fn api_firmware_flash(
@@ -1824,6 +2395,12 @@ async fn api_firmware_flash(
     if req.port_path.trim().is_empty() {
         return bad_request("portPath is required");
     }
+    if req.address != DEFAULT_FLASH_ADDRESS {
+        return bad_request("only the ESP32-S3 app partition address 0x10000 is supported");
+    }
+    if req.expected_identity.is_none() {
+        return bad_request("firmware flash requires expectedIdentity");
+    }
 
     let _guard = state.serial_lock.lock().await;
 
@@ -1836,6 +2413,15 @@ async fn api_firmware_flash(
 }
 
 fn run_firmware_flash(req: FirmwareFlashRequest) -> Result<FirmwareFlashResponse, String> {
+    if req.address != DEFAULT_FLASH_ADDRESS {
+        return Err("only the ESP32-S3 app partition address 0x10000 is supported".to_string());
+    }
+    let expected_identity = req
+        .expected_identity
+        .as_ref()
+        .ok_or_else(|| "firmware flash requires expected identity".to_string())?;
+    validate_flash_identity(&req.port_path, expected_identity)?;
+
     let firmware = base64::engine::general_purpose::STANDARD
         .decode(req.file_base64.trim())
         .map_err(|err| format!("firmware payload was not valid base64: {err}"))?;
@@ -1880,6 +2466,236 @@ fn run_firmware_flash(req: FirmwareFlashRequest) -> Result<FirmwareFlashResponse
         exit_code: output.status.code(),
         log,
     })
+}
+
+fn run_firmware_flash_file(
+    port_path: &str,
+    bin_path: &Path,
+    address: u32,
+    expected_identity: Option<DeviceIdentityExpectation>,
+) -> Result<FirmwareFlashResponse, String> {
+    if bin_path.extension().and_then(|value| value.to_str()) != Some("bin") {
+        return Err("firmware flash only accepts app .bin images".to_string());
+    }
+    let bytes = std::fs::read(bin_path).map_err(|err| {
+        format!(
+            "failed to read firmware image {}: {err}",
+            bin_path.display()
+        )
+    })?;
+    run_firmware_flash(FirmwareFlashRequest {
+        port_path: port_path.to_string(),
+        address,
+        file_name: bin_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("firmware.bin")
+            .to_string(),
+        file_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+        expected_identity,
+    })
+}
+
+fn run_firmware_make_bin(
+    elf_path: &Path,
+    out_path: &Path,
+) -> Result<FirmwareMakeBinResponse, String> {
+    if !elf_path.exists() {
+        return Err(format!("ELF does not exist: {}", elf_path.display()));
+    }
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    }
+    let output = Command::new("espflash")
+        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
+        .arg("save-image")
+        .arg("--chip")
+        .arg("esp32s3")
+        .arg(elf_path)
+        .arg(out_path)
+        .output()
+        .map_err(|err| format!("failed to start espflash: {err}"))?;
+    let mut log = String::new();
+    log.push_str(&String::from_utf8_lossy(&output.stdout));
+    log.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(FirmwareMakeBinResponse {
+        ok: output.status.success(),
+        exit_code: output.status.code(),
+        elf: elf_path.display().to_string(),
+        out: out_path.display().to_string(),
+        log,
+    })
+}
+
+fn run_firmware_reset(port_path: &str) -> Result<FirmwareResetResponse, String> {
+    let mut evidence = Vec::new();
+    evidence.push(format!("opening serial port {port_path}"));
+    {
+        let mut port = serialport::new(port_path, default_serial_baud_rate())
+            .timeout(StdDuration::from_millis(100))
+            .open()
+            .map_err(|err| format!("open {port_path} failed: {err}"))?;
+        evidence.push("using ESP32-S3 USB Serial/JTAG DTR/RTS hard reset sequence".to_string());
+        reset_esp32s3_usb_jtag(&mut *port)
+            .map_err(|err| format!("reset control line sequence failed: {err}"))?;
+    }
+    let deadline = StdInstant::now() + StdDuration::from_secs(3);
+    let mut port_available = serial_port_is_available(port_path);
+    while !port_available && StdInstant::now() < deadline {
+        std::thread::sleep(StdDuration::from_millis(100));
+        port_available = serial_port_is_available(port_path);
+    }
+    if port_available {
+        evidence.push(format!("port available after reset: {port_path}"));
+    } else {
+        evidence.push(format!(
+            "port did not reappear within reset window: {port_path}"
+        ));
+    }
+    Ok(FirmwareResetResponse {
+        ok: port_available,
+        port: port_path.to_string(),
+        method: "esp32s3-usb-jtag-dtr-rts-hard-reset",
+        port_available,
+        evidence,
+    })
+}
+
+fn serial_port_is_available(port_path: &str) -> bool {
+    if Path::new(port_path).exists() {
+        return true;
+    }
+    serialport::available_ports()
+        .map(|ports| {
+            ports
+                .into_iter()
+                .any(|port| serial_port_name_matches(&port.port_name, port_path))
+        })
+        .unwrap_or(false)
+}
+
+fn serial_port_name_matches(actual: &str, expected: &str) -> bool {
+    actual == expected || actual.eq_ignore_ascii_case(expected)
+}
+
+fn reset_esp32s3_usb_jtag(port: &mut dyn serialport::SerialPort) -> serialport::Result<()> {
+    port.write_data_terminal_ready(false)?;
+    port.write_request_to_send(false)?;
+    std::thread::sleep(StdDuration::from_millis(100));
+    port.write_data_terminal_ready(true)?;
+    port.write_request_to_send(false)?;
+    std::thread::sleep(StdDuration::from_millis(100));
+    port.write_data_terminal_ready(false)?;
+    port.write_request_to_send(true)?;
+    std::thread::sleep(StdDuration::from_millis(100));
+    port.write_data_terminal_ready(false)?;
+    port.write_request_to_send(false)?;
+    std::thread::sleep(StdDuration::from_millis(500));
+    Ok(())
+}
+
+fn run_firmware_monitor(
+    port_path: &str,
+    elf_path: Option<&Path>,
+    reset: bool,
+    json: bool,
+) -> anyhow::Result<()> {
+    if !json {
+        if let Some(elf_path) = elf_path {
+            return run_espflash_monitor(port_path, elf_path, reset);
+        }
+    }
+    if reset {
+        let response = run_firmware_reset(port_path).map_err(anyhow::Error::msg)?;
+        if !response.ok {
+            return Err(anyhow!("reset before monitor failed"));
+        }
+    }
+    if !json {
+        eprintln!("warning: no --elf provided; falling back to raw serial text monitor");
+    }
+    let mut port = serialport::new(port_path, default_serial_baud_rate())
+        .timeout(StdDuration::from_millis(200))
+        .open()
+        .with_context(|| format!("open {port_path} failed"))?;
+    let mut pending = Vec::<u8>::new();
+    let mut buf = [0u8; 256];
+    loop {
+        match port.read(&mut buf) {
+            Ok(0) => continue,
+            Ok(n) => {
+                pending.extend_from_slice(&buf[..n]);
+                while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
+                    let line: Vec<u8> = pending.drain(..=newline).collect();
+                    let line = String::from_utf8_lossy(&line);
+                    let line = line.trim_end_matches(['\r', '\n']);
+                    let kind = classify_monitor_line(line);
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::to_string(&serde_json::json!({
+                                "kind": kind,
+                                "line": line,
+                            }))?
+                        );
+                    } else {
+                        println!("[{kind}] {line}");
+                    }
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::TimedOut => continue,
+            Err(err) => return Err(anyhow!("serial monitor read failed: {err}")),
+        }
+    }
+}
+
+fn run_espflash_monitor(port_path: &str, elf_path: &Path, reset: bool) -> anyhow::Result<()> {
+    if !elf_path.exists() {
+        return Err(anyhow!("ELF does not exist: {}", elf_path.display()));
+    }
+    let status = Command::new("espflash")
+        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
+        .arg("monitor")
+        .arg("--chip")
+        .arg("esp32s3")
+        .arg("--port")
+        .arg(port_path)
+        .arg("--non-interactive")
+        .arg("--before")
+        .arg("no-reset-no-sync")
+        .arg("--after")
+        .arg(if reset { "hard-reset" } else { "no-reset" })
+        .arg("--log-format")
+        .arg("defmt")
+        .arg("--elf")
+        .arg(elf_path)
+        .status()
+        .map_err(|err| anyhow!("failed to start espflash monitor: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "espflash monitor failed with exit code {}",
+            status
+                .code()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "signal".to_string())
+        ))
+    }
+}
+
+fn classify_monitor_line(line: &str) -> &'static str {
+    let lower = line.to_lowercase();
+    if serde_json::from_str::<serde_json::Value>(line).is_ok() {
+        "jsonl"
+    } else if lower.contains("panic") || lower.contains("backtrace") {
+        "panic"
+    } else if lower.contains("rst:") || lower.contains("boot:") || lower.contains("esp-rom") {
+        "boot"
+    } else {
+        "log"
+    }
 }
 
 async fn api_storage_list_devices(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -2731,6 +3547,137 @@ mod tests {
             port: server.port,
             ipv4: Some(server.ipv4),
         }
+    }
+
+    #[test]
+    fn cli_filters_esp32_serial_candidates() {
+        let ports = filter_esp32_serial_ports(vec![
+            SerialPortInfo {
+                path: "/dev/tty.usbmodem21221401".to_string(),
+                label: "USB JTAG/serial debug unit".to_string(),
+                vendor_id: Some(0x303a),
+                product_id: Some(0x1001),
+                serial_number: None,
+                manufacturer: Some("Espressif".to_string()),
+                product: Some("USB JTAG/serial debug unit".to_string()),
+            },
+            SerialPortInfo {
+                path: "/dev/cu.usbmodem21221401".to_string(),
+                label: "USB JTAG/serial debug unit".to_string(),
+                vendor_id: Some(0x303a),
+                product_id: Some(0x1001),
+                serial_number: None,
+                manufacturer: Some("Espressif".to_string()),
+                product: Some("USB JTAG/serial debug unit".to_string()),
+            },
+            SerialPortInfo {
+                path: "/dev/cu.Bluetooth-Incoming-Port".to_string(),
+                label: "Bluetooth".to_string(),
+                vendor_id: None,
+                product_id: None,
+                serial_number: None,
+                manufacturer: None,
+                product: None,
+            },
+        ]);
+        assert_eq!(ports.len(), 1);
+        assert_eq!(ports[0].path, "/dev/cu.usbmodem21221401");
+    }
+
+    #[test]
+    fn jsonl_response_must_match_request_id() {
+        assert!(jsonl_response_matches(
+            &serde_json::json!({"id": 7, "ok": true}),
+            Some(&serde_json::json!(7))
+        ));
+        assert!(!jsonl_response_matches(
+            &serde_json::json!({"id": 8, "ok": true}),
+            Some(&serde_json::json!(7))
+        ));
+        assert!(jsonl_response_matches(
+            &serde_json::json!({"ok": true}),
+            None
+        ));
+    }
+
+    #[test]
+    fn extracts_identity_from_info_response_shapes() {
+        let nested = serde_json::json!({
+            "id": 1,
+            "ok": true,
+            "result": {
+                "device": {
+                    "device_id": "f293cc",
+                    "mac": "aa:bb:cc:dd:ee:ff"
+                }
+            }
+        });
+        let identity = extract_device_identity(&nested).expect("identity");
+        assert_eq!(identity.device_id.as_deref(), Some("f293cc"));
+        assert_eq!(identity.mac.as_deref(), Some("aa:bb:cc:dd:ee:ff"));
+    }
+
+    #[test]
+    fn parses_port_preference_cache_with_identity() {
+        let cache = parse_port_preference_cache(
+            "/dev/cu.usbmodem212101\nmac=50:78:7d:19:88:40\ndevice_id=isolapurr-198840\n",
+        )
+        .expect("parse cache")
+        .expect("cache present");
+
+        assert_eq!(cache.port, "/dev/cu.usbmodem212101");
+        assert_eq!(cache.mac.as_deref(), Some("50:78:7d:19:88:40"));
+        assert_eq!(cache.device_id.as_deref(), Some("isolapurr-198840"));
+    }
+
+    #[test]
+    fn port_preference_cache_requires_identity() {
+        let err = parse_port_preference_cache("/dev/cu.usbmodem212101\n")
+            .expect_err("missing identity should fail");
+
+        assert!(
+            err.to_string().contains("device_id/mac"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn flash_address_is_locked_to_app_partition() {
+        assert_eq!(
+            parse_flash_address("0x10000").unwrap(),
+            DEFAULT_FLASH_ADDRESS
+        );
+        assert!(parse_flash_address("0x0").is_err());
+    }
+
+    #[test]
+    fn identity_mismatch_is_explicit() {
+        let actual = PortIdentityCache {
+            port: "/dev/cu.usbmodem1".to_string(),
+            device_id: Some("actual".to_string()),
+            mac: Some("aa:bb:cc:dd:ee:ff".to_string()),
+            confirmed_at: "2026-05-19T00:00:00Z".to_string(),
+            source: "test".to_string(),
+        };
+        let err = ensure_identity_matches(
+            &actual,
+            &DeviceIdentityExpectation {
+                device_id: Some("expected".to_string()),
+                mac: None,
+            },
+        )
+        .expect_err("mismatch");
+        assert!(err.contains("device identity mismatch"));
+    }
+
+    #[test]
+    fn serial_port_names_match_windows_case_insensitively() {
+        assert!(serial_port_name_matches("COM3", "com3"));
+        assert!(serial_port_name_matches(
+            "/dev/cu.usbmodem1",
+            "/dev/cu.usbmodem1"
+        ));
+        assert!(!serial_port_name_matches("COM4", "COM3"));
     }
 
     #[tokio::test]

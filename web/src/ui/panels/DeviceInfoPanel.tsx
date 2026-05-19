@@ -430,6 +430,10 @@ export function DeviceInfoPanel({
           resolved.portPath,
           firmwareFile,
           address,
+          {
+            deviceId: device.id,
+            mac: info?.device.mac,
+          },
         );
         setFlashStatus(output || "Firmware update completed over Local USB.");
         return;

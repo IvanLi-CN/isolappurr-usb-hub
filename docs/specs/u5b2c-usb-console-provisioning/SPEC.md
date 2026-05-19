@@ -36,6 +36,11 @@ IsolaPurr USB Hub 需要在同一套 Web / Desktop 控制台里支持三类连�
 - Firmware MUST remove `USB_HUB_WIFI_SSID` and `USB_HUB_WIFI_PSK` as build-time required inputs.
 - EEPROM storage MUST include a magic/version marker and checksum or equivalent corruption guard.
 - Desktop agent MUST expose token-protected localhost APIs for serial port listing, command proxying, and firmware update operations.
+- Desktop CLI MUST expose Local USB development commands for serial port listing, JSONL request forwarding, app `.bin` generation, app flash, reset, and monitor.
+- Local USB development commands MUST NOT auto-select a serial port. They MUST require an explicit port argument or an owner-confirmed cache created by `serial identify`.
+- Development flash MUST read JSONL `info` before writing and match the owner-confirmed `device_id` and/or `mac`. If identity is missing, mismatched, or unresponsive, flash MUST fail before `espflash write-bin`.
+- Development flash MUST write only an app `.bin` at `0x10000` by default. Merged full-flash images are not a default development artifact.
+- Development reset MUST return the reset method and evidence that the serial port remained available or re-enumerated. Development monitor MUST keep the serial port open until interrupted and classify boot, JSONL, panic/backtrace, and ordinary log lines.
 - Web UI MUST keep device connection inside the Add device modal. Web Serial and Local USB may read device identity and add the device there, but firmware update MUST NOT appear inside Add device.
 - Firmware update UI MUST live on the selected device's Hardware page after the hub has been added, using Web Serial or Local USB as update paths for that saved device.
 - Firmware update UI MUST default to writing the ESP32-S3 app image `.bin` at `0x10000`; merged full-flash images are not the default product update artifact.
@@ -95,8 +100,8 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 
 ## Acceptance Criteria
 
-- Given no build-time `USB_HUB_WIFI_SSID` or `USB_HUB_WIFI_PSK`, when building with `net_http`, then firmware compile does not fail because of missing Wi-Fi credentials.
-- Given EEPROM contains valid Wi-Fi credentials, when firmware boots with `net_http`, then Wi-Fi uses the stored credentials.
+- Given no build-time `USB_HUB_WIFI_SSID` or `USB_HUB_WIFI_PSK`, when building the default firmware, then firmware compile does not fail because of missing Wi-Fi credentials.
+- Given EEPROM contains valid Wi-Fi credentials, when default firmware boots, then Wi-Fi uses the stored credentials.
 - Given a browser with Web Serial support, when the user connects over USB, then the app can fetch info/ports and run supported controls via JSONL.
 - Given a device already exists from Wi-Fi / LAN, when USB connects with the same `device_id`, then the app updates the saved device runtime channel state and telemetry instead of creating a duplicate.
 - Given the active runtime channel fails while another channel remains available, when the next control or polling operation runs, then the available channel becomes primary.
@@ -105,6 +110,9 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given Wi-Fi credentials are cleared through Web Serial or Local USB, when EEPROM clear succeeds, then firmware immediately stops the Wi-Fi station and reports no reboot requirement.
 - Given Web Serial is unsupported, when the user opens Add device, then the UI offers Local USB or Wi-Fi/HTTP alternatives.
 - Given the Desktop agent is running, when the user lists serial ports or proxies a command, then requests require the existing bearer token and origin policy.
+- Given `mcu-agentd` is not installed, when a developer runs `just desktop-agent-build` once and then the Local USB Justfile flow, then they can list ports, identify a hub, generate an app `.bin`, flash `0x10000`, reset, and monitor using `isolapurr-desktop`.
+- Given `.esp32-port` is missing or lacks `device_id`/`mac`, when a developer runs a flash/reset/monitor command that depends on the confirmed port, then it fails with instructions to run `just ports` and `PORT=/dev/cu.xxx just identify`.
+- Given JSONL `info` returns a different `device_id` or `mac`, when Local USB flash runs, then it fails before writing flash.
 - Given UI changes are complete, when Storybook renders the console states, then desktop and mobile evidence show no text overlap, clipping, or incoherent layout.
 
 ## Visual Evidence
