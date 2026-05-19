@@ -29,23 +29,49 @@ _desktop-dist:
 			cd web && bun install; \
 		fi; \
 		cd web && bun run build; \
-		cd ../desktop && ISOLAPURR_SKIP_WEB_BUILD=1 bun scripts/tauri-before-build.ts; \
-	fi
+			cd ../desktop && ISOLAPURR_SKIP_WEB_BUILD=1 bun scripts/tauri-before-build.ts; \
+		fi
+
+desktop-agent-build:
+	@just _desktop-dist
+	@cd {{DESKTOP_DIR}} && cargo build
+
+_desktop-agent-bin:
+	@bin=""; \
+	for candidate in \
+		{{DESKTOP_DIR}}/target/debug/isolapurr-desktop \
+		{{DESKTOP_DIR}}/target/*/debug/isolapurr-desktop \
+		{{DESKTOP_DIR}}/target/release/isolapurr-desktop \
+		{{DESKTOP_DIR}}/target/*/release/isolapurr-desktop; do \
+		if [ -x "$candidate" ]; then \
+			bin="$candidate"; \
+			break; \
+		fi; \
+	done; \
+	if [ -z "$bin" ]; then \
+		echo "error: isolapurr-desktop CLI is not built." >&2; \
+		echo "Run once:" >&2; \
+		echo "  just desktop-agent-build" >&2; \
+		exit 2; \
+	fi; \
+	printf '%s\n' "$bin"
 
 desktop-agent +args:
-	@just _desktop-dist
-	@cd {{DESKTOP_DIR}} && ISOLAPURR_REPO_ROOT={{ROOT}} cargo run -- {{args}}
+	@bin="$(just _desktop-agent-bin)" || exit $?; \
+	ISOLAPURR_REPO_ROOT={{ROOT}} exec "$bin" {{args}}
 
-local-ports:
+ports:
 	@just desktop-agent serial ports
 
-local-identify:
+identify:
 	@if [ -z "${PORT:-}" ]; then \
 		echo "error: PORT is required." >&2; \
 		echo "List candidates:" >&2; \
-		echo "  just local-ports" >&2; \
+		echo "  just ports" >&2; \
 		echo "Then confirm explicitly:" >&2; \
-		echo "  PORT=/dev/cu.xxx just local-identify" >&2; \
+		echo "  PORT=/dev/cu.xxx just identify" >&2; \
+		echo "Or run the interactive selector:" >&2; \
+		echo "  just select-port" >&2; \
 		exit 2; \
 	fi
 	@just desktop-agent serial identify --port "$PORT" --write-cache
@@ -56,68 +82,88 @@ firmware-bin:
 
 _local-confirmed-port:
 	@if [ ! -f .esp32-port ]; then \
-		echo "error: no port selected for this repo (.esp32-port missing)." >&2; \
-		echo "Run:" >&2; \
-		echo "  just local-ports" >&2; \
-		echo "  PORT=/dev/cu.xxx just local-identify" >&2; \
-		exit 2; \
-	fi; \
-	if [ ! -f .esp32-port.identity.json ]; then \
-		echo "error: no confirmed device identity (.esp32-port.identity.json missing)." >&2; \
-		echo "Run:" >&2; \
-		echo "  PORT=/dev/cu.xxx just local-identify" >&2; \
-		exit 2; \
-	fi; \
-	port="$(head -n 1 .esp32-port 2>/dev/null || true)"; \
+			echo "error: no port selected for this repo (.esp32-port missing)." >&2; \
+			echo "Run:" >&2; \
+			echo "  just ports" >&2; \
+			echo "  PORT=/dev/cu.xxx just identify" >&2; \
+			exit 2; \
+		fi; \
+		if ! grep -Eq '^(device_id|deviceId|mac)=' .esp32-port; then \
+			echo "error: no confirmed device identity in .esp32-port." >&2; \
+			echo "Run:" >&2; \
+			echo "  PORT=/dev/cu.xxx just identify" >&2; \
+			exit 2; \
+		fi; \
+		port="$(head -n 1 .esp32-port 2>/dev/null || true)"; \
 	port="$(printf '%s' "$port" | tr -d '\r' | xargs)"; \
-	if [ -z "$port" ] || [ ! -e "$port" ]; then \
-		echo "error: cached port '$port' is not available." >&2; \
-		echo "Run:" >&2; \
-		echo "  just local-ports" >&2; \
-		echo "  PORT=/dev/cu.xxx just local-identify" >&2; \
-		exit 2; \
-	fi; \
-	printf '%s\n' "$port"
+		if [ -z "$port" ] || [ ! -e "$port" ]; then \
+			echo "error: cached port '$port' is not available." >&2; \
+			echo "Run:" >&2; \
+			echo "  just ports" >&2; \
+			echo "  PORT=/dev/cu.xxx just identify" >&2; \
+			exit 2; \
+		fi; \
+		printf '%s\n' "$port"
 
-local-flash:
-	@port="$(just _local-confirmed-port)"; \
+flash:
+	@port="$(just _local-confirmed-port)" || exit $?; \
 	just firmware-bin; \
 	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --address 0x10000
 
-local-reset:
-	@port="$(just _local-confirmed-port)"; \
+reset:
+	@port="$(just _local-confirmed-port)" || exit $?; \
 	just desktop-agent firmware reset --port "$port"
 
-local-monitor:
-	@port="$(just _local-confirmed-port)"; \
-	cd {{DESKTOP_DIR}} && exec env ISOLAPURR_REPO_ROOT={{ROOT}} cargo run -- firmware monitor --port "$port"
+monitor:
+	@port="$(just _local-confirmed-port)" || exit $?; \
+	just desktop-agent firmware monitor --port "$port" --elf {{FIRMWARE_ELF}}
 
-local-flash-monitor:
-	@port="$(just _local-confirmed-port)"; \
+flash-monitor:
+	@port="$(just _local-confirmed-port)" || exit $?; \
 	just firmware-bin; \
 	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --address 0x10000; \
-	cd {{DESKTOP_DIR}} && exec env ISOLAPURR_REPO_ROOT={{ROOT}} cargo run -- firmware monitor --port "$port" --reset
-
-# Backwards-compatible aliases now use project-local Local USB tools.
-ports:
-	@just local-ports
+	just desktop-agent firmware monitor --port "$port" --elf {{FIRMWARE_ELF}} --reset
 
 select-port:
-	@just local-identify
-
-flash:
-	@just local-flash-monitor
-
-monitor:
-	@just local-monitor
-
-reset:
-	@just local-reset
+	@tmp="$(mktemp)"; \
+	trap 'rm -f "$tmp"' EXIT HUP INT TERM; \
+	if ! just ports >"$tmp"; then \
+		exit $?; \
+	fi; \
+	if [ ! -s "$tmp" ]; then \
+		echo "error: no ESP32-S3 USB Serial/JTAG candidates found." >&2; \
+		exit 2; \
+	fi; \
+	if command -v fzf >/dev/null 2>&1 && [ -t 0 ]; then \
+		selected="$(fzf --prompt='Select target port > ' --height=~40% --reverse --border --no-multi <"$tmp")" || { echo "aborted"; exit 2; }; \
+		port="$(printf '%s\n' "$selected" | awk -F '\t' '{ print $1 }')"; \
+	else \
+		echo "ESP32-S3 USB Serial/JTAG candidates:"; \
+		awk -F '\t' '{ printf "  [%d] %s", NR, $1; for (i = 2; i <= NF; i++) printf "\t%s", $i; printf "\n" }' "$tmp"; \
+		printf "Select target by number or full port path: "; \
+		read choice; \
+		case "$choice" in \
+			/dev/*) port="$choice" ;; \
+			*[!0-9]*|"") echo "error: invalid selection '$choice'." >&2; exit 2 ;; \
+			*) port="$(awk -F '\t' -v n="$choice" 'NR == n { print $1 }' "$tmp")" ;; \
+		esac; \
+	fi; \
+	if [ -z "$port" ]; then \
+		echo "error: no target port selected." >&2; \
+		exit 2; \
+	fi; \
+	printf "Confirm target port %s? Type 'yes' to continue: " "$port"; \
+	read confirm; \
+	if [ "$confirm" != "yes" ]; then \
+		echo "aborted"; \
+		exit 2; \
+	fi; \
+	PORT="$port" just identify
 
 # Legacy/emergency passthrough only. Local USB is the default development path.
 legacy-agentd +args:
 	@if ! command -v mcu-agentd >/dev/null 2>&1; then \
-		echo "[error] mcu-agentd is not installed. It is legacy/emergency only; use just local-*." >&2; \
+		echo "[error] mcu-agentd is not installed. It is legacy/emergency only; use just ports / just flash-monitor." >&2; \
 		exit 127; \
 	fi; \
 	exec mcu-agentd {{args}}

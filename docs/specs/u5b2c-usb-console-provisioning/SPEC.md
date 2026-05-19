@@ -100,8 +100,8 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 
 ## Acceptance Criteria
 
-- Given no build-time `USB_HUB_WIFI_SSID` or `USB_HUB_WIFI_PSK`, when building with `net_http`, then firmware compile does not fail because of missing Wi-Fi credentials.
-- Given EEPROM contains valid Wi-Fi credentials, when firmware boots with `net_http`, then Wi-Fi uses the stored credentials.
+- Given no build-time `USB_HUB_WIFI_SSID` or `USB_HUB_WIFI_PSK`, when building the default firmware, then firmware compile does not fail because of missing Wi-Fi credentials.
+- Given EEPROM contains valid Wi-Fi credentials, when default firmware boots, then Wi-Fi uses the stored credentials.
 - Given a browser with Web Serial support, when the user connects over USB, then the app can fetch info/ports and run supported controls via JSONL.
 - Given a device already exists from Wi-Fi / LAN, when USB connects with the same `device_id`, then the app updates the saved device runtime channel state and telemetry instead of creating a duplicate.
 - Given the active runtime channel fails while another channel remains available, when the next control or polling operation runs, then the available channel becomes primary.
@@ -111,7 +111,7 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given Web Serial is unsupported, when the user opens Add device, then the UI offers Local USB or Wi-Fi/HTTP alternatives.
 - Given the Desktop agent is running, when the user lists serial ports or proxies a command, then requests require the existing bearer token and origin policy.
 - Given `mcu-agentd` is not installed, when a developer runs the Local USB Justfile flow, then they can list ports, identify a hub, generate an app `.bin`, flash `0x10000`, reset, and monitor using `isolapurr-desktop`.
-- Given `.esp32-port` or `.esp32-port.identity.json` is missing, when a developer runs a flash/reset/monitor command that depends on the confirmed port, then it fails with instructions to run `just local-ports` and `PORT=/dev/cu.xxx just local-identify`.
+- Given `.esp32-port` is missing or lacks `device_id`/`mac`, when a developer runs a flash/reset/monitor command that depends on the confirmed port, then it fails with instructions to run `just ports` and `PORT=/dev/cu.xxx just identify`.
 - Given JSONL `info` returns a different `device_id` or `mac`, when Local USB flash runs, then it fails before writing flash.
 - Given UI changes are complete, when Storybook renders the console states, then desktop and mobile evidence show no text overlap, clipping, or incoherent layout.
 

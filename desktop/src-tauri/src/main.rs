@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    env,
     io::{Read as _, Write as _},
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
@@ -139,6 +140,8 @@ enum FirmwareCmd {
     Monitor {
         #[arg(long)]
         port: String,
+        #[arg(long)]
+        elf: Option<PathBuf>,
         #[arg(long)]
         reset: bool,
         #[arg(long)]
@@ -641,9 +644,24 @@ struct WebDist;
 #[tokio::main]
 async fn main() {
     if let Err(err) = run().await {
-        eprintln!("{err:#}");
+        if cli_error_as_json() {
+            let _ = print_json(&serde_json::json!({
+                "ok": false,
+                "error": {
+                    "code": "cli_error",
+                    "message": err.to_string(),
+                    "retryable": false
+                }
+            }));
+        } else {
+            eprintln!("{err:#}");
+        }
         std::process::exit(1);
     }
+}
+
+fn cli_error_as_json() -> bool {
+    env::args_os().any(|arg| arg == "--json")
 }
 
 async fn run() -> anyhow::Result<()> {
@@ -687,9 +705,10 @@ async fn run_serial_cli(cmd: SerialCmd) -> anyhow::Result<()> {
             } else {
                 for port in ports {
                     println!(
-                        "{}\t{}\tvid={}\tpid={}",
+                        "{}\t{}\tserial={}\tvid={}\tpid={}",
                         port.path,
                         port.label,
+                        port.serial_number.as_deref().unwrap_or("unknown"),
                         format_optional_hex(port.vendor_id),
                         format_optional_hex(port.product_id)
                     );
@@ -731,8 +750,7 @@ async fn run_serial_cli(cmd: SerialCmd) -> anyhow::Result<()> {
         } => {
             let identity = identify_port(&port).map_err(anyhow::Error::msg)?;
             if write_cache {
-                write_confirmed_port_cache(&port)?;
-                write_identity_cache(&identity)?;
+                write_port_preference_cache(&identity)?;
             }
             if json {
                 print_json(&identity)?;
@@ -744,10 +762,7 @@ async fn run_serial_cli(cmd: SerialCmd) -> anyhow::Result<()> {
                 );
                 println!("mac: {}", identity.mac.as_deref().unwrap_or("unknown"));
                 if write_cache {
-                    println!(
-                        "cached: {}, {}",
-                        PORT_CACHE_FILE_NAME, PORT_IDENTITY_CACHE_FILE_NAME
-                    );
+                    println!("cached: {PORT_CACHE_FILE_NAME}");
                 }
             }
             Ok(())
@@ -820,18 +835,24 @@ async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
                 Err(anyhow!("firmware reset failed"))
             }
         }
-        FirmwareCmd::Monitor { port, reset, json } => {
+        FirmwareCmd::Monitor {
+            port,
+            elf,
+            reset,
+            json,
+        } => {
             if json {
                 println!(
                     "{}",
                     serde_json::to_string(&serde_json::json!({
                     "port": port,
+                    "elf": elf.as_ref().map(|path| path.display().to_string()),
                     "reset": reset,
                     "status": "starting"
                     }))?
                 );
             }
-            run_firmware_monitor(&port, reset, json).map_err(anyhow::Error::msg)
+            run_firmware_monitor(&port, elf.as_deref(), reset, json).map_err(anyhow::Error::msg)
         }
     }
 }
@@ -2246,14 +2267,20 @@ fn extract_device_identity(value: &serde_json::Value) -> Option<DeviceIdentityEx
     None
 }
 
-fn write_confirmed_port_cache(port_path: &str) -> anyhow::Result<()> {
-    std::fs::write(
-        local_project_file(PORT_CACHE_FILE_NAME),
-        format!("{}\n", port_path.trim()),
-    )
-    .context("write .esp32-port")
+fn write_port_preference_cache(identity: &PortIdentityCache) -> anyhow::Result<()> {
+    let mut body = format!("{}\n", identity.port.trim());
+    if let Some(device_id) = identity.device_id.as_deref() {
+        body.push_str(&format!("device_id={}\n", device_id.trim()));
+    }
+    if let Some(mac) = identity.mac.as_deref() {
+        body.push_str(&format!("mac={}\n", mac.trim()));
+    }
+    body.push_str(&format!("confirmed_at={}\n", identity.confirmed_at.trim()));
+    body.push_str(&format!("source={}\n", identity.source.trim()));
+    std::fs::write(local_project_file(PORT_CACHE_FILE_NAME), body).context("write .esp32-port")
 }
 
+#[allow(dead_code)]
 fn write_identity_cache(identity: &PortIdentityCache) -> anyhow::Result<()> {
     std::fs::write(
         local_project_file(PORT_IDENTITY_CACHE_FILE_NAME),
@@ -2263,19 +2290,71 @@ fn write_identity_cache(identity: &PortIdentityCache) -> anyhow::Result<()> {
 }
 
 fn read_identity_cache() -> anyhow::Result<PortIdentityCache> {
-    let bytes = std::fs::read(local_project_file(PORT_IDENTITY_CACHE_FILE_NAME)).with_context(|| {
+    if let Some(cache) = read_port_preference_cache()? {
+        return Ok(cache);
+    }
+
+    let identity_path = local_project_file(PORT_IDENTITY_CACHE_FILE_NAME);
+    let bytes = std::fs::read(&identity_path).with_context(|| {
         format!(
-            "no confirmed device identity cache found ({PORT_IDENTITY_CACHE_FILE_NAME} missing); run PORT=/dev/cu.xxx just local-identify"
+            "no confirmed device identity found in {PORT_CACHE_FILE_NAME}; run PORT=/dev/cu.xxx just local-identify"
         )
     })?;
     let cache: PortIdentityCache = serde_json::from_slice(&bytes)
         .with_context(|| format!("{PORT_IDENTITY_CACHE_FILE_NAME} is not valid JSON"))?;
+    validate_port_identity_cache(&cache, PORT_IDENTITY_CACHE_FILE_NAME)?;
+    Ok(cache)
+}
+
+fn read_port_preference_cache() -> anyhow::Result<Option<PortIdentityCache>> {
+    let path = local_project_file(PORT_CACHE_FILE_NAME);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err).context("read .esp32-port"),
+    };
+    parse_port_preference_cache(&raw)
+}
+
+fn parse_port_preference_cache(raw: &str) -> anyhow::Result<Option<PortIdentityCache>> {
+    let mut lines = raw.lines().map(str::trim).filter(|line| !line.is_empty());
+    let Some(port) = lines.next() else {
+        return Ok(None);
+    };
+    let mut cache = PortIdentityCache {
+        port: port.to_string(),
+        device_id: None,
+        mac: None,
+        confirmed_at: "unknown".to_string(),
+        source: "isolapurr .esp32-port".to_string(),
+    };
+    for line in lines {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        match key.trim() {
+            "device_id" | "deviceId" => cache.device_id = Some(value.to_string()),
+            "mac" => cache.mac = Some(value.to_string()),
+            "confirmed_at" | "confirmedAt" => cache.confirmed_at = value.to_string(),
+            "source" => cache.source = value.to_string(),
+            _ => {}
+        }
+    }
+    validate_port_identity_cache(&cache, PORT_CACHE_FILE_NAME)?;
+    Ok(Some(cache))
+}
+
+fn validate_port_identity_cache(cache: &PortIdentityCache, label: &str) -> anyhow::Result<()> {
     if cache.port.trim().is_empty() || (cache.device_id.is_none() && cache.mac.is_none()) {
         return Err(anyhow!(
-            "{PORT_IDENTITY_CACHE_FILE_NAME} must include port and at least one of device_id/mac"
+            "{label} must include port and at least one of device_id/mac"
         ));
     }
-    Ok(cache)
+    Ok(())
 }
 
 fn local_project_file(name: &str) -> PathBuf {
@@ -2534,12 +2613,25 @@ fn reset_esp32s3_usb_jtag(port: &mut dyn serialport::SerialPort) -> serialport::
     Ok(())
 }
 
-fn run_firmware_monitor(port_path: &str, reset: bool, json: bool) -> anyhow::Result<()> {
+fn run_firmware_monitor(
+    port_path: &str,
+    elf_path: Option<&Path>,
+    reset: bool,
+    json: bool,
+) -> anyhow::Result<()> {
+    if !json {
+        if let Some(elf_path) = elf_path {
+            return run_espflash_monitor(port_path, elf_path, reset);
+        }
+    }
     if reset {
         let response = run_firmware_reset(port_path).map_err(anyhow::Error::msg)?;
         if !response.ok {
             return Err(anyhow!("reset before monitor failed"));
         }
+    }
+    if !json {
+        eprintln!("warning: no --elf provided; falling back to raw serial text monitor");
     }
     let mut port = serialport::new(port_path, default_serial_baud_rate())
         .timeout(StdDuration::from_millis(200))
@@ -2573,6 +2665,41 @@ fn run_firmware_monitor(port_path: &str, reset: bool, json: bool) -> anyhow::Res
             Err(err) if err.kind() == std::io::ErrorKind::TimedOut => continue,
             Err(err) => return Err(anyhow!("serial monitor read failed: {err}")),
         }
+    }
+}
+
+fn run_espflash_monitor(port_path: &str, elf_path: &Path, reset: bool) -> anyhow::Result<()> {
+    if !elf_path.exists() {
+        return Err(anyhow!("ELF does not exist: {}", elf_path.display()));
+    }
+    let status = Command::new("espflash")
+        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
+        .arg("monitor")
+        .arg("--chip")
+        .arg("esp32s3")
+        .arg("--port")
+        .arg(port_path)
+        .arg("--non-interactive")
+        .arg("--before")
+        .arg("no-reset-no-sync")
+        .arg("--after")
+        .arg(if reset { "hard-reset" } else { "no-reset" })
+        .arg("--log-format")
+        .arg("defmt")
+        .arg("--elf")
+        .arg(elf_path)
+        .status()
+        .map_err(|err| anyhow!("failed to start espflash monitor: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "espflash monitor failed with exit code {}",
+            status
+                .code()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "signal".to_string())
+        ))
     }
 }
 
@@ -3506,6 +3633,30 @@ mod tests {
         let identity = extract_device_identity(&nested).expect("identity");
         assert_eq!(identity.device_id.as_deref(), Some("f293cc"));
         assert_eq!(identity.mac.as_deref(), Some("aa:bb:cc:dd:ee:ff"));
+    }
+
+    #[test]
+    fn parses_port_preference_cache_with_identity() {
+        let cache = parse_port_preference_cache(
+            "/dev/cu.usbmodem212101\nmac=50:78:7d:19:88:40\ndevice_id=isolapurr-198840\n",
+        )
+        .expect("parse cache")
+        .expect("cache present");
+
+        assert_eq!(cache.port, "/dev/cu.usbmodem212101");
+        assert_eq!(cache.mac.as_deref(), Some("50:78:7d:19:88:40"));
+        assert_eq!(cache.device_id.as_deref(), Some("isolapurr-198840"));
+    }
+
+    #[test]
+    fn port_preference_cache_requires_identity() {
+        let err = parse_port_preference_cache("/dev/cu.usbmodem212101\n")
+            .expect_err("missing identity should fail");
+
+        assert!(
+            err.to_string().contains("device_id/mac"),
+            "unexpected error: {err:#}"
+        );
     }
 
     #[test]

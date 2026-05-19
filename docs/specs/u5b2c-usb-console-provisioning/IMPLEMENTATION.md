@@ -3,7 +3,7 @@
 ## Current State
 
 - Created as the canonical topic spec for USB communication, firmware update, and Wi-Fi provisioning.
-- Firmware no longer requires build-time `USB_HUB_WIFI_SSID` or `USB_HUB_WIFI_PSK` for `net_http`.
+- Firmware enables `net_http` by default for Local USB JSONL, Wi-Fi, mDNS, and HTTP support; it no longer requires build-time `USB_HUB_WIFI_SSID` or `USB_HUB_WIFI_PSK`.
 - Firmware loads Wi-Fi credentials from EEPROM U21 `0x50` at boot and exposes a USB Serial/JTAG JSONL control task.
 - Local USB exposes token-protected serial port listing, JSONL request forwarding, and selected binary firmware flash execution through the desktop app. The same core logic is available through `isolapurr-desktop` CLI for development-stage hardware work.
 - Web UI keeps device connection inside the original Add device modal. Firmware update and Wi-Fi configuration live on the selected device's Hardware page. The standalone Hardware Console route and panel were removed so USB setup cannot bypass the add-device flow.
@@ -16,7 +16,7 @@
 - Firmware Wi-Fi HTTP fallback: implemented for `info`, `ports.get`, port power/replug actions, and `wifi.get`. HTTP rejects `wifi.set`, `wifi.clear`, and Wi-Fi apply `reboot` with `unsafe_transport` because Wi-Fi configuration changes require Web Serial or Local USB.
 - EEPROM Wi-Fi config: implemented with magic/version/checksum record, SSID/PSK fields, optional static IPv4 fields, and queued runtime writes through the telemetry I2C bus.
 - Local USB: implemented for serial enumeration, JSONL request proxying, single-operation serial lock, `espflash save-image`, identity-checked `espflash write-bin` at `0x10000`, reset, and monitor using the user-selected app `.bin` and port path.
-- Development CLI: implemented `serial ports`, `serial identify`, `serial request`, `firmware make-bin`, `firmware flash`, `firmware reset`, and `firmware monitor`. `just local-identify` writes `.esp32-port` and `.esp32-port.identity.json`; `just local-flash-monitor` builds, creates the app `.bin`, validates identity, flashes, resets, and monitors without `mcu-agentd`.
+- Development CLI: implemented `serial ports`, `serial identify`, `serial request`, `firmware make-bin`, `firmware flash`, `firmware reset`, and `firmware monitor`. `just identify` writes `.esp32-port` with the owner-confirmed port plus `device_id`/`mac`; `just flash-monitor` builds, creates the app `.bin`, validates identity, flashes, resets, and monitors without `mcu-agentd`.
 - Web transports and Add device UI: implemented with Add device flows for Wi-Fi / LAN, Web Serial, and Local USB; Web Serial JSONL; Local USB JSONL; and Wi-Fi HTTP fallback.
 - Device runtime: implemented concurrent Wi-Fi / LAN, Web Serial, and Local USB channel tracking. The active channel remains primary while healthy; when it fails, polling and controls promote the next available channel for the same saved device.
 - Runtime Wi-Fi apply: implemented with an in-memory Wi-Fi apply signal. After EEPROM store succeeds, the Wi-Fi task reconnects immediately with the new credentials. After EEPROM clear succeeds, the Wi-Fi task stops the station immediately. Devices with empty EEPROM still spawn the network task in idle mode so later USB provisioning can bring Wi-Fi online without reboot.
@@ -25,7 +25,7 @@
 
 ## Validation
 
-- `cargo build --release --features net_http`
+- `cargo build --release`
 - `cd web && bun run check`
 - `cd web && bun run build`
 - `cd web && bun test ./src`

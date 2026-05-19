@@ -63,7 +63,7 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
 static_cell = { version = "2.1", optional = true }
 
 [features]
-default = []
+default = ["net_http"]
 net_http = [
     "dep:embassy-net",
     "dep:embassy-sync",

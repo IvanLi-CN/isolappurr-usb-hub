@@ -12,21 +12,21 @@
 
 Prefer `Justfile`:
 
-- `just build` — build firmware (`cargo build --release`)
+- `just build` — build firmware with the Local USB JSONL console (`cargo build --release`)
 - `just desktop-agent` — run the project-local `isolapurr-desktop` CLI
-- `just local-ports` — list ESP32-S3 USB Serial/JTAG candidates
-- `PORT=/dev/cu.xxx just local-identify` — read JSONL `info` and persist the owner-confirmed port plus identity into `.esp32-port` and `.esp32-port.identity.json`
+- `just ports` — list ESP32-S3 USB Serial/JTAG candidates
+- `PORT=/dev/cu.xxx just identify` — read JSONL `info` and persist the owner-confirmed port plus identity into `.esp32-port`
 - `just firmware-bin` — build firmware and generate the app `.bin`
-- `just local-flash` — identity-check and flash the app `.bin` at `0x10000`
-- `just local-reset` / `just local-monitor` — reset or monitor through Local USB
-- `just local-flash-monitor` — build, make app `.bin`, identity-check flash, reset, and monitor
+- `just flash` — identity-check and flash the app `.bin` at `0x10000`
+- `just reset` / `just monitor` — reset or monitor through Local USB
+- `just flash-monitor` — build, make app `.bin`, identity-check flash, reset, and monitor
 - `just web-install` / `just web` / `just web-build` — install/run/build the SPA
 - `just web-check` — run Biome checks
 - `just hooks-install` — install Git hooks (lefthook)
 
 Direct equivalents:
 
-- Firmware (recommended): `just local-flash-monitor`
+- Firmware (recommended): `just flash-monitor`
 - Firmware (via cargo runner): `cargo run --release` (invokes `tools/mcu-agentd-runner`, now a Local USB runner)
 - Web: `cd web && bun install && bun dev`
 
@@ -53,9 +53,9 @@ There are no dedicated test suites yet. At minimum, keep:
 ## Security & Configuration
 
 - Never commit secrets. Use local env files (e.g. `.env`) for machine-specific settings.
-- Flashing requires an explicit Local USB identity confirmation in `.esp32-port` and `.esp32-port.identity.json` (auto-selection is intentionally disabled).
+- Flashing requires an explicit Local USB identity confirmation in `.esp32-port` (auto-selection is intentionally disabled).
 - Flashing safety: only flash to the owner-confirmed port for this project. The Local USB runner must read JSONL `info` and match `device_id` / `mac` before `espflash write-bin`.
-- Tools must never auto-select a port (even if only one port exists). If `.esp32-port` or `.esp32-port.identity.json` is missing or invalid, error out and instruct the user to run `just local-ports` and then `PORT=/dev/cu.xxx just local-identify`.
+- Tools must never auto-select a port (even if only one port exists). If `.esp32-port` is missing or lacks `device_id`/`mac`, error out and instruct the user to run `just ports` and then `PORT=/dev/cu.xxx just identify`.
 - Do not set `PORT=...` unless the owner explicitly provided the exact device path. If the expected port is missing or multiple ports exist, stop and ask the owner to confirm/re-select the port.
 - `mcu-agentd` is legacy/emergency only and must not be recommended as the default development path.
 
