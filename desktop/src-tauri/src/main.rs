@@ -2480,10 +2480,10 @@ fn run_firmware_reset(port_path: &str) -> Result<FirmwareResetResponse, String> 
             .map_err(|err| format!("reset control line sequence failed: {err}"))?;
     }
     let deadline = StdInstant::now() + StdDuration::from_secs(3);
-    let mut port_available = Path::new(port_path).exists();
+    let mut port_available = serial_port_is_available(port_path);
     while !port_available && StdInstant::now() < deadline {
         std::thread::sleep(StdDuration::from_millis(100));
-        port_available = Path::new(port_path).exists();
+        port_available = serial_port_is_available(port_path);
     }
     if port_available {
         evidence.push(format!("port available after reset: {port_path}"));
@@ -2499,6 +2499,23 @@ fn run_firmware_reset(port_path: &str) -> Result<FirmwareResetResponse, String> 
         port_available,
         evidence,
     })
+}
+
+fn serial_port_is_available(port_path: &str) -> bool {
+    if Path::new(port_path).exists() {
+        return true;
+    }
+    serialport::available_ports()
+        .map(|ports| {
+            ports
+                .into_iter()
+                .any(|port| serial_port_name_matches(&port.port_name, port_path))
+        })
+        .unwrap_or(false)
+}
+
+fn serial_port_name_matches(actual: &str, expected: &str) -> bool {
+    actual == expected || actual.eq_ignore_ascii_case(expected)
 }
 
 fn reset_esp32s3_usb_jtag(port: &mut dyn serialport::SerialPort) -> serialport::Result<()> {
@@ -3518,6 +3535,16 @@ mod tests {
         )
         .expect_err("mismatch");
         assert!(err.contains("device identity mismatch"));
+    }
+
+    #[test]
+    fn serial_port_names_match_windows_case_insensitively() {
+        assert!(serial_port_name_matches("COM3", "com3"));
+        assert!(serial_port_name_matches(
+            "/dev/cu.usbmodem1",
+            "/dev/cu.usbmodem1"
+        ));
+        assert!(!serial_port_name_matches("COM4", "COM3"));
     }
 
     #[tokio::test]
