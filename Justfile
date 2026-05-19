@@ -107,7 +107,7 @@ _local-confirmed-port:
 
 flash:
 	@port="$(just _local-confirmed-port)" || exit $?; \
-	just firmware-bin; \
+	just firmware-bin && \
 	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --address 0x10000
 
 reset:
@@ -120,8 +120,8 @@ monitor:
 
 flash-monitor:
 	@port="$(just _local-confirmed-port)" || exit $?; \
-	just firmware-bin; \
-	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --address 0x10000; \
+	just firmware-bin && \
+	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --address 0x10000 && \
 	just desktop-agent firmware monitor --port "$port" --elf {{FIRMWARE_ELF}} --reset
 
 select-port:
