@@ -4,23 +4,32 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 PORT_FILE="$REPO_ROOT/.esp32-port"
+IDENTITY_FILE="$REPO_ROOT/.esp32-port.identity.json"
+DESKTOP_DIR="$REPO_ROOT/desktop/src-tauri"
+APP_BIN="$REPO_ROOT/target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub.app.bin"
+DESKTOP_DIST_INDEX="$REPO_ROOT/desktop/dist/index.html"
 
 err() { printf '%s\n' "$1" >&2; }
 
 # cargo invokes the runner as: <runner> <path-to-elf> [args...]
 ELF_PATH="${1:-}"
-if [[ -n "$ELF_PATH" ]] && [[ "$ELF_PATH" == *"/debug/"* ]]; then
-  err "error: cargo produced a debug ELF, but this project flashes the release ELF."
-  err "Use: cargo run --release"
-  err "Or:  just flash"
+if [[ -z "$ELF_PATH" ]]; then
+  err "error: cargo did not provide an ELF path."
   exit 2
 fi
 
-if [[ ! -f "$PORT_FILE" ]]; then
-  err "error: no port selected for this repo ($PORT_FILE missing)."
+if [[ "$ELF_PATH" == *"/debug/"* ]]; then
+  err "error: cargo produced a debug ELF, but this project flashes the release ELF."
+  err "Use: cargo run --release"
+  err "Or:  just local-flash-monitor"
+  exit 2
+fi
+
+if [[ ! -f "$PORT_FILE" || ! -f "$IDENTITY_FILE" ]]; then
+  err "error: Local USB port and identity are not confirmed for this repo."
   err "Run:"
-  err "  just ports"
-  err "  PORT=/dev/cu.xxx just select-port"
+  err "  just local-ports"
+  err "  PORT=/dev/cu.xxx just local-identify"
   exit 2
 fi
 
@@ -29,16 +38,20 @@ PORT_VALUE="$(printf '%s' "$PORT_VALUE" | tr -d '\r' | xargs)"
 if [[ -z "$PORT_VALUE" ]] || [[ ! -e "$PORT_VALUE" ]]; then
   err "error: cached port '$PORT_VALUE' is not available."
   err "Run:"
-  err "  just ports"
-  err "  PORT=/dev/cu.xxx just select-port"
+  err "  just local-ports"
+  err "  PORT=/dev/cu.xxx just local-identify"
   exit 2
 fi
 
-if ! command -v mcu-agentd >/dev/null 2>&1; then
-  err "error: mcu-agentd not found in PATH."
-  err "Install it with: just agentd-init"
-  exit 127
+cd "$REPO_ROOT"
+if [[ ! -f "$DESKTOP_DIST_INDEX" ]]; then
+  if [[ ! -d "$REPO_ROOT/web/node_modules" ]]; then
+    (cd "$REPO_ROOT/web" && bun install)
+  fi
+  (cd "$REPO_ROOT/web" && bun run build)
+  (cd "$REPO_ROOT/desktop" && ISOLAPURR_SKIP_WEB_BUILD=1 bun scripts/tauri-before-build.ts)
 fi
-
-mcu-agentd flash usb_hub
-exec mcu-agentd monitor usb_hub --reset
+(cd "$DESKTOP_DIR" && ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run -- firmware make-bin --elf "$ELF_PATH" --out "$APP_BIN")
+(cd "$DESKTOP_DIR" && ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run -- firmware flash --port "$PORT_VALUE" --bin "$APP_BIN" --address 0x10000)
+cd "$DESKTOP_DIR"
+exec env ISOLAPURR_REPO_ROOT="$REPO_ROOT" cargo run -- firmware monitor --port "$PORT_VALUE" --reset

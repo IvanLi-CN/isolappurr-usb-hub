@@ -13,3 +13,5 @@ The product flow keeps device connection in the existing Add device modal and ke
 Web Serial firmware update uses the saved device's current USB channel. After flashing, the app restores the authorized serial port without reopening the browser serial picker and republishes the device link so runtime polling can refresh identity, telemetry, and primary-channel state.
 
 Wi-Fi configuration belongs on the saved device Hardware page rather than Add device because it is maintenance for an already identified hub. The UI uses the same active transport fallback model as telemetry and port controls, while PSK values remain write-only and are never rendered back into the page.
+
+Development-stage hardware work now uses the project-local `isolapurr-desktop` Local USB CLI as the default path. `mcu-agentd` remains legacy/emergency only so the repository's development loop and product Local USB semantics share the same serial, identity, flash address, reset, and monitor contract.
