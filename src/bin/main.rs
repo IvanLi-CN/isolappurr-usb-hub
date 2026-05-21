@@ -105,6 +105,9 @@ static WIFI_PROVISIONING_PENDING: Mutex<RefCell<Option<WifiProvisioningCommand>>
 static WIFI_PROVISIONING_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
 #[cfg(feature = "net_http")]
+static USB_C_ROUTE_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+
+#[cfg(feature = "net_http")]
 static WIFI_CREDENTIALS_CACHE: Mutex<RefCell<Option<provisioning::WifiCredentials>>> =
     Mutex::new(RefCell::new(None));
 
@@ -193,17 +196,71 @@ async fn handle_usb_jsonl_request(
         let state = { *api_state.lock().await };
         let _ = write!(
             body,
-            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{},\"isolated_usb_fault\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{}}},\"ports\":[",
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{},\"isolated_usb_fault\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{},\"usb_c_downstream_route\":\"{}\",\"usb_c_downstream_persisted\":{}}},\"ports\":[",
             id.as_str(),
             state.hub.upstream_connected,
             state.hub.isolated_usb_fault,
             state.hub.isolated_downstream_connected,
-            state.hub.isolated_usb_ready
+            state.hub.isolated_usb_ready,
+            state.hub.usb_c_downstream_route.as_str(),
+            state.hub.usb_c_downstream_persisted
         );
         write_usb_port_json(&mut body, "port_a", "USB-A", &state.ports.port_a);
         let _ = body.push(',');
         write_usb_port_json(&mut body, "port_c", "USB-C", &state.ports.port_c);
         let _ = body.push_str("]}}");
+        return body;
+    }
+
+    if request.contains("\"method\":\"hub.route_set\"")
+        || request.contains("\"method\": \"hub.route_set\"")
+    {
+        let Some(route) =
+            extract_json_string(request, "route").and_then(|route| match route.as_str() {
+                "mcu" => Some(provisioning::UsbCDownstreamRoute::Mcu),
+                "usb_c" => Some(provisioning::UsbCDownstreamRoute::UsbC),
+                _ => None,
+            })
+        else {
+            write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "bad_request",
+                "missing or invalid route",
+                false,
+            );
+            return body;
+        };
+
+        match net::try_set_usb_c_downstream_route(api_state, route).await {
+            Ok(()) => {
+                if wait_usb_c_route_result().await {
+                    let _ = write!(
+                        body,
+                        "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"usb_c_downstream_route\":\"{}\",\"persisted\":true}}}}",
+                        id.as_str(),
+                        route.as_str()
+                    );
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "eeprom_failed",
+                        "USB-C downstream route could not be saved to EEPROM U21",
+                        true,
+                    );
+                }
+            }
+            Err(net::ApiActionError::Busy) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "busy",
+                    "USB-C downstream route switch is busy",
+                    true,
+                );
+            }
+        }
         return body;
     }
 
@@ -418,6 +475,16 @@ fn set_wifi_credentials_cache(credentials: Option<provisioning::WifiCredentials>
 #[cfg(feature = "net_http")]
 pub(crate) fn wifi_credentials_cache() -> Option<provisioning::WifiCredentials> {
     critical_section::with(|cs| *WIFI_CREDENTIALS_CACHE.borrow_ref(cs))
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) async fn wait_usb_c_route_result() -> bool {
+    USB_C_ROUTE_RESULT.wait().await
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) fn reset_usb_c_route_result() {
+    USB_C_ROUTE_RESULT.reset();
 }
 
 #[cfg(feature = "net_http")]
@@ -820,6 +887,8 @@ const DATA_DISCONNECT_MS: u64 = 250;
 const TOAST_MS: u64 = 1500;
 const POWER_SWITCH_GUARD_MS: u64 = 350;
 #[cfg(feature = "net_http")]
+const USB_C_ROUTE_SETTLE_MS: u64 = 30;
+#[cfg(feature = "net_http")]
 const LEDD_SAMPLE_MS: u64 = 1_000;
 #[cfg(feature = "net_http")]
 const UP0_PG_SAMPLE_MS: u64 = 1_000;
@@ -828,6 +897,7 @@ const PRESS_SHORT_MIN: Duration = Duration::from_millis(100);
 const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
 const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
 const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
+const SETTINGS_MENU_MS: u64 = 5_000;
 const TPS_SW_PRECHARGE_MS: u64 = 10;
 const SW2303_POR_RELEASE_MS: u64 = 100;
 const PD_I2C_KHZ: u32 = 400;
@@ -877,6 +947,101 @@ const TOAST_USB_C_PWR_ON: [[u8; 13]; 3] = [*b"USB-C PWRON  ", *b"DONE         ",
 const TOAST_USB_C_BUSY: [[u8; 13]; 3] = [*b"USB-C BUSY   ", *b"REJECT       ", *b"             "];
 const TOAST_USB_C_BADTIME: [[u8; 13]; 3] =
     [*b"USB-C BADTIME", *b"REJECT       ", *b"             "];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettingsMenuItem {
+    Mode,
+    Wifi,
+    About,
+}
+
+#[cfg(feature = "net_http")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettingsMenuView {
+    Main,
+    ModeDetail,
+}
+
+impl SettingsMenuItem {
+    fn prev(self) -> Self {
+        match self {
+            Self::Mode => Self::About,
+            Self::Wifi => Self::Mode,
+            Self::About => Self::Wifi,
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Mode => Self::Wifi,
+            Self::Wifi => Self::About,
+            Self::About => Self::Mode,
+        }
+    }
+
+    fn index(self) -> usize {
+        match self {
+            Self::Mode => 0,
+            Self::Wifi => 1,
+            Self::About => 2,
+        }
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn copy_compact_line(line: &mut [u8; 20], text: &str) {
+    for (dst, src) in line.iter_mut().zip(text.as_bytes().iter().copied()) {
+        *dst = src;
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn about_toast_lines() -> [[u8; 20]; 3] {
+    let mut lines = [*b"                    "; 3];
+    copy_compact_line(&mut lines[0], "ISOLAPURR USB HUB");
+    copy_compact_line(&mut lines[1], env!("CARGO_PKG_VERSION"));
+    copy_compact_line(&mut lines[2], BUILD_GIT_SHA);
+    lines
+}
+
+#[cfg(feature = "net_http")]
+fn route_mode_label(route: provisioning::UsbCDownstreamRoute) -> &'static str {
+    match route {
+        provisioning::UsbCDownstreamRoute::Mcu => "UPGRADE",
+        provisioning::UsbCDownstreamRoute::UsbC => "NORMAL",
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn route_transition_label(
+    previous: provisioning::UsbCDownstreamRoute,
+    next: provisioning::UsbCDownstreamRoute,
+) -> &'static str {
+    match (previous, next) {
+        (provisioning::UsbCDownstreamRoute::UsbC, provisioning::UsbCDownstreamRoute::Mcu) => {
+            "NORMAL TO UPGRADE"
+        }
+        (provisioning::UsbCDownstreamRoute::Mcu, provisioning::UsbCDownstreamRoute::UsbC) => {
+            "UPGRADE TO NORMAL"
+        }
+        (_, next) => route_mode_label(next),
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn route_detail_title(route: provisioning::UsbCDownstreamRoute) -> &'static str {
+    match route {
+        provisioning::UsbCDownstreamRoute::Mcu => "USB-C MODE",
+        provisioning::UsbCDownstreamRoute::UsbC => "USB-C MODE",
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn route_current_label(route: provisioning::UsbCDownstreamRoute) -> &'static str {
+    match route {
+        provisioning::UsbCDownstreamRoute::Mcu => "CURRENT: UPGRADE",
+        provisioning::UsbCDownstreamRoute::UsbC => "CURRENT: NORMAL",
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ToastId {
@@ -1296,10 +1461,14 @@ async fn main(_spawner: Spawner) {
     let mut combo_done = false;
     #[cfg(feature = "net_http")]
     let mut combo_expired = false;
+    let mut settings_menu_selected = SettingsMenuItem::Mode;
+    #[cfg(feature = "net_http")]
+    let mut settings_menu_view = SettingsMenuView::Main;
+    let mut settings_menu_until: Option<Instant> = None;
 
     // Port controls (tps-sw netlist):
     // - P1_CED/P2_CED drive CH442E EN#: low=enable/connect, high=disable/disconnect.
-    // - U8 IN is P1_ESP with an RN3 pulldown default; firmware leaves it at reset default.
+    // - U8 IN is P1_ESP: low=MCU D+/D-, high=USB-C/TPS D+/D-.
     // - P1_EN# drives CH217K enable: low=enable (power on), high=disable (power off).
     // - CE_TPS drives Q9, pulling TPS EN/UVLO low when CE_TPS is high (power off).
     //
@@ -1307,10 +1476,12 @@ async fn main(_spawner: Spawner) {
     // SW2303 POR window is explicitly controlled below.
     let mut p2_ced = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
     let mut p1_ced = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
+    #[allow(unused_mut, unused_variables)]
+    let mut p1_esp = Output::new(peripherals.GPIO5, Level::High, OutputConfig::default());
     let mut p1_en_n = Output::new(peripherals.GPIO16, Level::Low, OutputConfig::default());
     let mut ce_tps = Output::new(peripherals.GPIO37, Level::High, OutputConfig::default());
     info!(
-        "ports: boot state p1_en#=low(on) p1_ced=low(connect) p2_ced=low(connect) ce_tps=high(off)"
+        "ports: boot state p1_en#=low(on) p1_ced=low(connect) p2_ced=low(connect) p1_esp=high(route=usb_c) ce_tps=high(off)"
     );
 
     let mut port_usb_a = PortState::new(PowerState::On);
@@ -1698,6 +1869,45 @@ async fn main(_spawner: Spawner) {
         }
     };
     #[cfg(feature = "net_http")]
+    let (mut usb_c_downstream_route, mut usb_c_downstream_persisted) =
+        match provisioning::load_usb_c_downstream_route(&mut telemetry_i2c).await {
+            Ok(Some(route)) => {
+                info!(
+                    "provisioning: USB-C downstream route loaded from EEPROM U21 route={}",
+                    route.as_str()
+                );
+                (route, true)
+            }
+            Ok(None) => {
+                info!(
+                    "provisioning: USB-C downstream route EEPROM record empty; defaulting to usb_c"
+                );
+                (provisioning::UsbCDownstreamRoute::UsbC, false)
+            }
+            Err(err) => {
+                defmt::warn!(
+                    "provisioning: failed to load USB-C downstream route from EEPROM U21: {:?}; defaulting to usb_c",
+                    defmt::Debug2Format(&err)
+                );
+                (provisioning::UsbCDownstreamRoute::UsbC, false)
+            }
+        };
+    #[cfg(feature = "net_http")]
+    match usb_c_downstream_route {
+        provisioning::UsbCDownstreamRoute::Mcu => {
+            let _ = p2_ced.set_high();
+            let _ = p1_esp.set_low();
+            Timer::after_millis(USB_C_ROUTE_SETTLE_MS).await;
+            let _ = p2_ced.set_low();
+        }
+        provisioning::UsbCDownstreamRoute::UsbC => {
+            let _ = p2_ced.set_high();
+            let _ = p1_esp.set_high();
+            Timer::after_millis(USB_C_ROUTE_SETTLE_MS).await;
+            let _ = p2_ced.set_low();
+        }
+    }
+    #[cfg(feature = "net_http")]
     let net_handles =
         net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state, wifi_credentials);
     #[cfg(feature = "net_http")]
@@ -1874,6 +2084,88 @@ async fn main(_spawner: Spawner) {
                         }
                     }
                 }
+            }
+        }
+        #[cfg(feature = "net_http")]
+        {
+            let route_now = Instant::now();
+            let mut pending_route = None;
+            {
+                let mut guard = api_state.lock().await;
+                if guard.pending.usb_c_downstream_route.is_some() && !port_usb_c.is_busy(route_now)
+                {
+                    pending_route = guard.pending.usb_c_downstream_route.take();
+                }
+            }
+
+            if let Some(route) = pending_route {
+                let previous_route = usb_c_downstream_route;
+                port_usb_c.busy_until =
+                    Some(route_now + Duration::from_millis(USB_C_ROUTE_SETTLE_MS));
+                let _ = p2_ced.set_high();
+                match route {
+                    provisioning::UsbCDownstreamRoute::Mcu => {
+                        let _ = p1_esp.set_low();
+                    }
+                    provisioning::UsbCDownstreamRoute::UsbC => {
+                        let _ = p1_esp.set_high();
+                    }
+                }
+                Timer::after_millis(USB_C_ROUTE_SETTLE_MS).await;
+                usb_c_downstream_route = route;
+                usb_c_downstream_persisted = false;
+
+                if matches!(port_usb_c.power, PowerState::On)
+                    && matches!(port_usb_c.data, DataState::Connected)
+                {
+                    let _ = p2_ced.set_low();
+                }
+
+                match provisioning::store_usb_c_downstream_route(telemetry_sampler.i2c_mut(), route)
+                    .await
+                {
+                    Ok(()) => {
+                        usb_c_downstream_persisted = true;
+                        let route_label =
+                            route_transition_label(previous_route, usb_c_downstream_route);
+                        let _ = ui
+                            .show_message_card(
+                                route_now,
+                                "USB-C MODE",
+                                route_label,
+                                "EEPROM SAVED",
+                                TOAST_OK_RAW,
+                                Duration::from_millis(TOAST_MS),
+                            )
+                            .await;
+                        prompt_tone.notify(SoundEvent::ActionOk);
+                        USB_C_ROUTE_RESULT.signal(true);
+                        info!(
+                            "provisioning: USB-C downstream route saved to EEPROM U21 route={}",
+                            route.as_str()
+                        );
+                    }
+                    Err(err) => {
+                        let _ = ui
+                            .show_message_card(
+                                route_now,
+                                "USB-C MODE",
+                                "EEPROM FAIL",
+                                "NOT SAVED",
+                                TOAST_ERR_RAW,
+                                Duration::from_millis(TOAST_MS),
+                            )
+                            .await;
+                        prompt_tone.notify(SoundEvent::ActionFail);
+                        USB_C_ROUTE_RESULT.signal(false);
+                        defmt::warn!(
+                            "provisioning: failed to save USB-C downstream route to EEPROM U21: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                    }
+                }
+                button_fast_loop_until =
+                    Some(Instant::now() + Duration::from_millis(POWER_SWITCH_GUARD_MS));
             }
         }
         #[cfg(feature = "net_http")]
@@ -2698,8 +2990,17 @@ async fn main(_spawner: Spawner) {
         let left_pressed = btn_left_state.is_pressed();
         #[cfg(feature = "net_http")]
         let right_pressed = btn_right_state.is_pressed();
+        #[cfg(feature = "net_http")]
+        if settings_menu_until.is_some_and(|until| buttons_now >= until) {
+            settings_menu_until = None;
+            settings_menu_view = SettingsMenuView::Main;
+            ui.clear_toast();
+        }
 
-        // Combo: press BOTH buttons, hold 1s..=5s, then release to show network info (Plan #0003).
+        #[cfg(feature = "net_http")]
+        let settings_menu_active = settings_menu_until.is_some_and(|until| buttons_now < until);
+
+        // Combo: long press opens the settings menu; in-menu short combo selects.
         // Holding >5s is invalid ("expired") and does nothing.
         #[cfg(feature = "net_http")]
         if !combo_active && left_pressed && right_pressed {
@@ -2714,6 +3015,22 @@ async fn main(_spawner: Spawner) {
             if let Some(since) = combo_pressed_at {
                 if buttons_now - since > PRESS_LONG_MAX {
                     combo_expired = true;
+                } else if !settings_menu_active
+                    && !combo_done
+                    && buttons_now - since >= PRESS_LONG_MIN
+                {
+                    settings_menu_selected = SettingsMenuItem::Mode;
+                    settings_menu_until =
+                        Some(buttons_now + Duration::from_millis(SETTINGS_MENU_MS));
+                    let _ = ui
+                        .show_settings_menu(
+                            buttons_now,
+                            settings_menu_selected.index(),
+                            Duration::from_millis(SETTINGS_MENU_MS),
+                        )
+                        .await;
+                    prompt_tone.notify(SoundEvent::MenuConfirm);
+                    combo_done = true;
                 }
             }
         }
@@ -2722,30 +3039,141 @@ async fn main(_spawner: Spawner) {
         if combo_active && (!left_pressed || !right_pressed) && !combo_done {
             if let Some(since) = combo_pressed_at {
                 let duration = buttons_now - since;
-                if !combo_expired && duration >= PRESS_LONG_MIN && duration <= PRESS_LONG_MAX {
-                    let (short_id, ip) = if let Some(handles) = net_handles.as_ref() {
-                        let ip = {
-                            let state = handles.wifi_state.lock().await;
-                            state.ipv4
-                        };
-                        (Some(handles.device_names.short_id.as_str()), ip)
-                    } else {
-                        (None, None)
-                    };
+                if !combo_expired && settings_menu_active {
+                    if duration >= PRESS_SHORT_MIN && duration <= PRESS_SHORT_MAX {
+                        match settings_menu_selected {
+                            SettingsMenuItem::Mode => match settings_menu_view {
+                                SettingsMenuView::Main => {
+                                    settings_menu_view = SettingsMenuView::ModeDetail;
+                                    settings_menu_until =
+                                        Some(buttons_now + Duration::from_millis(SETTINGS_MENU_MS));
+                                    let mut lines = [*b"                    "; 3];
+                                    copy_compact_line(
+                                        &mut lines[0],
+                                        route_current_label(usb_c_downstream_route),
+                                    );
+                                    copy_compact_line(
+                                        &mut lines[1],
+                                        route_mode_label(usb_c_downstream_route),
+                                    );
+                                    copy_compact_line(&mut lines[2], "PRESS AGAIN TO SET");
+                                    let _ = ui
+                                        .show_lines_card(
+                                            buttons_now,
+                                            route_detail_title(usb_c_downstream_route),
+                                            &lines,
+                                            TOAST_INFO_RAW,
+                                            Duration::from_millis(SETTINGS_MENU_MS),
+                                        )
+                                        .await;
+                                    prompt_tone.notify(SoundEvent::MenuConfirm);
+                                }
+                                SettingsMenuView::ModeDetail => {
+                                    let pending_busy = {
+                                        let guard = api_state.lock().await;
+                                        guard.pending.usb_c_downstream_route.is_some()
+                                    };
+                                    if port_usb_c.is_busy(buttons_now) || pending_busy {
+                                        let (lines, fg_raw) =
+                                            toast_spec(ButtonId::Right, ToastId::Busy);
+                                        let _ = ui
+                                            .show_toast(
+                                                buttons_now,
+                                                lines,
+                                                fg_raw,
+                                                Duration::from_millis(TOAST_MS),
+                                            )
+                                            .await;
+                                        prompt_tone.notify(SoundEvent::ActionFail);
+                                    } else {
+                                        let next_route = match usb_c_downstream_route {
+                                            provisioning::UsbCDownstreamRoute::Mcu => {
+                                                provisioning::UsbCDownstreamRoute::UsbC
+                                            }
+                                            provisioning::UsbCDownstreamRoute::UsbC => {
+                                                provisioning::UsbCDownstreamRoute::Mcu
+                                            }
+                                        };
+                                        {
+                                            let mut guard = api_state.lock().await;
+                                            guard.pending.usb_c_downstream_route = Some(next_route);
+                                        }
+                                        prompt_tone.notify(SoundEvent::MenuConfirm);
+                                        settings_menu_until = None;
+                                        settings_menu_view = SettingsMenuView::Main;
+                                        button_fast_loop_until = Some(
+                                            buttons_now
+                                                + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                        );
+                                    }
+                                }
+                            },
+                            SettingsMenuItem::Wifi => {
+                                let (short_id, ip) = if let Some(handles) = net_handles.as_ref() {
+                                    let ip = {
+                                        let state = handles.wifi_state.lock().await;
+                                        state.ipv4
+                                    };
+                                    (Some(handles.device_names.short_id.as_str()), ip)
+                                } else {
+                                    (None, None)
+                                };
 
-                    let lines = net::format_network_toast_lines(short_id, ip);
+                                let lines = net::format_network_toast_lines(short_id, ip);
+                                let _ = ui
+                                    .show_lines_card(
+                                        buttons_now,
+                                        "WIFI",
+                                        &lines,
+                                        TOAST_INFO_RAW,
+                                        Duration::from_millis(SETTINGS_MENU_MS),
+                                    )
+                                    .await;
+                                prompt_tone.notify(SoundEvent::MenuConfirm);
+                                settings_menu_until = None;
+                            }
+                            SettingsMenuItem::About => {
+                                let lines = about_toast_lines();
+                                let _ = ui
+                                    .show_lines_card(
+                                        buttons_now,
+                                        "ABOUT",
+                                        &lines,
+                                        TOAST_INFO_RAW,
+                                        Duration::from_millis(SETTINGS_MENU_MS),
+                                    )
+                                    .await;
+                                prompt_tone.notify(SoundEvent::MenuConfirm);
+                                settings_menu_until = None;
+                            }
+                        };
+                    }
+                } else if !combo_expired && duration >= PRESS_LONG_MIN && duration <= PRESS_LONG_MAX
+                {
+                    settings_menu_selected = SettingsMenuItem::Mode;
+                    settings_menu_until =
+                        Some(buttons_now + Duration::from_millis(SETTINGS_MENU_MS));
                     let _ = ui
-                        .show_toast_compact(
+                        .show_settings_menu(
                             buttons_now,
-                            &lines,
-                            TOAST_INFO_RAW,
-                            Duration::from_millis(5_000),
+                            settings_menu_selected.index(),
+                            Duration::from_millis(SETTINGS_MENU_MS),
                         )
                         .await;
+                    prompt_tone.notify(SoundEvent::MenuConfirm);
+                } else if !combo_expired
+                    && duration >= PRESS_SHORT_MIN
+                    && duration <= PRESS_SHORT_MAX
+                {
+                    // Short combo is only meaningful inside the settings menu.
+                } else if !combo_expired {
+                    // Preserve invalid timing as a no-op for combo actions.
                 }
             }
             combo_done = true;
         }
+
+        let settings_menu_active = settings_menu_until.is_some_and(|until| buttons_now < until);
 
         if let Some(edge) = left_edge {
             match edge {
@@ -2759,6 +3187,33 @@ async fn main(_spawner: Spawner) {
 
                     if combo_active {
                         btn_left_pressed_at = None;
+                    } else if settings_menu_active {
+                        if let Some(pressed_at) = btn_left_pressed_at.take() {
+                            if matches!(classify_press(buttons_now - pressed_at), PressClass::Short)
+                            {
+                                match settings_menu_view {
+                                    SettingsMenuView::Main => {
+                                        settings_menu_selected = settings_menu_selected.prev();
+                                        settings_menu_until = Some(
+                                            buttons_now + Duration::from_millis(SETTINGS_MENU_MS),
+                                        );
+                                        let _ = ui
+                                            .show_settings_menu(
+                                                buttons_now,
+                                                settings_menu_selected.index(),
+                                                Duration::from_millis(SETTINGS_MENU_MS),
+                                            )
+                                            .await;
+                                        prompt_tone.notify(SoundEvent::MenuNavigate);
+                                    }
+                                    SettingsMenuView::ModeDetail => {
+                                        settings_menu_until = Some(
+                                            buttons_now + Duration::from_millis(SETTINGS_MENU_MS),
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         let Some(pressed_at) = btn_left_pressed_at.take() else {
                             // Ignore unmatched releases.
@@ -2895,6 +3350,33 @@ async fn main(_spawner: Spawner) {
 
                     if combo_active {
                         btn_right_pressed_at = None;
+                    } else if settings_menu_active {
+                        if let Some(pressed_at) = btn_right_pressed_at.take() {
+                            if matches!(classify_press(buttons_now - pressed_at), PressClass::Short)
+                            {
+                                match settings_menu_view {
+                                    SettingsMenuView::Main => {
+                                        settings_menu_selected = settings_menu_selected.next();
+                                        settings_menu_until = Some(
+                                            buttons_now + Duration::from_millis(SETTINGS_MENU_MS),
+                                        );
+                                        let _ = ui
+                                            .show_settings_menu(
+                                                buttons_now,
+                                                settings_menu_selected.index(),
+                                                Duration::from_millis(SETTINGS_MENU_MS),
+                                            )
+                                            .await;
+                                        prompt_tone.notify(SoundEvent::MenuNavigate);
+                                    }
+                                    SettingsMenuView::ModeDetail => {
+                                        settings_menu_until = Some(
+                                            buttons_now + Duration::from_millis(SETTINGS_MENU_MS),
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         let Some(pressed_at) = btn_right_pressed_at.take() else {
                             continue;
@@ -3065,6 +3547,8 @@ async fn main(_spawner: Spawner) {
                 isolated_usb_fault: api_isolated_usb_fault,
                 isolated_downstream_connected: !api_isolated_usb_fault,
                 isolated_usb_ready: api_isolated_usb_ready,
+                usb_c_downstream_route,
+                usb_c_downstream_persisted,
             };
             guard.ports = ports;
         }

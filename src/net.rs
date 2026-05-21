@@ -17,7 +17,7 @@ use esp_radio::{
     wifi::{self, ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent},
 };
 use heapless::{String as HString, Vec};
-use isolapurr_usb_hub::provisioning::WifiCredentials;
+use isolapurr_usb_hub::provisioning::{UsbCDownstreamRoute, WifiCredentials};
 use static_cell::StaticCell;
 
 use crate::mdns;
@@ -165,6 +165,8 @@ pub struct ApiHubSnapshot {
     pub isolated_usb_fault: bool,
     pub isolated_downstream_connected: bool,
     pub isolated_usb_ready: bool,
+    pub usb_c_downstream_route: UsbCDownstreamRoute,
+    pub usb_c_downstream_persisted: bool,
 }
 
 impl ApiHubSnapshot {
@@ -174,6 +176,8 @@ impl ApiHubSnapshot {
             isolated_usb_fault: false,
             isolated_downstream_connected: false,
             isolated_usb_ready: false,
+            usb_c_downstream_route: UsbCDownstreamRoute::UsbC,
+            usb_c_downstream_persisted: false,
         }
     }
 }
@@ -223,6 +227,7 @@ pub enum ApiPortAction {
 pub struct ApiPendingActions {
     pub port_a: Option<ApiPortAction>,
     pub port_c: Option<ApiPortAction>,
+    pub usb_c_downstream_route: Option<UsbCDownstreamRoute>,
 }
 
 impl ApiPendingActions {
@@ -230,6 +235,7 @@ impl ApiPendingActions {
         Self {
             port_a: None,
             port_c: None,
+            usb_c_downstream_route: None,
         }
     }
 }
@@ -904,12 +910,70 @@ async fn handle_api_request(
             } else {
                 "false"
             });
+            let _ = body.push_str(",\"usb_c_downstream_route\":\"");
+            let _ = body.push_str(state.hub.usb_c_downstream_route.as_str());
+            let _ = body.push_str("\",\"usb_c_downstream_persisted\":");
+            let _ = body.push_str(if state.hub.usb_c_downstream_persisted {
+                "true"
+            } else {
+                "false"
+            });
             let _ = body.push_str("},\"ports\":[");
             write_port_json(&mut body, ApiPortId::PortA, "USB-A", &state.ports.port_a);
             let _ = body.push(',');
             write_port_json(&mut body, ApiPortId::PortC, "USB-C", &state.ports.port_c);
             let _ = body.push_str("]}");
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+            return Ok(());
+        }
+        ("POST", "/api/v1/hub/usb-c-downstream-route") => {
+            let Some(route) = parse_usb_c_downstream_route(query) else {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "missing or invalid route",
+                    false,
+                )
+                .await?;
+                return Ok(());
+            };
+
+            match try_set_usb_c_downstream_route(api_state, route).await {
+                Ok(()) => {
+                    if crate::wait_usb_c_route_result().await {
+                        let mut body = String::new();
+                        let _ = core::write!(
+                            body,
+                            "{{\"accepted\":true,\"usb_c_downstream_route\":\"{}\",\"persisted\":true}}",
+                            route.as_str()
+                        );
+                        write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+                    } else {
+                        write_api_error(
+                            socket,
+                            "500 Internal Server Error",
+                            allow_origin,
+                            "eeprom_failed",
+                            "USB-C downstream route could not be saved to EEPROM U21",
+                            true,
+                        )
+                        .await?;
+                    }
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "USB-C downstream route switch is busy",
+                        true,
+                    )
+                    .await?;
+                }
+            }
             return Ok(());
         }
         _ => {}
@@ -1132,6 +1196,21 @@ fn parse_enabled_query(query: &str) -> Option<bool> {
     None
 }
 
+fn parse_usb_c_downstream_route(query: &str) -> Option<UsbCDownstreamRoute> {
+    for part in query.split('&') {
+        let (key, value) = part.split_once('=')?;
+        if key != "route" {
+            continue;
+        }
+        return match value {
+            "mcu" => Some(UsbCDownstreamRoute::Mcu),
+            "usb_c" => Some(UsbCDownstreamRoute::UsbC),
+            _ => None,
+        };
+    }
+    None
+}
+
 fn parse_query_value(query: &str, key: &str) -> Option<String> {
     for part in query.split('&') {
         let (k, v) = part.split_once('=')?;
@@ -1270,7 +1349,9 @@ pub async fn try_set_action(
         ApiPortId::PortC => guard.ports.port_c,
     };
 
-    if port.state.busy {
+    if port.state.busy
+        || (port_id == ApiPortId::PortC && guard.pending.usb_c_downstream_route.is_some())
+    {
         return Err(ApiActionError::Busy);
     }
 
@@ -1283,6 +1364,19 @@ pub async fn try_set_action(
         return Err(ApiActionError::Busy);
     }
     *slot = Some(action);
+    Ok(())
+}
+
+pub async fn try_set_usb_c_downstream_route(
+    api_state: &'static ApiSharedMutex,
+    route: UsbCDownstreamRoute,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    if guard.ports.port_c.state.busy || guard.pending.usb_c_downstream_route.is_some() {
+        return Err(ApiActionError::Busy);
+    }
+    crate::reset_usb_c_route_result();
+    guard.pending.usb_c_downstream_route = Some(route);
     Ok(())
 }
 

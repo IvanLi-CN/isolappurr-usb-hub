@@ -36,7 +36,7 @@ export function DevicePageTabs({ deviceId }: { deviceId: string }) {
         to={`/devices/${deviceId}/info`}
         role="tab"
       >
-        Hardware
+        Settings
       </NavLink>
     </div>
   );

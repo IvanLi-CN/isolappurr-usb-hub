@@ -22,6 +22,12 @@ const legacyDevice: StoredDevice = {
   baseUrl: "http://hub-legacy.local",
 };
 
+const mcuRouteDevice: StoredDevice = {
+  id: "hub-mcu",
+  name: "MCU Routed Hub",
+  baseUrl: "http://hub-mcu.local",
+};
+
 const mockDeviceApi = async (
   input: Parameters<typeof fetch>[0],
   init: Parameters<typeof fetch>[1],
@@ -35,7 +41,11 @@ const mockDeviceApi = async (
         : input.toString(),
   );
 
-  if (url.hostname !== "hub-a.local" && url.hostname !== "hub-legacy.local") {
+  if (
+    url.hostname !== "hub-a.local" &&
+    url.hostname !== "hub-legacy.local" &&
+    url.hostname !== "hub-mcu.local"
+  ) {
     return original(input, init);
   }
 
@@ -48,6 +58,9 @@ const mockDeviceApi = async (
             isolated_usb_fault: false,
             isolated_downstream_connected: true,
             isolated_usb_ready: true,
+            usb_c_downstream_route:
+              url.hostname === "hub-mcu.local" ? "mcu" : "usb_c",
+            usb_c_downstream_persisted: url.hostname !== "hub-mcu.local",
           };
 
     return jsonResponse({
@@ -102,6 +115,15 @@ const mockDeviceApi = async (
     return jsonResponse({ accepted: true, power_enabled: enabled });
   }
 
+  if (url.pathname === "/api/v1/hub/usb-c-downstream-route") {
+    const route = url.searchParams.get("route") === "mcu" ? "mcu" : "usb_c";
+    return jsonResponse({
+      accepted: true,
+      usb_c_downstream_route: route,
+      persisted: true,
+    });
+  }
+
   return original(input, init);
 };
 
@@ -147,6 +169,20 @@ export const MobileIsolationBadges: Story = {
   parameters: {
     viewport: {
       defaultViewport: "isolapurrNarrow",
+    },
+  },
+};
+
+export const UsbCRouteMcu: Story = {
+  args: {
+    device: mcuRouteDevice,
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Dashboard remains focused on port state while USB-C mode is configured in Settings.",
+      },
     },
   },
 };

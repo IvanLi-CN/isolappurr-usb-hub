@@ -24,6 +24,7 @@ import {
   rebootDevice,
   replugPort,
   setPortPower,
+  setUsbCDownstreamRoute,
   setWifiConfig,
   type WifiConfigInput,
   type WifiConfigResponse,
@@ -37,7 +38,13 @@ import {
   getLocalUsbDeviceLink,
   subscribeLocalUsbDeviceLinks,
 } from "../domain/localUsbLinks";
-import type { HubState, Port, PortId, PortsResponse } from "../domain/ports";
+import type {
+  HubState,
+  Port,
+  PortId,
+  PortsResponse,
+  UsbCDownstreamRoute,
+} from "../domain/ports";
 import {
   forgetWebSerialDeviceTransport,
   getWebSerialDeviceTransport,
@@ -94,6 +101,10 @@ type DeviceRuntimeContextValue = {
     enabled: boolean,
   ) => Promise<void>;
   replug: (deviceId: string, portId: PortId) => Promise<void>;
+  setUsbCDownstreamRoute: (
+    deviceId: string,
+    route: UsbCDownstreamRoute,
+  ) => Promise<void>;
 };
 
 const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
@@ -359,6 +370,12 @@ export function DeviceRuntimeProvider({
           return replugPort(baseUrl, params?.port as PortId) as Promise<
             Result<T>
           >;
+        }
+        if (method === "hub.route_set") {
+          return setUsbCDownstreamRoute(
+            baseUrl,
+            params?.route as UsbCDownstreamRoute,
+          ) as Promise<Result<T>>;
         }
       }
       if (transport === "web_serial") {
@@ -844,6 +861,66 @@ export function DeviceRuntimeProvider({
     ],
   );
 
+  const setRoute = useCallback(
+    async (deviceId: string, route: UsbCDownstreamRoute) => {
+      const device = devices.find((d) => d.id === deviceId);
+      if (!device) {
+        return;
+      }
+
+      setPending(deviceId, "port_c", true);
+      try {
+        let res: Result<{
+          accepted: true;
+          usb_c_downstream_route: UsbCDownstreamRoute;
+          persisted: boolean;
+        }> | null = null;
+        for (const transport of orderedTransports(deviceId)) {
+          const candidate = await requestTransport<{
+            accepted: true;
+            usb_c_downstream_route: UsbCDownstreamRoute;
+            persisted: boolean;
+          }>(deviceId, device.baseUrl, transport, "hub.route_set", {
+            route,
+          });
+          markChannelResult(deviceId, transport, candidate);
+          if (candidate.ok) {
+            preferredTransportByDevice.current[deviceId] = transport;
+            res = candidate;
+            break;
+          }
+          res = candidate;
+        }
+        if (!res) {
+          return;
+        }
+        if (res.ok) {
+          const label =
+            res.value.usb_c_downstream_route === "mcu" ? "Upgrade" : "Normal";
+          pushToast({
+            message: `${device.name}: USB-C mode set to ${label}`,
+            variant: "success",
+          });
+          await refreshDevice(deviceId);
+          return;
+        }
+        handleApiErrorToast(device.name, "USB-C route", res.error);
+      } finally {
+        setPending(deviceId, "port_c", false);
+      }
+    },
+    [
+      devices,
+      handleApiErrorToast,
+      markChannelResult,
+      orderedTransports,
+      pushToast,
+      refreshDevice,
+      requestTransport,
+      setPending,
+    ],
+  );
+
   const value = useMemo<DeviceRuntimeContextValue>(() => {
     const connectionState = (deviceId: string): ConnectionState => {
       const rt = runtimeById[deviceId];
@@ -928,6 +1005,7 @@ export function DeviceRuntimeProvider({
       rebootDevice: reboot,
       setPower,
       replug,
+      setUsbCDownstreamRoute: setRoute,
     };
   }, [
     clearWifi,
@@ -938,6 +1016,7 @@ export function DeviceRuntimeProvider({
     replug,
     runtimeById,
     saveWifiConfig,
+    setRoute,
     setPower,
     wifiConfig,
   ]);

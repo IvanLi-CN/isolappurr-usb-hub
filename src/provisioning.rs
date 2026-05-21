@@ -15,6 +15,28 @@ const EEPROM_WRITE_CYCLE: Duration = Duration::from_millis(6);
 const FLAG_STATIC_IPV4: u8 = 1 << 0;
 const FLAG_STATIC_DNS: u8 = 1 << 1;
 
+const DEVICE_SETTINGS_RECORD_LEN: usize = 32;
+const DEVICE_SETTINGS_MAGIC: &[u8; 8] = b"IPSET01\0";
+const DEVICE_SETTINGS_VERSION: u8 = 1;
+const DEVICE_SETTINGS_RECORD_OFFSET: u16 = 256;
+const DEVICE_SETTINGS_ROUTE_MCU: u8 = 0;
+const DEVICE_SETTINGS_ROUTE_USB_C: u8 = 1;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UsbCDownstreamRoute {
+    Mcu,
+    UsbC,
+}
+
+impl UsbCDownstreamRoute {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mcu => "mcu",
+            Self::UsbC => "usb_c",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaticIpv4Config {
     pub address: [u8; 4],
@@ -197,6 +219,63 @@ where
     I2C: I2c<SevenBitAddress>,
 {
     eeprom_write(i2c, EEPROM_RECORD_OFFSET, &[0u8; RECORD_LEN]).await
+}
+
+pub async fn load_usb_c_downstream_route<I2C>(
+    i2c: &mut I2C,
+) -> Result<Option<UsbCDownstreamRoute>, ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let mut record = [0u8; DEVICE_SETTINGS_RECORD_LEN];
+    eeprom_read(i2c, DEVICE_SETTINGS_RECORD_OFFSET, &mut record).await?;
+
+    if record.iter().all(|b| *b == 0x00 || *b == 0xff) {
+        return Ok(None);
+    }
+    if &record[..DEVICE_SETTINGS_MAGIC.len()] != DEVICE_SETTINGS_MAGIC
+        || record[DEVICE_SETTINGS_MAGIC.len()] != DEVICE_SETTINGS_VERSION
+    {
+        return Err(ProvisioningError::InvalidRecord);
+    }
+
+    let checksum_offset = DEVICE_SETTINGS_RECORD_LEN - 4;
+    let expected = u32::from_le_bytes([
+        record[checksum_offset],
+        record[checksum_offset + 1],
+        record[checksum_offset + 2],
+        record[checksum_offset + 3],
+    ]);
+    record[checksum_offset..].fill(0);
+    if checksum(&record) != expected {
+        return Err(ProvisioningError::InvalidRecord);
+    }
+
+    match record[9] {
+        DEVICE_SETTINGS_ROUTE_MCU => Ok(Some(UsbCDownstreamRoute::Mcu)),
+        DEVICE_SETTINGS_ROUTE_USB_C => Ok(Some(UsbCDownstreamRoute::UsbC)),
+        _ => Err(ProvisioningError::InvalidRecord),
+    }
+}
+
+pub async fn store_usb_c_downstream_route<I2C>(
+    i2c: &mut I2C,
+    route: UsbCDownstreamRoute,
+) -> Result<(), ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let mut record = [0u8; DEVICE_SETTINGS_RECORD_LEN];
+    record[..DEVICE_SETTINGS_MAGIC.len()].copy_from_slice(DEVICE_SETTINGS_MAGIC);
+    record[DEVICE_SETTINGS_MAGIC.len()] = DEVICE_SETTINGS_VERSION;
+    record[9] = match route {
+        UsbCDownstreamRoute::Mcu => DEVICE_SETTINGS_ROUTE_MCU,
+        UsbCDownstreamRoute::UsbC => DEVICE_SETTINGS_ROUTE_USB_C,
+    };
+
+    let crc = checksum(&record);
+    record[DEVICE_SETTINGS_RECORD_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
+    eeprom_write(i2c, DEVICE_SETTINGS_RECORD_OFFSET, &record).await
 }
 
 async fn eeprom_read<I2C>(

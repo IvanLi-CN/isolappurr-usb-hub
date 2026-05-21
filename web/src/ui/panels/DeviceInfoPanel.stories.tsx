@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, userEvent, within } from "@storybook/test";
+import { useState } from "react";
 
 import type { StoredDevice } from "../../domain/devices";
 import { DeviceInfoPanel } from "./DeviceInfoPanel";
@@ -60,6 +61,10 @@ const meta: Meta<typeof DeviceInfoPanel> = {
       value: { accepted: true, reboot_required: false },
     }),
     rebootDevice: async () => ({ ok: true, value: { accepted: true } }),
+    usbCDownstreamRoute: "usb_c",
+    usbCDownstreamPersisted: true,
+    routeBusy: false,
+    setUsbCDownstreamRoute: async () => {},
   },
 };
 
@@ -74,6 +79,33 @@ export const EmptyWifiConfig: Story = {
     transport: "web_serial",
     wifiManagementTransport: "web_serial",
     loadWifiConfig: async () => ({ ok: true, value: mockWifiEmpty }),
+  },
+};
+
+export const UsbCUpgradeMode: Story = {
+  args: {
+    usbCDownstreamRoute: "mcu",
+    usbCDownstreamPersisted: true,
+  },
+};
+
+export const UsbCModeSwitchFlow: Story = {
+  render: (args) => {
+    const [route, setRoute] = useState(args.usbCDownstreamRoute ?? "usb_c");
+    return (
+      <DeviceInfoPanel
+        {...args}
+        usbCDownstreamRoute={route}
+        setUsbCDownstreamRoute={async (nextRoute) => setRoute(nextRoute)}
+      />
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Upgrade" }));
+    await expect(
+      canvas.getByRole("button", { name: "Upgrade" }),
+    ).toBeDisabled();
   },
 };
 

@@ -5,8 +5,10 @@ import { PortCard } from "./PortCard";
 const meta: Meta<typeof PortCard> = {
   title: "Cards/PortCard",
   component: PortCard,
+  tags: ["autodocs"],
   args: {
     label: "USB-A",
+    portId: "port_a",
     telemetry: {
       status: "ok",
       voltage_mv: 5030,
@@ -54,6 +56,19 @@ export const Replugging: Story = {
       power_enabled: true,
       data_connected: false,
       replugging: true,
+      busy: true,
+    },
+  },
+};
+
+export const Busy: Story = {
+  args: {
+    portId: "port_c",
+    label: "USB-C",
+    state: {
+      power_enabled: true,
+      data_connected: true,
+      replugging: false,
       busy: true,
     },
   },
