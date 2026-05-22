@@ -127,25 +127,12 @@ where
     I2C: I2c,
     I2C::Error: core::fmt::Debug,
 {
-    use sw2303::registers::{Register, constants::pd};
-
     let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
 
-    let status = dev.read_register(Register::FastChargingStatus).await?;
-    let fast_protocol =
-        (status & sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL.bits()) != 0;
-    let fast_voltage = (status & sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE.bits()) != 0;
-    let negotiated_protocol = match status & 0x0f {
-        pd::PROTOCOL_QC20 => Some(sw2303::ProtocolType::QC20),
-        pd::PROTOCOL_QC30 => Some(sw2303::ProtocolType::QC30),
-        pd::PROTOCOL_FCP => Some(sw2303::ProtocolType::FCP),
-        pd::PROTOCOL_SCP => Some(sw2303::ProtocolType::SCP),
-        pd::PROTOCOL_PD_FIX | pd::PROTOCOL_PD_PPS => Some(sw2303::ProtocolType::PD),
-        pd::PROTOCOL_PE20 => Some(sw2303::ProtocolType::PE20),
-        pd::PROTOCOL_SFCP => Some(sw2303::ProtocolType::SFCP),
-        pd::PROTOCOL_AFC => Some(sw2303::ProtocolType::AFC),
-        _ => None,
-    };
+    let status = dev.get_fast_charging_status().await?;
+    let fast_protocol = status.contains(sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL);
+    let fast_voltage = status.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE);
+    let negotiated_protocol = dev.get_negotiated_protocol().await?;
     let req = dev.get_power_request().await?;
 
     Ok(PowerRequest {
