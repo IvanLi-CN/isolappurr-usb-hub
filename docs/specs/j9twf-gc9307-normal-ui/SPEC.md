@@ -187,6 +187,10 @@ PR: include
 白色背景下的错误/超量程状态。
 ![](./images/gc9307-normal-ui-preview-error-over.png)
 
+PR: include
+USB-C 真实协商 7V PPS 时，右列显示 `PPS`、`7V` badge 与 U17 实测 V/A/W。
+![](./images/gc9307-normal-ui-usbc-pps-present.png)
+
 ## 参考（References）
 
 - `docs/plan/0001:gc9307-normal-ui/PLAN.md`

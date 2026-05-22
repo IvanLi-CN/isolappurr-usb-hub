@@ -291,41 +291,41 @@ fn draw_port(
     canvas.draw_text_aa(x + 12, y + 129, secondary_font, 0, power, accent);
 }
 
+fn draw_dashboard_example(canvas: &mut Canvas) {
+    draw_port(
+        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.03V", "0.48A", "2.4W",
+    );
+    draw_port(
+        canvas, 164, 6, 150, 160, BERRY, "PD", "20V", "20.1V", "3.12A", "62.7W",
+    );
+}
+
+fn draw_usb_c_pps_present_example(canvas: &mut Canvas) {
+    draw_port(
+        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
+    );
+    draw_port(
+        canvas, 164, 6, 150, 160, BERRY, "PPS", "7V", "7.02V", "0.51A", "3.6W",
+    );
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::current_dir()?;
     let assets = root.join("docs/specs/3j4df-gc9307-shell-dashboard-ui/assets");
     fs::create_dir_all(&assets)?;
 
-    let framebuffer_path = assets.join("gc9307-shell-dashboard-example.framebuffer.bin");
+    let framebuffer_path = std::env::var_os("GC9307_DASHBOARD_OUTPUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| assets.join("gc9307-shell-dashboard-example.framebuffer.bin"));
+    if let Some(parent) = framebuffer_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
     let mut canvas = Canvas::new(WHITE);
-
-    draw_port(
-        &mut canvas,
-        6,
-        6,
-        150,
-        160,
-        AQUA,
-        "USB-A",
-        "5V",
-        "5.03V",
-        "0.48A",
-        "2.4W",
-    );
-    draw_port(
-        &mut canvas,
-        164,
-        6,
-        150,
-        160,
-        BERRY,
-        "PD",
-        "20V",
-        "20.1V",
-        "3.12A",
-        "62.7W",
-    );
+    match std::env::var("GC9307_DASHBOARD_SCENE").as_deref() {
+        Ok("usb-c-pps-present") => draw_usb_c_pps_present_example(&mut canvas),
+        _ => draw_dashboard_example(&mut canvas),
+    }
 
     canvas.write_rgb565_le(&framebuffer_path)?;
     println!("{}", framebuffer_path.display());
