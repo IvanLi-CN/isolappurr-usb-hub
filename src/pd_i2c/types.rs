@@ -8,6 +8,8 @@ pub struct PowerRequest {
     pub negotiated_protocol: Option<sw2303::ProtocolType>,
     /// SW2303 sink/CC connection status when available.
     pub cc_attached: bool,
+    /// Whether protocol and CC status fields came from successful status reads.
+    pub status_valid: bool,
     pub v_req_mv: u16,
     pub i_req_ma: u16,
 }

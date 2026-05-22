@@ -130,21 +130,25 @@ where
     let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
 
     let req = dev.get_power_request().await?;
-    let status = dev.get_fast_charging_status().await.ok();
-    let fast_protocol = status
-        .map(|status| status.contains(sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL))
-        .unwrap_or(false);
-    let fast_voltage = status
-        .map(|status| status.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE))
-        .unwrap_or(false);
-    let negotiated_protocol = dev.get_negotiated_protocol().await.ok().flatten();
-    let cc_attached = dev.is_sink_device_connected().await.ok().unwrap_or(false);
+    let status = dev.get_fast_charging_status().await;
+    let fast_protocol = match &status {
+        Ok(status) => status.contains(sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL),
+        Err(_) => false,
+    };
+    let fast_voltage = match &status {
+        Ok(status) => status.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE),
+        Err(_) => false,
+    };
+    let negotiated_protocol = dev.get_negotiated_protocol().await;
+    let cc_attached = dev.is_sink_device_connected().await;
+    let status_valid = status.is_ok() && negotiated_protocol.is_ok() && cc_attached.is_ok();
 
     Ok(PowerRequest {
         fast_protocol,
         fast_voltage,
-        negotiated_protocol,
-        cc_attached,
+        negotiated_protocol: negotiated_protocol.ok().flatten(),
+        cc_attached: cc_attached.ok().unwrap_or(false),
+        status_valid,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
     })
@@ -166,6 +170,7 @@ where
         fast_voltage: false,
         negotiated_protocol: None,
         cc_attached: false,
+        status_valid: false,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
     })
