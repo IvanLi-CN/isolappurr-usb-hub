@@ -127,31 +127,28 @@ where
     I2C: I2c,
     I2C::Error: core::fmt::Debug,
 {
-    use sw2303::registers::{Register, constants::pd};
-
     let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
 
-    let status = dev.read_register(Register::FastChargingStatus).await?;
-    let fast_protocol =
-        (status & sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL.bits()) != 0;
-    let fast_voltage = (status & sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE.bits()) != 0;
-    let negotiated_protocol = match status & 0x0f {
-        pd::PROTOCOL_QC20 => Some(sw2303::ProtocolType::QC20),
-        pd::PROTOCOL_QC30 => Some(sw2303::ProtocolType::QC30),
-        pd::PROTOCOL_FCP => Some(sw2303::ProtocolType::FCP),
-        pd::PROTOCOL_SCP => Some(sw2303::ProtocolType::SCP),
-        pd::PROTOCOL_PD_FIX | pd::PROTOCOL_PD_PPS => Some(sw2303::ProtocolType::PD),
-        pd::PROTOCOL_PE20 => Some(sw2303::ProtocolType::PE20),
-        pd::PROTOCOL_SFCP => Some(sw2303::ProtocolType::SFCP),
-        pd::PROTOCOL_AFC => Some(sw2303::ProtocolType::AFC),
-        _ => None,
-    };
     let req = dev.get_power_request().await?;
+    let status = dev.get_fast_charging_status().await;
+    let fast_protocol = match &status {
+        Ok(status) => status.contains(sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL),
+        Err(_) => false,
+    };
+    let fast_voltage = match &status {
+        Ok(status) => status.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE),
+        Err(_) => false,
+    };
+    let negotiated_protocol = dev.get_negotiated_protocol().await;
+    let cc_attached = dev.is_sink_device_connected().await;
+    let status_valid = status.is_ok() && negotiated_protocol.is_ok() && cc_attached.is_ok();
 
     Ok(PowerRequest {
         fast_protocol,
         fast_voltage,
-        negotiated_protocol,
+        negotiated_protocol: negotiated_protocol.ok().flatten(),
+        cc_attached: cc_attached.ok().unwrap_or(false),
+        status_valid,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
     })
@@ -172,6 +169,8 @@ where
         fast_protocol: false,
         fast_voltage: false,
         negotiated_protocol: None,
+        cc_attached: false,
+        status_valid: false,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
     })
