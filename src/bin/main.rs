@@ -2407,7 +2407,11 @@ async fn main(_spawner: Spawner) {
                     usb_c: NormalUiPort {
                         present: usb_c_present,
                         mode: usb_c_mode,
-                        badge_mv: normal_ui_badge_mv(request, telemetry.usb_c.voltage_mv),
+                        badge_mv: if usb_c_present {
+                            normal_ui_badge_mv(request, telemetry.usb_c.voltage_mv)
+                        } else {
+                            None
+                        },
                         voltage_uv: telemetry_field_to_ui(telemetry.usb_c.voltage_mv),
                         current_ua: telemetry_field_to_ui(telemetry.usb_c.current_ma),
                         power_uw: telemetry_field_to_ui(telemetry.usb_c.power_mw),
