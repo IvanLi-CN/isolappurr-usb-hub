@@ -45,6 +45,9 @@ IsolaPurr USB Hub 需要在同一套 Web / Desktop 控制台里支持三类连�
 - Firmware update UI MUST live on the selected device's Hardware page after the hub has been added, using Web Serial or Local USB as update paths for that saved device.
 - Firmware update UI MUST default to writing the ESP32-S3 app image `.bin` at `0x10000`; merged full-flash images are not the default product update artifact.
 - Runtime control MUST treat Wi-Fi / LAN, Web Serial, and Local USB as concurrent channels for the same saved device. The active channel is the current primary; if it fails, another available channel MUST be promoted without creating a duplicate device entry.
+- When Web Serial or Local USB `info` reports a Wi-Fi IPv4 address, Web UI MUST immediately probe `http://<ipv4>` and bind that Wi-Fi / LAN base URL only when the HTTP identity matches the USB `device_id` or `mac`.
+- Add device MUST show recent Web Serial and Local USB connection steps, including authorization, port open, `info`, Wi-Fi probe, save/bind, and failure messages.
+- The saved-device Hardware page MUST provide a delete action with an in-app confirmation. Confirmed deletion MUST remove the saved profile, clear runtime USB/channel records, and leave the user on a valid device list route.
 - USB-only operations, including firmware update, MUST require a USB channel even when Wi-Fi / LAN is online.
 - Web UI MUST provide clear states for unsupported Web Serial, no device, connected, flashing/updating, update failed, Wi-Fi empty/configured/error, telemetry online/offline, busy action, and disruptive action confirmation.
 - Storybook MUST cover the Add device and saved-device Hardware page states before visual evidence is accepted.
@@ -104,6 +107,9 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given EEPROM contains valid Wi-Fi credentials, when default firmware boots, then Wi-Fi uses the stored credentials.
 - Given a browser with Web Serial support, when the user connects over USB, then the app can fetch info/ports and run supported controls via JSONL.
 - Given a device already exists from Wi-Fi / LAN, when USB connects with the same `device_id`, then the app updates the saved device runtime channel state and telemetry instead of creating a duplicate.
+- Given Web Serial or Local USB `info` reports a reachable Wi-Fi IPv4 address whose HTTP identity matches the USB identity, when the hub is added or reconnected, then the saved device base URL is updated to that Wi-Fi address and the Wi-Fi / LAN channel is marked available immediately.
+- Given Web Serial or Local USB is connecting, when the user watches Add device, then recent connection steps and failure causes are visible in the modal.
+- Given a saved device exists, when the user confirms deletion from Hardware, then the profile is removed and the page navigates away from the deleted device route.
 - Given the active runtime channel fails while another channel remains available, when the next control or polling operation runs, then the available channel becomes primary.
 - Given a device is currently managed through Wi-Fi / LAN, when the Hardware page renders Wi-Fi configuration, then stored settings are readable but save and clear controls are disabled until Web Serial or Local USB is active.
 - Given Wi-Fi credentials are saved through Web Serial or Local USB, when EEPROM write succeeds, then firmware immediately reconnects Wi-Fi with the new credentials and reports no reboot requirement.
@@ -125,6 +131,10 @@ PR: include
 
 ![Add device Web Serial desktop](assets/add-device-web-serial-desktop.png)
 
+Add device Web Serial connection log:
+
+![Add device Web Serial connection log](assets/add-device-web-serial-connection-log.png)
+
 Add device Local USB mobile:
 
 ![Add device Local USB mobile](assets/add-device-local-usb-mobile.png)
@@ -134,6 +144,10 @@ Device Hardware firmware update:
 PR: include
 
 ![Device Hardware Web Serial firmware update](assets/device-hardware-web-serial-flashing.png)
+
+Device Hardware delete confirmation:
+
+![Device Hardware delete confirmation](assets/device-delete-confirmation.png)
 
 Device list connection badges:
 

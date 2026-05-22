@@ -45,6 +45,15 @@ export function announceLocalUsbDeviceLink(link: LocalUsbDeviceLink): void {
   window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: link }));
 }
 
+export function forgetLocalUsbDeviceLink(deviceId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const links = readLinks();
+  delete links[deviceId];
+  window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(links));
+}
+
 export function subscribeLocalUsbDeviceLinks(
   callback: (link: LocalUsbDeviceLink) => void,
 ): () => void {

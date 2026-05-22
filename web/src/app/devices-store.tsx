@@ -20,9 +20,12 @@ import type {
 } from "../domain/devices";
 import {
   loadStoredDevices,
+  normalizeBaseUrl,
   saveStoredDevices,
   validateAddDeviceInput,
 } from "../domain/devices";
+import { forgetLocalUsbDeviceLink } from "../domain/localUsbLinks";
+import { forgetWebSerialDeviceTransport } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
 import { useDesktopAgent } from "./desktop-agent-ui";
 import { readMigrationPayload } from "./storage-migration";
@@ -30,6 +33,7 @@ import { readMigrationPayload } from "./storage-migration";
 type DevicesContextValue = {
   devices: StoredDevice[];
   addDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
+  upsertDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   removeDevice: (deviceId: string) => Promise<void>;
   getDevice: (deviceId: string) => StoredDevice | undefined;
 };
@@ -141,6 +145,44 @@ export function DevicesProvider({
     const existingIds = new Set(devices.map((d) => d.id));
     const existingBaseUrls = new Set(devices.map((d) => d.baseUrl));
 
+    const persistDevice = async (
+      device: StoredDevice,
+    ): Promise<AddDeviceValidationResult> => {
+      if (!agent) {
+        setDevices((prev) => {
+          const next = prev.filter(
+            (d) => d.id !== device.id && d.baseUrl !== device.baseUrl,
+          );
+          return [...next, device];
+        });
+        return { ok: true, device };
+      }
+      const res = await upsertStoredDevice(agent, device);
+      if (!res.ok) {
+        if (res.error.code === "conflict") {
+          return {
+            ok: false,
+            errors: { baseUrl: res.error.message },
+          };
+        }
+        pushToast({
+          variant: "error",
+          message: `Desktop storage error: ${res.error.message}`,
+        });
+        return {
+          ok: false,
+          errors: { baseUrl: "Desktop storage unavailable" },
+        };
+      }
+      setDevices((prev) => {
+        const next = prev.filter(
+          (d) => d.id !== res.value.id && d.baseUrl !== res.value.baseUrl,
+        );
+        return [...next, res.value];
+      });
+      return { ok: true, device: res.value };
+    };
+
     return {
       devices,
       addDevice: async (input) => {
@@ -152,36 +194,26 @@ export function DevicesProvider({
         if (!result.ok) {
           return result;
         }
-        if (!agent) {
-          setDevices((prev) => [...prev, result.device]);
-          return result;
-        }
-        const res = await upsertStoredDevice(agent, result.device);
-        if (!res.ok) {
-          if (res.error.code === "conflict") {
-            return {
-              ok: false,
-              errors: {
-                baseUrl: res.error.message,
-              },
-            };
-          }
-          pushToast({
-            variant: "error",
-            message: `Desktop storage error: ${res.error.message}`,
-          });
+        return persistDevice(result.device);
+      },
+      upsertDevice: async (input) => {
+        const name = input.name.trim();
+        const id = input.id?.trim();
+        const baseUrl = normalizeBaseUrl(input.baseUrl);
+        if (!name || !id || !baseUrl.ok) {
           return {
             ok: false,
-            errors: { baseUrl: "Desktop storage unavailable" },
+            errors: {
+              name: name ? undefined : "Name is required",
+              id: id ? undefined : "ID is required",
+              baseUrl: baseUrl.ok ? undefined : baseUrl.error,
+            },
           };
         }
-        setDevices((prev) => {
-          const next = prev.filter(
-            (d) => d.id !== res.value.id && d.baseUrl !== res.value.baseUrl,
-          );
-          return [...next, res.value];
-        });
-        return { ok: true, device: res.value };
+        if (devices.some((d) => d.id !== id && d.baseUrl === baseUrl.baseUrl)) {
+          return { ok: false, errors: { baseUrl: "Base URL already exists" } };
+        }
+        return persistDevice({ id, name, baseUrl: baseUrl.baseUrl });
       },
       removeDevice: async (deviceId) => {
         if (agent) {
@@ -191,8 +223,11 @@ export function DevicesProvider({
               variant: "error",
               message: `Desktop storage error: ${res.error.message}`,
             });
+            throw new Error(res.error.message);
           }
         }
+        forgetLocalUsbDeviceLink(deviceId);
+        forgetWebSerialDeviceTransport(deviceId);
         setDevices((prev) => prev.filter((d) => d.id !== deviceId));
       },
       getDevice: (deviceId) => devices.find((d) => d.id === deviceId),
