@@ -55,13 +55,14 @@ use esp_hal::{dma_buffers, handler, ram};
 use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{
     ActiveLowBacklight, DASHBOARD_BG_RGB8, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort,
-    NormalUiPortMode, NormalUiSnapshot, WORKBUF_SIZE,
+    NormalUiPortMode, NormalUiSnapshot, WORKBUF_SIZE, normal_ui_usb_c_mode,
+    normal_ui_usb_c_present,
 };
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
 use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
 use isolapurr_usb_hub::pd_i2c::sw2303::{
-    EnableProfileStatus, apply_enable_profile_full, read_power_target,
+    EnableProfileStatus, apply_enable_profile_full, read_power_request,
 };
 use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_setpoint, apply_setpoint_before_enable, boot_supply_setpoint,
@@ -1158,26 +1159,6 @@ fn telemetry_field_to_ui(field: Field<u32>) -> NormalUiField {
     }
 }
 
-fn normal_ui_usb_c_mode(request: Option<PowerRequest>) -> NormalUiPortMode {
-    let Some(request) = request else {
-        return NormalUiPortMode::Off;
-    };
-
-    if request.negotiated_protocol == Some(sw2303::ProtocolType::PD) {
-        return if matches!(request.v_req_mv, 5_000 | 9_000 | 12_000 | 15_000 | 20_000) {
-            NormalUiPortMode::Pd
-        } else {
-            NormalUiPortMode::Pps
-        };
-    }
-
-    if request.negotiated_protocol.is_some() || request.fast_protocol || request.fast_voltage {
-        return NormalUiPortMode::Dc;
-    }
-
-    NormalUiPortMode::Off
-}
-
 fn normal_ui_badge_mv(
     request: Option<PowerRequest>,
     fallback_voltage_mv: Field<u32>,
@@ -2240,7 +2221,7 @@ async fn main(_spawner: Spawner) {
             last_sw2303_read_attempt = Some(Instant::now());
             let mut retry = 0;
             let request_result = loop {
-                match read_power_target(&mut i2c).await {
+                match read_power_request(&mut i2c).await {
                     Ok(request) => break Ok(request),
                     Err(err) if retry < SW2303_READ_RETRIES => {
                         retry += 1;
@@ -2681,13 +2662,21 @@ async fn main(_spawner: Spawner) {
 
                 // Presence rules (frozen spec):
                 // - USB-A: if voltage is Ok(v_mv) and v_mv < 1000 => NotPresent; else Present (incl. read error).
-                // - USB-C/PD: protocol active when negotiated_protocol OR fast_protocol OR fast_voltage.
+                // - USB-C/PD: present when U17 has real voltage/current or SW2303 reports a real protocol.
                 let usb_a_present = match telemetry.usb_a.voltage_mv {
                     Field::Ok(v_mv) if v_mv < 1_000 => false,
                     _ => true,
                 };
-                let usb_c_mode = normal_ui_usb_c_mode(request);
-                let usb_c_present = !matches!(usb_c_mode, NormalUiPortMode::Off);
+                let usb_c_present = normal_ui_usb_c_present(
+                    request,
+                    telemetry.usb_c.voltage_mv,
+                    telemetry.usb_c.current_ma,
+                );
+                let usb_c_mode = normal_ui_usb_c_mode(
+                    request,
+                    telemetry.usb_c.voltage_mv,
+                    telemetry.usb_c.current_ma,
+                );
 
                 #[cfg(feature = "net_http")]
                 {
@@ -2710,7 +2699,11 @@ async fn main(_spawner: Spawner) {
                     usb_c: NormalUiPort {
                         present: usb_c_present,
                         mode: usb_c_mode,
-                        badge_mv: normal_ui_badge_mv(request, telemetry.usb_c.voltage_mv),
+                        badge_mv: if usb_c_present {
+                            normal_ui_badge_mv(request, telemetry.usb_c.voltage_mv)
+                        } else {
+                            None
+                        },
                         voltage_uv: telemetry_field_to_ui(telemetry.usb_c.voltage_mv),
                         current_ua: telemetry_field_to_ui(telemetry.usb_c.current_ma),
                         power_uw: telemetry_field_to_ui(telemetry.usb_c.power_mw),

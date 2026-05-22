@@ -5,6 +5,7 @@ mod dashboard_font;
 mod font6x8;
 mod icons;
 mod menu;
+mod normal_ui_policy;
 mod surface;
 
 pub use dashboard::DASHBOARD_BG_RGB8;
@@ -23,7 +24,9 @@ use esp_alloc::ExternalMemory;
 use esp_hal::time::{Duration, Instant};
 use gc9307_async::{Config, Error as GcError, GC9307C, Orientation, Timer};
 
+use crate::pd_i2c::PowerRequest;
 use crate::telemetry::{Field, TelemetrySnapshot};
+use normal_ui_policy::{UsbCModeKind, UsbCPolicyInput};
 
 pub const WORKBUF_SIZE: usize = gc9307_async::BUF_SIZE;
 pub const DISPLAY_WIDTH: u16 = 320;
@@ -103,6 +106,59 @@ pub struct NormalUiSnapshot {
     pub usb_a: NormalUiPort,
     /// Right column: USB-C/PD.
     pub usb_c: NormalUiPort,
+}
+
+pub fn normal_ui_usb_c_protocol_active(request: Option<PowerRequest>) -> bool {
+    request
+        .map(|request| {
+            request.negotiated_protocol.is_some() || request.fast_protocol || request.fast_voltage
+        })
+        .unwrap_or(false)
+}
+
+fn field_ok(field: Field<u32>) -> Option<u32> {
+    match field {
+        Field::Ok(value) => Some(value),
+        Field::Err => None,
+    }
+}
+
+fn usb_c_policy_input(
+    request: Option<PowerRequest>,
+    voltage_mv: Field<u32>,
+    current_ma: Field<u32>,
+) -> UsbCPolicyInput {
+    UsbCPolicyInput {
+        voltage_mv: field_ok(voltage_mv),
+        current_ma: field_ok(current_ma),
+        cc_attached: request.map(|request| request.cc_attached).unwrap_or(false),
+        protocol_active: normal_ui_usb_c_protocol_active(request),
+        pd_protocol: request
+            .map(|request| request.negotiated_protocol == Some(sw2303::ProtocolType::PD))
+            .unwrap_or(false),
+        request_mv: request.map(|request| request.v_req_mv),
+    }
+}
+
+pub fn normal_ui_usb_c_present(
+    request: Option<PowerRequest>,
+    voltage_mv: Field<u32>,
+    current_ma: Field<u32>,
+) -> bool {
+    normal_ui_policy::usb_c_present(usb_c_policy_input(request, voltage_mv, current_ma))
+}
+
+pub fn normal_ui_usb_c_mode(
+    request: Option<PowerRequest>,
+    voltage_mv: Field<u32>,
+    current_ma: Field<u32>,
+) -> NormalUiPortMode {
+    match normal_ui_policy::usb_c_mode(usb_c_policy_input(request, voltage_mv, current_ma)) {
+        UsbCModeKind::Pd => NormalUiPortMode::Pd,
+        UsbCModeKind::Pps => NormalUiPortMode::Pps,
+        UsbCModeKind::Dc => NormalUiPortMode::Dc,
+        UsbCModeKind::Off => NormalUiPortMode::Off,
+    }
 }
 
 pub trait BacklightControl {
