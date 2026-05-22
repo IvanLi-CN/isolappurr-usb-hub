@@ -1940,7 +1940,7 @@ async fn main(_spawner: Spawner) {
                 }
             };
             match request_result {
-                Ok(mut request) => {
+                Ok(request) => {
                     let _ = i2c.inner_mut().apply_config(
                         &I2cConfig::default()
                             .with_frequency(Rate::from_khz(PD_I2C_KHZ))
@@ -1953,15 +1953,6 @@ async fn main(_spawner: Spawner) {
                     }
                     sw2303_error_latched = false;
                     sw2303_consecutive_errors = 0;
-                    if !request.status_valid {
-                        if let Some(last) = last_valid_sw2303_request {
-                            request.fast_protocol = last.fast_protocol;
-                            request.fast_voltage = last.fast_voltage;
-                            request.negotiated_protocol = last.negotiated_protocol;
-                            request.cc_attached = last.cc_attached;
-                            request.status_valid = last.status_valid;
-                        }
-                    }
                     last_valid_sw2303_request = Some(request);
                     sw2303_stable_reads = sw2303_stable_reads.saturating_add(1);
                     if matches!(sw2303_stable_reads, 1 | 10 | 50 | 100)
