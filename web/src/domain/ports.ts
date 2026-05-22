@@ -1,4 +1,5 @@
 export type PortId = "port_a" | "port_c";
+export type UsbCDownstreamRoute = "mcu" | "usb_c";
 
 export type TelemetryStatus = "ok" | "not_inserted" | "error" | "overrange";
 
@@ -8,6 +9,8 @@ export type HubState = {
   isolated_usb_fault?: boolean;
   isolated_downstream_connected?: boolean;
   isolated_usb_ready?: boolean;
+  usb_c_downstream_route?: UsbCDownstreamRoute;
+  usb_c_downstream_persisted?: boolean;
 };
 
 export type PortTelemetry = {

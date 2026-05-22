@@ -62,3 +62,4 @@
 | jqapx | SW2303 高压 PPS PDO 缺失定位与修复 | 已完成 | `jqapx-sw2303-pps-high-voltage-pdo/SPEC.md` | 2026-04-15 | Structured PD/PPS capability readback, auto-mode PPS fix, and hardware validation completed |
 | 6xrna | 隔离侧 USB 状态指示 | 已完成 | `6xrna-ch318-ledd-upstream-link/SPEC.md` | 2026-05-16 | GPIO18/UP0_PG active-high fault sampling and GPIO6/LEDD active-low ready sampling; hub API exposes isolated status fields |
 | u5b2c | USB 通信、固件更新与 Wi-Fi provisioning | 已验证 | `u5b2c-usb-console-provisioning/SPEC.md` | 2026-05-14 | Web Serial, Local USB, EEPROM Wi-Fi config, firmware update, and saved-device Hardware page control flow |
+| tvhca | USB-C 下行通道路由切换 | 已完成 | `tvhca-usb-c-downstream-route/SPEC.md` | 2026-05-18 | MCU / USB-C route switching, EEPROM persistence, HTTP/USB JSONL API, Web UI, and dual-button shortcut |

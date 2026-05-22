@@ -1,4 +1,4 @@
-import type { Port, PortId, PortsResponse } from "./ports";
+import type { Port, PortId, PortsResponse, UsbCDownstreamRoute } from "./ports";
 
 export type DeviceInfoResponse = {
   device: {
@@ -237,6 +237,25 @@ export async function setPortPower(
     `/api/v1/ports/${portId}/power?${query}`,
     { method: "POST" },
   );
+}
+
+export async function setUsbCDownstreamRoute(
+  baseUrl: string,
+  route: UsbCDownstreamRoute,
+): Promise<
+  Result<{
+    accepted: true;
+    usb_c_downstream_route: UsbCDownstreamRoute;
+    persisted: boolean;
+  }>
+> {
+  return fetchJson<{
+    accepted: true;
+    usb_c_downstream_route: UsbCDownstreamRoute;
+    persisted: boolean;
+  }>(baseUrl, `/api/v1/hub/usb-c-downstream-route?route=${route}`, {
+    method: "POST",
+  });
 }
 
 export async function getDeviceInfo(

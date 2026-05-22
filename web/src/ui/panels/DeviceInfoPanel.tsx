@@ -22,6 +22,7 @@ import {
   WebSerialJsonlTransport,
 } from "../../domain/hardwareConsole";
 import { getLocalUsbDeviceLink } from "../../domain/localUsbLinks";
+import type { UsbCDownstreamRoute } from "../../domain/ports";
 import {
   getWebSerialDeviceTransport,
   setWebSerialDeviceTransport,
@@ -56,6 +57,10 @@ export function DeviceInfoPanel({
   saveWifiConfig,
   clearWifiConfig,
   rebootDevice,
+  usbCDownstreamRoute,
+  usbCDownstreamPersisted,
+  routeBusy,
+  setUsbCDownstreamRoute,
 }: {
   device: StoredDevice;
   transport: DeviceTransport | null;
@@ -67,6 +72,10 @@ export function DeviceInfoPanel({
   ) => Promise<Result<WifiMutationResponse>>;
   clearWifiConfig: () => Promise<Result<WifiMutationResponse>>;
   rebootDevice: () => Promise<Result<RebootResponse>>;
+  usbCDownstreamRoute: UsbCDownstreamRoute;
+  usbCDownstreamPersisted: boolean | null;
+  routeBusy: boolean;
+  setUsbCDownstreamRoute: (route: UsbCDownstreamRoute) => Promise<void>;
 }) {
   const [info, setInfo] = useState<DeviceInfoResponse | null>(null);
   const [infoError, setInfoError] = useState<string | null>(null);
@@ -88,6 +97,7 @@ export function DeviceInfoPanel({
   const [flashError, setFlashError] = useState<string | null>(null);
   const [flashProgress, setFlashProgress] =
     useState<FirmwareFlashProgress | null>(null);
+  const [modeBusy, setModeBusy] = useState(false);
   const loadInfoRef = useRef(loadInfo);
   const loadWifiConfigRef = useRef(loadWifiConfig);
   const wifiFormDirtyRef = useRef(false);
@@ -252,6 +262,21 @@ export function DeviceInfoPanel({
     wifiManagementTransport === "web_serial" ||
     wifiManagementTransport === "local_usb";
   const wifiCanSubmit = wifiCanManage && !wifiBusy;
+  const modeDisabled = !transport || routeBusy || modeBusy;
+  const selectedMode = usbCDownstreamRoute === "mcu" ? "upgrade" : "normal";
+
+  const setMode = async (mode: "normal" | "upgrade") => {
+    const route = mode === "upgrade" ? "mcu" : "usb_c";
+    if (modeDisabled || route === usbCDownstreamRoute) {
+      return;
+    }
+    setModeBusy(true);
+    try {
+      await setUsbCDownstreamRoute(route);
+    } finally {
+      setModeBusy(false);
+    }
+  };
 
   const saveWifi = async () => {
     const nextPsk = wifiOpenNetwork ? "" : wifiPsk;
@@ -613,6 +638,53 @@ export function DeviceInfoPanel({
       </div>
 
       <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-[16px] font-bold leading-5">USB-C mode</div>
+            <div className="mt-2 text-[12px] font-semibold leading-5 text-[var(--muted)]">
+              Normal uses the USB-C data path. Upgrade routes downstream USB to
+              the MCU and stores the choice in EEPROM.
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex h-10 w-full rounded-[12px] border border-[var(--border)] p-1 sm:w-[260px]">
+              {(
+                [
+                  ["normal", "Normal"],
+                  ["upgrade", "Upgrade"],
+                ] as const
+              ).map(([mode, label]) => {
+                const active = selectedMode === mode;
+                return (
+                  <button
+                    className={[
+                      "flex h-8 flex-1 items-center justify-center rounded-[10px] text-[12px] font-bold",
+                      modeDisabled
+                        ? "text-[var(--btn-disabled-text)]"
+                        : active
+                          ? "bg-[var(--primary)] text-[var(--primary-text)]"
+                          : "bg-transparent text-[var(--text)]",
+                    ].join(" ")}
+                    type="button"
+                    disabled={modeDisabled || active}
+                    key={mode}
+                    onClick={() => void setMode(mode)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {usbCDownstreamPersisted === false ? (
+              <div className="flex min-h-8 items-center rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-3 text-[12px] font-bold whitespace-nowrap text-[var(--badge-warning-text)]">
+                EEPROM not saved
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="text-[16px] font-bold leading-5">
@@ -898,7 +970,8 @@ export function DeviceInfoPanel({
       </div>
 
       <div className="text-[12px] font-semibold text-[var(--muted)]">
-        Hardware tab maps directly to Plan #0005 /api/v1/info fields.
+        Settings includes device info plus persistent Wi-Fi, USB-C mode, and
+        firmware update controls.
       </div>
     </div>
   );

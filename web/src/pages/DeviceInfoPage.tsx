@@ -55,6 +55,16 @@ export function DeviceInfoPage() {
           saveWifiConfig={(input) => runtime.saveWifiConfig(device.id, input)}
           clearWifiConfig={() => runtime.clearWifiConfig(device.id)}
           rebootDevice={() => runtime.rebootDevice(device.id)}
+          usbCDownstreamRoute={
+            runtime.hub(device.id)?.usb_c_downstream_route ?? "usb_c"
+          }
+          usbCDownstreamPersisted={
+            runtime.hub(device.id)?.usb_c_downstream_persisted ?? null
+          }
+          routeBusy={runtime.pending(device.id, "port_c")}
+          setUsbCDownstreamRoute={(route) =>
+            runtime.setUsbCDownstreamRoute(device.id, route)
+          }
         />
       </div>
     </div>

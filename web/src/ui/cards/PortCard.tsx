@@ -27,6 +27,49 @@ function formatValue(value: number | null, unit: "V" | "A" | "W"): string {
   return `${(value / 1000).toFixed(2)}${unit}`;
 }
 
+function PortStateSummary({
+  powerEnabled,
+  dataConnected,
+  replugging,
+}: {
+  powerEnabled: boolean;
+  dataConnected: boolean;
+  replugging: boolean;
+}) {
+  const items = [
+    {
+      label: powerEnabled ? "Power on" : "Power off",
+      active: powerEnabled,
+    },
+    {
+      label: replugging
+        ? "Replugging"
+        : dataConnected
+          ? "Data linked"
+          : "Data off",
+      active: dataConnected && !replugging,
+    },
+  ];
+
+  return (
+    <div className="grid h-7 grid-cols-2 gap-2">
+      {items.map((item) => (
+        <div
+          className={[
+            "flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold",
+            item.active
+              ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
+              : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]",
+          ].join(" ")}
+          key={item.label}
+        >
+          <span className="truncate">{item.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ConfirmPopover({
   open,
   onClose,
@@ -110,13 +153,11 @@ export function PortCard({
 
   return (
     <div
-      className="iso-card relative flex min-h-[226px] flex-col rounded-[18px] bg-[var(--panel)] p-6 shadow-[inset_0_0_0_1px_var(--border)]"
+      className="iso-card relative flex h-full min-h-[236px] flex-col rounded-[18px] bg-[var(--panel)] p-6 shadow-[inset_0_0_0_1px_var(--border)]"
       data-testid={`port-card-${portId}`}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col">
-          <div className="text-[16px] font-bold">{label}</div>
-        </div>
+        <div className="min-w-0 text-[16px] font-bold">{label}</div>
         <div
           className={[
             "flex h-6 min-w-[60px] items-center justify-center rounded-full px-3",
@@ -133,7 +174,18 @@ export function PortCard({
         </div>
       </div>
 
-      <div className="mt-8 grid grid-cols-3 gap-6 sm:gap-10">
+      <div className="mt-4 grid grid-cols-[76px_minmax(0,1fr)] items-center gap-3">
+        <div className="text-[12px] font-semibold text-[var(--muted)]">
+          State
+        </div>
+        <PortStateSummary
+          powerEnabled={state.power_enabled}
+          dataConnected={state.data_connected}
+          replugging={state.replugging}
+        />
+      </div>
+
+      <div className="mt-5 grid grid-cols-3 gap-6 sm:gap-10">
         <div>
           <div className="text-[12px] font-semibold text-[var(--muted)]">
             Voltage
@@ -160,7 +212,7 @@ export function PortCard({
         </div>
       </div>
 
-      <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <div className="relative w-full sm:w-auto">
           <button
             className={[

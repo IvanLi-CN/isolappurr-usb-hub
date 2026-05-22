@@ -56,6 +56,10 @@ pub enum SoundId {
     ActionOkOnce,
     /// A short acknowledgement for a failed user action.
     ActionFailOnce,
+    /// A short, retriggerable click for hardware menu navigation.
+    MenuNavigateOnce,
+    /// A retriggerable acknowledgement for hardware menu confirmation.
+    MenuConfirmOnce,
 
     /// Reserved: a generic acknowledgement for user actions.
     ActionOnce,
@@ -93,6 +97,10 @@ pub enum SoundEvent {
     ActionOk,
     /// A user action completed but failed.
     ActionFail,
+    /// Hardware menu cursor moved.
+    MenuNavigate,
+    /// Hardware menu item was opened or confirmed.
+    MenuConfirm,
 }
 
 /// Warning reasons during initialization.

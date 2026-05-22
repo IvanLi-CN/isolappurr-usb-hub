@@ -223,6 +223,12 @@ where
                 }
                 self.request_one_shot(SoundId::ActionFailOnce);
             }
+            SoundEvent::MenuNavigate => {
+                self.restart_feedback(SoundId::MenuNavigateOnce);
+            }
+            SoundEvent::MenuConfirm => {
+                self.restart_feedback(SoundId::MenuConfirmOnce);
+            }
         }
     }
 
@@ -299,6 +305,21 @@ where
         }
 
         let _ = self.queue.push(id);
+    }
+
+    fn restart_feedback(&mut self, id: SoundId) {
+        if self.safety_active {
+            self.pause_safety_for_one_shot();
+        }
+
+        self.queue.remove(id);
+
+        if self.playing.is_some_and(|p| p.id != SoundId::SafetyAlarm) {
+            let _ = self.buzzer.stop();
+            self.playing = None;
+        }
+
+        self.start_immediately(id);
     }
 
     fn pause_safety_for_one_shot(&mut self) {
@@ -448,6 +469,8 @@ fn sound_priority(id: SoundId) -> u8 {
         SoundId::RecoverOnce => 40,
         SoundId::ActionOkOnce => 35,
         SoundId::ActionFailOnce => 35,
+        SoundId::MenuConfirmOnce => 35,
+        SoundId::MenuNavigateOnce => 34,
         SoundId::ActionOnce => 30,
         SoundId::PdOnce => 30,
 
@@ -661,6 +684,28 @@ const ACTION_OK_ONCE_STEPS: &[SoundStep] = &[SoundStep::Tone {
     duration: Duration::from_millis(ACTION_CLICK_MS),
 }];
 
+const MENU_NAVIGATE_ONCE_STEPS: &[SoundStep] = &[SoundStep::Tone {
+    freq_hz: ACTION_FREQ_HZ,
+    duty_pct: 18,
+    duration: Duration::from_millis(45),
+}];
+
+const MENU_CONFIRM_ONCE_STEPS: &[SoundStep] = &[
+    SoundStep::Tone {
+        freq_hz: ACTION_FREQ_HZ,
+        duty_pct: 18,
+        duration: Duration::from_millis(45),
+    },
+    SoundStep::Silence {
+        duration: Duration::from_millis(25),
+    },
+    SoundStep::Tone {
+        freq_hz: 3200,
+        duty_pct: 18,
+        duration: Duration::from_millis(45),
+    },
+];
+
 const ACTION_FAIL_ONCE_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
         freq_hz: ACTION_FREQ_HZ,
@@ -695,6 +740,8 @@ pub const PATTERN_WARNING_ONCE: SoundPattern = SoundPattern::once(WARNING_ONCE_S
 pub const PATTERN_ERROR_ONCE: SoundPattern = SoundPattern::once(ERROR_ONCE_STEPS);
 pub const PATTERN_ACTION_OK_ONCE: SoundPattern = SoundPattern::once(ACTION_OK_ONCE_STEPS);
 pub const PATTERN_ACTION_FAIL_ONCE: SoundPattern = SoundPattern::once(ACTION_FAIL_ONCE_STEPS);
+pub const PATTERN_MENU_NAVIGATE_ONCE: SoundPattern = SoundPattern::once(MENU_NAVIGATE_ONCE_STEPS);
+pub const PATTERN_MENU_CONFIRM_ONCE: SoundPattern = SoundPattern::once(MENU_CONFIRM_ONCE_STEPS);
 pub const PATTERN_SAFETY_ALARM: SoundPattern = SoundPattern::looped(SAFETY_ALARM_STEPS);
 
 fn pattern_for(id: SoundId) -> Option<&'static SoundPattern> {
@@ -706,6 +753,8 @@ fn pattern_for(id: SoundId) -> Option<&'static SoundPattern> {
         SoundId::ErrorOnce => Some(&PATTERN_ERROR_ONCE),
         SoundId::ActionOkOnce => Some(&PATTERN_ACTION_OK_ONCE),
         SoundId::ActionFailOnce => Some(&PATTERN_ACTION_FAIL_ONCE),
+        SoundId::MenuNavigateOnce => Some(&PATTERN_MENU_NAVIGATE_ONCE),
+        SoundId::MenuConfirmOnce => Some(&PATTERN_MENU_CONFIRM_ONCE),
         SoundId::SafetyAlarm => Some(&PATTERN_SAFETY_ALARM),
         _ => None,
     }
