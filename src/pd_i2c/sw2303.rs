@@ -129,11 +129,15 @@ where
 {
     let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
 
-    let status = dev.get_fast_charging_status().await?;
-    let fast_protocol = status.contains(sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL);
-    let fast_voltage = status.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE);
-    let negotiated_protocol = dev.get_negotiated_protocol().await?;
     let req = dev.get_power_request().await?;
+    let status = dev.get_fast_charging_status().await.ok();
+    let fast_protocol = status
+        .map(|status| status.contains(sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL))
+        .unwrap_or(false);
+    let fast_voltage = status
+        .map(|status| status.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE))
+        .unwrap_or(false);
+    let negotiated_protocol = dev.get_negotiated_protocol().await.ok().flatten();
 
     Ok(PowerRequest {
         fast_protocol,
