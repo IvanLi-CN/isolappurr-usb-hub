@@ -138,11 +138,13 @@ where
         .map(|status| status.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE))
         .unwrap_or(false);
     let negotiated_protocol = dev.get_negotiated_protocol().await.ok().flatten();
+    let cc_attached = dev.is_sink_device_connected().await.ok().unwrap_or(false);
 
     Ok(PowerRequest {
         fast_protocol,
         fast_voltage,
         negotiated_protocol,
+        cc_attached,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
     })
@@ -163,6 +165,7 @@ where
         fast_protocol: false,
         fast_voltage: false,
         negotiated_protocol: None,
+        cc_attached: false,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
     })

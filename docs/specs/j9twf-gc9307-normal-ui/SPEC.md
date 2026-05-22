@@ -57,8 +57,8 @@
 - 屏幕刷新周期为 500ms。
 - USB-A present 判定：电压有效且 `< 1.0V` 视为未插入；否则视为已插入（包含读数错误）。
 - USB-C present 判定：满足任一条件即视为已插入并显示 U17 实测电参量：
-  - U17 实测电压 `> 3000mV`
-  - U17 实测电流 `> 10mA`
+  - U17 实测电压 `>= 3000mV` 且 U17 实测电流 `> 10mA`
+  - SW2303 结构化状态显示 CC/设备在线已捕获（`cc_attached`）
   - SW2303 结构化状态显示真实协议已协商（`negotiated_protocol` / `fast_protocol` / `fast_voltage` 任一有效）
 - USB-C 协议状态只用于 present/mode/badge 辅助，不得替代 U17 的实际电压、电流、功率读数。
 - USB-C mode 判定：真实 PD fixed 目标显示 `PD`；真实 PD 非固定目标显示 `PPS`；其它快充协议显示 `DC`；若仅由 U17 量测阈值触发 present 且协议状态不可用，则显示 `DC`。
@@ -90,7 +90,7 @@
 ### Edge cases / errors
 
 - 单项读数失败时显示 `ERROR `；超过量程时显示 `OVER  `。
-- USB-C 若协议状态不可用，但 U17 实测电压 `> 3000mV` 或实测电流 `> 10mA`，仍显示 U17 实测电压、电流、功率；读取失败的单项按已插入状态显示 `ERROR `。
+- USB-C 若协议/CC 状态不可用，但 U17 实测电压 `>= 3000mV` 且实测电流 `> 10mA`，仍显示 U17 实测电压、电流、功率；读取失败的单项按已插入状态显示 `ERROR `。
 
 ## 接口契约（Interfaces & Contracts）
 
@@ -107,15 +107,21 @@ None。
 - Given：USB-A 电压读取失败
   When：界面刷新
   Then：该口仍视为已插入，并仅让对应失败字段显示 `ERROR `。
-- Given：USB-C 协议未激活，且 U17 实测电压 `<= 3000mV`、实测电流 `<= 10mA`
+- Given：USB-C 协议和 CC 捕获均未激活，且 U17 实测电压 `< 3000mV` 或实测电流 `<= 10mA`
   When：界面刷新
   Then：USB-C 三行均显示 `--.--V` / `--.--A` / `--.--W`。
-- Given：USB-C 协议状态不可用，且 U17 实测电压为 `3001mV`
+- Given：USB-C 协议和 CC 捕获均未激活，且 U17 实测电压为 `5000mV`、实测电流为 `0mA`
+  When：界面刷新
+  Then：USB-C 三行均显示 `--.--V` / `--.--A` / `--.--W`，避免默认 5V 空载误判为已连接。
+- Given：USB-C 协议和 CC 捕获均未激活，且 U17 实测电压为 `3000mV`、实测电流为 `11mA`
   When：界面刷新
   Then：USB-C 显示 U17 实测 V/A/W，mode 使用 `DC` fallback。
-- Given：USB-C 协议状态不可用，且 U17 实测电流为 `11mA`
+- Given：USB-C 协议和 CC 捕获均未激活，且 U17 实测电压为 `2999mV`、实测电流为 `11mA`
   When：界面刷新
-  Then：USB-C 显示 U17 实测 V/A/W，mode 使用 `DC` fallback。
+  Then：USB-C 三行均显示 `--.--V` / `--.--A` / `--.--W`。
+- Given：SW2303 状态显示 CC/设备在线已捕获
+  When：界面刷新且 U17 任一字段读取失败
+  Then：USB-C 仍视为已插入，失败字段显示 `ERROR `，其它有效字段正常显示。
 - Given：SW2303 状态显示真实协议已协商
   When：界面刷新且 U17 任一字段读取失败
   Then：USB-C 仍视为已插入，失败字段显示 `ERROR `，其它有效字段正常显示。
@@ -190,6 +196,10 @@ PR: include
 PR: include
 USB-C 真实协商 7V PPS 时，右列显示 `PPS`、`7V` badge 与 U17 实测 V/A/W。
 ![](./images/gc9307-normal-ui-usbc-pps-present.png)
+
+PR: include
+USB-C 保持默认 5V 但电流未超过 10mA、且无 CC/协议捕获时，右列显示未插入占位。
+![](./images/gc9307-normal-ui-usbc-5v-idle-not-present.png)
 
 ## 参考（References）
 

@@ -309,6 +309,15 @@ fn draw_usb_c_pps_present_example(canvas: &mut Canvas) {
     );
 }
 
+fn draw_usb_c_5v_idle_not_present_example(canvas: &mut Canvas) {
+    draw_port(
+        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
+    );
+    draw_port(
+        canvas, 164, 6, 150, 160, BERRY, "OFF", "OFF", "--.--V", "--.--A", "--.--W",
+    );
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::current_dir()?;
     let assets = root.join("docs/specs/3j4df-gc9307-shell-dashboard-ui/assets");
@@ -324,6 +333,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut canvas = Canvas::new(WHITE);
     match std::env::var("GC9307_DASHBOARD_SCENE").as_deref() {
         Ok("usb-c-pps-present") => draw_usb_c_pps_present_example(&mut canvas),
+        Ok("usb-c-5v-idle-not-present") => draw_usb_c_5v_idle_not_present_example(&mut canvas),
         _ => draw_dashboard_example(&mut canvas),
     }
 

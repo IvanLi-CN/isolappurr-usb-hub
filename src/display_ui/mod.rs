@@ -127,6 +127,7 @@ fn usb_c_policy_input(
     UsbCPolicyInput {
         voltage_mv: field_ok(voltage_mv),
         current_ma: field_ok(current_ma),
+        cc_attached: request.map(|request| request.cc_attached).unwrap_or(false),
         protocol_active: normal_ui_usb_c_protocol_active(request),
         pd_protocol: request
             .map(|request| request.negotiated_protocol == Some(sw2303::ProtocolType::PD))

@@ -10,6 +10,7 @@ pub enum UsbCModeKind {
 pub struct UsbCPolicyInput {
     pub voltage_mv: Option<u32>,
     pub current_ma: Option<u32>,
+    pub cc_attached: bool,
     pub protocol_active: bool,
     pub pd_protocol: bool,
     pub request_mv: Option<u16>,
@@ -19,16 +20,16 @@ const USB_C_PRESENT_VOLTAGE_MV: u32 = 3_000;
 const USB_C_PRESENT_CURRENT_MA: u32 = 10;
 
 pub const fn usb_c_present(input: UsbCPolicyInput) -> bool {
-    let voltage_present = match input.voltage_mv {
-        Some(v_mv) => v_mv > USB_C_PRESENT_VOLTAGE_MV,
+    let voltage_ready = match input.voltage_mv {
+        Some(v_mv) => v_mv >= USB_C_PRESENT_VOLTAGE_MV,
         None => false,
     };
-    let current_present = match input.current_ma {
+    let current_ready = match input.current_ma {
         Some(i_ma) => i_ma > USB_C_PRESENT_CURRENT_MA,
         None => false,
     };
 
-    voltage_present || current_present || input.protocol_active
+    (voltage_ready && current_ready) || input.cc_attached || input.protocol_active
 }
 
 pub const fn usb_c_mode(input: UsbCPolicyInput) -> UsbCModeKind {
@@ -54,6 +55,7 @@ mod tests {
     const fn input(
         voltage_mv: Option<u32>,
         current_ma: Option<u32>,
+        cc_attached: bool,
         protocol_active: bool,
         pd_protocol: bool,
         request_mv: Option<u16>,
@@ -61,6 +63,7 @@ mod tests {
         UsbCPolicyInput {
             voltage_mv,
             current_ma,
+            cc_attached,
             protocol_active,
             pd_protocol,
             request_mv,
@@ -68,17 +71,27 @@ mod tests {
     }
 
     #[test]
-    fn usb_c_present_uses_strict_voltage_threshold() {
+    fn usb_c_present_requires_voltage_and_current_thresholds() {
         assert!(!usb_c_present(input(
-            Some(3_000),
+            Some(5_000),
             Some(0),
+            false,
+            false,
+            false,
+            None
+        )));
+        assert!(!usb_c_present(input(
+            Some(2_999),
+            Some(11),
+            false,
             false,
             false,
             None
         )));
         assert!(usb_c_present(input(
-            Some(3_001),
-            Some(0),
+            Some(3_000),
+            Some(11),
+            false,
             false,
             false,
             None
@@ -87,19 +100,59 @@ mod tests {
 
     #[test]
     fn usb_c_present_uses_strict_current_threshold() {
-        assert!(!usb_c_present(input(Some(0), Some(10), false, false, None)));
-        assert!(usb_c_present(input(Some(0), Some(11), false, false, None)));
+        assert!(!usb_c_present(input(
+            Some(3_000),
+            Some(10),
+            false,
+            false,
+            false,
+            None
+        )));
+        assert!(usb_c_present(input(
+            Some(3_000),
+            Some(11),
+            false,
+            false,
+            false,
+            None
+        )));
+    }
+
+    #[test]
+    fn usb_c_present_uses_cc_attachment() {
+        assert!(usb_c_present(input(
+            Some(0),
+            Some(0),
+            true,
+            false,
+            false,
+            None
+        )));
     }
 
     #[test]
     fn usb_c_present_uses_real_protocol_activity() {
-        assert!(usb_c_present(input(None, None, true, true, Some(5_000))));
+        assert!(usb_c_present(input(
+            None,
+            None,
+            false,
+            true,
+            true,
+            Some(5_000)
+        )));
     }
 
     #[test]
     fn usb_c_mode_reports_pps_for_non_fixed_pd_voltage() {
         assert_eq!(
-            usb_c_mode(input(Some(7_000), Some(250), true, true, Some(7_000))),
+            usb_c_mode(input(
+                Some(7_000),
+                Some(250),
+                false,
+                true,
+                true,
+                Some(7_000)
+            )),
             UsbCModeKind::Pps
         );
     }
@@ -107,11 +160,11 @@ mod tests {
     #[test]
     fn usb_c_mode_falls_back_to_dc_when_only_measurement_is_present() {
         assert_eq!(
-            usb_c_mode(input(Some(3_001), Some(0), false, false, None)),
+            usb_c_mode(input(Some(3_000), Some(11), false, false, false, None)),
             UsbCModeKind::Dc
         );
         assert_eq!(
-            usb_c_mode(input(Some(0), Some(0), false, false, None)),
+            usb_c_mode(input(Some(5_000), Some(0), false, false, false, None)),
             UsbCModeKind::Off
         );
     }

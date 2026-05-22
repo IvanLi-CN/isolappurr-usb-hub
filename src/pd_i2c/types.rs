@@ -6,6 +6,8 @@ pub struct PowerRequest {
     pub fast_voltage: bool,
     /// Currently negotiated charging protocol (if any).
     pub negotiated_protocol: Option<sw2303::ProtocolType>,
+    /// SW2303 sink/CC connection status when available.
+    pub cc_attached: bool,
     pub v_req_mv: u16,
     pub i_req_ma: u16,
 }
