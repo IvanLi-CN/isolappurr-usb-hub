@@ -14,12 +14,16 @@ const AddDeviceUiContext = createContext<AddDeviceUiContextValue | null>(null);
 export function AddDeviceUiProvider({
   existingDeviceIds,
   existingDeviceBaseUrls,
+  existingDeviceNamesById,
   onCreate,
+  onUpsert,
   children,
 }: {
   existingDeviceIds: string[];
   existingDeviceBaseUrls: string[];
+  existingDeviceNamesById: Record<string, string>;
   onCreate: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
+  onUpsert: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -38,8 +42,10 @@ export function AddDeviceUiProvider({
         open={open}
         existingDeviceIds={existingDeviceIds}
         existingDeviceBaseUrls={existingDeviceBaseUrls}
+        existingDeviceNamesById={existingDeviceNamesById}
         onClose={() => setOpen(false)}
         onCreate={onCreate}
+        onUpsert={onUpsert}
       />
     </AddDeviceUiContext.Provider>
   );

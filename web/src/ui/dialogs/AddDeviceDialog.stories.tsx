@@ -102,6 +102,10 @@ const meta: Meta<typeof AddDeviceDialog> = {
       ok: true,
       device: { id: "demo", name: "Demo", baseUrl: "http://192.168.1.10" },
     }),
+    onUpsert: async () => ({
+      ok: true,
+      device: { id: "demo", name: "Demo", baseUrl: "http://192.168.1.10" },
+    }),
   },
   decorators: [
     (Story) => (
@@ -236,6 +240,41 @@ export const AddFailure: Story = {
 export const WebSerialSetup: Story = {
   args: {
     initialMethod: "web_serial",
+  },
+  decorators: [
+    mockFetchDecorator(
+      mockAgent({
+        mode: "service",
+        status: "ready",
+        devices: [],
+      }),
+    ),
+  ],
+};
+
+export const WebSerialConnectionLog: Story = {
+  args: {
+    initialMethod: "web_serial",
+    initialUsbLog: [
+      { tone: "info", message: "Requesting browser serial access..." },
+      {
+        tone: "info",
+        message: "Browser serial port opened. Reading connected hub...",
+      },
+      {
+        tone: "warning",
+        message:
+          "Web Serial info attempt failed: No IsolaPurr JSONL response received from this serial device.",
+      },
+      {
+        tone: "info",
+        message: "Sending info request over Web Serial (attempt 2/3)...",
+      },
+      {
+        tone: "success",
+        message: "Wi-Fi HTTP link verified and will be saved.",
+      },
+    ],
   },
   decorators: [
     mockFetchDecorator(

@@ -61,6 +61,7 @@ export function DeviceInfoPanel({
   usbCDownstreamPersisted,
   routeBusy,
   setUsbCDownstreamRoute,
+  deleteDevice,
 }: {
   device: StoredDevice;
   transport: DeviceTransport | null;
@@ -76,6 +77,7 @@ export function DeviceInfoPanel({
   usbCDownstreamPersisted: boolean | null;
   routeBusy: boolean;
   setUsbCDownstreamRoute: (route: UsbCDownstreamRoute) => Promise<void>;
+  deleteDevice: () => Promise<void>;
 }) {
   const [info, setInfo] = useState<DeviceInfoResponse | null>(null);
   const [infoError, setInfoError] = useState<string | null>(null);
@@ -90,6 +92,9 @@ export function DeviceInfoPanel({
   const [wifiError, setWifiError] = useState<string | null>(null);
   const [wifiRebootRequired, setWifiRebootRequired] = useState(false);
   const [wifiClearConfirmOpen, setWifiClearConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [firmwareFile, setFirmwareFile] = useState<File | null>(null);
   const [flashAddress, setFlashAddress] = useState("0x10000");
   const [flashBusy, setFlashBusy] = useState(false);
@@ -124,6 +129,8 @@ export function DeviceInfoPanel({
     setWifiError(null);
     setWifiRebootRequired(false);
     setWifiClearConfirmOpen(false);
+    setDeleteConfirmOpen(false);
+    setDeleteError(null);
     wifiFormDirtyRef.current = false;
   }, [device.id]);
 
@@ -405,6 +412,19 @@ export function DeviceInfoPanel({
       setWifiError(res.error.message);
     } finally {
       setWifiBusy(false);
+    }
+  };
+
+  const confirmDeleteDevice = async () => {
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await deleteDevice();
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Could not delete this hub.",
+      );
+      setDeleteBusy(false);
     }
   };
 
@@ -875,6 +895,53 @@ export function DeviceInfoPanel({
         </div>
       ) : null}
 
+      {deleteConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6"
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-[460px] rounded-[14px] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-2xl"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="device-delete-title"
+            aria-describedby="device-delete-description"
+          >
+            <div
+              id="device-delete-title"
+              className="text-[15px] font-bold text-[var(--text)]"
+            >
+              Delete this saved device?
+            </div>
+            <div
+              id="device-delete-description"
+              className="mt-3 text-[13px] font-semibold leading-6 text-[var(--muted)]"
+            >
+              This only removes the local saved profile for {device.name}. It
+              does not change hardware settings on the hub.
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                className="btn btn-outline btn-sm min-h-10 justify-center"
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => setDeleteConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary btn-sm min-h-10 justify-center"
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => void confirmDeleteDevice()}
+              >
+                {deleteBusy ? "Deleting..." : "Delete device"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
@@ -967,6 +1034,35 @@ export function DeviceInfoPanel({
           <div>- Connection: offline when last ok ≥ 10s</div>
           <div>- UI labels default English; i18n later</div>
         </div>
+      </div>
+
+      <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="text-[16px] font-bold leading-5">Saved device</div>
+            <div className="mt-2 text-[12px] font-semibold leading-5 text-[var(--muted)]">
+              Remove this hub from the local device list.
+            </div>
+          </div>
+          <button
+            className="btn btn-outline btn-sm min-h-10 justify-center border-[var(--error)] text-[var(--error)]"
+            type="button"
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteConfirmOpen(true);
+            }}
+          >
+            Delete device
+          </button>
+        </div>
+        {deleteError ? (
+          <div
+            className="mt-4 rounded-[12px] border border-[var(--error)] bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold text-[var(--error)]"
+            role="alert"
+          >
+            {deleteError}
+          </div>
+        ) : null}
       </div>
 
       <div className="text-[12px] font-semibold text-[var(--muted)]">

@@ -38,6 +38,7 @@ import {
   getLocalUsbDeviceLink,
   subscribeLocalUsbDeviceLinks,
 } from "../domain/localUsbLinks";
+import { subscribeNetworkDeviceLinks } from "../domain/networkLinks";
 import type {
   HubState,
   Port,
@@ -163,6 +164,9 @@ export function DeviceRuntimeProvider({
       for (const id of Object.keys(next)) {
         if (!alive.has(id)) {
           delete next[id];
+          delete localUsbPortByDevice.current[id];
+          delete localUsbRequestQueues.current[id];
+          delete preferredTransportByDevice.current[id];
         }
       }
       for (const d of devices) {
@@ -534,6 +538,20 @@ export function DeviceRuntimeProvider({
       }
     });
   }, [devices, pollDevice]);
+
+  useEffect(() => {
+    return subscribeNetworkDeviceLinks((link) => {
+      markChannelResult(link.deviceId, "http", {
+        ok: true,
+        value: { baseUrl: link.baseUrl },
+      });
+      const currentTransport = runtimeById[link.deviceId]?.transport;
+      if (!currentTransport) {
+        preferredTransportByDevice.current[link.deviceId] = "http";
+      }
+      void pollDevice(link.deviceId, link.baseUrl);
+    });
+  }, [markChannelResult, pollDevice, runtimeById]);
 
   useEffect(() => {
     let cancelled = false;

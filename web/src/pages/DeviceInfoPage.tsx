@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
 import { DevicePageTabs } from "../ui/nav/DevicePageTabs";
@@ -6,7 +6,8 @@ import { DeviceInfoPanel } from "../ui/panels/DeviceInfoPanel";
 
 export function DeviceInfoPage() {
   const { deviceId } = useParams();
-  const { getDevice } = useDevices();
+  const { getDevice, removeDevice } = useDevices();
+  const navigate = useNavigate();
   const runtime = useDeviceRuntime();
 
   if (!deviceId) {
@@ -65,6 +66,10 @@ export function DeviceInfoPage() {
           setUsbCDownstreamRoute={(route) =>
             runtime.setUsbCDownstreamRoute(device.id, route)
           }
+          deleteDevice={async () => {
+            await removeDevice(device.id);
+            navigate("/");
+          }}
         />
       </div>
     </div>

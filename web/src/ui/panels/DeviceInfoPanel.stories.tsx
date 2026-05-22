@@ -65,6 +65,7 @@ const meta: Meta<typeof DeviceInfoPanel> = {
     usbCDownstreamPersisted: true,
     routeBusy: false,
     setUsbCDownstreamRoute: async () => {},
+    deleteDevice: async () => undefined,
   },
 };
 
@@ -227,5 +228,22 @@ export const WebSerialFlashing: Story = {
   args: {
     transport: "web_serial",
     wifiManagementTransport: "web_serial",
+  },
+};
+
+export const DeleteDeviceConfirmation: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Delete device" }),
+    );
+    await expect(
+      await canvas.findByRole("alertdialog", {
+        name: "Delete this saved device?",
+      }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByText(/does not change hardware settings/),
+    ).toBeVisible();
   },
 };

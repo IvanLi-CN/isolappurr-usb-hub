@@ -304,6 +304,15 @@ export class WebSerialJsonlTransport {
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private decoder = new TextDecoder();
   private requestQueue: Promise<void> = Promise.resolve();
+  private buffered = "";
+  private pending = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (err: Error) => void;
+      timeoutId: number;
+    }
+  >();
 
   async connect(): Promise<void> {
     if (!isWebSerialSupported()) {
@@ -317,6 +326,13 @@ export class WebSerialJsonlTransport {
       } catch {
         await this.disconnect().catch(() => undefined);
       }
+    }
+    await this.connectToPort(await requestWebSerialPort());
+  }
+
+  async connectWithPicker(): Promise<void> {
+    if (!isWebSerialSupported()) {
+      throw new Error("Web Serial is not supported by this browser");
     }
     await this.connectToPort(await requestWebSerialPort());
   }
@@ -337,7 +353,9 @@ export class WebSerialJsonlTransport {
     this.reader = port.readable?.getReader() ?? null;
     this.writer = port.writable?.getWriter() ?? null;
     this.decoder = new TextDecoder();
+    this.buffered = "";
     this.port = port;
+    void this.readSerialLoop();
   }
 
   async takePortForExclusiveUse(): Promise<SerialLikePort> {
@@ -363,40 +381,101 @@ export class WebSerialJsonlTransport {
       throw new Error("Web Serial transport is not connected");
     }
     const payload = `${JSON.stringify(request)}\n`;
-    await this.writer.write(new TextEncoder().encode(payload));
+    const response = this.waitForResponse(request);
+    try {
+      await this.writer.write(new TextEncoder().encode(payload));
+      return await response;
+    } catch (err) {
+      this.clearPendingRequest(request.id);
+      throw err;
+    }
+  }
 
-    let buffered = "";
-    const deadline =
-      Date.now() + (request.timeoutMs ?? DEFAULT_JSONL_TIMEOUT_MS);
-    while (Date.now() < deadline) {
-      const remaining = Math.max(1, deadline - Date.now());
-      const chunk = await readWithTimeout(this.reader, remaining);
-      if (!chunk) {
-        break;
+  private waitForResponse(request: JsonlRequest): Promise<unknown> {
+    const key = String(request.id);
+    this.clearPendingRequest(request.id);
+    return new Promise((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        this.pending.delete(key);
+        reject(
+          new Error(
+            "No IsolaPurr JSONL response received from this serial device.",
+          ),
+        );
+      }, request.timeoutMs ?? DEFAULT_JSONL_TIMEOUT_MS);
+      this.pending.set(key, { resolve, reject, timeoutId });
+    });
+  }
+
+  private clearPendingRequest(requestId: number): void {
+    const key = String(requestId);
+    const pending = this.pending.get(key);
+    if (!pending) {
+      return;
+    }
+    window.clearTimeout(pending.timeoutId);
+    this.pending.delete(key);
+  }
+
+  private async readSerialLoop(): Promise<void> {
+    const reader = this.reader;
+    if (!reader) {
+      return;
+    }
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          throw new Error("Serial stream closed before a JSONL response");
+        }
+        this.buffered += this.decoder.decode(chunk.value, { stream: true });
+        this.drainBufferedLines();
       }
-      buffered += this.decoder.decode(chunk.value, { stream: true });
-      while (true) {
-        const newline = buffered.indexOf("\n");
-        if (newline < 0) {
-          break;
-        }
-        const line = buffered.slice(0, newline).trim();
-        buffered = buffered.slice(newline + 1);
-        if (line) {
-          try {
-            const parsed = JSON.parse(line) as unknown;
-            if (jsonlResponseMatchesRequest(parsed, request.id)) {
-              return parsed;
-            }
-          } catch {
-            // Ignore boot logs or non-IsolaPurr serial output until a JSONL frame appears.
-          }
-        }
+    } catch (err) {
+      if (this.reader === reader) {
+        this.rejectPending(
+          err instanceof Error ? err : new Error("Web Serial read failed"),
+        );
       }
     }
-    throw new Error(
-      "No IsolaPurr JSONL response received from this serial device.",
-    );
+  }
+
+  private drainBufferedLines(): void {
+    for (;;) {
+      const newline = this.buffered.indexOf("\n");
+      if (newline < 0) {
+        return;
+      }
+      const line = this.buffered.slice(0, newline).trim();
+      this.buffered = this.buffered.slice(newline + 1);
+      if (!line) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        const id = jsonlResponseId(parsed);
+        if (id === null) {
+          continue;
+        }
+        const pending = this.pending.get(id);
+        if (!pending) {
+          continue;
+        }
+        window.clearTimeout(pending.timeoutId);
+        this.pending.delete(id);
+        pending.resolve(parsed);
+      } catch {
+        // Ignore boot logs or non-IsolaPurr serial output until a JSONL frame appears.
+      }
+    }
+  }
+
+  private rejectPending(err: Error): void {
+    for (const pending of this.pending.values()) {
+      window.clearTimeout(pending.timeoutId);
+      pending.reject(err);
+    }
+    this.pending.clear();
   }
 
   async disconnect(): Promise<void> {
@@ -408,7 +487,9 @@ export class WebSerialJsonlTransport {
     this.writer = null;
     this.port = null;
     this.decoder = new TextDecoder();
+    this.buffered = "";
     this.requestQueue = Promise.resolve();
+    this.rejectPending(new Error("Web Serial transport disconnected"));
 
     try {
       await reader?.cancel();
@@ -471,34 +552,12 @@ function isEspressifWebSerialPort(port: SerialLikePort): boolean {
   );
 }
 
-function jsonlResponseMatchesRequest(
-  value: unknown,
-  requestId: number,
-): boolean {
+function jsonlResponseId(value: unknown): string | null {
   if (!value || typeof value !== "object") {
-    return false;
-  }
-  const id = (value as { id?: unknown }).id;
-  return id === requestId || String(id) === String(requestId);
-}
-
-async function readWithTimeout(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  timeoutMs: number,
-): Promise<ReadableStreamReadResult<Uint8Array> | null> {
-  let timeoutId = 0;
-  const timeout = new Promise<null>((resolve) => {
-    timeoutId = window.setTimeout(() => resolve(null), timeoutMs);
-  });
-  const result = await Promise.race([reader.read(), timeout]);
-  window.clearTimeout(timeoutId);
-  if (!result) {
     return null;
   }
-  if (result.done) {
-    throw new Error("Serial stream closed before a JSONL response");
-  }
-  return result;
+  const id = (value as { id?: unknown }).id;
+  return id === undefined || id === null ? null : String(id);
 }
 
 export async function flashWithWebSerial(

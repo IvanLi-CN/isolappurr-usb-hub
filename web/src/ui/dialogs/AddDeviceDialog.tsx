@@ -5,7 +5,7 @@ import {
   type DesktopAgent,
   tryBootstrapDesktopAgent,
 } from "../../domain/desktopAgent";
-import { getDeviceInfo } from "../../domain/deviceApi";
+import { type DeviceInfoResponse, getDeviceInfo } from "../../domain/deviceApi";
 import type {
   AddDeviceInput,
   AddDeviceValidationResult,
@@ -29,6 +29,7 @@ import {
   WebSerialJsonlTransport,
 } from "../../domain/hardwareConsole";
 import { announceLocalUsbDeviceLink } from "../../domain/localUsbLinks";
+import { announceNetworkDeviceLink } from "../../domain/networkLinks";
 import { announceWebSerialDeviceLink } from "../../domain/webSerialLinks";
 import { DeviceDiscoveryPanel } from "../panels/DeviceDiscoveryPanel";
 
@@ -51,22 +52,34 @@ type UsbDeviceInfo = {
   wifi?: { ipv4?: string | null };
 };
 
+type UsbLogEntry = {
+  id: number;
+  tone: "info" | "success" | "warning" | "error";
+  message: string;
+};
+
 export type AddDeviceDialogProps = {
   open: boolean;
   initialMethod?: AddDeviceMethod;
+  initialUsbLog?: Array<Omit<UsbLogEntry, "id">>;
   existingDeviceIds?: string[];
   existingDeviceBaseUrls?: string[];
+  existingDeviceNamesById?: Record<string, string>;
   onClose: () => void;
   onCreate: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
+  onUpsert: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
 };
 
 export function AddDeviceDialog({
   open,
   initialMethod = "wifi",
+  initialUsbLog,
   existingDeviceIds,
   existingDeviceBaseUrls,
+  existingDeviceNamesById,
   onClose,
   onCreate,
+  onUpsert,
 }: AddDeviceDialogProps) {
   const navigate = useNavigate();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -79,6 +92,9 @@ export function AddDeviceDialog({
   const [addError, setAddError] = useState<string | null>(null);
   const [usbBusy, setUsbBusy] = useState(false);
   const [usbStatus, setUsbStatus] = useState<string | null>(null);
+  const [usbLog, setUsbLog] = useState<UsbLogEntry[]>(() =>
+    hydrateInitialUsbLog(initialUsbLog),
+  );
   const [localUsbPorts, setLocalUsbPorts] = useState<SerialPortInfo[]>([]);
   const [selectedLocalUsbPort, setSelectedLocalUsbPort] = useState("");
   const [discoveryPanelKey, setDiscoveryPanelKey] = useState(0);
@@ -103,6 +119,21 @@ export function AddDeviceDialog({
   const agentPollRef = useRef<number | null>(null);
 
   const scanRunIdRef = useRef(0);
+  const usbLogSeqRef = useRef(1);
+
+  const appendUsbLog = (
+    message: string,
+    tone: UsbLogEntry["tone"] = "info",
+  ) => {
+    const entry = { id: usbLogSeqRef.current, message, tone };
+    usbLogSeqRef.current += 1;
+    setUsbLog((prev) => [...prev.slice(-7), entry]);
+  };
+
+  const setUsbStep = (message: string, tone: UsbLogEntry["tone"] = "info") => {
+    setUsbStatus(message);
+    appendUsbLog(message, tone);
+  };
 
   useEffect(() => {
     openRef.current = open;
@@ -129,6 +160,7 @@ export function AddDeviceDialog({
       setAddError(null);
       setUsbBusy(false);
       setUsbStatus(null);
+      setUsbLog(hydrateInitialUsbLog(initialUsbLog));
       setLocalUsbPorts([]);
       setSelectedLocalUsbPort("");
       methodRef.current = initialMethod;
@@ -150,7 +182,7 @@ export function AddDeviceDialog({
     if (el.open) {
       el.close();
     }
-  }, [initialMethod, open]);
+  }, [initialMethod, initialUsbLog, open]);
 
   useEffect(() => {
     if (!open) {
@@ -456,6 +488,45 @@ export function AddDeviceDialog({
     onClose();
   };
 
+  const resolveReachableUsbBaseUrl = async (
+    device: UsbDeviceInfo,
+    id: string,
+    hostname: string,
+    run?: { id: number; method: AddDeviceMethod },
+  ): Promise<string> => {
+    const fallbackBaseUrl = `http://${device.fqdn?.trim() || `${hostname}.local`}`;
+    const ipv4 = device.wifi?.ipv4?.trim();
+    if (!ipv4) {
+      setUsbStep("USB info did not report a Wi-Fi IPv4 address.", "warning");
+      return fallbackBaseUrl;
+    }
+
+    const wifiBaseUrl = `http://${ipv4}`;
+    setUsbStep(`Checking Wi-Fi reachability at ${wifiBaseUrl}...`);
+    const res = await getDeviceInfo(wifiBaseUrl);
+    if (run && !isActiveUsbRun(run.id, run.method)) {
+      return fallbackBaseUrl;
+    }
+    if (!res.ok) {
+      setUsbStep(
+        `Wi-Fi reported ${ipv4}, but HTTP is not reachable yet: ${res.error.message}`,
+        "warning",
+      );
+      return fallbackBaseUrl;
+    }
+    if (!usbInfoMatchesHttpInfo(device, id, res.value)) {
+      setUsbStep(
+        "Wi-Fi HTTP responded, but identity did not match the USB device.",
+        "warning",
+      );
+      return fallbackBaseUrl;
+    }
+
+    setUsbStep("Wi-Fi HTTP link verified and will be saved.", "success");
+    announceNetworkDeviceLink({ deviceId: id, baseUrl: wifiBaseUrl });
+    return wifiBaseUrl;
+  };
+
   const addUsbDevice = async (
     envelope: unknown,
     fallback?: {
@@ -487,15 +558,21 @@ export function AddDeviceDialog({
     }
 
     const hostname = device.hostname?.trim() || `isolapurr-usb-hub-${id}`;
-    const baseUrl = device.wifi?.ipv4
-      ? `http://${device.wifi.ipv4}`
-      : `http://${device.fqdn?.trim() || `${hostname}.local`}`;
+    const baseUrl = await resolveReachableUsbBaseUrl(device, id, hostname, run);
+    if (run && !isActiveUsbRun(run.id, run.method)) {
+      return false;
+    }
 
-    const saved = await onCreate({
+    setUsbStep("Saving hub profile...");
+    const existingName = existingDeviceNamesById?.[id]?.trim();
+    const input = {
       id,
-      name: hostname,
+      name: existingName || hostname,
       baseUrl,
-    });
+    };
+    const saved = ids.includes(id)
+      ? await onUpsert(input)
+      : await onCreate(input);
     if (run && !isActiveUsbRun(run.id, run.method)) {
       return false;
     }
@@ -513,10 +590,17 @@ export function AddDeviceDialog({
             transport: fallback.webSerialTransport,
           });
         }
-        setAddError(null);
-        onClose();
-        navigate(`/devices/${id}`);
-        return true;
+        const updated = await onUpsert(input);
+        if (updated.ok) {
+          setUsbStep(
+            "Existing hub updated with the latest connection link.",
+            "success",
+          );
+          setAddError(null);
+          onClose();
+          navigate(`/devices/${id}`);
+          return true;
+        }
       }
       setAddError(
         saved.errors.id ??
@@ -526,6 +610,7 @@ export function AddDeviceDialog({
       );
       return false;
     }
+    setUsbStep("Hub saved.", "success");
     if (fallback?.portPath) {
       announceLocalUsbDeviceLink({ deviceId: id, portPath: fallback.portPath });
     }
@@ -537,6 +622,7 @@ export function AddDeviceDialog({
     }
     setAddError(null);
     onClose();
+    navigate(`/devices/${id}`);
     return true;
   };
 
@@ -544,7 +630,8 @@ export function AddDeviceDialog({
     const runId = startUsbRun("local_usb");
     setUsbBusy(true);
     setAddError(null);
-    setUsbStatus("Preparing Local USB connection...");
+    setUsbLog([]);
+    setUsbStep("Preparing Local USB connection...");
     try {
       const agent = agentRef.current ?? (await tryBootstrapDesktopAgent());
       agentRef.current = agent;
@@ -573,11 +660,11 @@ export function AddDeviceDialog({
         setSelectedLocalUsbPort(selectedPortPath);
         const port = ports.find((p) => p.path === selectedPortPath);
         if (!port) {
-          setUsbStatus("Choose the IsolaPurr ESP32 USB device to connect.");
+          setUsbStep("Choose the IsolaPurr ESP32 USB device to connect.");
           return;
         }
-        setUsbStatus("Identifying IsolaPurr USB hub...");
-        const response = await readLocalUsbInfo(agent, port);
+        setUsbStep(`Opening Local USB port ${port.path}...`);
+        const response = await readLocalUsbInfo(agent, port, appendUsbLog);
         await addUsbDevice(
           response,
           { serialNumber: port.serialNumber, portPath: port.path },
@@ -586,10 +673,11 @@ export function AddDeviceDialog({
         return;
       }
 
-      setUsbStatus("Identifying IsolaPurr USB hub...");
+      setUsbStep("Identifying IsolaPurr USB hub...");
       for (const port of ports) {
         try {
-          const response = await readLocalUsbInfo(agent, port);
+          setUsbStep(`Trying Local USB port ${port.path}...`);
+          const response = await readLocalUsbInfo(agent, port, appendUsbLog);
           if (!isActiveUsbRun(runId, "local_usb")) {
             return;
           }
@@ -611,12 +699,19 @@ export function AddDeviceDialog({
 
       if (ports.length === 1) {
         setAddError("The ESP32 USB port did not respond as IsolaPurr.");
+        appendUsbLog(
+          "Local USB info request did not identify IsolaPurr.",
+          "error",
+        );
         return;
       }
-      setUsbStatus("Choose the IsolaPurr ESP32 USB device to connect.");
+      setUsbStep("Choose the IsolaPurr ESP32 USB device to connect.");
     } catch (err) {
       if (isActiveUsbRun(runId, "local_usb")) {
-        setAddError(err instanceof Error ? err.message : "Local USB failed.");
+        const message =
+          err instanceof Error ? err.message : "Local USB failed.";
+        appendUsbLog(message, "error");
+        setAddError(message);
       }
     } finally {
       if (isActiveUsbRun(runId, "local_usb")) {
@@ -629,16 +724,17 @@ export function AddDeviceDialog({
     const runId = startUsbRun("web_serial");
     setUsbBusy(true);
     setAddError(null);
-    setUsbStatus("Requesting browser serial access...");
+    setUsbLog([]);
+    setUsbStep("Requesting browser serial access...");
     const transport = new WebSerialJsonlTransport();
     let handedOff = false;
     try {
-      await transport.connect();
+      await transport.connectWithPicker();
       if (!isActiveUsbRun(runId, "web_serial")) {
         return;
       }
-      setUsbStatus("Reading connected hub...");
-      const response = await readWebSerialInfo(transport);
+      setUsbStep("Browser serial port opened. Reading connected hub...");
+      const response = await readWebSerialInfo(transport, appendUsbLog);
       handedOff = await addUsbDevice(
         response,
         { webSerialTransport: transport },
@@ -649,7 +745,10 @@ export function AddDeviceDialog({
       );
     } catch (err) {
       if (isActiveUsbRun(runId, "web_serial")) {
-        setAddError(err instanceof Error ? err.message : "Web Serial failed.");
+        const message =
+          err instanceof Error ? err.message : "Web Serial failed.";
+        appendUsbLog(message, "error");
+        setAddError(message);
       }
     } finally {
       if (!handedOff) {
@@ -670,6 +769,7 @@ export function AddDeviceDialog({
     setMethod(nextMethod);
     setAddError(null);
     setUsbStatus(null);
+    setUsbLog([]);
     setUsbBusy(false);
   };
 
@@ -987,6 +1087,35 @@ export function AddDeviceDialog({
                       {usbStatus}
                     </div>
                   ) : null}
+                  {usbLog.length > 0 ? (
+                    <div className="mt-4 rounded-[12px] border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+                      <div className="text-[12px] font-bold text-[var(--muted)]">
+                        Connection log
+                      </div>
+                      <div className="mt-2 grid gap-1.5">
+                        {usbLog.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className={[
+                              "flex min-w-0 items-start gap-2 text-[12px] font-semibold leading-5",
+                              entry.tone === "success"
+                                ? "text-[var(--badge-success-text)]"
+                                : entry.tone === "warning"
+                                  ? "text-[var(--warning)]"
+                                  : entry.tone === "error"
+                                    ? "text-[var(--error)]"
+                                    : "text-[var(--muted)]",
+                            ].join(" ")}
+                          >
+                            <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                            <span className="min-w-0 break-words">
+                              {entry.message}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {addError ? <InlineAddError message={addError} /> : null}
                 </div>
 
@@ -1020,10 +1149,14 @@ export function AddDeviceDialog({
 async function readLocalUsbInfo(
   agent: DesktopAgent,
   port: SerialPortInfo,
+  onLog: (message: string, tone?: UsbLogEntry["tone"]) => void,
 ): Promise<unknown> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
+      onLog(
+        `Sending info request over Local USB (attempt ${attempt + 1}/3)...`,
+      );
       return await sendLocalUsbJsonlRequest(agent, port.path, {
         id: nextJsonlRequestId(),
         method: "info",
@@ -1031,6 +1164,12 @@ async function readLocalUsbInfo(
       });
     } catch (err) {
       lastError = err;
+      onLog(
+        err instanceof Error
+          ? `Local USB info attempt failed: ${err.message}`
+          : "Local USB info attempt failed.",
+        "warning",
+      );
       await delay(250 + attempt * 250);
     }
   }
@@ -1041,10 +1180,14 @@ async function readLocalUsbInfo(
 
 async function readWebSerialInfo(
   transport: WebSerialJsonlTransport,
+  onLog: (message: string, tone?: UsbLogEntry["tone"]) => void,
 ): Promise<unknown> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
+      onLog(
+        `Sending info request over Web Serial (attempt ${attempt + 1}/3)...`,
+      );
       return await transport.request({
         id: nextJsonlRequestId(),
         method: "info",
@@ -1052,6 +1195,12 @@ async function readWebSerialInfo(
       });
     } catch (err) {
       lastError = err;
+      onLog(
+        err instanceof Error
+          ? `Web Serial info attempt failed: ${err.message}`
+          : "Web Serial info attempt failed.",
+        "warning",
+      );
       await delay(250 + attempt * 250);
     }
   }
@@ -1091,6 +1240,12 @@ function InlineAddError({ message }: { message: string }) {
   );
 }
 
+function hydrateInitialUsbLog(
+  entries: Array<Omit<UsbLogEntry, "id">> | undefined,
+): UsbLogEntry[] {
+  return entries?.map((entry, index) => ({ ...entry, id: index + 1 })) ?? [];
+}
+
 function isIsolaPurrDeviceInfo(device: UsbDeviceInfo): boolean {
   return (
     device.firmware?.name === "isolapurr-usb-hub" ||
@@ -1100,9 +1255,29 @@ function isIsolaPurrDeviceInfo(device: UsbDeviceInfo): boolean {
   );
 }
 
+function usbInfoMatchesHttpInfo(
+  usbDevice: UsbDeviceInfo,
+  usbDeviceId: string,
+  httpInfo: DeviceInfoResponse,
+): boolean {
+  const httpDevice = httpInfo.device;
+  const httpDeviceId = normalizeDeviceId(httpDevice.device_id);
+  if (httpDeviceId && httpDeviceId === usbDeviceId) {
+    return true;
+  }
+  const usbMac = normalizeMac(usbDevice.mac);
+  const httpMac = normalizeMac(httpDevice.mac);
+  return Boolean(usbMac && httpMac && usbMac === httpMac);
+}
+
 function normalizeDeviceId(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeMac(value: string | null | undefined): string | null {
+  const hex = value?.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
+  return hex && hex.length >= 6 ? hex : null;
 }
 
 function shortIdFromMac(value: string | null | undefined): string | null {

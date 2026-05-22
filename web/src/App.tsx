@@ -23,11 +23,14 @@ import { ToastProvider } from "./ui/toast/ToastProvider";
 
 function RootLayout() {
   const { deviceId } = useParams();
-  const { devices, addDevice } = useDevices();
+  const { devices, addDevice, upsertDevice } = useDevices();
   const navigate = useNavigate();
 
   const existingIds = devices.map((d) => d.id);
   const existingBaseUrls = devices.map((d) => d.baseUrl);
+  const existingNamesById = Object.fromEntries(
+    devices.map((d) => [d.id, d.name]),
+  );
 
   const onAdd = async (input: AddDeviceInput) => {
     const result = await addDevice(input);
@@ -42,7 +45,9 @@ function RootLayout() {
     <AddDeviceUiProvider
       existingDeviceIds={existingIds}
       existingDeviceBaseUrls={existingBaseUrls}
+      existingDeviceNamesById={existingNamesById}
       onCreate={onAdd}
+      onUpsert={upsertDevice}
     >
       <AppLayout
         sidebar={
