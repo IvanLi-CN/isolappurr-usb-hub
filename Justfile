@@ -82,18 +82,11 @@ firmware-bin:
 	cargo build --release
 	@just desktop-agent firmware make-bin --elf {{FIRMWARE_ELF}} --out {{FIRMWARE_BIN}}
 
-_local-confirmed-port:
+_local-selected-port:
 	@if [ ! -f .esp32-port ]; then \
 			echo "error: no port selected for this repo (.esp32-port missing)." >&2; \
 			echo "Run:" >&2; \
-			echo "  just ports" >&2; \
-			echo "  PORT=/dev/cu.xxx just identify" >&2; \
-			exit 2; \
-		fi; \
-		if ! grep -Eq '^(device_id|deviceId|mac)=' .esp32-port; then \
-			echo "error: no confirmed device identity in .esp32-port." >&2; \
-			echo "Run:" >&2; \
-			echo "  PORT=/dev/cu.xxx just identify" >&2; \
+			echo "  just select-port" >&2; \
 			exit 2; \
 		fi; \
 		port="$(head -n 1 .esp32-port 2>/dev/null || true)"; \
@@ -101,16 +94,43 @@ _local-confirmed-port:
 		if [ -z "$port" ] || [ ! -e "$port" ]; then \
 			echo "error: cached port '$port' is not available." >&2; \
 			echo "Run:" >&2; \
-			echo "  just ports" >&2; \
-			echo "  PORT=/dev/cu.xxx just identify" >&2; \
+			echo "  just select-port" >&2; \
 			exit 2; \
 		fi; \
 		printf '%s\n' "$port"
 
+_local-confirmed-port:
+	@if [ ! -f .esp32-port ]; then \
+			echo "error: no port selected for this repo (.esp32-port missing)." >&2; \
+			echo "Run:" >&2; \
+			echo "  just select-port" >&2; \
+			exit 2; \
+		fi; \
+		if ! grep -Eq '^(device_id|deviceId|mac)=' .esp32-port; then \
+			echo "error: no confirmed device identity in .esp32-port." >&2; \
+			echo "If this is first-time hardware or download mode, run:" >&2; \
+			echo "  just flash" >&2; \
+			echo "After the project firmware is running, run:" >&2; \
+			echo "  PORT=/dev/cu.xxx just identify" >&2; \
+			exit 2; \
+		fi; \
+		just _local-selected-port
+
 flash:
-	@port="$(just _local-confirmed-port)" || exit $?; \
+	@port="${PORT:-}"; \
+	if [ -n "$port" ]; then \
+		port="$(printf '%s' "$port" | tr -d '\r' | xargs)"; \
+	else \
+		port="$(just _local-selected-port)" || exit $?; \
+	fi; \
+	if [ -z "$port" ] || [ ! -e "$port" ]; then \
+		echo "error: selected port '$port' is not available." >&2; \
+		echo "Run:" >&2; \
+		echo "  just select-port" >&2; \
+		exit 2; \
+	fi; \
 	just firmware-bin && \
-	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --address 0x10000
+	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --elf {{FIRMWARE_ELF}} --address 0x10000 --allow-unconfirmed-port
 
 reset:
 	@port="$(just _local-confirmed-port)" || exit $?; \
@@ -160,7 +180,7 @@ select-port:
 		echo "aborted"; \
 		exit 2; \
 	fi; \
-	PORT="$port" just identify
+	just desktop-agent serial identify --port "$port" --write-cache --allow-unconfirmed-cache
 
 # Legacy/emergency passthrough only. Local USB is the default development path.
 legacy-agentd +args:

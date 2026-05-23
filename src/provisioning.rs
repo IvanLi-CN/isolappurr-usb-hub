@@ -37,6 +37,8 @@ impl UsbCDownstreamRoute {
     }
 }
 
+pub const DEFAULT_USB_C_DOWNSTREAM_ROUTE: UsbCDownstreamRoute = UsbCDownstreamRoute::Mcu;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaticIpv4Config {
     pub address: [u8; 4],

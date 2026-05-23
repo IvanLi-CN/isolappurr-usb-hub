@@ -92,7 +92,7 @@ jobs:
 
       - name: Checkout (windows, sparse)
         if: matrix.name == 'windows'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         env:
           GIT_CONFIG_COUNT: "1"
           GIT_CONFIG_KEY_0: "core.protectNTFS"
@@ -101,6 +101,7 @@ jobs:
           sparse-checkout: |
             desktop
             web
+          sparse-checkout-cone-mode: false
 
       - name: Download web dist
         uses: actions/download-artifact@v4
@@ -337,7 +338,7 @@ jobs:
 
       - name: Checkout (windows, sparse)
         if: startsWith(matrix.os, 'windows')
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         env:
           GIT_CONFIG_COUNT: "1"
           GIT_CONFIG_KEY_0: "core.protectNTFS"
@@ -346,6 +347,7 @@ jobs:
           sparse-checkout: |
             desktop
             web
+          sparse-checkout-cone-mode: false
 
       - name: Download web dist
         uses: actions/download-artifact@v4

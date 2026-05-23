@@ -1861,16 +1861,16 @@ async fn main(_spawner: Spawner) {
             }
             Ok(None) => {
                 info!(
-                    "provisioning: USB-C downstream route EEPROM record empty; defaulting to usb_c"
+                    "provisioning: USB-C downstream route EEPROM record empty; defaulting to mcu"
                 );
-                (provisioning::UsbCDownstreamRoute::UsbC, false)
+                (provisioning::DEFAULT_USB_C_DOWNSTREAM_ROUTE, false)
             }
             Err(err) => {
                 defmt::warn!(
-                    "provisioning: failed to load USB-C downstream route from EEPROM U21: {:?}; defaulting to usb_c",
+                    "provisioning: failed to load USB-C downstream route from EEPROM U21: {:?}; defaulting to mcu",
                     defmt::Debug2Format(&err)
                 );
-                (provisioning::UsbCDownstreamRoute::UsbC, false)
+                (provisioning::DEFAULT_USB_C_DOWNSTREAM_ROUTE, false)
             }
         };
     #[cfg(feature = "net_http")]

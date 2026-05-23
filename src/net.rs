@@ -17,7 +17,9 @@ use esp_radio::{
     wifi::{self, ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent},
 };
 use heapless::{String as HString, Vec};
-use isolapurr_usb_hub::provisioning::{UsbCDownstreamRoute, WifiCredentials};
+use isolapurr_usb_hub::provisioning::{
+    DEFAULT_USB_C_DOWNSTREAM_ROUTE, UsbCDownstreamRoute, WifiCredentials,
+};
 use static_cell::StaticCell;
 
 use crate::mdns;
@@ -176,7 +178,7 @@ impl ApiHubSnapshot {
             isolated_usb_fault: false,
             isolated_downstream_connected: false,
             isolated_usb_ready: false,
-            usb_c_downstream_route: UsbCDownstreamRoute::UsbC,
+            usb_c_downstream_route: DEFAULT_USB_C_DOWNSTREAM_ROUTE,
             usb_c_downstream_persisted: false,
         }
     }
@@ -1676,4 +1678,17 @@ fn build_net_config_from_env(credentials: Option<&WifiCredentials>) -> (NetConfi
 fn build_net_config_dhcp() -> (NetConfig, bool) {
     info!("Wi-Fi using DHCPv4 for IPv4 configuration");
     (NetConfig::dhcpv4(DhcpConfig::default()), false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_hub_snapshot_defaults_to_upgrade_route() {
+        assert_eq!(
+            ApiHubSnapshot::unknown().usb_c_downstream_route,
+            UsbCDownstreamRoute::Mcu
+        );
+    }
 }
