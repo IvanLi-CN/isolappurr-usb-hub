@@ -90,9 +90,18 @@ jobs:
         if: matrix.name != 'windows'
         uses: actions/checkout@v4
 
-      - name: Checkout (windows)
+      - name: Checkout (windows, sparse)
         if: matrix.name == 'windows'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "core.protectNTFS"
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          sparse-checkout: |
+            desktop
+            web
+          sparse-checkout-cone-mode: false
 
       - name: Download web dist
         uses: actions/download-artifact@v4
