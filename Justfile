@@ -130,7 +130,7 @@ flash:
 		exit 2; \
 	fi; \
 	just firmware-bin && \
-	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --address 0x10000 --allow-unconfirmed-port
+	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --elf {{FIRMWARE_ELF}} --address 0x10000 --allow-unconfirmed-port
 
 reset:
 	@port="$(just _local-confirmed-port)" || exit $?; \

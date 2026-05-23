@@ -128,6 +128,8 @@ enum FirmwareCmd {
         port: String,
         #[arg(long)]
         bin: PathBuf,
+        #[arg(long)]
+        elf: Option<PathBuf>,
         #[arg(long, default_value = "0x10000")]
         address: String,
         #[arg(long)]
@@ -834,6 +836,7 @@ async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
         FirmwareCmd::Flash {
             port,
             bin,
+            elf,
             address,
             allow_unconfirmed_port,
             json,
@@ -880,8 +883,15 @@ async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
                 ));
             };
             let unverified_first_flash = expected_identity.is_none();
-            let response = run_firmware_flash_file(&port, &bin, address, expected_identity)
-                .map_err(anyhow::Error::msg)?;
+            let response = if unverified_first_flash {
+                let elf = elf.as_deref().ok_or_else(|| {
+                    anyhow!("unconfirmed first flash requires --elf for full bootstrap flashing")
+                })?;
+                run_firmware_full_flash_elf(&port, elf).map_err(anyhow::Error::msg)?
+            } else {
+                run_firmware_flash_file(&port, &bin, address, expected_identity)
+                    .map_err(anyhow::Error::msg)?
+            };
             if json {
                 print_json(&response)?;
             } else {
@@ -889,12 +899,14 @@ async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
             }
             if response.ok {
                 if unverified_first_flash {
-                    let identity = identify_port(&port).map_err(|err| {
-                        anyhow!(
-                            "unverified flash succeeded, but post-flash identity confirmation failed: {err}. Run PORT={} just identify after the device boots.",
-                            port
-                        )
-                    })?;
+                    wait_for_serial_port(&port, StdDuration::from_secs(5));
+                    let identity = identify_port_with_retries(&port, 3, StdDuration::from_secs(2))
+                        .map_err(|err| {
+                            anyhow!(
+                                "unverified bootstrap flash succeeded, but post-flash identity confirmation failed: {err}. Run PORT={} just identify after the device boots.",
+                                port
+                            )
+                        })?;
                     write_port_preference_cache(&identity)?;
                     if !json {
                         println!("post-flash identity confirmed: {PORT_CACHE_FILE_NAME}");
@@ -2325,6 +2337,27 @@ fn identify_port(port_path: &str) -> Result<PortIdentityCache, String> {
     })
 }
 
+fn identify_port_with_retries(
+    port_path: &str,
+    attempts: usize,
+    delay: StdDuration,
+) -> Result<PortIdentityCache, String> {
+    let attempts = attempts.max(1);
+    let mut last_err = String::new();
+    for attempt in 0..attempts {
+        match identify_port(port_path) {
+            Ok(identity) => return Ok(identity),
+            Err(err) => {
+                last_err = err;
+                if attempt + 1 < attempts {
+                    std::thread::sleep(delay);
+                }
+            }
+        }
+    }
+    Err(last_err)
+}
+
 fn unconfirmed_port_cache(port_path: &str) -> PortIdentityCache {
     PortIdentityCache {
         port: port_path.to_string(),
@@ -2454,9 +2487,12 @@ fn confirm_unverified_flash(port_path: &str, bin_path: &Path, address: u32) -> a
         "warning: {PORT_CACHE_FILE_NAME} has identity=unconfirmed; this is only for first-time hardware or download mode."
     );
     eprintln!(
-        "This will write {} to {} at 0x{:x} without pre-flash device identity verification.",
+        "This will bootstrap flash {} to {} without pre-flash device identity verification.",
         bin_path.display(),
-        port_path,
+        port_path
+    );
+    eprintln!(
+        "For first-time hardware this writes bootloader, partition table, and app; repeated confirmed flashing still writes only the app at 0x{:x}.",
         address
     );
     eprint!("Type 'yes' to continue: ");
@@ -2626,6 +2662,44 @@ fn run_firmware_flash_file(
         file_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
         expected_identity,
     })
+}
+
+fn run_firmware_full_flash_elf(
+    port_path: &str,
+    elf_path: &Path,
+) -> Result<FirmwareFlashResponse, String> {
+    if !elf_path.exists() {
+        return Err(format!("ELF does not exist: {}", elf_path.display()));
+    }
+    let output = Command::new("espflash")
+        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
+        .arg("flash")
+        .arg("--chip")
+        .arg("esp32s3")
+        .arg("--port")
+        .arg(port_path)
+        .arg(elf_path)
+        .output()
+        .map_err(|err| format!("failed to start espflash: {err}"))?;
+    let mut log = String::new();
+    log.push_str(&String::from_utf8_lossy(&output.stdout));
+    log.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(FirmwareFlashResponse {
+        ok: output.status.success(),
+        exit_code: output.status.code(),
+        log,
+    })
+}
+
+fn wait_for_serial_port(port_path: &str, timeout: StdDuration) -> bool {
+    let deadline = StdInstant::now() + timeout;
+    while StdInstant::now() < deadline {
+        if serial_port_is_available(port_path) {
+            return true;
+        }
+        std::thread::sleep(StdDuration::from_millis(100));
+    }
+    serial_port_is_available(port_path)
 }
 
 fn run_firmware_make_bin(
@@ -3819,6 +3893,18 @@ mod tests {
 
         assert!(
             err.contains("firmware payload was not valid base64"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn full_flash_requires_existing_elf() {
+        let missing = PathBuf::from("/tmp/isolapurr-missing-release.elf");
+        let err = run_firmware_full_flash_elf("/dev/cu.usbmodem1", &missing)
+            .expect_err("missing ELF should fail before espflash");
+
+        assert!(
+            err.contains("ELF does not exist"),
             "unexpected error: {err}"
         );
     }
