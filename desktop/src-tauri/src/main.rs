@@ -45,6 +45,7 @@ const STORAGE_SCHEMA_VERSION: u8 = 1;
 const STORAGE_FILE_NAME: &str = "storage.json";
 const PORT_CACHE_FILE_NAME: &str = ".esp32-port";
 const DEFAULT_FLASH_ADDRESS: u32 = 0x10000;
+const PORT_IDENTITY_UNCONFIRMED: &str = "unconfirmed";
 
 const EXIT_SERVER_FAILED: i32 = 10;
 const EXIT_DISCOVERY_UNAVAILABLE: i32 = 20;
@@ -106,6 +107,8 @@ enum SerialCmd {
         #[arg(long)]
         write_cache: bool,
         #[arg(long)]
+        allow_unconfirmed_cache: bool,
+        #[arg(long)]
         json: bool,
     },
 }
@@ -127,6 +130,8 @@ enum FirmwareCmd {
         bin: PathBuf,
         #[arg(long, default_value = "0x10000")]
         address: String,
+        #[arg(long)]
+        allow_unconfirmed_port: bool,
         #[arg(long)]
         json: bool,
     },
@@ -362,11 +367,23 @@ struct DeviceIdentityExpectation {
 struct PortIdentityCache {
     port: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    identity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     device_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mac: Option<String>,
     confirmed_at: String,
     source: String,
+}
+
+impl PortIdentityCache {
+    fn has_identity(&self) -> bool {
+        self.device_id.is_some() || self.mac.is_some()
+    }
+
+    fn is_unconfirmed(&self) -> bool {
+        self.identity.as_deref() == Some(PORT_IDENTITY_UNCONFIRMED)
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -745,9 +762,33 @@ async fn run_serial_cli(cmd: SerialCmd) -> anyhow::Result<()> {
         SerialCmd::Identify {
             port,
             write_cache,
+            allow_unconfirmed_cache,
             json,
         } => {
-            let identity = identify_port(&port).map_err(anyhow::Error::msg)?;
+            let identity = match identify_port(&port) {
+                Ok(identity) => identity,
+                Err(err)
+                    if write_cache
+                        && allow_unconfirmed_cache
+                        && is_unconfirmed_identity_error(&err) =>
+                {
+                    let cache = unconfirmed_port_cache(&port);
+                    write_port_preference_cache(&cache)?;
+                    if json {
+                        print_json(&cache)?;
+                    } else {
+                        eprintln!(
+                            "warning: selected port did not answer project JSONL info: {err}"
+                        );
+                        println!("port: {}", cache.port);
+                        println!("identity: {PORT_IDENTITY_UNCONFIRMED}");
+                        println!("cached: {PORT_CACHE_FILE_NAME}");
+                        println!("Next: run just flash to write the project app image.");
+                    }
+                    return Ok(());
+                }
+                Err(err) => return Err(anyhow::Error::msg(err)),
+            };
             if write_cache {
                 write_port_preference_cache(&identity)?;
             }
@@ -760,6 +801,9 @@ async fn run_serial_cli(cmd: SerialCmd) -> anyhow::Result<()> {
                     identity.device_id.as_deref().unwrap_or("unknown")
                 );
                 println!("mac: {}", identity.mac.as_deref().unwrap_or("unknown"));
+                if identity.is_unconfirmed() {
+                    println!("identity: {PORT_IDENTITY_UNCONFIRMED}");
+                }
                 if write_cache {
                     println!("cached: {PORT_CACHE_FILE_NAME}");
                 }
@@ -791,21 +835,51 @@ async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
             port,
             bin,
             address,
+            allow_unconfirmed_port,
             json,
         } => {
             let address = parse_flash_address(&address)?;
-            let cache = read_identity_cache()?;
-            if cache.port != port {
+            let cache = read_port_preference_cache()?;
+            let expected_identity = if let Some(cache) = cache {
+                if cache.port != port {
+                    return Err(anyhow!(
+                        "selected port does not match confirmed identity cache: expected {}, got {}",
+                        cache.port,
+                        port
+                    ));
+                }
+                if cache.has_identity() {
+                    Some(DeviceIdentityExpectation {
+                        device_id: cache.device_id.clone(),
+                        mac: cache.mac.clone(),
+                    })
+                } else if cache.is_unconfirmed() {
+                    if json {
+                        return Err(anyhow!(
+                            "unconfirmed first flash requires interactive confirmation"
+                        ));
+                    }
+                    confirm_unverified_flash(&port, &bin, address)?;
+                    None
+                } else {
+                    return Err(anyhow!(
+                        "{PORT_CACHE_FILE_NAME} must include device_id/mac or identity=unconfirmed"
+                    ));
+                }
+            } else if allow_unconfirmed_port {
+                if json {
+                    return Err(anyhow!(
+                        "unconfirmed first flash requires interactive confirmation"
+                    ));
+                }
+                confirm_unverified_flash(&port, &bin, address)?;
+                None
+            } else {
                 return Err(anyhow!(
-                    "selected port does not match confirmed identity cache: expected {}, got {}",
-                    cache.port,
-                    port
+                    "no selected port found in {PORT_CACHE_FILE_NAME}; run just select-port or pass PORT=/dev/cu.xxx to just flash"
                 ));
-            }
-            let expected_identity = Some(DeviceIdentityExpectation {
-                device_id: cache.device_id.clone(),
-                mac: cache.mac.clone(),
-            });
+            };
+            let unverified_first_flash = expected_identity.is_none();
             let response = run_firmware_flash_file(&port, &bin, address, expected_identity)
                 .map_err(anyhow::Error::msg)?;
             if json {
@@ -814,6 +888,18 @@ async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
                 print!("{}", response.log);
             }
             if response.ok {
+                if unverified_first_flash {
+                    let identity = identify_port(&port).map_err(|err| {
+                        anyhow!(
+                            "unverified flash succeeded, but post-flash identity confirmation failed: {err}. Run PORT={} just identify after the device boots.",
+                            port
+                        )
+                    })?;
+                    write_port_preference_cache(&identity)?;
+                    if !json {
+                        println!("post-flash identity confirmed: {PORT_CACHE_FILE_NAME}");
+                    }
+                }
                 Ok(())
             } else {
                 Err(anyhow!("espflash write-bin failed"))
@@ -2229,6 +2315,7 @@ fn identify_port(port_path: &str) -> Result<PortIdentityCache, String> {
         .ok_or_else(|| "info response did not include device_id or mac".to_string())?;
     Ok(PortIdentityCache {
         port: port_path.to_string(),
+        identity: None,
         device_id: identity.device_id,
         mac: identity.mac,
         confirmed_at: time::OffsetDateTime::now_utc()
@@ -2236,6 +2323,24 @@ fn identify_port(port_path: &str) -> Result<PortIdentityCache, String> {
             .unwrap_or_else(|_| "unknown".to_string()),
         source: "isolapurr-desktop serial identify".to_string(),
     })
+}
+
+fn unconfirmed_port_cache(port_path: &str) -> PortIdentityCache {
+    PortIdentityCache {
+        port: port_path.to_string(),
+        identity: Some(PORT_IDENTITY_UNCONFIRMED.to_string()),
+        device_id: None,
+        mac: None,
+        confirmed_at: time::OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "unknown".to_string()),
+        source: "isolapurr-desktop select-port".to_string(),
+    }
+}
+
+fn is_unconfirmed_identity_error(err: &str) -> bool {
+    err.contains("serial response timed out")
+        || err.contains("info response did not include device_id or mac")
 }
 
 fn extract_device_identity(value: &serde_json::Value) -> Option<DeviceIdentityExpectation> {
@@ -2268,6 +2373,9 @@ fn extract_device_identity(value: &serde_json::Value) -> Option<DeviceIdentityEx
 
 fn write_port_preference_cache(identity: &PortIdentityCache) -> anyhow::Result<()> {
     let mut body = format!("{}\n", identity.port.trim());
+    if let Some(identity_state) = identity.identity.as_deref() {
+        body.push_str(&format!("identity={}\n", identity_state.trim()));
+    }
     if let Some(device_id) = identity.device_id.as_deref() {
         body.push_str(&format!("device_id={}\n", device_id.trim()));
     }
@@ -2277,15 +2385,6 @@ fn write_port_preference_cache(identity: &PortIdentityCache) -> anyhow::Result<(
     body.push_str(&format!("confirmed_at={}\n", identity.confirmed_at.trim()));
     body.push_str(&format!("source={}\n", identity.source.trim()));
     std::fs::write(local_project_file(PORT_CACHE_FILE_NAME), body).context("write .esp32-port")
-}
-
-fn read_identity_cache() -> anyhow::Result<PortIdentityCache> {
-    if let Some(cache) = read_port_preference_cache()? {
-        return Ok(cache);
-    }
-    Err(anyhow!(
-        "no confirmed device identity found in {PORT_CACHE_FILE_NAME}; run just ports and then PORT=/dev/cu.xxx just identify"
-    ))
 }
 
 fn read_port_preference_cache() -> anyhow::Result<Option<PortIdentityCache>> {
@@ -2305,6 +2404,7 @@ fn parse_port_preference_cache(raw: &str) -> anyhow::Result<Option<PortIdentityC
     };
     let mut cache = PortIdentityCache {
         port: port.to_string(),
+        identity: None,
         device_id: None,
         mac: None,
         confirmed_at: "unknown".to_string(),
@@ -2319,6 +2419,7 @@ fn parse_port_preference_cache(raw: &str) -> anyhow::Result<Option<PortIdentityC
             continue;
         }
         match key.trim() {
+            "identity" => cache.identity = Some(value.to_string()),
             "device_id" | "deviceId" => cache.device_id = Some(value.to_string()),
             "mac" => cache.mac = Some(value.to_string()),
             "confirmed_at" | "confirmedAt" => cache.confirmed_at = value.to_string(),
@@ -2331,9 +2432,42 @@ fn parse_port_preference_cache(raw: &str) -> anyhow::Result<Option<PortIdentityC
 }
 
 fn validate_port_identity_cache(cache: &PortIdentityCache, label: &str) -> anyhow::Result<()> {
-    if cache.port.trim().is_empty() || (cache.device_id.is_none() && cache.mac.is_none()) {
+    if cache.port.trim().is_empty() {
+        return Err(anyhow!("{label} must include port"));
+    }
+    if cache.has_identity() {
+        return Ok(());
+    }
+    if cache.is_unconfirmed() {
+        return Ok(());
+    }
+    if cache.identity.is_some() {
+        return Err(anyhow!("{label} has unsupported identity state"));
+    }
+    Err(anyhow!(
+        "{label} must include device_id/mac or identity=unconfirmed"
+    ))
+}
+
+fn confirm_unverified_flash(port_path: &str, bin_path: &Path, address: u32) -> anyhow::Result<()> {
+    eprintln!(
+        "warning: {PORT_CACHE_FILE_NAME} has identity=unconfirmed; this is only for first-time hardware or download mode."
+    );
+    eprintln!(
+        "This will write {} to {} at 0x{:x} without pre-flash device identity verification.",
+        bin_path.display(),
+        port_path,
+        address
+    );
+    eprint!("Type 'yes' to continue: ");
+    std::io::stderr().flush().ok();
+    let mut confirm = String::new();
+    std::io::stdin()
+        .read_line(&mut confirm)
+        .context("read confirmation")?;
+    if confirm.trim() != "yes" {
         return Err(anyhow!(
-            "{label} must include port and at least one of device_id/mac"
+            "aborted unconfirmed first flash; run just select-port to reselect or PORT=/dev/cu.xxx just identify when firmware is running"
         ));
     }
     Ok(())
@@ -2416,11 +2550,9 @@ fn run_firmware_flash(req: FirmwareFlashRequest) -> Result<FirmwareFlashResponse
     if req.address != DEFAULT_FLASH_ADDRESS {
         return Err("only the ESP32-S3 app partition address 0x10000 is supported".to_string());
     }
-    let expected_identity = req
-        .expected_identity
-        .as_ref()
-        .ok_or_else(|| "firmware flash requires expected identity".to_string())?;
-    validate_flash_identity(&req.port_path, expected_identity)?;
+    if let Some(expected_identity) = req.expected_identity.as_ref() {
+        validate_flash_identity(&req.port_path, expected_identity)?;
+    }
 
     let firmware = base64::engine::general_purpose::STANDARD
         .decode(req.file_base64.trim())
@@ -3631,12 +3763,36 @@ mod tests {
     }
 
     #[test]
-    fn port_preference_cache_requires_identity() {
+    fn parses_unconfirmed_port_preference_cache() {
+        let cache = parse_port_preference_cache(
+            "/dev/cu.usbmodem21231401\nidentity=unconfirmed\nsource=isolapurr-desktop select-port\n",
+        )
+        .expect("parse cache")
+        .expect("cache present");
+
+        assert_eq!(cache.port, "/dev/cu.usbmodem21231401");
+        assert!(cache.is_unconfirmed());
+        assert!(!cache.has_identity());
+    }
+
+    #[test]
+    fn port_preference_cache_requires_identity_or_unconfirmed_state() {
         let err = parse_port_preference_cache("/dev/cu.usbmodem212101\n")
-            .expect_err("missing identity should fail");
+            .expect_err("missing identity state should fail");
 
         assert!(
-            err.to_string().contains("device_id/mac"),
+            err.to_string().contains("identity=unconfirmed"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn port_preference_cache_rejects_unknown_identity_state() {
+        let err = parse_port_preference_cache("/dev/cu.usbmodem212101\nidentity=unknown\n")
+            .expect_err("unknown identity state should fail");
+
+        assert!(
+            err.to_string().contains("unsupported identity state"),
             "unexpected error: {err:#}"
         );
     }
@@ -3651,9 +3807,27 @@ mod tests {
     }
 
     #[test]
+    fn cli_flash_request_can_omit_expected_identity_for_first_flash() {
+        let req = FirmwareFlashRequest {
+            port_path: "/dev/cu.usbmodem1".to_string(),
+            address: DEFAULT_FLASH_ADDRESS,
+            file_name: "firmware.bin".to_string(),
+            file_base64: "not-base64".to_string(),
+            expected_identity: None,
+        };
+        let err = run_firmware_flash(req).expect_err("invalid payload should fail");
+
+        assert!(
+            err.contains("firmware payload was not valid base64"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn identity_mismatch_is_explicit() {
         let actual = PortIdentityCache {
             port: "/dev/cu.usbmodem1".to_string(),
+            identity: None,
             device_id: Some("actual".to_string()),
             mac: Some("aa:bb:cc:dd:ee:ff".to_string()),
             confirmed_at: "2026-05-19T00:00:00Z".to_string(),

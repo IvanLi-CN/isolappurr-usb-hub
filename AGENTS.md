@@ -54,9 +54,9 @@ There are no dedicated test suites yet. At minimum, keep:
 ## Security & Configuration
 
 - Never commit secrets. Use local env files (e.g. `.env`) for machine-specific settings.
-- Flashing requires an explicit Local USB identity confirmation in `.esp32-port` (auto-selection is intentionally disabled).
-- Flashing safety: only flash to the owner-confirmed port for this project. The Local USB runner must read JSONL `info` and match `device_id` / `mac` before `espflash write-bin`.
-- Tools must never auto-select a port (even if only one port exists). If `.esp32-port` is missing or lacks `device_id`/`mac`, error out and instruct the user to run `just ports` and then `PORT=/dev/cu.xxx just identify`.
+- Flashing requires an explicit Local USB port selection in `.esp32-port` (auto-selection is intentionally disabled). Normal repeated flashing requires confirmed `device_id` / `mac`; first-time hardware or download mode may use an `identity=unconfirmed` owner-confirmed port for one app flash.
+- Flashing safety: only flash to the owner-confirmed port for this project. Normal flashing must read JSONL `info` and match `device_id` / `mac` before `espflash write-bin`; unconfirmed first flash must require an explicit confirmation and write only the app `.bin` at `0x10000`, then attempt to confirm identity.
+- Tools must never auto-select a port (even if only one port exists). If `.esp32-port` is missing, instruct the user to run `just select-port`; if identity is missing after first flash, instruct the user to run `PORT=/dev/cu.xxx just identify` once the project firmware is running.
 - Do not set `PORT=...` unless the owner explicitly provided the exact device path. If the expected port is missing or multiple ports exist, stop and ask the owner to confirm/re-select the port.
 - `mcu-agentd` is legacy/emergency only and must not be recommended as the default development path.
 
