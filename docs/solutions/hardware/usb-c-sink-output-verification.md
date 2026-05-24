@@ -143,6 +143,13 @@ Observed passing pattern:
   `7011-7059 mV`, and current around `247-251 mA` with the 250 mA CC preset.
 - Firmware logs show `sw2303 stable reads` continuing, `v_req_mv=7000`, and
   SW2303 ADC readback around `vin_mv=7050`, `vbus_mv=7035-7042`.
+- When defmt logs are not available, `/api/v1/pd-diagnostics` or the USB JSONL
+  `pd.diagnostics` method is the firmware side of the same proof: compare
+  `sw2303_request`, `tps_setpoint`, `sw2303_stable_reads`, and latch flags
+  against LoadLynx `/api/v1/pd` and `/api/v1/status`.
+- If the same USB-C route carries the local JSONL control channel, a controlled
+  USB-C output-off test must keep the data route connected; otherwise the test
+  can turn TPS output off but lose the only path that can turn it back on.
 - With the TPS55288 low-voltage clamp removed, reconnect-style PPS negotiation
   also works below 5 V: tested targets `3300`, `3600`, `3900`, `4200`, and
   `4500 mV` produced LoadLynx `v_main_mv` around `3331`, `3638`, `3981`,
@@ -186,3 +193,4 @@ Observed diagnostic pattern:
 - `hardware/tps-sw/netlist.enet`
 - `docs/netlist/tps-sw-checklist.md`
 - `src/bin/main.rs`
+- `src/net.rs`

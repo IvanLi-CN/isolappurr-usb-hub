@@ -60,13 +60,14 @@ use isolapurr_usb_hub::display_ui::{
 };
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
+use isolapurr_usb_hub::pd_i2c::PowerSetpoint;
 use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
 use isolapurr_usb_hub::pd_i2c::sw2303::{
     EnableProfileStatus, apply_enable_profile_full, read_power_request,
 };
 use isolapurr_usb_hub::pd_i2c::tps55288::{
-    TpsApplyState, apply_setpoint, apply_setpoint_before_enable, boot_supply_setpoint,
-    power_request_to_setpoint, stop_output_and_enable_discharge,
+    TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
+    stop_output_and_enable_discharge,
 };
 use isolapurr_usb_hub::prompt_tone::{
     DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitWarnReason, PromptToneManager, SafetyKind,
@@ -88,8 +89,8 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 static mut DISPLAY_WORKBUF: [u8; WORKBUF_SIZE] = [0; WORKBUF_SIZE];
 
-static INT_TPS: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
-static INT_TPS_DIRTY: AtomicBool = AtomicBool::new(false);
+static TPS_INT: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
+static TPS_INT_DIRTY: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "net_http")]
 #[derive(Clone, Copy)]
@@ -210,6 +211,16 @@ async fn handle_usb_jsonl_request(
         let _ = body.push(',');
         write_usb_port_json(&mut body, "port_c", "USB-C", &state.ports.port_c);
         let _ = body.push_str("]}}");
+        return body;
+    }
+
+    if request.contains("\"method\":\"pd.diagnostics\"")
+        || request.contains("\"method\": \"pd.diagnostics\"")
+    {
+        let state = { *api_state.lock().await };
+        let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+        net::write_pd_diagnostics_json(&mut body, &state.pd);
+        let _ = body.push('}');
         return body;
     }
 
@@ -816,10 +827,10 @@ fn copy_json_string_token(rest: &str) -> Option<alloc::string::String> {
 #[ram]
 fn gpio_interrupt_handler() {
     critical_section::with(|cs| {
-        let mut pin = INT_TPS.borrow_ref_mut(cs);
+        let mut pin = TPS_INT.borrow_ref_mut(cs);
         if let Some(pin) = pin.as_mut() {
             if pin.is_interrupt_set() {
-                INT_TPS_DIRTY.store(true, Ordering::Release);
+                TPS_INT_DIRTY.store(true, Ordering::Release);
                 pin.clear_interrupt();
             }
         }
@@ -899,7 +910,6 @@ const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
 const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
 const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
 const SETTINGS_MENU_MS: u64 = 5_000;
-const TPS_SW_PRECHARGE_MS: u64 = 10;
 const SW2303_POR_RELEASE_MS: u64 = 100;
 const PD_I2C_KHZ: u32 = 400;
 const PD_I2C_TIMEOUT_MS: u64 = 10;
@@ -919,7 +929,7 @@ const BOOT_CE_RECOVERY_HOLD_MS: u64 = 5;
 const BOOT_CE_RECOVERY_POLL_MS: u64 = 5;
 const BOOT_CE_RELEASE_SETTLE_MS: u64 = 10;
 const BOOT_TPS_RETRY_DELAY_MS: u64 = 10;
-const TPS55288_MODE_REG: u8 = 0x06;
+const USB_C_PD_RESTART_GUARD_MS: u64 = 500;
 
 // Toast colors (RGB565 raw).
 const TOAST_OK_RAW: u16 = 0x1407; // dark green (same as UI OK power)
@@ -934,6 +944,8 @@ const TOAST_USB_A_DATA_ON: [[u8; 13]; 3] =
 const TOAST_USB_A_PWR_OFF: [[u8; 13]; 3] =
     [*b"USB-A PWROFF ", *b"DONE         ", *b"             "];
 const TOAST_USB_A_PWR_ON: [[u8; 13]; 3] = [*b"USB-A PWRON  ", *b"DONE         ", *b"             "];
+const TOAST_USB_A_PWR_FAIL: [[u8; 13]; 3] =
+    [*b"USB-A PWRERR ", *b"RETRY        ", *b"             "];
 const TOAST_USB_A_BUSY: [[u8; 13]; 3] = [*b"USB-A BUSY   ", *b"REJECT       ", *b"             "];
 const TOAST_USB_A_BADTIME: [[u8; 13]; 3] =
     [*b"USB-A BADTIME", *b"REJECT       ", *b"             "];
@@ -945,6 +957,8 @@ const TOAST_USB_C_DATA_ON: [[u8; 13]; 3] =
 const TOAST_USB_C_PWR_OFF: [[u8; 13]; 3] =
     [*b"USB-C PWROFF ", *b"DONE         ", *b"             "];
 const TOAST_USB_C_PWR_ON: [[u8; 13]; 3] = [*b"USB-C PWRON  ", *b"DONE         ", *b"             "];
+const TOAST_USB_C_PWR_FAIL: [[u8; 13]; 3] =
+    [*b"USB-C PWRERR ", *b"RETRY        ", *b"             "];
 const TOAST_USB_C_BUSY: [[u8; 13]; 3] = [*b"USB-C BUSY   ", *b"REJECT       ", *b"             "];
 const TOAST_USB_C_BADTIME: [[u8; 13]; 3] =
     [*b"USB-C BADTIME", *b"REJECT       ", *b"             "];
@@ -1050,6 +1064,7 @@ enum ToastId {
     DataOn,
     PwrOff,
     PwrOn,
+    PwrFail,
     Busy,
     BadTime,
 }
@@ -1060,7 +1075,7 @@ fn toast_spec(button: ButtonId, toast: ToastId) -> (&'static [[u8; 13]; 3], u16)
         ToastId::DataOn => TOAST_OK_RAW,
         ToastId::PwrOff => TOAST_WARN_RAW,
         ToastId::PwrOn => TOAST_OK_RAW,
-        ToastId::Busy | ToastId::BadTime => TOAST_ERR_RAW,
+        ToastId::PwrFail | ToastId::Busy | ToastId::BadTime => TOAST_ERR_RAW,
     };
 
     let lines = match (button, toast) {
@@ -1068,12 +1083,14 @@ fn toast_spec(button: ButtonId, toast: ToastId) -> (&'static [[u8; 13]; 3], u16)
         (ButtonId::Left, ToastId::DataOn) => &TOAST_USB_A_DATA_ON,
         (ButtonId::Left, ToastId::PwrOff) => &TOAST_USB_A_PWR_OFF,
         (ButtonId::Left, ToastId::PwrOn) => &TOAST_USB_A_PWR_ON,
+        (ButtonId::Left, ToastId::PwrFail) => &TOAST_USB_A_PWR_FAIL,
         (ButtonId::Left, ToastId::Busy) => &TOAST_USB_A_BUSY,
         (ButtonId::Left, ToastId::BadTime) => &TOAST_USB_A_BADTIME,
         (ButtonId::Right, ToastId::DataOff) => &TOAST_USB_C_DATA_OFF,
         (ButtonId::Right, ToastId::DataOn) => &TOAST_USB_C_DATA_ON,
         (ButtonId::Right, ToastId::PwrOff) => &TOAST_USB_C_PWR_OFF,
         (ButtonId::Right, ToastId::PwrOn) => &TOAST_USB_C_PWR_ON,
+        (ButtonId::Right, ToastId::PwrFail) => &TOAST_USB_C_PWR_FAIL,
         (ButtonId::Right, ToastId::Busy) => &TOAST_USB_C_BUSY,
         (ButtonId::Right, ToastId::BadTime) => &TOAST_USB_C_BADTIME,
     };
@@ -1216,72 +1233,6 @@ fn log_sw2303_profile_status(context: &'static str, status: &EnableProfileStatus
             "sw2303 pps diag: PD/PPS capability readback unavailable after profile apply; keeping configuration success"
         );
     }
-}
-
-async fn bitbang_i2c_delay() {
-    Timer::after_micros(5).await;
-}
-
-async fn bitbang_i2c_write_byte(sda: &mut Flex<'_>, scl: &mut Flex<'_>, byte: u8) -> bool {
-    for bit in (0..8).rev() {
-        if ((byte >> bit) & 1) == 0 {
-            sda.set_low();
-            sda.set_output_enable(true);
-        } else {
-            sda.set_high();
-            sda.set_output_enable(false);
-        }
-        bitbang_i2c_delay().await;
-        scl.set_high();
-        scl.set_output_enable(false);
-        bitbang_i2c_delay().await;
-        scl.set_low();
-        scl.set_output_enable(true);
-        bitbang_i2c_delay().await;
-    }
-
-    sda.set_high();
-    sda.set_output_enable(false);
-    bitbang_i2c_delay().await;
-    scl.set_high();
-    scl.set_output_enable(false);
-    bitbang_i2c_delay().await;
-    let ack = sda.is_low();
-    scl.set_low();
-    scl.set_output_enable(true);
-    bitbang_i2c_delay().await;
-    ack
-}
-
-async fn bitbang_tps55288_mode_write(sda: &mut Flex<'_>, scl: &mut Flex<'_>, mode: u8) -> bool {
-    sda.set_high();
-    scl.set_high();
-    sda.set_output_enable(false);
-    scl.set_output_enable(false);
-    bitbang_i2c_delay().await;
-
-    sda.set_low();
-    sda.set_output_enable(true);
-    bitbang_i2c_delay().await;
-    scl.set_low();
-    scl.set_output_enable(true);
-    bitbang_i2c_delay().await;
-
-    let address_ack = bitbang_i2c_write_byte(sda, scl, TPS55288_ADDR_7BIT << 1).await;
-    let register_ack = bitbang_i2c_write_byte(sda, scl, TPS55288_MODE_REG).await;
-    let data_ack = bitbang_i2c_write_byte(sda, scl, mode).await;
-
-    sda.set_low();
-    sda.set_output_enable(true);
-    bitbang_i2c_delay().await;
-    scl.set_high();
-    scl.set_output_enable(false);
-    bitbang_i2c_delay().await;
-    sda.set_high();
-    sda.set_output_enable(false);
-    bitbang_i2c_delay().await;
-
-    address_ack && register_ack && data_ack
 }
 
 #[cfg(feature = "net_http")]
@@ -1469,57 +1420,42 @@ async fn main(_spawner: Spawner) {
     let mut port_usb_c = PortState::new(PowerState::On);
 
     // TPS55288 FB/INT fault indication (tps-sw netlist):
-    // - INT_TPS = GPIO38
+    // - shared INT = GPIO7
     // - active-low, external 4.7k pull-up to 3V3
     // - keep hi-Z (no internal pull)
     let mut io = Io::new(peripherals.IO_MUX);
     io.set_interrupt_handler(gpio_interrupt_handler);
-    let int_tps_cfg = InputConfig::default().with_pull(Pull::None);
-    let mut int_tps = Input::new(peripherals.GPIO38, int_tps_cfg);
-    let mut last_int_tps_low = int_tps.is_low();
+    let tps_int_cfg = InputConfig::default().with_pull(Pull::None);
+    let mut tps_int = Input::new(peripherals.GPIO7, tps_int_cfg);
+    let mut last_tps_int_low = tps_int.is_low();
     info!(
-        "tps int: GPIO38 initial raw_low={} (active-low, hi-z input; no pull)",
-        last_int_tps_low
+        "tps int: GPIO7 initial raw_low={} (active-low, hi-z input; no pull)",
+        last_tps_int_low
     );
     critical_section::with(|cs| {
-        int_tps.listen(Event::AnyEdge);
-        INT_TPS.borrow_ref_mut(cs).replace(int_tps);
+        tps_int.listen(Event::AnyEdge);
+        TPS_INT.borrow_ref_mut(cs).replace(tps_int);
     });
-    if last_int_tps_low {
-        INT_TPS_DIRTY.store(true, Ordering::Release);
+    if last_tps_int_low {
+        TPS_INT_DIRTY.store(true, Ordering::Release);
     }
 
-    let mut pd_sda = Flex::new(peripherals.GPIO39);
-    let mut pd_scl = Flex::new(peripherals.GPIO40);
-    pd_sda.set_input_enable(true);
-    pd_scl.set_input_enable(true);
-    let pd_i2c_release_input_cfg = InputConfig::default().with_pull(Pull::Up);
-    let pd_i2c_release_output_cfg = OutputConfig::default()
-        .with_drive_mode(DriveMode::OpenDrain)
-        .with_pull(Pull::Up);
-    pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-    pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-    pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-    pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-
-    pd_sda.set_high();
-    pd_scl.set_high();
-    pd_sda.set_output_enable(true);
-    pd_scl.set_output_enable(true);
-    Timer::after_millis(TPS_SW_PRECHARGE_MS).await;
+    let tps_i2c = I2c::new(
+        peripherals.I2C1,
+        I2cConfig::default()
+            .with_frequency(Rate::from_khz(400))
+            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(20))),
+    )
+    .unwrap()
+    .with_sda(peripherals.GPIO8)
+    .with_scl(peripherals.GPIO9)
+    .into_async();
+    let mut telemetry_i2c = TelemetryI2cAllowlist::new(tps_i2c);
     info!(
-        "pd i2c boot: SCL high window elapsed sda_high={} scl_high={}",
-        pd_sda.is_high(),
-        pd_scl.is_high()
+        "tps i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 allowlist=[0x40/0x44,0x41/0x45,0x50,0x74]"
     );
-    pd_sda.set_output_enable(false);
-    pd_scl.set_output_enable(false);
 
-    // Shared PD I2C bus (no scanning; strictly allowlisted).
-    // SDA = GPIO39 (SDA_TPS), SCL = GPIO40 (SCL_TPS).
-    //
-    // Note: SW2303 supports 100 kHz / 400 kHz. Use 400 kHz by default; adjust if signal integrity requires.
-    let i2c = I2c::new(
+    let sw2303_i2c = I2c::new(
         peripherals.I2C0,
         I2cConfig::default()
             .with_frequency(Rate::from_khz(PD_I2C_KHZ))
@@ -1528,14 +1464,18 @@ async fn main(_spawner: Spawner) {
             ))),
     )
     .unwrap()
-    .with_sda(pd_sda)
-    .with_scl(pd_scl)
+    .with_sda(peripherals.GPIO39)
+    .with_scl(peripherals.GPIO40)
     .into_async();
-    let mut i2c = I2cAllowlist::new(i2c);
+    let mut sw2303_i2c = I2cAllowlist::new(sw2303_i2c);
     info!(
-        "pd i2c: I2C0@{}kHz async SDA=GPIO39 SCL=GPIO40 allowlist=[0x3C,0x74]",
+        "sw2303 i2c: I2C0@{}kHz async SDA=GPIO39 SCL=GPIO40 allowlist=[0x3C]",
         PD_I2C_KHZ
     );
+    let sw2303_i2c_release_input_cfg = InputConfig::default().with_pull(Pull::Up);
+    let sw2303_i2c_release_output_cfg = OutputConfig::default()
+        .with_drive_mode(DriveMode::OpenDrain)
+        .with_pull(Pull::Up);
 
     let mut tps_state = TpsApplyState::new();
     let mut last_request: Option<PowerRequest> = None;
@@ -1568,7 +1508,7 @@ async fn main(_spawner: Spawner) {
     // the final TPS OE write completes.
     let _ = ce_tps.set_low();
     Timer::after_millis(BOOT_CE_RELEASE_SETTLE_MS).await;
-    match stop_output_and_enable_discharge(&mut i2c).await {
+    match stop_output_and_enable_discharge(&mut telemetry_i2c).await {
         Ok(()) => {
             info!("tps55288 boot discharge: OE off and active discharge enabled");
         }
@@ -1581,149 +1521,33 @@ async fn main(_spawner: Spawner) {
         }
     }
     Timer::after_millis(BOOT_PD_DISCHARGE_SETTLE_MS).await;
-    {
-        let i2c_inner = i2c.into_inner();
-        let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
-        let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
-        pd_sda.set_input_enable(true);
-        pd_scl.set_input_enable(true);
-        pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-        pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-        pd_sda.set_high();
-        pd_scl.set_high();
-        pd_sda.set_output_enable(false);
-        pd_scl.set_output_enable(false);
-        Timer::after_millis(BOOT_PD_RELEASE_SETTLE_MS).await;
-        let bus_released_after_discharge = pd_sda.is_high() && pd_scl.is_high();
-        info!(
-            "pd i2c after discharge: sda_high={} scl_high={}",
-            pd_sda.is_high(),
-            pd_scl.is_high()
-        );
-        if !bus_released_after_discharge {
-            defmt::warn!(
-                "pd i2c after discharge: bus held low; hard-cycling CE_TPS before TPS boot I2C"
-            );
-            let mut recovered_after_ms = 0;
-            let mut recovery_cycles = 0;
-            for cycle in 1..=3 {
-                recovery_cycles = cycle;
-                let _ = ce_tps.set_high();
-                Timer::after_millis(BOOT_CE_RECOVERY_HOLD_MS).await;
-                let _ = ce_tps.set_low();
-                for step in 1..=100 {
-                    Timer::after_millis(BOOT_CE_RECOVERY_POLL_MS).await;
-                    if pd_sda.is_high() && pd_scl.is_high() {
-                        recovered_after_ms = BOOT_CE_RECOVERY_HOLD_MS as u32
-                            + step * BOOT_CE_RECOVERY_POLL_MS as u32;
-                        break;
-                    }
-                }
-                if pd_sda.is_high() && pd_scl.is_high() {
-                    break;
-                }
-            }
-            boot_recovery_cycled = true;
-            info!(
-                "pd i2c after CE recovery: sda_high={} scl_high={} cycles={} recovered_after_ms={}",
-                pd_sda.is_high(),
-                pd_scl.is_high(),
-                recovery_cycles,
-                recovered_after_ms
-            );
-        }
-        let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
-        i2c = I2cAllowlist::new(i2c_inner);
-        let _ = i2c.inner_mut().apply_config(
-            &I2cConfig::default()
-                .with_frequency(Rate::from_khz(PD_I2C_KHZ))
-                .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
-                    PD_I2C_TIMEOUT_MS,
-                ))),
-        );
-    }
 
-    // SW2303 is powered from the TPS output path, so bring TPS to a conservative
-    // 5V keep-alive setpoint before touching SW2303 over I2C.
     let mut tps_boot_ready = false;
     let mut sw2303_i2c_allowed = false;
     let mut boot_retry_recovery_cycled = false;
     for attempt in 1..=4 {
-        match apply_setpoint_before_enable(&mut i2c, &mut tps_state, boot_sp).await {
-            Ok(mode_with_oe) => {
-                let i2c_inner = i2c.into_inner();
-                let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
-                let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
-                pd_sda.set_input_enable(true);
-                pd_scl.set_input_enable(true);
-                pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_sda.set_high();
-                pd_scl.set_high();
-                pd_sda.set_output_enable(false);
-                pd_scl.set_output_enable(false);
-
-                let mode_ack =
-                    bitbang_tps55288_mode_write(&mut pd_sda, &mut pd_scl, mode_with_oe).await;
-                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_sda.set_high();
-                pd_scl.set_high();
-                pd_sda.set_output_enable(false);
-                pd_scl.set_output_enable(false);
-
+        match apply_setpoint(&mut telemetry_i2c, &mut tps_state, boot_sp).await {
+            Ok(()) => {
                 tps_error_latched = false;
                 tps_boot_ready = true;
                 tps_5v_setpoint_since = Some(Instant::now());
-                tps_state.last = Some(boot_sp);
-                if !mode_ack {
-                    defmt::warn!(
-                        "tps55288 boot OE bitbang write had missing ACK; continuing into SW2303 POR hold"
-                    );
-                }
                 info!(
-                    "tps55288 boot supply applied (attempt {}/4): v={}mV ilim={}mA elapsed_ms={}; PD I2C lines held high",
+                    "tps55288 boot supply applied (attempt {}/4): v={}mV ilim={}mA elapsed_ms={}",
                     attempt,
                     boot_sp.v_out_mv,
                     boot_sp.i_lim_ma,
                     elapsed_ms_since(pd_boot_started)
                 );
                 info!(
-                    "sw2303 power gate: holding SDA/SCL high for {}ms after TPS boot setpoint",
+                    "sw2303 power gate: holding SW2303 POR for {}ms after TPS boot setpoint",
                     SW2303_POR_RELEASE_MS
                 );
                 Timer::after_millis(SW2303_POR_RELEASE_MS).await;
-                pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                pd_sda.set_high();
-                pd_scl.set_high();
-                pd_sda.set_output_enable(false);
-                pd_scl.set_output_enable(false);
-                Timer::after_millis(BOOT_PD_RELEASE_SETTLE_MS).await;
-                let sw2303_start_bus_released = pd_sda.is_high() && pd_scl.is_high();
+                sw2303_i2c_allowed = true;
                 info!(
-                    "sw2303 power gate: SW2303 POR delay elapsed sda_high={} scl_high={} elapsed_ms={}",
-                    pd_sda.is_high(),
-                    pd_scl.is_high(),
+                    "sw2303 power gate: SW2303 POR delay elapsed elapsed_ms={}",
                     elapsed_ms_since(pd_boot_started)
                 );
-                let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
-                i2c = I2cAllowlist::new(i2c_inner);
-
-                if !sw2303_start_bus_released {
-                    defmt::warn!(
-                        "sw2303 power gate: PD I2C release not established; keeping TPS boot output and skipping SW2303 access"
-                    );
-                    sw2303_i2c_allowed = false;
-                } else {
-                    sw2303_i2c_allowed = true;
-                }
                 break;
             }
             Err(err) => {
@@ -1733,72 +1557,29 @@ async fn main(_spawner: Spawner) {
                         attempt,
                         defmt::Debug2Format(&err)
                     );
-                } else if !boot_retry_recovery_cycled {
-                    defmt::warn!(
-                        "tps55288 boot I2C failed after pre-boot recovery; hard-cycling CE_TPS before retry: {:?}",
-                        defmt::Debug2Format(&err)
-                    );
-                    let i2c_inner = i2c.into_inner();
-                    let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
-                    let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
-                    pd_sda.set_input_enable(true);
-                    pd_scl.set_input_enable(true);
-                    pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                    pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                    pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                    pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                    pd_sda.set_high();
-                    pd_scl.set_high();
-                    pd_sda.set_output_enable(false);
-                    pd_scl.set_output_enable(false);
-
-                    let mut recovered_after_ms = 0;
-                    let mut recovery_cycles = 0;
-                    for cycle in 1..=3 {
-                        recovery_cycles = cycle;
+                } else {
+                    if !boot_retry_recovery_cycled {
+                        defmt::warn!(
+                            "tps55288 boot I2C failed; hard-cycling CE_TPS before retry: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
                         let _ = ce_tps.set_high();
                         Timer::after_millis(BOOT_CE_RECOVERY_HOLD_MS).await;
                         let _ = ce_tps.set_low();
-                        for step in 1..=100 {
-                            Timer::after_millis(BOOT_CE_RECOVERY_POLL_MS).await;
-                            if pd_sda.is_high() && pd_scl.is_high() {
-                                recovered_after_ms = BOOT_CE_RECOVERY_HOLD_MS as u32
-                                    + step * BOOT_CE_RECOVERY_POLL_MS as u32;
-                                break;
-                            }
-                        }
-                        if pd_sda.is_high() && pd_scl.is_high() {
-                            break;
-                        }
+                        boot_retry_recovery_cycled = true;
+                        boot_recovery_cycled = true;
+                    } else {
+                        info!(
+                            "tps55288 boot supply retrying after transient I2C error (attempt {}/4): {:?}",
+                            attempt,
+                            defmt::Debug2Format(&err)
+                        );
                     }
-                    boot_retry_recovery_cycled = true;
-                    boot_recovery_cycled = true;
-                    info!(
-                        "pd i2c after retry CE recovery: sda_high={} scl_high={} cycles={} recovered_after_ms={}",
-                        pd_sda.is_high(),
-                        pd_scl.is_high(),
-                        recovery_cycles,
-                        recovered_after_ms
-                    );
-                    i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
-                    let _ = i2c.inner_mut().apply_config(
-                        &I2cConfig::default()
-                            .with_frequency(Rate::from_khz(PD_I2C_KHZ))
-                            .with_software_timeout(SoftwareTimeout::Transaction(
-                                Duration::from_millis(PD_I2C_TIMEOUT_MS),
-                            )),
-                    );
-                } else {
-                    info!(
-                        "tps55288 boot supply retrying after transient I2C error (attempt {}/4): {:?}",
-                        attempt,
-                        defmt::Debug2Format(&err)
-                    );
-                }
-                tps_state.last = None;
-                tps_error_latched = true;
-                if attempt < 4 {
-                    Timer::after_millis(BOOT_TPS_RETRY_DELAY_MS).await;
+                    tps_state.last = None;
+                    tps_error_latched = true;
+                    if attempt < 4 {
+                        Timer::after_millis(BOOT_TPS_RETRY_DELAY_MS).await;
+                    }
                 }
             }
         }
@@ -1812,24 +1593,8 @@ async fn main(_spawner: Spawner) {
         info!("sw2303 profile: deferred until first successful SW2303 read");
     }
 
-    // Telemetry I2C bus (no scanning; allowlist enforced in telemetry wrapper).
-    // SDA = GPIO8, SCL = GPIO9.
-    let i2c_telemetry = I2c::new(
-        peripherals.I2C1,
-        I2cConfig::default()
-            .with_frequency(Rate::from_khz(400))
-            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(20))),
-    )
-    .unwrap()
-    .with_sda(peripherals.GPIO8)
-    .with_scl(peripherals.GPIO9)
-    .into_async();
-    info!(
-        "telemetry i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 addr=[0x40/0x44,0x41/0x45,0x50] (no scan)"
-    );
-
     #[allow(unused_mut)]
-    let mut telemetry_i2c = TelemetryI2cAllowlist::new(i2c_telemetry);
+    let mut telemetry_i2c = telemetry_i2c;
     #[cfg(feature = "net_http")]
     let wifi_credentials = match provisioning::load_wifi_credentials(&mut telemetry_i2c).await {
         Ok(value) => {
@@ -2184,21 +1949,30 @@ async fn main(_spawner: Spawner) {
             api_isolated_usb_fault = fault;
         }
 
-        let allow_sw2303_probe = !sw2303_error_latched
-            || last_sw2303_read_attempt
-                .map(|attempt| attempt.elapsed() >= Duration::from_millis(SW2303_ERROR_RETRY_MS))
-                .unwrap_or(true);
+        let usb_c_pd_power_on = matches!(port_usb_c.power, PowerState::On);
+        let usb_c_power_off_setpoint = PowerSetpoint {
+            output_enabled: false,
+            ..boot_sp
+        };
+
+        let allow_sw2303_probe = usb_c_pd_power_on
+            && (!sw2303_error_latched
+                || last_sw2303_read_attempt
+                    .map(|attempt| {
+                        attempt.elapsed() >= Duration::from_millis(SW2303_ERROR_RETRY_MS)
+                    })
+                    .unwrap_or(true));
         if !sw2303_i2c_allowed && allow_sw2303_probe {
             last_sw2303_read_attempt = Some(Instant::now());
-            let i2c_inner = i2c.into_inner();
+            let i2c_inner = sw2303_i2c.into_inner();
             let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
             let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
             pd_sda.set_input_enable(true);
             pd_scl.set_input_enable(true);
-            pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-            pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-            pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-            pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+            pd_sda.apply_input_config(&sw2303_i2c_release_input_cfg);
+            pd_scl.apply_input_config(&sw2303_i2c_release_input_cfg);
+            pd_sda.apply_output_config(&sw2303_i2c_release_output_cfg);
+            pd_scl.apply_output_config(&sw2303_i2c_release_output_cfg);
             pd_sda.set_high();
             pd_scl.set_high();
             pd_sda.set_output_enable(false);
@@ -2211,17 +1985,19 @@ async fn main(_spawner: Spawner) {
                 sw2303_error_latched = false;
             }
             let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
-            i2c = I2cAllowlist::new(i2c_inner);
+            sw2303_i2c = I2cAllowlist::new(i2c_inner);
         }
         let sw2303_power_gate_ready = tps_5v_setpoint_since
             .map(|since| since.elapsed() >= Duration::from_millis(SW2303_POR_RELEASE_MS))
             .unwrap_or(false);
         let allow_sw2303_read = sw2303_i2c_allowed && allow_sw2303_probe && sw2303_power_gate_ready;
-        let (request, setpoint) = if allow_sw2303_read {
+        let (request, setpoint) = if !usb_c_pd_power_on {
+            (None, usb_c_power_off_setpoint)
+        } else if allow_sw2303_read {
             last_sw2303_read_attempt = Some(Instant::now());
             let mut retry = 0;
             let request_result = loop {
-                match read_power_request(&mut i2c).await {
+                match read_power_request(&mut sw2303_i2c).await {
                     Ok(request) => break Ok(request),
                     Err(err) if retry < SW2303_READ_RETRIES => {
                         retry += 1;
@@ -2233,7 +2009,7 @@ async fn main(_spawner: Spawner) {
             };
             match request_result {
                 Ok(request) => {
-                    let _ = i2c.inner_mut().apply_config(
+                    let _ = sw2303_i2c.inner_mut().apply_config(
                         &I2cConfig::default()
                             .with_frequency(Rate::from_khz(PD_I2C_KHZ))
                             .with_software_timeout(SoftwareTimeout::Transaction(
@@ -2263,7 +2039,7 @@ async fn main(_spawner: Spawner) {
                     (Some(request), sp)
                 }
                 Err(err) => {
-                    let _ = i2c.inner_mut().apply_config(
+                    let _ = sw2303_i2c.inner_mut().apply_config(
                         &I2cConfig::default()
                             .with_frequency(Rate::from_khz(PD_I2C_KHZ))
                             .with_software_timeout(SoftwareTimeout::Transaction(
@@ -2307,7 +2083,7 @@ async fn main(_spawner: Spawner) {
                 .unwrap_or(true);
             if allow_retry {
                 last_sw2303_profile_attempt = Some(Instant::now());
-                match apply_enable_profile_full(&mut i2c).await {
+                match apply_enable_profile_full(&mut sw2303_i2c).await {
                     Ok(status) => {
                         sw2303_profile_applied = true;
                         log_sw2303_profile_status("applied after stable target reads", &status);
@@ -2352,11 +2128,19 @@ async fn main(_spawner: Spawner) {
 
         let tps_apply_needed = tps_state.last != Some(setpoint);
         let tps_voltage_update_needed = setpoint.v_out_mv > boot_sp.v_out_mv;
-        if sw2303_stable_reads < SW2303_STABLE_READS_BEFORE_TPS
+        let tps_boot_restore_needed = usb_c_pd_power_on
+            && setpoint == boot_sp
+            && tps_5v_setpoint_since.is_none()
+            && tps_apply_needed;
+        if (usb_c_pd_power_on
+            && sw2303_stable_reads < SW2303_STABLE_READS_BEFORE_TPS
+            && !tps_boot_restore_needed)
             || (!tps_voltage_update_needed && !tps_apply_needed)
         {
             loop_delay_ms = SW2303_POLL_MS;
-        } else if let Err(err) = apply_setpoint(&mut i2c, &mut tps_state, setpoint).await {
+        } else if let Err(err) =
+            apply_setpoint(telemetry_sampler.i2c_mut(), &mut tps_state, setpoint).await
+        {
             if !tps_error_latched {
                 defmt::warn!(
                     "tps55288 apply error (keeping output as-is): {:?}",
@@ -2380,8 +2164,8 @@ async fn main(_spawner: Spawner) {
             prompt_tone.notify(SoundEvent::ExitSafety(SafetyKind::TpsApply));
         }
 
-        let runtime_recovery_due = sw2303_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT
-            || tps_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT;
+        let runtime_recovery_due =
+            usb_c_pd_power_on && tps_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT;
         let runtime_recovery_allowed = last_pd_runtime_recovery
             .map(|last| {
                 last.elapsed() >= Duration::from_millis(PD_RUNTIME_RECOVERY_MIN_INTERVAL_MS)
@@ -2399,7 +2183,7 @@ async fn main(_spawner: Spawner) {
                 sw2303_stable_reads
             );
 
-            match stop_output_and_enable_discharge(&mut i2c).await {
+            match stop_output_and_enable_discharge(telemetry_sampler.i2c_mut()).await {
                 Ok(()) => info!("pd i2c runtime recovery: TPS OE off and discharge enabled"),
                 Err(err) => {
                     defmt::warn!(
@@ -2411,15 +2195,15 @@ async fn main(_spawner: Spawner) {
             }
             Timer::after_millis(BOOT_PD_DISCHARGE_SETTLE_MS).await;
 
-            let i2c_inner = i2c.into_inner();
+            let i2c_inner = sw2303_i2c.into_inner();
             let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
             let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
             pd_sda.set_input_enable(true);
             pd_scl.set_input_enable(true);
-            pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-            pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-            pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-            pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+            pd_sda.apply_input_config(&sw2303_i2c_release_input_cfg);
+            pd_scl.apply_input_config(&sw2303_i2c_release_input_cfg);
+            pd_sda.apply_output_config(&sw2303_i2c_release_output_cfg);
+            pd_scl.apply_output_config(&sw2303_i2c_release_output_cfg);
             pd_sda.set_high();
             pd_scl.set_high();
             pd_sda.set_output_enable(false);
@@ -2453,8 +2237,8 @@ async fn main(_spawner: Spawner) {
             );
 
             let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
-            i2c = I2cAllowlist::new(i2c_inner);
-            let _ = i2c.inner_mut().apply_config(
+            sw2303_i2c = I2cAllowlist::new(i2c_inner);
+            let _ = sw2303_i2c.inner_mut().apply_config(
                 &I2cConfig::default()
                     .with_frequency(Rate::from_khz(PD_I2C_KHZ))
                     .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
@@ -2465,47 +2249,31 @@ async fn main(_spawner: Spawner) {
             let mut runtime_boot_ready = false;
             let mut runtime_sw2303_allowed = false;
             for attempt in 1..=PD_RUNTIME_RECOVERY_TPS_RETRIES {
-                match apply_setpoint_before_enable(&mut i2c, &mut tps_state, boot_sp).await {
-                    Ok(mode_with_oe) => {
-                        let i2c_inner = i2c.into_inner();
+                match apply_setpoint(telemetry_sampler.i2c_mut(), &mut tps_state, boot_sp).await {
+                    Ok(()) => {
+                        let i2c_inner = sw2303_i2c.into_inner();
                         let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
                         let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
                         pd_sda.set_input_enable(true);
                         pd_scl.set_input_enable(true);
-                        pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                        pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
-                        pd_sda.set_high();
-                        pd_scl.set_high();
-                        pd_sda.set_output_enable(false);
-                        pd_scl.set_output_enable(false);
-
-                        let mode_ack =
-                            bitbang_tps55288_mode_write(&mut pd_sda, &mut pd_scl, mode_with_oe)
-                                .await;
-                        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                        pd_sda.apply_input_config(&sw2303_i2c_release_input_cfg);
+                        pd_scl.apply_input_config(&sw2303_i2c_release_input_cfg);
+                        pd_sda.apply_output_config(&sw2303_i2c_release_output_cfg);
+                        pd_scl.apply_output_config(&sw2303_i2c_release_output_cfg);
                         pd_sda.set_high();
                         pd_scl.set_high();
                         pd_sda.set_output_enable(false);
                         pd_scl.set_output_enable(false);
                         tps_5v_setpoint_since = Some(Instant::now());
-                        tps_state.last = Some(boot_sp);
-                        if !mode_ack {
-                            defmt::warn!(
-                                "pd i2c runtime recovery: TPS OE bitbang write had missing ACK"
-                            );
-                        }
                         info!(
                             "pd i2c runtime recovery: TPS boot 5V applied (attempt {}/{}); holding SW2303 POR",
                             attempt, PD_RUNTIME_RECOVERY_TPS_RETRIES
                         );
                         Timer::after_millis(SW2303_POR_RELEASE_MS).await;
-                        pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                        pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                        pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                        pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                        pd_sda.apply_input_config(&sw2303_i2c_release_input_cfg);
+                        pd_scl.apply_input_config(&sw2303_i2c_release_input_cfg);
+                        pd_sda.apply_output_config(&sw2303_i2c_release_output_cfg);
+                        pd_scl.apply_output_config(&sw2303_i2c_release_output_cfg);
                         pd_sda.set_high();
                         pd_scl.set_high();
                         pd_sda.set_output_enable(false);
@@ -2517,7 +2285,7 @@ async fn main(_spawner: Spawner) {
                             pd_sda.is_high(),
                             pd_scl.is_high()
                         );
-                        i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
+                        sw2303_i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
                         runtime_boot_ready = true;
                         break;
                     }
@@ -2536,15 +2304,15 @@ async fn main(_spawner: Spawner) {
                                 PD_RUNTIME_RECOVERY_TPS_RETRIES,
                                 defmt::Debug2Format(&err)
                             );
-                            let i2c_inner = i2c.into_inner();
+                            let i2c_inner = sw2303_i2c.into_inner();
                             let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
                             let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
                             pd_sda.set_input_enable(true);
                             pd_scl.set_input_enable(true);
-                            pd_sda.apply_input_config(&pd_i2c_release_input_cfg);
-                            pd_scl.apply_input_config(&pd_i2c_release_input_cfg);
-                            pd_sda.apply_output_config(&pd_i2c_release_output_cfg);
-                            pd_scl.apply_output_config(&pd_i2c_release_output_cfg);
+                            pd_sda.apply_input_config(&sw2303_i2c_release_input_cfg);
+                            pd_scl.apply_input_config(&sw2303_i2c_release_input_cfg);
+                            pd_sda.apply_output_config(&sw2303_i2c_release_output_cfg);
+                            pd_scl.apply_output_config(&sw2303_i2c_release_output_cfg);
                             pd_sda.set_high();
                             pd_scl.set_high();
                             pd_sda.set_output_enable(false);
@@ -2553,8 +2321,9 @@ async fn main(_spawner: Spawner) {
                             Timer::after_millis(BOOT_CE_RECOVERY_HOLD_MS).await;
                             let _ = ce_tps.set_low();
                             Timer::after_millis(BOOT_TPS_RETRY_DELAY_MS).await;
-                            i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
-                            let _ = i2c.inner_mut().apply_config(
+                            sw2303_i2c =
+                                I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
+                            let _ = sw2303_i2c.inner_mut().apply_config(
                                 &I2cConfig::default()
                                     .with_frequency(Rate::from_khz(PD_I2C_KHZ))
                                     .with_software_timeout(SoftwareTimeout::Transaction(
@@ -2595,13 +2364,13 @@ async fn main(_spawner: Spawner) {
             );
         }
 
-        // TPS55288 fault change logging via INT_TPS (GPIO38).
+        // TPS55288 fault change logging via shared INT (GPIO7).
         // Note: `STATUS` is read-to-clear, so only read/print on interrupt-driven changes.
         if sw2303_stable_reads >= SW2303_STABLE_READS_BEFORE_TPS_STATUS
-            && INT_TPS_DIRTY.swap(false, Ordering::AcqRel)
+            && TPS_INT_DIRTY.swap(false, Ordering::AcqRel)
         {
             let int_tps_low = critical_section::with(|cs| {
-                INT_TPS
+                TPS_INT
                     .borrow_ref_mut(cs)
                     .as_ref()
                     .map(|pin| pin.is_low())
@@ -2609,7 +2378,10 @@ async fn main(_spawner: Spawner) {
             });
 
             let status = {
-                let mut dev = tps55288::Tps55288::with_address(&mut i2c, TPS55288_ADDR_7BIT);
+                let mut dev = tps55288::Tps55288::with_address(
+                    telemetry_sampler.i2c_mut(),
+                    TPS55288_ADDR_7BIT,
+                );
                 dev.read_status().await
             };
 
@@ -2618,7 +2390,7 @@ async fn main(_spawner: Spawner) {
                     if faults.short_circuit || faults.over_current || faults.over_voltage {
                         tps_5v_setpoint_since = None;
                     }
-                    let changed = int_tps_low != last_int_tps_low
+                    let changed = int_tps_low != last_tps_int_low
                         || last_tps_status != Some((operating, faults));
                     if changed {
                         info!(
@@ -2627,23 +2399,23 @@ async fn main(_spawner: Spawner) {
                             defmt::Debug2Format(&operating),
                             defmt::Debug2Format(&faults),
                         );
-                        last_int_tps_low = int_tps_low;
+                        last_tps_int_low = int_tps_low;
                         last_tps_status = Some((operating, faults));
                     } else {
-                        last_int_tps_low = int_tps_low;
+                        last_tps_int_low = int_tps_low;
                     }
                 }
                 Err(err) => {
-                    if int_tps_low != last_int_tps_low || last_tps_status.is_some() {
+                    if int_tps_low != last_tps_int_low || last_tps_status.is_some() {
                         defmt::warn!(
                             "tps fault: int_low={} read_status error: {:?}",
                             int_tps_low,
                             defmt::Debug2Format(&err)
                         );
-                        last_int_tps_low = int_tps_low;
+                        last_tps_int_low = int_tps_low;
                         last_tps_status = None;
                     } else {
-                        last_int_tps_low = int_tps_low;
+                        last_tps_int_low = int_tps_low;
                     }
                 }
             }
@@ -2830,13 +2602,30 @@ async fn main(_spawner: Spawner) {
             if let Some(action) = exec_c {
                 match action {
                     net::ApiPortAction::Replug => {
+                        let was_usb_c_power_off = matches!(port_usb_c.power, PowerState::Off);
                         port_usb_c.power = PowerState::On;
                         port_usb_c.data = DataState::Pulsing {
                             until: ports_now + Duration::from_millis(DATA_DISCONNECT_MS),
                         };
                         port_usb_c.busy_until =
                             Some(ports_now + Duration::from_millis(DATA_DISCONNECT_MS));
-                        let _ = ce_tps.set_low();
+                        if was_usb_c_power_off {
+                            tps_state.last = None;
+                            tps_5v_setpoint_since = None;
+                            sw2303_i2c_allowed = false;
+                            sw2303_profile_applied = false;
+                            sw2303_stable_reads = 0;
+                            sw2303_consecutive_errors = 0;
+                            tps_consecutive_errors = 0;
+                            last_sw2303_read_attempt = None;
+                            last_sw2303_profile_attempt = None;
+                            last_valid_sw2303_request = None;
+                            last_request = None;
+                            last_fast_protocol = None;
+                            info!(
+                                "usb-c replug: restarting PD coordinator from power-off state without CE_TPS hard cycle"
+                            );
+                        }
                         let _ = p2_ced.set_high();
                         let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOff);
                         let _ = ui
@@ -2850,8 +2639,22 @@ async fn main(_spawner: Spawner) {
                             port_usb_c.power = PowerState::On;
                             port_usb_c.data = DataState::Connected;
                             port_usb_c.busy_until =
-                                Some(ports_now + Duration::from_millis(POWER_SWITCH_GUARD_MS));
-                            let _ = ce_tps.set_low();
+                                Some(ports_now + Duration::from_millis(USB_C_PD_RESTART_GUARD_MS));
+                            tps_state.last = None;
+                            tps_5v_setpoint_since = None;
+                            sw2303_i2c_allowed = false;
+                            sw2303_profile_applied = false;
+                            sw2303_stable_reads = 0;
+                            sw2303_consecutive_errors = 0;
+                            tps_consecutive_errors = 0;
+                            last_sw2303_read_attempt = None;
+                            last_sw2303_profile_attempt = None;
+                            last_valid_sw2303_request = None;
+                            last_request = None;
+                            last_fast_protocol = None;
+                            info!(
+                                "usb-c power: re-enable requested; restarting PD coordinator without CE_TPS hard cycle"
+                            );
                             let _ = p2_ced.set_low();
                             let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::PwrOn);
                             let _ = ui
@@ -2865,13 +2668,43 @@ async fn main(_spawner: Spawner) {
                             prompt_tone.notify(SoundEvent::ActionOk);
                         }
                         (false, PowerState::On) => {
-                            port_usb_c.power = PowerState::Off;
-                            port_usb_c.data = DataState::Disconnected;
                             port_usb_c.busy_until =
                                 Some(ports_now + Duration::from_millis(POWER_SWITCH_GUARD_MS));
-                            let _ = ce_tps.set_high();
-                            let _ = p2_ced.set_high();
-                            let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::PwrOff);
+                            match apply_setpoint(
+                                telemetry_sampler.i2c_mut(),
+                                &mut tps_state,
+                                usb_c_power_off_setpoint,
+                            )
+                            .await
+                            {
+                                Ok(()) => {
+                                    port_usb_c.power = PowerState::Off;
+                                    tps_error_latched = false;
+                                    tps_consecutive_errors = 0;
+                                    tps_5v_setpoint_since = None;
+                                    info!(
+                                        "usb-c power: TPS output disabled via OE; CE_TPS left released"
+                                    );
+                                }
+                                Err(err) => {
+                                    if !tps_error_latched {
+                                        defmt::warn!(
+                                            "usb-c power: TPS OE disable failed; keeping USB-C power state on and CE_TPS released for coordinator recovery: {:?}",
+                                            defmt::Debug2Format(&err)
+                                        );
+                                        tps_error_latched = true;
+                                    }
+                                    tps_consecutive_errors =
+                                        tps_consecutive_errors.saturating_add(1);
+                                    tps_state.last = None;
+                                }
+                            }
+                            let toast = if matches!(port_usb_c.power, PowerState::Off) {
+                                ToastId::PwrOff
+                            } else {
+                                ToastId::PwrFail
+                            };
+                            let (lines, fg_raw) = toast_spec(ButtonId::Right, toast);
                             let _ = ui
                                 .show_toast(
                                     ports_now,
@@ -2880,7 +2713,11 @@ async fn main(_spawner: Spawner) {
                                     Duration::from_millis(TOAST_MS),
                                 )
                                 .await;
-                            prompt_tone.notify(SoundEvent::ActionOk);
+                            if matches!(port_usb_c.power, PowerState::Off) {
+                                prompt_tone.notify(SoundEvent::ActionOk);
+                            } else {
+                                prompt_tone.notify(SoundEvent::ActionFail);
+                            }
                         }
                     },
                 }
@@ -2926,40 +2763,28 @@ async fn main(_spawner: Spawner) {
         }
 
         // USB-C invariants: P2_CED drives CH442E EN# (low=connected, high=disconnected).
-        match port_usb_c.power {
-            PowerState::On => {
-                let _ = ce_tps.set_low();
-                match port_usb_c.data {
-                    DataState::Connected => {
-                        let _ = p2_ced.set_low();
-                    }
-                    DataState::Disconnected => {
-                        let _ = p2_ced.set_high();
-                    }
-                    DataState::Pulsing { until } => {
-                        if ports_now >= until {
-                            port_usb_c.data = DataState::Connected;
-                            port_usb_c.busy_until = None;
-                            let _ = p2_ced.set_low();
-                            let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOn);
-                            let _ = ui
-                                .show_toast(
-                                    ports_now,
-                                    lines,
-                                    fg_raw,
-                                    Duration::from_millis(TOAST_MS),
-                                )
-                                .await;
-                        } else {
-                            let _ = p2_ced.set_high();
-                        }
-                    }
-                }
+        // CE_TPS is reserved for boot/recovery; routine port power uses TPS OE.
+        // Keep the data route independent from TPS OE so USB JSONL can turn
+        // USB-C power back on after a controlled output-off test.
+        match port_usb_c.data {
+            DataState::Connected => {
+                let _ = p2_ced.set_low();
             }
-            PowerState::Off => {
-                port_usb_c.data = DataState::Disconnected;
-                let _ = ce_tps.set_high();
+            DataState::Disconnected => {
                 let _ = p2_ced.set_high();
+            }
+            DataState::Pulsing { until } => {
+                if ports_now >= until {
+                    port_usb_c.data = DataState::Connected;
+                    port_usb_c.busy_until = None;
+                    let _ = p2_ced.set_low();
+                    let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOn);
+                    let _ = ui
+                        .show_toast(ports_now, lines, fg_raw, Duration::from_millis(TOAST_MS))
+                        .await;
+                } else {
+                    let _ = p2_ced.set_high();
+                }
             }
         }
 
@@ -3402,9 +3227,23 @@ async fn main(_spawner: Spawner) {
                                         port_usb_c.data = DataState::Connected;
                                         port_usb_c.busy_until = Some(
                                             buttons_now
-                                                + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                                + Duration::from_millis(USB_C_PD_RESTART_GUARD_MS),
                                         );
-                                        let _ = ce_tps.set_low();
+                                        tps_state.last = None;
+                                        tps_5v_setpoint_since = None;
+                                        sw2303_i2c_allowed = false;
+                                        sw2303_profile_applied = false;
+                                        sw2303_stable_reads = 0;
+                                        sw2303_consecutive_errors = 0;
+                                        tps_consecutive_errors = 0;
+                                        last_sw2303_read_attempt = None;
+                                        last_sw2303_profile_attempt = None;
+                                        last_valid_sw2303_request = None;
+                                        last_request = None;
+                                        last_fast_protocol = None;
+                                        info!(
+                                            "usb-c power: button re-enable requested; restarting PD coordinator without CE_TPS hard cycle"
+                                        );
                                         let _ = p2_ced.set_low();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Right, ToastId::PwrOn);
@@ -3446,9 +3285,23 @@ async fn main(_spawner: Spawner) {
                                         port_usb_c.data = DataState::Connected;
                                         port_usb_c.busy_until = Some(
                                             buttons_now
-                                                + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                                + Duration::from_millis(USB_C_PD_RESTART_GUARD_MS),
                                         );
-                                        let _ = ce_tps.set_low();
+                                        tps_state.last = None;
+                                        tps_5v_setpoint_since = None;
+                                        sw2303_i2c_allowed = false;
+                                        sw2303_profile_applied = false;
+                                        sw2303_stable_reads = 0;
+                                        sw2303_consecutive_errors = 0;
+                                        tps_consecutive_errors = 0;
+                                        last_sw2303_read_attempt = None;
+                                        last_sw2303_profile_attempt = None;
+                                        last_valid_sw2303_request = None;
+                                        last_request = None;
+                                        last_fast_protocol = None;
+                                        info!(
+                                            "usb-c power: button re-enable requested; restarting PD coordinator without CE_TPS hard cycle"
+                                        );
                                         let _ = p2_ced.set_low();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Right, ToastId::PwrOn);
@@ -3463,16 +3316,45 @@ async fn main(_spawner: Spawner) {
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                     PowerState::On => {
-                                        port_usb_c.power = PowerState::Off;
-                                        port_usb_c.data = DataState::Disconnected;
                                         port_usb_c.busy_until = Some(
                                             buttons_now
                                                 + Duration::from_millis(POWER_SWITCH_GUARD_MS),
                                         );
-                                        let _ = ce_tps.set_high();
-                                        let _ = p2_ced.set_high();
-                                        let (lines, fg_raw) =
-                                            toast_spec(ButtonId::Right, ToastId::PwrOff);
+                                        match apply_setpoint(
+                                            telemetry_sampler.i2c_mut(),
+                                            &mut tps_state,
+                                            usb_c_power_off_setpoint,
+                                        )
+                                        .await
+                                        {
+                                            Ok(()) => {
+                                                port_usb_c.power = PowerState::Off;
+                                                tps_error_latched = false;
+                                                tps_consecutive_errors = 0;
+                                                tps_5v_setpoint_since = None;
+                                                info!(
+                                                    "usb-c power: TPS output disabled via OE; CE_TPS left released"
+                                                );
+                                            }
+                                            Err(err) => {
+                                                if !tps_error_latched {
+                                                    defmt::warn!(
+                                                        "usb-c power: TPS OE disable failed; keeping USB-C power state on and CE_TPS released for coordinator recovery: {:?}",
+                                                        defmt::Debug2Format(&err)
+                                                    );
+                                                    tps_error_latched = true;
+                                                }
+                                                tps_consecutive_errors =
+                                                    tps_consecutive_errors.saturating_add(1);
+                                                tps_state.last = None;
+                                            }
+                                        }
+                                        let toast = if matches!(port_usb_c.power, PowerState::Off) {
+                                            ToastId::PwrOff
+                                        } else {
+                                            ToastId::PwrFail
+                                        };
+                                        let (lines, fg_raw) = toast_spec(ButtonId::Right, toast);
                                         let _ = ui
                                             .show_toast(
                                                 buttons_now,
@@ -3481,7 +3363,11 @@ async fn main(_spawner: Spawner) {
                                                 Duration::from_millis(TOAST_MS),
                                             )
                                             .await;
-                                        prompt_tone.notify(SoundEvent::ActionOk);
+                                        if matches!(port_usb_c.power, PowerState::Off) {
+                                            prompt_tone.notify(SoundEvent::ActionOk);
+                                        } else {
+                                            prompt_tone.notify(SoundEvent::ActionFail);
+                                        }
                                     }
                                 },
                                 PressClass::Invalid => unreachable!("handled above"),
@@ -3544,6 +3430,25 @@ async fn main(_spawner: Spawner) {
                 usb_c_downstream_persisted,
             };
             guard.ports = ports;
+            guard.pd = net::ApiPdSnapshot {
+                usb_c_power_enabled: matches!(port_usb_c.power, PowerState::On),
+                sw2303_i2c_allowed,
+                sw2303_profile_applied,
+                sw2303_stable_reads: sw2303_stable_reads as u32,
+                sw2303_error_latched,
+                tps_error_latched,
+                sw2303_request_mv: request.map(|request| request.v_req_mv as u32),
+                sw2303_request_ma: request.map(|request| request.i_req_ma as u32),
+                sw2303_last_valid_mv: last_valid_sw2303_request
+                    .map(|request| request.v_req_mv as u32),
+                sw2303_last_valid_ma: last_valid_sw2303_request
+                    .map(|request| request.i_req_ma as u32),
+                tps_setpoint_output_enabled: tps_state.last.map(|setpoint| setpoint.output_enabled),
+                tps_setpoint_mv: tps_state.last.map(|setpoint| setpoint.v_out_mv as u32),
+                tps_setpoint_ilim_ma: tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32),
+                runtime_recovery_count: pd_runtime_recovery_count,
+                sample_uptime_ms: uptime_ms_from_instant(now),
+            };
         }
 
         let now_us = esp_hal::time::Instant::now()

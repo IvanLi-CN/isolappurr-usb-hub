@@ -1,19 +1,17 @@
 use embedded_hal::i2c::{ErrorKind, ErrorType};
 use embedded_hal_async::i2c::{I2c, Operation};
 
-use super::{SW2303_ADDR_7BIT, TPS55288_ADDR_7BIT};
+use super::SW2303_ADDR_7BIT;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PdI2cAddr {
     Sw2303,
-    Tps55288,
 }
 
 impl PdI2cAddr {
     pub const fn as_7bit(self) -> u8 {
         match self {
             Self::Sw2303 => SW2303_ADDR_7BIT,
-            Self::Tps55288 => TPS55288_ADDR_7BIT,
         }
     }
 }
@@ -41,7 +39,7 @@ pub struct I2cAllowlist<I2C> {
 }
 
 fn ensure_allowed_address<E>(address: u8) -> Result<(), I2cAllowlistError<E>> {
-    if address == SW2303_ADDR_7BIT || address == TPS55288_ADDR_7BIT {
+    if address == SW2303_ADDR_7BIT {
         Ok(())
     } else {
         Err(I2cAllowlistError::NotAllowedAddress(address))

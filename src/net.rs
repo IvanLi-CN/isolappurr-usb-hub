@@ -220,6 +220,47 @@ impl ApiPortsSnapshot {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiPdSnapshot {
+    pub usb_c_power_enabled: bool,
+    pub sw2303_i2c_allowed: bool,
+    pub sw2303_profile_applied: bool,
+    pub sw2303_stable_reads: u32,
+    pub sw2303_error_latched: bool,
+    pub tps_error_latched: bool,
+    pub sw2303_request_mv: Option<u32>,
+    pub sw2303_request_ma: Option<u32>,
+    pub sw2303_last_valid_mv: Option<u32>,
+    pub sw2303_last_valid_ma: Option<u32>,
+    pub tps_setpoint_output_enabled: Option<bool>,
+    pub tps_setpoint_mv: Option<u32>,
+    pub tps_setpoint_ilim_ma: Option<u32>,
+    pub runtime_recovery_count: u32,
+    pub sample_uptime_ms: u64,
+}
+
+impl ApiPdSnapshot {
+    pub const fn unknown() -> Self {
+        Self {
+            usb_c_power_enabled: false,
+            sw2303_i2c_allowed: false,
+            sw2303_profile_applied: false,
+            sw2303_stable_reads: 0,
+            sw2303_error_latched: false,
+            tps_error_latched: false,
+            sw2303_request_mv: None,
+            sw2303_request_ma: None,
+            sw2303_last_valid_mv: None,
+            sw2303_last_valid_ma: None,
+            tps_setpoint_output_enabled: None,
+            tps_setpoint_mv: None,
+            tps_setpoint_ilim_ma: None,
+            runtime_recovery_count: 0,
+            sample_uptime_ms: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiPortAction {
     Replug,
     Power { enabled: bool },
@@ -246,6 +287,7 @@ impl ApiPendingActions {
 pub struct ApiSharedState {
     pub hub: ApiHubSnapshot,
     pub ports: ApiPortsSnapshot,
+    pub pd: ApiPdSnapshot,
     pub pending: ApiPendingActions,
 }
 
@@ -254,6 +296,7 @@ impl ApiSharedState {
         Self {
             hub: ApiHubSnapshot::unknown(),
             ports: ApiPortsSnapshot::unknown(),
+            pd: ApiPdSnapshot::unknown(),
             pending: ApiPendingActions::empty(),
         }
     }
@@ -928,6 +971,13 @@ async fn handle_api_request(
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
         }
+        ("GET", "/api/v1/pd-diagnostics") => {
+            let state = { *api_state.lock().await };
+            let mut body = String::new();
+            write_pd_diagnostics_json(&mut body, &state.pd);
+            write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+            return Ok(());
+        }
         ("POST", "/api/v1/hub/usb-c-downstream-route") => {
             let Some(route) = parse_usb_c_downstream_route(query) else {
                 write_api_error(
@@ -1292,6 +1342,72 @@ fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &Ap
         },
         if port.state.busy { "true" } else { "false" },
     );
+}
+
+pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
+    let _ = core::write!(
+        body,
+        "{{\"usb_c_power_enabled\":{},\"sw2303_i2c_allowed\":{},\"sw2303_profile_applied\":{},\"sw2303_stable_reads\":{},\"sw2303_error_latched\":{},\"tps_error_latched\":{},\"sw2303_request\":{{\"mv\":",
+        if pd.usb_c_power_enabled {
+            "true"
+        } else {
+            "false"
+        },
+        if pd.sw2303_i2c_allowed {
+            "true"
+        } else {
+            "false"
+        },
+        if pd.sw2303_profile_applied {
+            "true"
+        } else {
+            "false"
+        },
+        pd.sw2303_stable_reads,
+        if pd.sw2303_error_latched {
+            "true"
+        } else {
+            "false"
+        },
+        if pd.tps_error_latched {
+            "true"
+        } else {
+            "false"
+        },
+    );
+    write_json_u32_or_null(body, pd.sw2303_request_mv);
+    let _ = body.push_str(",\"ma\":");
+    write_json_u32_or_null(body, pd.sw2303_request_ma);
+    let _ = body.push_str("},\"sw2303_last_valid_request\":{\"mv\":");
+    write_json_u32_or_null(body, pd.sw2303_last_valid_mv);
+    let _ = body.push_str(",\"ma\":");
+    write_json_u32_or_null(body, pd.sw2303_last_valid_ma);
+    let _ = body.push_str("},\"tps_setpoint\":{\"output_enabled\":");
+    write_json_bool_or_null(body, pd.tps_setpoint_output_enabled);
+    let _ = body.push_str(",\"mv\":");
+    write_json_u32_or_null(body, pd.tps_setpoint_mv);
+    let _ = body.push_str(",\"ilim_ma\":");
+    write_json_u32_or_null(body, pd.tps_setpoint_ilim_ma);
+    let _ = core::write!(
+        body,
+        "}},\"runtime_recovery_count\":{},\"sample_uptime_ms\":{}}}",
+        pd.runtime_recovery_count,
+        pd.sample_uptime_ms
+    );
+}
+
+fn write_json_bool_or_null(body: &mut String, v: Option<bool>) {
+    match v {
+        None => {
+            let _ = body.push_str("null");
+        }
+        Some(true) => {
+            let _ = body.push_str("true");
+        }
+        Some(false) => {
+            let _ = body.push_str("false");
+        }
+    }
 }
 
 fn write_json_u32_or_null(body: &mut String, v: Option<u32>) {
