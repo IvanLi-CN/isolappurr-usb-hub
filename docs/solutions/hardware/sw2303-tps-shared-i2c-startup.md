@@ -18,6 +18,7 @@ symptoms:
   - SW2303 cannot be read when SDA_TPS is held low.
   - SW2303 target reads can ACK only after its POR window while the bus stays released.
   - Shorter SW2303 POR holds can show transitional target values before settling to the negotiated 7 V request.
+  - PD can stay at the default 5 V request if routine USB-C power toggles hard-cycle CE_TPS instead of letting the TPS/SW2303 coordinator restart from TPS OE.
 root_cause: SW2303 VIN is powered by TPS55288 VOUT while SW2303 and TPS55288 share SDA_TPS/SCL_TPS, so firmware must keep SDA_TPS/SCL_TPS released through SW2303 POR before using the shared bus.
 resolution_type: firmware-guardrail
 ---
@@ -70,6 +71,10 @@ I2C bus.
   post-discharge stuck-low bus before TPS boot I2C, ran one more CE recovery
   after the first TPS I2C timeout, and then applied the 5 V boot setpoint on
   attempt 3/4 in every sample.
+- If user-visible USB-C power is toggled after boot, firmware must not keep
+  driving `CE_TPS` as the normal on/off control. Use TPS55288 `OE` for the
+  routine output state and clear cached SW2303 target/profile state when
+  re-enabling so the coordinator rebuilds from fresh target-register reads.
 
 ## Root Cause
 
@@ -113,20 +118,32 @@ Use this firmware startup sequence:
    improve the observed final SW2303 behavior.
 7. Poll SW2303 target voltage/current from the structured driver path and keep
    the last valid target if a single read window is missed.
-8. If runtime SW2303 reads or TPS setpoint writes keep failing, enter the same
-   shared-bus recovery flow automatically: stop TPS output and enable active
-   discharge when possible, hard-cycle `CE_TPS`, reapply the TPS 5 V boot
-   setpoint, hold the released bus through SW2303 POR, then clear stale SW2303
-   target/profile state so normal polling rebuilds from fresh reads.
-9. Avoid TPS no-op writes when the SW2303 target is still the 5 V boot setpoint;
+8. For user-visible USB-C power off, clear TPS55288 `OE` through the TPS driver
+   and leave `CE_TPS` released. For power on or a replug from the off state,
+   clear cached TPS/SW2303 coordinator state, apply the 5 V boot setpoint, hold
+   the SW2303 POR window, then resume target-register polling. This preserves
+   the same startup ordering without using a hard CE cycle as a UI/API power
+   switch.
+9. If runtime TPS setpoint writes keep failing, enter the same shared-bus
+   recovery flow automatically: stop TPS output and enable active discharge
+   when possible, hard-cycle `CE_TPS`, reapply the TPS 5 V boot setpoint, hold
+   the released bus through SW2303 POR, then clear stale SW2303 target/profile
+   state so normal polling rebuilds from fresh reads.
+10. Avoid TPS no-op writes when the SW2303 target is still the 5 V boot setpoint;
    only update TPS when SW2303 asks for a higher target voltage.
-10. Defer TPS fault/status reads and SW2303 profile writes until SW2303 target
+11. Defer TPS fault/status reads and SW2303 profile writes until SW2303 target
    reads have been stable for a long window.
 
 Guardrails:
 
 - Do not use INA226 to decide whether TPS output is ready for SW2303 access.
 - Do not use `CE_TPS` for routine power-path control; prefer TPS55288 `OE`.
+- Do not let UI/API replug or power-toggle paths bypass the PD coordinator
+  restart state reset; stale SW2303 request/profile state can hide a failed
+  renegotiation.
+- On split-bus `tps-sw` hardware, SW2303-only read failures must stay isolated
+  to SW polling/diagnostics; do not drop TPS output or hard-cycle `CE_TPS` for a
+  fault on `SDA_SW/SCL_SW` alone.
 - Use `CE_TPS` only for hard restrap/recovery when the released shared bus is
   stuck low before TPS boot I2C; do not start TPS I2C until both lines are high
   or the bounded recovery cycles have been exhausted.

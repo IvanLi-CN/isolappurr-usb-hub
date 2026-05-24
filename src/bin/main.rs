@@ -60,13 +60,14 @@ use isolapurr_usb_hub::display_ui::{
 };
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
+use isolapurr_usb_hub::pd_i2c::PowerSetpoint;
 use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
 use isolapurr_usb_hub::pd_i2c::sw2303::{
     EnableProfileStatus, apply_enable_profile_full, read_power_request,
 };
 use isolapurr_usb_hub::pd_i2c::tps55288::{
-    TpsApplyState, apply_setpoint, apply_setpoint_before_enable, boot_supply_setpoint,
-    power_request_to_setpoint, stop_output_and_enable_discharge,
+    TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
+    stop_output_and_enable_discharge,
 };
 use isolapurr_usb_hub::prompt_tone::{
     DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitWarnReason, PromptToneManager, SafetyKind,
@@ -210,6 +211,16 @@ async fn handle_usb_jsonl_request(
         let _ = body.push(',');
         write_usb_port_json(&mut body, "port_c", "USB-C", &state.ports.port_c);
         let _ = body.push_str("]}}");
+        return body;
+    }
+
+    if request.contains("\"method\":\"pd.diagnostics\"")
+        || request.contains("\"method\": \"pd.diagnostics\"")
+    {
+        let state = { *api_state.lock().await };
+        let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+        net::write_pd_diagnostics_json(&mut body, &state.pd);
+        let _ = body.push('}');
         return body;
     }
 
@@ -918,7 +929,7 @@ const BOOT_CE_RECOVERY_HOLD_MS: u64 = 5;
 const BOOT_CE_RECOVERY_POLL_MS: u64 = 5;
 const BOOT_CE_RELEASE_SETTLE_MS: u64 = 10;
 const BOOT_TPS_RETRY_DELAY_MS: u64 = 10;
-const TPS55288_MODE_REG: u8 = 0x06;
+const USB_C_PD_RESTART_GUARD_MS: u64 = 500;
 
 // Toast colors (RGB565 raw).
 const TOAST_OK_RAW: u16 = 0x1407; // dark green (same as UI OK power)
@@ -933,6 +944,8 @@ const TOAST_USB_A_DATA_ON: [[u8; 13]; 3] =
 const TOAST_USB_A_PWR_OFF: [[u8; 13]; 3] =
     [*b"USB-A PWROFF ", *b"DONE         ", *b"             "];
 const TOAST_USB_A_PWR_ON: [[u8; 13]; 3] = [*b"USB-A PWRON  ", *b"DONE         ", *b"             "];
+const TOAST_USB_A_PWR_FAIL: [[u8; 13]; 3] =
+    [*b"USB-A PWRERR ", *b"RETRY        ", *b"             "];
 const TOAST_USB_A_BUSY: [[u8; 13]; 3] = [*b"USB-A BUSY   ", *b"REJECT       ", *b"             "];
 const TOAST_USB_A_BADTIME: [[u8; 13]; 3] =
     [*b"USB-A BADTIME", *b"REJECT       ", *b"             "];
@@ -944,6 +957,8 @@ const TOAST_USB_C_DATA_ON: [[u8; 13]; 3] =
 const TOAST_USB_C_PWR_OFF: [[u8; 13]; 3] =
     [*b"USB-C PWROFF ", *b"DONE         ", *b"             "];
 const TOAST_USB_C_PWR_ON: [[u8; 13]; 3] = [*b"USB-C PWRON  ", *b"DONE         ", *b"             "];
+const TOAST_USB_C_PWR_FAIL: [[u8; 13]; 3] =
+    [*b"USB-C PWRERR ", *b"RETRY        ", *b"             "];
 const TOAST_USB_C_BUSY: [[u8; 13]; 3] = [*b"USB-C BUSY   ", *b"REJECT       ", *b"             "];
 const TOAST_USB_C_BADTIME: [[u8; 13]; 3] =
     [*b"USB-C BADTIME", *b"REJECT       ", *b"             "];
@@ -1049,6 +1064,7 @@ enum ToastId {
     DataOn,
     PwrOff,
     PwrOn,
+    PwrFail,
     Busy,
     BadTime,
 }
@@ -1059,7 +1075,7 @@ fn toast_spec(button: ButtonId, toast: ToastId) -> (&'static [[u8; 13]; 3], u16)
         ToastId::DataOn => TOAST_OK_RAW,
         ToastId::PwrOff => TOAST_WARN_RAW,
         ToastId::PwrOn => TOAST_OK_RAW,
-        ToastId::Busy | ToastId::BadTime => TOAST_ERR_RAW,
+        ToastId::PwrFail | ToastId::Busy | ToastId::BadTime => TOAST_ERR_RAW,
     };
 
     let lines = match (button, toast) {
@@ -1067,12 +1083,14 @@ fn toast_spec(button: ButtonId, toast: ToastId) -> (&'static [[u8; 13]; 3], u16)
         (ButtonId::Left, ToastId::DataOn) => &TOAST_USB_A_DATA_ON,
         (ButtonId::Left, ToastId::PwrOff) => &TOAST_USB_A_PWR_OFF,
         (ButtonId::Left, ToastId::PwrOn) => &TOAST_USB_A_PWR_ON,
+        (ButtonId::Left, ToastId::PwrFail) => &TOAST_USB_A_PWR_FAIL,
         (ButtonId::Left, ToastId::Busy) => &TOAST_USB_A_BUSY,
         (ButtonId::Left, ToastId::BadTime) => &TOAST_USB_A_BADTIME,
         (ButtonId::Right, ToastId::DataOff) => &TOAST_USB_C_DATA_OFF,
         (ButtonId::Right, ToastId::DataOn) => &TOAST_USB_C_DATA_ON,
         (ButtonId::Right, ToastId::PwrOff) => &TOAST_USB_C_PWR_OFF,
         (ButtonId::Right, ToastId::PwrOn) => &TOAST_USB_C_PWR_ON,
+        (ButtonId::Right, ToastId::PwrFail) => &TOAST_USB_C_PWR_FAIL,
         (ButtonId::Right, ToastId::Busy) => &TOAST_USB_C_BUSY,
         (ButtonId::Right, ToastId::BadTime) => &TOAST_USB_C_BADTIME,
     };
@@ -1215,72 +1233,6 @@ fn log_sw2303_profile_status(context: &'static str, status: &EnableProfileStatus
             "sw2303 pps diag: PD/PPS capability readback unavailable after profile apply; keeping configuration success"
         );
     }
-}
-
-async fn bitbang_i2c_delay() {
-    Timer::after_micros(5).await;
-}
-
-async fn bitbang_i2c_write_byte(sda: &mut Flex<'_>, scl: &mut Flex<'_>, byte: u8) -> bool {
-    for bit in (0..8).rev() {
-        if ((byte >> bit) & 1) == 0 {
-            sda.set_low();
-            sda.set_output_enable(true);
-        } else {
-            sda.set_high();
-            sda.set_output_enable(false);
-        }
-        bitbang_i2c_delay().await;
-        scl.set_high();
-        scl.set_output_enable(false);
-        bitbang_i2c_delay().await;
-        scl.set_low();
-        scl.set_output_enable(true);
-        bitbang_i2c_delay().await;
-    }
-
-    sda.set_high();
-    sda.set_output_enable(false);
-    bitbang_i2c_delay().await;
-    scl.set_high();
-    scl.set_output_enable(false);
-    bitbang_i2c_delay().await;
-    let ack = sda.is_low();
-    scl.set_low();
-    scl.set_output_enable(true);
-    bitbang_i2c_delay().await;
-    ack
-}
-
-async fn bitbang_tps55288_mode_write(sda: &mut Flex<'_>, scl: &mut Flex<'_>, mode: u8) -> bool {
-    sda.set_high();
-    scl.set_high();
-    sda.set_output_enable(false);
-    scl.set_output_enable(false);
-    bitbang_i2c_delay().await;
-
-    sda.set_low();
-    sda.set_output_enable(true);
-    bitbang_i2c_delay().await;
-    scl.set_low();
-    scl.set_output_enable(true);
-    bitbang_i2c_delay().await;
-
-    let address_ack = bitbang_i2c_write_byte(sda, scl, TPS55288_ADDR_7BIT << 1).await;
-    let register_ack = bitbang_i2c_write_byte(sda, scl, TPS55288_MODE_REG).await;
-    let data_ack = bitbang_i2c_write_byte(sda, scl, mode).await;
-
-    sda.set_low();
-    sda.set_output_enable(true);
-    bitbang_i2c_delay().await;
-    scl.set_high();
-    scl.set_output_enable(false);
-    bitbang_i2c_delay().await;
-    sda.set_high();
-    sda.set_output_enable(false);
-    bitbang_i2c_delay().await;
-
-    address_ack && register_ack && data_ack
 }
 
 #[cfg(feature = "net_http")]
@@ -1997,10 +1949,19 @@ async fn main(_spawner: Spawner) {
             api_isolated_usb_fault = fault;
         }
 
-        let allow_sw2303_probe = !sw2303_error_latched
-            || last_sw2303_read_attempt
-                .map(|attempt| attempt.elapsed() >= Duration::from_millis(SW2303_ERROR_RETRY_MS))
-                .unwrap_or(true);
+        let usb_c_pd_power_on = matches!(port_usb_c.power, PowerState::On);
+        let usb_c_power_off_setpoint = PowerSetpoint {
+            output_enabled: false,
+            ..boot_sp
+        };
+
+        let allow_sw2303_probe = usb_c_pd_power_on
+            && (!sw2303_error_latched
+                || last_sw2303_read_attempt
+                    .map(|attempt| {
+                        attempt.elapsed() >= Duration::from_millis(SW2303_ERROR_RETRY_MS)
+                    })
+                    .unwrap_or(true));
         if !sw2303_i2c_allowed && allow_sw2303_probe {
             last_sw2303_read_attempt = Some(Instant::now());
             let i2c_inner = sw2303_i2c.into_inner();
@@ -2030,7 +1991,9 @@ async fn main(_spawner: Spawner) {
             .map(|since| since.elapsed() >= Duration::from_millis(SW2303_POR_RELEASE_MS))
             .unwrap_or(false);
         let allow_sw2303_read = sw2303_i2c_allowed && allow_sw2303_probe && sw2303_power_gate_ready;
-        let (request, setpoint) = if allow_sw2303_read {
+        let (request, setpoint) = if !usb_c_pd_power_on {
+            (None, usb_c_power_off_setpoint)
+        } else if allow_sw2303_read {
             last_sw2303_read_attempt = Some(Instant::now());
             let mut retry = 0;
             let request_result = loop {
@@ -2165,7 +2128,13 @@ async fn main(_spawner: Spawner) {
 
         let tps_apply_needed = tps_state.last != Some(setpoint);
         let tps_voltage_update_needed = setpoint.v_out_mv > boot_sp.v_out_mv;
-        if sw2303_stable_reads < SW2303_STABLE_READS_BEFORE_TPS
+        let tps_boot_restore_needed = usb_c_pd_power_on
+            && setpoint == boot_sp
+            && tps_5v_setpoint_since.is_none()
+            && tps_apply_needed;
+        if (usb_c_pd_power_on
+            && sw2303_stable_reads < SW2303_STABLE_READS_BEFORE_TPS
+            && !tps_boot_restore_needed)
             || (!tps_voltage_update_needed && !tps_apply_needed)
         {
             loop_delay_ms = SW2303_POLL_MS;
@@ -2195,8 +2164,8 @@ async fn main(_spawner: Spawner) {
             prompt_tone.notify(SoundEvent::ExitSafety(SafetyKind::TpsApply));
         }
 
-        let runtime_recovery_due = sw2303_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT
-            || tps_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT;
+        let runtime_recovery_due =
+            usb_c_pd_power_on && tps_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT;
         let runtime_recovery_allowed = last_pd_runtime_recovery
             .map(|last| {
                 last.elapsed() >= Duration::from_millis(PD_RUNTIME_RECOVERY_MIN_INTERVAL_MS)
@@ -2280,14 +2249,8 @@ async fn main(_spawner: Spawner) {
             let mut runtime_boot_ready = false;
             let mut runtime_sw2303_allowed = false;
             for attempt in 1..=PD_RUNTIME_RECOVERY_TPS_RETRIES {
-                match apply_setpoint_before_enable(
-                    telemetry_sampler.i2c_mut(),
-                    &mut tps_state,
-                    boot_sp,
-                )
-                .await
-                {
-                    Ok(mode_with_oe) => {
+                match apply_setpoint(telemetry_sampler.i2c_mut(), &mut tps_state, boot_sp).await {
+                    Ok(()) => {
                         let i2c_inner = sw2303_i2c.into_inner();
                         let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
                         let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
@@ -2301,23 +2264,7 @@ async fn main(_spawner: Spawner) {
                         pd_scl.set_high();
                         pd_sda.set_output_enable(false);
                         pd_scl.set_output_enable(false);
-
-                        let mode_ack =
-                            bitbang_tps55288_mode_write(&mut pd_sda, &mut pd_scl, mode_with_oe)
-                                .await;
-                        pd_sda.apply_output_config(&sw2303_i2c_release_output_cfg);
-                        pd_scl.apply_output_config(&sw2303_i2c_release_output_cfg);
-                        pd_sda.set_high();
-                        pd_scl.set_high();
-                        pd_sda.set_output_enable(false);
-                        pd_scl.set_output_enable(false);
                         tps_5v_setpoint_since = Some(Instant::now());
-                        tps_state.last = Some(boot_sp);
-                        if !mode_ack {
-                            defmt::warn!(
-                                "pd i2c runtime recovery: TPS OE bitbang write had missing ACK"
-                            );
-                        }
                         info!(
                             "pd i2c runtime recovery: TPS boot 5V applied (attempt {}/{}); holding SW2303 POR",
                             attempt, PD_RUNTIME_RECOVERY_TPS_RETRIES
@@ -2655,13 +2602,30 @@ async fn main(_spawner: Spawner) {
             if let Some(action) = exec_c {
                 match action {
                     net::ApiPortAction::Replug => {
+                        let was_usb_c_power_off = matches!(port_usb_c.power, PowerState::Off);
                         port_usb_c.power = PowerState::On;
                         port_usb_c.data = DataState::Pulsing {
                             until: ports_now + Duration::from_millis(DATA_DISCONNECT_MS),
                         };
                         port_usb_c.busy_until =
                             Some(ports_now + Duration::from_millis(DATA_DISCONNECT_MS));
-                        let _ = ce_tps.set_low();
+                        if was_usb_c_power_off {
+                            tps_state.last = None;
+                            tps_5v_setpoint_since = None;
+                            sw2303_i2c_allowed = false;
+                            sw2303_profile_applied = false;
+                            sw2303_stable_reads = 0;
+                            sw2303_consecutive_errors = 0;
+                            tps_consecutive_errors = 0;
+                            last_sw2303_read_attempt = None;
+                            last_sw2303_profile_attempt = None;
+                            last_valid_sw2303_request = None;
+                            last_request = None;
+                            last_fast_protocol = None;
+                            info!(
+                                "usb-c replug: restarting PD coordinator from power-off state without CE_TPS hard cycle"
+                            );
+                        }
                         let _ = p2_ced.set_high();
                         let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOff);
                         let _ = ui
@@ -2675,8 +2639,22 @@ async fn main(_spawner: Spawner) {
                             port_usb_c.power = PowerState::On;
                             port_usb_c.data = DataState::Connected;
                             port_usb_c.busy_until =
-                                Some(ports_now + Duration::from_millis(POWER_SWITCH_GUARD_MS));
-                            let _ = ce_tps.set_low();
+                                Some(ports_now + Duration::from_millis(USB_C_PD_RESTART_GUARD_MS));
+                            tps_state.last = None;
+                            tps_5v_setpoint_since = None;
+                            sw2303_i2c_allowed = false;
+                            sw2303_profile_applied = false;
+                            sw2303_stable_reads = 0;
+                            sw2303_consecutive_errors = 0;
+                            tps_consecutive_errors = 0;
+                            last_sw2303_read_attempt = None;
+                            last_sw2303_profile_attempt = None;
+                            last_valid_sw2303_request = None;
+                            last_request = None;
+                            last_fast_protocol = None;
+                            info!(
+                                "usb-c power: re-enable requested; restarting PD coordinator without CE_TPS hard cycle"
+                            );
                             let _ = p2_ced.set_low();
                             let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::PwrOn);
                             let _ = ui
@@ -2690,13 +2668,43 @@ async fn main(_spawner: Spawner) {
                             prompt_tone.notify(SoundEvent::ActionOk);
                         }
                         (false, PowerState::On) => {
-                            port_usb_c.power = PowerState::Off;
-                            port_usb_c.data = DataState::Disconnected;
                             port_usb_c.busy_until =
                                 Some(ports_now + Duration::from_millis(POWER_SWITCH_GUARD_MS));
-                            let _ = ce_tps.set_high();
-                            let _ = p2_ced.set_high();
-                            let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::PwrOff);
+                            match apply_setpoint(
+                                telemetry_sampler.i2c_mut(),
+                                &mut tps_state,
+                                usb_c_power_off_setpoint,
+                            )
+                            .await
+                            {
+                                Ok(()) => {
+                                    port_usb_c.power = PowerState::Off;
+                                    tps_error_latched = false;
+                                    tps_consecutive_errors = 0;
+                                    tps_5v_setpoint_since = None;
+                                    info!(
+                                        "usb-c power: TPS output disabled via OE; CE_TPS left released"
+                                    );
+                                }
+                                Err(err) => {
+                                    if !tps_error_latched {
+                                        defmt::warn!(
+                                            "usb-c power: TPS OE disable failed; keeping USB-C power state on and CE_TPS released for coordinator recovery: {:?}",
+                                            defmt::Debug2Format(&err)
+                                        );
+                                        tps_error_latched = true;
+                                    }
+                                    tps_consecutive_errors =
+                                        tps_consecutive_errors.saturating_add(1);
+                                    tps_state.last = None;
+                                }
+                            }
+                            let toast = if matches!(port_usb_c.power, PowerState::Off) {
+                                ToastId::PwrOff
+                            } else {
+                                ToastId::PwrFail
+                            };
+                            let (lines, fg_raw) = toast_spec(ButtonId::Right, toast);
                             let _ = ui
                                 .show_toast(
                                     ports_now,
@@ -2705,7 +2713,11 @@ async fn main(_spawner: Spawner) {
                                     Duration::from_millis(TOAST_MS),
                                 )
                                 .await;
-                            prompt_tone.notify(SoundEvent::ActionOk);
+                            if matches!(port_usb_c.power, PowerState::Off) {
+                                prompt_tone.notify(SoundEvent::ActionOk);
+                            } else {
+                                prompt_tone.notify(SoundEvent::ActionFail);
+                            }
                         }
                     },
                 }
@@ -2751,40 +2763,28 @@ async fn main(_spawner: Spawner) {
         }
 
         // USB-C invariants: P2_CED drives CH442E EN# (low=connected, high=disconnected).
-        match port_usb_c.power {
-            PowerState::On => {
-                let _ = ce_tps.set_low();
-                match port_usb_c.data {
-                    DataState::Connected => {
-                        let _ = p2_ced.set_low();
-                    }
-                    DataState::Disconnected => {
-                        let _ = p2_ced.set_high();
-                    }
-                    DataState::Pulsing { until } => {
-                        if ports_now >= until {
-                            port_usb_c.data = DataState::Connected;
-                            port_usb_c.busy_until = None;
-                            let _ = p2_ced.set_low();
-                            let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOn);
-                            let _ = ui
-                                .show_toast(
-                                    ports_now,
-                                    lines,
-                                    fg_raw,
-                                    Duration::from_millis(TOAST_MS),
-                                )
-                                .await;
-                        } else {
-                            let _ = p2_ced.set_high();
-                        }
-                    }
-                }
+        // CE_TPS is reserved for boot/recovery; routine port power uses TPS OE.
+        // Keep the data route independent from TPS OE so USB JSONL can turn
+        // USB-C power back on after a controlled output-off test.
+        match port_usb_c.data {
+            DataState::Connected => {
+                let _ = p2_ced.set_low();
             }
-            PowerState::Off => {
-                port_usb_c.data = DataState::Disconnected;
-                let _ = ce_tps.set_high();
+            DataState::Disconnected => {
                 let _ = p2_ced.set_high();
+            }
+            DataState::Pulsing { until } => {
+                if ports_now >= until {
+                    port_usb_c.data = DataState::Connected;
+                    port_usb_c.busy_until = None;
+                    let _ = p2_ced.set_low();
+                    let (lines, fg_raw) = toast_spec(ButtonId::Right, ToastId::DataOn);
+                    let _ = ui
+                        .show_toast(ports_now, lines, fg_raw, Duration::from_millis(TOAST_MS))
+                        .await;
+                } else {
+                    let _ = p2_ced.set_high();
+                }
             }
         }
 
@@ -3227,9 +3227,23 @@ async fn main(_spawner: Spawner) {
                                         port_usb_c.data = DataState::Connected;
                                         port_usb_c.busy_until = Some(
                                             buttons_now
-                                                + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                                + Duration::from_millis(USB_C_PD_RESTART_GUARD_MS),
                                         );
-                                        let _ = ce_tps.set_low();
+                                        tps_state.last = None;
+                                        tps_5v_setpoint_since = None;
+                                        sw2303_i2c_allowed = false;
+                                        sw2303_profile_applied = false;
+                                        sw2303_stable_reads = 0;
+                                        sw2303_consecutive_errors = 0;
+                                        tps_consecutive_errors = 0;
+                                        last_sw2303_read_attempt = None;
+                                        last_sw2303_profile_attempt = None;
+                                        last_valid_sw2303_request = None;
+                                        last_request = None;
+                                        last_fast_protocol = None;
+                                        info!(
+                                            "usb-c power: button re-enable requested; restarting PD coordinator without CE_TPS hard cycle"
+                                        );
                                         let _ = p2_ced.set_low();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Right, ToastId::PwrOn);
@@ -3271,9 +3285,23 @@ async fn main(_spawner: Spawner) {
                                         port_usb_c.data = DataState::Connected;
                                         port_usb_c.busy_until = Some(
                                             buttons_now
-                                                + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                                + Duration::from_millis(USB_C_PD_RESTART_GUARD_MS),
                                         );
-                                        let _ = ce_tps.set_low();
+                                        tps_state.last = None;
+                                        tps_5v_setpoint_since = None;
+                                        sw2303_i2c_allowed = false;
+                                        sw2303_profile_applied = false;
+                                        sw2303_stable_reads = 0;
+                                        sw2303_consecutive_errors = 0;
+                                        tps_consecutive_errors = 0;
+                                        last_sw2303_read_attempt = None;
+                                        last_sw2303_profile_attempt = None;
+                                        last_valid_sw2303_request = None;
+                                        last_request = None;
+                                        last_fast_protocol = None;
+                                        info!(
+                                            "usb-c power: button re-enable requested; restarting PD coordinator without CE_TPS hard cycle"
+                                        );
                                         let _ = p2_ced.set_low();
                                         let (lines, fg_raw) =
                                             toast_spec(ButtonId::Right, ToastId::PwrOn);
@@ -3288,16 +3316,45 @@ async fn main(_spawner: Spawner) {
                                         prompt_tone.notify(SoundEvent::ActionOk);
                                     }
                                     PowerState::On => {
-                                        port_usb_c.power = PowerState::Off;
-                                        port_usb_c.data = DataState::Disconnected;
                                         port_usb_c.busy_until = Some(
                                             buttons_now
                                                 + Duration::from_millis(POWER_SWITCH_GUARD_MS),
                                         );
-                                        let _ = ce_tps.set_high();
-                                        let _ = p2_ced.set_high();
-                                        let (lines, fg_raw) =
-                                            toast_spec(ButtonId::Right, ToastId::PwrOff);
+                                        match apply_setpoint(
+                                            telemetry_sampler.i2c_mut(),
+                                            &mut tps_state,
+                                            usb_c_power_off_setpoint,
+                                        )
+                                        .await
+                                        {
+                                            Ok(()) => {
+                                                port_usb_c.power = PowerState::Off;
+                                                tps_error_latched = false;
+                                                tps_consecutive_errors = 0;
+                                                tps_5v_setpoint_since = None;
+                                                info!(
+                                                    "usb-c power: TPS output disabled via OE; CE_TPS left released"
+                                                );
+                                            }
+                                            Err(err) => {
+                                                if !tps_error_latched {
+                                                    defmt::warn!(
+                                                        "usb-c power: TPS OE disable failed; keeping USB-C power state on and CE_TPS released for coordinator recovery: {:?}",
+                                                        defmt::Debug2Format(&err)
+                                                    );
+                                                    tps_error_latched = true;
+                                                }
+                                                tps_consecutive_errors =
+                                                    tps_consecutive_errors.saturating_add(1);
+                                                tps_state.last = None;
+                                            }
+                                        }
+                                        let toast = if matches!(port_usb_c.power, PowerState::Off) {
+                                            ToastId::PwrOff
+                                        } else {
+                                            ToastId::PwrFail
+                                        };
+                                        let (lines, fg_raw) = toast_spec(ButtonId::Right, toast);
                                         let _ = ui
                                             .show_toast(
                                                 buttons_now,
@@ -3306,7 +3363,11 @@ async fn main(_spawner: Spawner) {
                                                 Duration::from_millis(TOAST_MS),
                                             )
                                             .await;
-                                        prompt_tone.notify(SoundEvent::ActionOk);
+                                        if matches!(port_usb_c.power, PowerState::Off) {
+                                            prompt_tone.notify(SoundEvent::ActionOk);
+                                        } else {
+                                            prompt_tone.notify(SoundEvent::ActionFail);
+                                        }
                                     }
                                 },
                                 PressClass::Invalid => unreachable!("handled above"),
@@ -3369,6 +3430,25 @@ async fn main(_spawner: Spawner) {
                 usb_c_downstream_persisted,
             };
             guard.ports = ports;
+            guard.pd = net::ApiPdSnapshot {
+                usb_c_power_enabled: matches!(port_usb_c.power, PowerState::On),
+                sw2303_i2c_allowed,
+                sw2303_profile_applied,
+                sw2303_stable_reads: sw2303_stable_reads as u32,
+                sw2303_error_latched,
+                tps_error_latched,
+                sw2303_request_mv: request.map(|request| request.v_req_mv as u32),
+                sw2303_request_ma: request.map(|request| request.i_req_ma as u32),
+                sw2303_last_valid_mv: last_valid_sw2303_request
+                    .map(|request| request.v_req_mv as u32),
+                sw2303_last_valid_ma: last_valid_sw2303_request
+                    .map(|request| request.i_req_ma as u32),
+                tps_setpoint_output_enabled: tps_state.last.map(|setpoint| setpoint.output_enabled),
+                tps_setpoint_mv: tps_state.last.map(|setpoint| setpoint.v_out_mv as u32),
+                tps_setpoint_ilim_ma: tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32),
+                runtime_recovery_count: pd_runtime_recovery_count,
+                sample_uptime_ms: uptime_ms_from_instant(now),
+            };
         }
 
         let now_us = esp_hal::time::Instant::now()
