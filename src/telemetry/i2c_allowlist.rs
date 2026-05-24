@@ -5,6 +5,7 @@ use super::hardware::{
     INA226_U13_ADDR_7BIT, INA226_U13_FALLBACK_ADDR_7BIT, INA226_U17_ADDR_7BIT,
     INA226_U17_FALLBACK_ADDR_7BIT,
 };
+use crate::pd_i2c::TPS55288_ADDR_7BIT;
 #[cfg(feature = "net_http")]
 use crate::provisioning::WIFI_EEPROM_ADDR_7BIT;
 
@@ -26,8 +27,9 @@ impl<E: Error> Error for TelemetryI2cError<E> {
 /// Telemetry-only I2C allowlist wrapper.
 ///
 /// Frozen v1 policy:
-/// - Only allow INA226 (U13/U17) at addresses `0x40` / `0x41` and the
-///   documented counterfeit/clone fallbacks `0x44` / `0x45`
+/// - Only allow INA226 (U13/U17) at addresses `0x40` / `0x41`, the
+///   documented counterfeit/clone fallbacks `0x44` / `0x45`, and TPS55288
+///   `0x74` on the shared system I2C bus.
 /// - Only allow the provisioning EEPROM U21 (`0x50`) through explicit
 ///   provisioning calls when `net_http` is enabled.
 /// - Never scan / never touch other devices on the same bus (e.g. TMP112 U23).
@@ -67,6 +69,7 @@ where
             && address != INA226_U13_FALLBACK_ADDR_7BIT
             && address != INA226_U17_ADDR_7BIT
             && address != INA226_U17_FALLBACK_ADDR_7BIT
+            && address != TPS55288_ADDR_7BIT
             && address != WIFI_EEPROM_ADDR_7BIT
         {
             return Err(TelemetryI2cError::AddressNotAllowed(address));
@@ -76,6 +79,7 @@ where
             && address != INA226_U13_FALLBACK_ADDR_7BIT
             && address != INA226_U17_ADDR_7BIT
             && address != INA226_U17_FALLBACK_ADDR_7BIT
+            && address != TPS55288_ADDR_7BIT
         {
             return Err(TelemetryI2cError::AddressNotAllowed(address));
         }
