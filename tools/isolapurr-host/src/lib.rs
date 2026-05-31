@@ -629,15 +629,22 @@ async fn dispatch_ipc_request(
         }
         "device.wifi.set" => {
             let req: DeviceWifiSetRequest = serde_json::from_value(params)?;
-            Ok(redact_sensitive(
-                &usb_jsonl_request(
-                    state,
-                    &req.device_id,
-                    "wifi.set",
-                    Some(json!({"ssid": req.ssid, "psk": req.psk})),
-                )
-                .await?,
-            ))
+            match usb_jsonl_request(
+                state,
+                &req.device_id,
+                "wifi.set",
+                Some(json!({"ssid": req.ssid, "psk": req.psk})),
+            )
+            .await
+            {
+                Ok(value) => Ok(redact_sensitive(&value)),
+                Err(err) => {
+                    match verify_wifi_after_set_timeout(state, &req.device_id, &req.ssid).await {
+                        Ok(value) => Ok(redact_sensitive(&value)),
+                        Err(_) => Err(err),
+                    }
+                }
+            }
         }
         "device.wifi.clear" => {
             let req: DeviceIdRequest = serde_json::from_value(params)?;
@@ -1345,6 +1352,36 @@ fn extract_hub_route(value: &Value) -> Option<(String, Option<bool>)> {
         .get("usb_c_downstream_persisted")
         .and_then(Value::as_bool);
     Some((route, persisted))
+}
+
+async fn verify_wifi_after_set_timeout(
+    state: &AppState,
+    id: &str,
+    expected_ssid: &str,
+) -> anyhow::Result<Value> {
+    let mut last_error = None;
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        match usb_jsonl_request(state, id, "wifi.get", None).await {
+            Ok(mut value) => {
+                if wifi_matches_expected_ssid(&value, expected_ssid) {
+                    if let Some(result) = value.get_mut("result").and_then(Value::as_object_mut) {
+                        result.insert("verified_after_serial_timeout".to_string(), json!(true));
+                    }
+                    return Ok(value);
+                }
+                last_error = Some(anyhow!("Wi-Fi settings did not report expected SSID yet"));
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("Wi-Fi set did not verify after serial timeout")))
+}
+
+fn wifi_matches_expected_ssid(value: &Value, expected_ssid: &str) -> bool {
+    let wifi = value.get("result").unwrap_or(value);
+    wifi.get("configured").and_then(Value::as_bool) == Some(true)
+        && wifi.get("ssid").and_then(Value::as_str) == Some(expected_ssid)
 }
 
 async fn device_flash(
@@ -2986,6 +3023,20 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn matches_wifi_set_verification_shape() {
+        let value = json!({
+            "ok": true,
+            "result": {
+                "configured": true,
+                "ssid": "Ivan",
+                "state": "connected"
+            }
+        });
+        assert!(wifi_matches_expected_ssid(&value, "Ivan"));
+        assert!(!wifi_matches_expected_ssid(&value, "Other"));
     }
 
     #[test]
