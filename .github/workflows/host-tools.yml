@@ -37,15 +37,7 @@ jobs:
             os: macos-14
             target: aarch64-apple-darwin
             archive: isolapurr-host-tools-macos-aarch64.tar.gz
-          - slug: windows-x86_64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-            archive: isolapurr-host-tools-windows-x86_64.tar.gz
     steps:
-      - name: Enable Windows long paths
-        if: runner.os == 'Windows'
-        run: git config --system core.longpaths true
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
