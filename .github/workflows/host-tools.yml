@@ -96,8 +96,8 @@ jobs:
           printf '%s\n' \
             "IsolaPurr host tools" \
             "" \
-            "- isolapurr: user CLI" \
-            "- isolapurr-devd: local device daemon" \
+            "- isolapurr: user CLI over local IPC" \
+            "- isolapurr-devd: local IPC device daemon; use bridge-http for browser/debug HTTP" \
             > "$out/README.txt"
           tar -czf "dist/${{ matrix.archive }}" -C "$out" .
 

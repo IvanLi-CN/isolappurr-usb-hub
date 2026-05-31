@@ -20,14 +20,19 @@ use std::{
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::{net::TcpListener, sync::Mutex};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
+    net::TcpListener,
+    sync::Mutex,
+};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     services::ServeDir,
 };
 
 pub const DEFAULT_BIND: &str = "127.0.0.1:51200";
-pub const DEFAULT_DEVD_URL: &str = "http://127.0.0.1:51200";
+pub const DEFAULT_IPC_FILE_NAME: &str = "devd.sock";
+pub const DEFAULT_WINDOWS_PIPE_NAME: &str = r"\\.\pipe\isolapurr-devd";
 const STORAGE_FILE_NAME: &str = "devices.json";
 const STORAGE_SETTINGS_FILE_NAME: &str = "settings.json";
 const STORAGE_SCHEMA_VERSION: u8 = 1;
@@ -55,11 +60,76 @@ impl DevdConfig {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct IpcConfig {
+    pub endpoint: String,
+}
+
+impl IpcConfig {
+    pub fn new(endpoint: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IpcRequest {
+    pub id: String,
+    pub method: String,
+    #[serde(default)]
+    pub params: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IpcResponse {
+    pub id: String,
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+pub fn default_ipc_endpoint() -> String {
+    #[cfg(windows)]
+    {
+        DEFAULT_WINDOWS_PIPE_NAME.to_string()
+    }
+    #[cfg(not(windows))]
+    {
+        let base = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join(format!("isolapurr-{}", user_id_hint())));
+        base.join("isolapurr")
+            .join(DEFAULT_IPC_FILE_NAME)
+            .to_string_lossy()
+            .to_string()
+    }
+}
+
+#[cfg(not(windows))]
+fn user_id_hint() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "user".to_string())
+}
+
 #[derive(Clone)]
 struct AppState {
     token: String,
     base_url: String,
     inner: Arc<Mutex<DevdState>>,
+}
+
+impl AppState {
+    fn new(base_url: impl Into<String>) -> Self {
+        Self {
+            token: generate_token(),
+            base_url: base_url.into(),
+            inner: Arc::new(Mutex::new(DevdState::default())),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -313,7 +383,488 @@ struct ErrorInfo {
     retryable: bool,
 }
 
-pub async fn serve(config: DevdConfig) -> anyhow::Result<()> {
+pub async fn serve_ipc(config: IpcConfig) -> anyhow::Result<()> {
+    let state = AppState::new("ipc://isolapurr-devd");
+    serve_ipc_with_state(config, state).await
+}
+
+async fn serve_ipc_with_state(config: IpcConfig, state: AppState) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        serve_ipc_unix(config, state).await
+    }
+    #[cfg(windows)]
+    {
+        serve_ipc_windows(config, state).await
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (config, state);
+        Err(anyhow!(
+            "isolapurr-devd IPC is unsupported on this platform"
+        ))
+    }
+}
+
+#[cfg(unix)]
+async fn serve_ipc_unix(config: IpcConfig, state: AppState) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    use tokio::net::UnixListener;
+
+    let path = PathBuf::from(&config.endpoint);
+    if let Some(parent) = path.parent() {
+        let created_parent = !parent.exists();
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+        if created_parent {
+            fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+                .with_context(|| format!("chmod {}", parent.display()))?;
+        }
+    }
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("remove stale {}", path.display()))?;
+    }
+    let listener =
+        UnixListener::bind(&path).with_context(|| format!("bind IPC {}", path.display()))?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("chmod {}", path.display()))?;
+    tracing::info!("isolapurr-devd IPC listening on {}", path.display());
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let state = state.clone();
+        tokio::spawn(async move {
+            if let Err(err) = handle_ipc_stream(stream, state).await {
+                tracing::warn!("IPC client failed: {err:#}");
+            }
+        });
+    }
+}
+
+#[cfg(windows)]
+async fn serve_ipc_windows(config: IpcConfig, state: AppState) -> anyhow::Result<()> {
+    use tokio::net::windows::named_pipe::ServerOptions;
+
+    tracing::info!("isolapurr-devd IPC listening on {}", config.endpoint);
+    loop {
+        let server = ServerOptions::new()
+            .first_pipe_instance(false)
+            .create(&config.endpoint)
+            .with_context(|| format!("create IPC pipe {}", config.endpoint))?;
+        server.connect().await.context("connect IPC pipe client")?;
+        let state = state.clone();
+        tokio::spawn(async move {
+            if let Err(err) = handle_ipc_stream(server, state).await {
+                tracing::warn!("IPC client failed: {err:#}");
+            }
+        });
+    }
+}
+
+async fn handle_ipc_stream<S>(stream: S, state: AppState) -> anyhow::Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let (read, mut write) = tokio::io::split(stream);
+    let mut lines = BufReader::new(read).lines();
+    while let Some(line) = lines.next_line().await? {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let response = match serde_json::from_str::<IpcRequest>(&line) {
+            Ok(request) => handle_ipc_request(&state, request).await,
+            Err(err) => IpcResponse {
+                id: "invalid".to_string(),
+                ok: false,
+                result: None,
+                error: Some(format!("invalid IPC request: {err}")),
+            },
+        };
+        let mut encoded = serde_json::to_vec(&response)?;
+        encoded.push(b'\n');
+        write.write_all(&encoded).await?;
+        write.flush().await?;
+    }
+    Ok(())
+}
+
+async fn handle_ipc_request(state: &AppState, request: IpcRequest) -> IpcResponse {
+    let id = request.id;
+    let result = dispatch_ipc_request(state, &request.method, request.params).await;
+    match result {
+        Ok(result) => IpcResponse {
+            id,
+            ok: true,
+            result: Some(result),
+            error: None,
+        },
+        Err(err) => IpcResponse {
+            id,
+            ok: false,
+            result: None,
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+async fn dispatch_ipc_request(
+    state: &AppState,
+    method: &str,
+    params: Value,
+) -> anyhow::Result<Value> {
+    match method {
+        "devd.health" => Ok(json!({"ok": true})),
+        "devices.list" => ipc_list_devices(state).await,
+        "devices.scan" => ipc_scan_devices(state).await,
+        "device.status" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(state, &req.device_id, "info", None).await?,
+            ))
+        }
+        "device.session" => {
+            let req: DeviceSessionRequest = serde_json::from_value(params)?;
+            ipc_device_session(state, &req.device_id, req.tail, req.lease_id).await
+        }
+        "device.wifi.get" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(state, &req.device_id, "wifi.get", None).await?,
+            ))
+        }
+        "device.wifi.set" => {
+            let req: DeviceWifiSetRequest = serde_json::from_value(params)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "wifi.set",
+                    Some(json!({"ssid": req.ssid, "psk": req.psk})),
+                )
+                .await?,
+            ))
+        }
+        "device.wifi.clear" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(state, &req.device_id, "wifi.clear", None).await?,
+            ))
+        }
+        "device.ports.get" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(state, &req.device_id, "ports.get", None).await?,
+            ))
+        }
+        "device.port.power" => {
+            let req: DevicePortPowerRequest = serde_json::from_value(params)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "port.power_set",
+                    Some(json!({"port": req.port, "enabled": req.enabled})),
+                )
+                .await?,
+            ))
+        }
+        "device.port.replug" => {
+            let req: DevicePortRequest = serde_json::from_value(params)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "port.replug",
+                    Some(json!({"port": req.port})),
+                )
+                .await?,
+            ))
+        }
+        "device.hub.route_set" => {
+            let req: DeviceHubRouteRequest = serde_json::from_value(params)?;
+            match usb_jsonl_request(
+                state,
+                &req.device_id,
+                "hub.route_set",
+                Some(json!({"route": req.route})),
+            )
+            .await
+            {
+                Ok(value) => Ok(redact_sensitive(&value)),
+                Err(err) => {
+                    match verify_hub_route_after_disconnect(state, &req.device_id, &req.route).await
+                    {
+                        Ok(value) => Ok(redact_sensitive(&value)),
+                        Err(_) => Err(err),
+                    }
+                }
+            }
+        }
+        "serial.lease.create" => {
+            let req: LeaseRequest = serde_json::from_value(params)?;
+            ipc_create_lease(state, req).await
+        }
+        "serial.lease.release" => {
+            let req: LeaseIdRequest = serde_json::from_value(params)?;
+            ipc_release_lease(state, &req.lease_id).await
+        }
+        "device.flash" => {
+            let req: DeviceFlashRequest = serde_json::from_value(params)?;
+            require_lease_value(state, &req.device_id, req.flash.lease_id.as_deref()).await?;
+            Ok(redact_sensitive(
+                &run_flash_request(state, &req.device_id, req.flash).await?,
+            ))
+        }
+        "device.reset" => {
+            let req: DeviceResetRequest = serde_json::from_value(params)?;
+            ipc_device_reset(state, &req.device_id, req.lease_id.as_deref()).await
+        }
+        "device.diagnostics" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(state, &req.device_id, "pd.diagnostics", None).await?,
+            ))
+        }
+        "firmware.catalog.validate" => {
+            let catalog: FirmwareCatalog = serde_json::from_value(params)?;
+            let errors = validate_catalog_shape(&catalog);
+            Ok(json!({"ok": errors.is_empty(), "errors": errors}))
+        }
+        _ => Err(anyhow!("unknown IPC method: {method}")),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceIdRequest {
+    device_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceSessionRequest {
+    device_id: String,
+    lease_id: Option<String>,
+    tail: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceWifiSetRequest {
+    device_id: String,
+    ssid: String,
+    psk: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevicePortRequest {
+    device_id: String,
+    port: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevicePortPowerRequest {
+    device_id: String,
+    port: String,
+    enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceHubRouteRequest {
+    device_id: String,
+    route: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LeaseIdRequest {
+    lease_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceFlashRequest {
+    device_id: String,
+    #[serde(flatten)]
+    flash: FlashRequest,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceResetRequest {
+    device_id: String,
+    lease_id: Option<String>,
+}
+
+async fn ipc_list_devices(state: &AppState) -> anyhow::Result<Value> {
+    cleanup_expired_leases(state).await;
+    let devices = state
+        .inner
+        .lock()
+        .await
+        .devices
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(json!({"devices": devices}))
+}
+
+async fn ipc_scan_devices(state: &AppState) -> anyhow::Result<Value> {
+    let ports = list_serial_ports().context("serial enumeration failed")?;
+    let mut inner = state.inner.lock().await;
+    reconcile_scanned_usb_devices(&mut inner, ports);
+    let devices = inner.devices.values().cloned().collect::<Vec<_>>();
+    Ok(json!({"devices": devices}))
+}
+
+async fn ipc_device_session(
+    state: &AppState,
+    device_id: &str,
+    tail: Option<usize>,
+    lease_id: Option<String>,
+) -> anyhow::Result<Value> {
+    let tail = tail.unwrap_or(200).min(MAX_SESSION_ITEMS);
+    let inner = state.inner.lock().await;
+    let device = inner
+        .devices
+        .get(device_id)
+        .ok_or_else(|| anyhow!("device not found"))?;
+    if let Some(lease_id) = lease_id.as_deref()
+        && !inner.leases.contains_key(lease_id)
+    {
+        return Err(anyhow!("lease not found or expired"));
+    }
+    Ok(json!({
+        "logs": tail_items(&device.session.logs, tail),
+        "traces": tail_items(&device.session.traces, tail),
+    }))
+}
+
+async fn ipc_create_lease(state: &AppState, req: LeaseRequest) -> anyhow::Result<Value> {
+    cleanup_expired_leases(state).await;
+    let port_path = {
+        let inner = state.inner.lock().await;
+        let device = inner
+            .devices
+            .get(&req.device_id)
+            .ok_or_else(|| anyhow!("device not found"))?;
+        device.usb.as_ref().map(|usb| usb.port_path.clone())
+    };
+
+    let lease_id = next_id();
+    let lease = LeaseRecord {
+        lease_id: lease_id.clone(),
+        device_id: req.device_id.clone(),
+        port_path,
+        expires_at: Instant::now() + Duration::from_millis(LEASE_TTL_MS),
+    };
+    state
+        .inner
+        .lock()
+        .await
+        .leases
+        .insert(lease_id.clone(), lease);
+    Ok(json!(LeaseResponse {
+        lease_id,
+        device_id: req.device_id,
+        heartbeat_interval_ms: LEASE_HEARTBEAT_INTERVAL_MS,
+        lease_ttl_ms: LEASE_TTL_MS,
+    }))
+}
+
+async fn ipc_release_lease(state: &AppState, lease_id: &str) -> anyhow::Result<Value> {
+    let removed = state.inner.lock().await.leases.remove(lease_id).is_some();
+    Ok(json!({"ok": true, "released": removed}))
+}
+
+async fn require_lease_value(
+    state: &AppState,
+    device_id: &str,
+    lease_id: Option<&str>,
+) -> anyhow::Result<()> {
+    cleanup_expired_leases(state).await;
+    let lease_id = lease_id.ok_or_else(|| anyhow!("lease_id is required"))?;
+    let inner = state.inner.lock().await;
+    let lease = inner
+        .leases
+        .get(lease_id)
+        .ok_or_else(|| anyhow!("lease not found or expired"))?;
+    if lease.device_id != device_id {
+        return Err(anyhow!("lease does not belong to device"));
+    }
+    Ok(())
+}
+
+async fn ipc_device_reset(
+    state: &AppState,
+    device_id: &str,
+    lease_id: Option<&str>,
+) -> anyhow::Result<Value> {
+    require_lease_value(state, device_id, lease_id).await?;
+    let port_path = device_usb_port_path(state, device_id).await?;
+    {
+        let mut inner = state.inner.lock().await;
+        if inner.exclusive_ports.contains_key(&port_path) {
+            return Err(anyhow!("device busy"));
+        }
+        inner
+            .exclusive_ports
+            .insert(port_path.clone(), "reset".to_string());
+    }
+    let guard = ExclusiveGuard {
+        state: state.clone(),
+        port_path,
+    };
+    let result =
+        usb_jsonl_request_with_exclusive(state, device_id, "reboot", None, Some("reset")).await;
+    drop(guard);
+    Ok(redact_sensitive(&result?))
+}
+
+pub async fn ipc_call(endpoint: &str, method: &str, params: Value) -> anyhow::Result<Value> {
+    let request = IpcRequest {
+        id: next_id(),
+        method: method.to_string(),
+        params,
+    };
+    #[cfg(unix)]
+    {
+        let stream = tokio::net::UnixStream::connect(endpoint)
+            .await
+            .with_context(|| format!("connect IPC socket {endpoint}"))?;
+        send_ipc_request(stream, request).await
+    }
+    #[cfg(windows)]
+    {
+        let stream = tokio::net::windows::named_pipe::ClientOptions::new()
+            .open(endpoint)
+            .with_context(|| format!("connect IPC pipe {endpoint}"))?;
+        send_ipc_request(stream, request).await
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (endpoint, request);
+        Err(anyhow!("isolapurr IPC is unsupported on this platform"))
+    }
+}
+
+async fn send_ipc_request<S>(mut stream: S, request: IpcRequest) -> anyhow::Result<Value>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let mut encoded = serde_json::to_vec(&request)?;
+    encoded.push(b'\n');
+    stream.write_all(&encoded).await?;
+    stream.flush().await?;
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).await?;
+    let response: IpcResponse = serde_json::from_str(line.trim()).context("decode IPC response")?;
+    if response.ok {
+        Ok(response.result.unwrap_or_else(|| json!({})))
+    } else {
+        Err(anyhow!(
+            "{}",
+            response
+                .error
+                .unwrap_or_else(|| "IPC request failed".to_string())
+        ))
+    }
+}
+
+pub async fn serve_http_bridge(config: DevdConfig) -> anyhow::Result<()> {
     if !config.bind.ip().is_loopback() {
         return Err(anyhow!(
             "isolapurr-devd refuses non-loopback binds because /api/v1/bootstrap returns a local bearer token"
@@ -323,14 +874,10 @@ pub async fn serve(config: DevdConfig) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("bind {}", config.bind))?;
     let port = listener.local_addr()?.port();
-    let state = AppState {
-        token: generate_token(),
-        base_url: format!("http://127.0.0.1:{port}"),
-        inner: Arc::new(Mutex::new(DevdState::default())),
-    };
+    let state = AppState::new(format!("http://127.0.0.1:{port}"));
 
     let router = router(state, config.web_root, config.allow_dev_cors);
-    tracing::info!("isolapurr-devd listening on http://127.0.0.1:{port}");
+    tracing::info!("isolapurr-devd HTTP bridge listening on http://127.0.0.1:{port}");
     axum::serve(listener, router).await?;
     Ok(())
 }
@@ -2394,5 +2941,38 @@ mod tests {
             HardwareTransport::Usb { ref device_id, .. }
                 if device_id == "usb--dev-cu-usbmodem101"
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn ipc_serves_jsonl_requests_over_unix_socket() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let endpoint = temp.path().join("devd.sock");
+        let endpoint_string = endpoint.to_string_lossy().to_string();
+        let task = tokio::spawn({
+            let endpoint = endpoint_string.clone();
+            async move { serve_ipc(IpcConfig::new(endpoint)).await }
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut last_error = None;
+        let result = loop {
+            match ipc_call(&endpoint_string, "devd.health", json!({})).await {
+                Ok(value) => break value,
+                Err(err) if Instant::now() < deadline => {
+                    last_error = Some(err);
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                Err(err) => panic!(
+                    "IPC health failed: {err}; last={}",
+                    last_error
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| "none".to_string())
+                ),
+            }
+        };
+        task.abort();
+        assert_eq!(result["ok"], true);
     }
 }

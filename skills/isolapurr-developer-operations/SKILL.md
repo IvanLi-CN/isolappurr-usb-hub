@@ -26,8 +26,9 @@ test -d desktop
 - Build firmware: `just build`
 - Build host tools from source: `just host-tools-build`
 - Test host tools from source: `just host-tools-test`
-- Run devd from source: `just devd-serve --bind 127.0.0.1:<port>`
-- Run CLI from source: `just isolapurr <args>`
+- Run IPC devd from source: `just devd-serve`
+- Run the explicit localhost HTTP bridge for browser/debug UI only: `just devd-http-bridge --bind 127.0.0.1:<port>`
+- Run CLI from source over IPC: `just isolapurr <args>`
 - Web checks: `cd web && bun run check && bun run build && bun run test:unit`
 - Storybook checks when UI changes: `cd web && bun run build-storybook && bun run test:storybook`
 - Desktop checks: `cd desktop/src-tauri && cargo test`

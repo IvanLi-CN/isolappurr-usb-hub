@@ -6,9 +6,9 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 
 ## Goals
 
-- Ship `isolapurr-devd` as the localhost daemon for discovery, Local USB, leases, firmware update, storage, and diagnostics.
+- Ship `isolapurr-devd` as the local IPC daemon for discovery, Local USB, leases, firmware update, storage, and diagnostics.
 - Ship `isolapurr` as the user-facing CLI for hardware memory, discovery, status, Wi-Fi provisioning, port control, flash, reset, monitor, and diagnostics.
-- Keep `isolapurr-desktop` as a GUI client that starts or connects to `isolapurr-devd` and consumes the same localhost API as Web.
+- Keep `isolapurr-desktop` as a GUI client that starts or connects to `isolapurr-devd`; browser/Web access uses an explicit HTTP bridge rather than the default CLI transport.
 - Preserve Web Serial as a first-class product path. It is not a debug-only fallback.
 - Use one shared device profile schema across devd/CLI/desktop storage and browser storage.
 - Introduce firmware catalog assets as the formal release update contract.
@@ -24,6 +24,9 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 ## Requirements
 
 - MUST publish two host-tools binaries: `isolapurr-devd` and `isolapurr`.
+- MUST make `isolapurr-devd serve` expose only local IPC by default: Unix domain socket on macOS/Linux and named pipe on Windows.
+- MUST keep `isolapurr` CLI communication with devd on local IPC. The CLI must not connect to devd through HTTP.
+- MUST expose localhost HTTP only through an explicit bridge command for browser/debug UI clients.
 - MUST keep Web Serial available in the Web app as a formal supported channel.
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
@@ -37,7 +40,9 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 
 ## Public Interfaces
 
-- `isolapurr-devd serve --bind 127.0.0.1:<port> [--web-root <path>] [--allow-dev-cors]`
+- `isolapurr-devd serve [--endpoint <ipc-endpoint>]`
+- `isolapurr-devd bridge-http --bind 127.0.0.1:<port> [--web-root <path>] [--allow-dev-cors]`
+- `isolapurr [--ipc <ipc-endpoint>] [--no-auto-start] ...`
 - `isolapurr hardware available|recent|list|save|forget|path`
 - `isolapurr devices`, `isolapurr discover`, `isolapurr status`
 - `isolapurr wifi show|set|clear`
@@ -48,7 +53,16 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr flash`, `isolapurr reset`, `isolapurr monitor`
 - `isolapurr diagnostics export`
 
-The daemon API is device-centric:
+The IPC daemon protocol is newline-delimited JSON request/response. Requests include `{id, method, params}` and responses include `{id, ok, result|error}`. CLI-visible method families include:
+
+- `devices.list`, `devices.scan`
+- `device.status`, `device.session`, `device.wifi.get|set|clear`
+- `device.ports.get`, `device.port.power`, `device.port.replug`, `device.hub.route_set`
+- `serial.lease.create`, `serial.lease.release`
+- `device.flash`, `device.reset`, `device.diagnostics`
+- `firmware.catalog.validate`
+
+The explicit HTTP bridge API remains device-centric for browser/debug clients:
 
 - `GET /api/v1/bootstrap`
 - `GET /api/v1/health`
@@ -78,7 +92,8 @@ The daemon API is device-centric:
 
 ## Acceptance Criteria
 
-- Given released host tools are installed, when a user starts `isolapurr-devd serve`, then `isolapurr devices` can discover devd-visible hardware without requiring a source checkout.
+- Given released host tools are installed, when a user runs `isolapurr devices`, then the CLI connects to local IPC or auto-starts a sibling `isolapurr-devd serve` without requiring a source checkout or localhost HTTP server.
+- Given `isolapurr-devd serve` is running, when localhost is scanned, then no HTTP devd API is exposed unless `isolapurr-devd bridge-http` was explicitly started.
 - Given a browser supports Web Serial, when the user connects through the Web app, then Web Serial remains a normal channel and can be promoted by the runtime without devd.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.
 - Given devd owns a Local USB session, when another devd client requests the same port during an exclusive flash/reset, then devd returns a busy error instead of opening the port concurrently.

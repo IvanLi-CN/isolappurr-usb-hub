@@ -33,8 +33,13 @@ devd-serve +args:
 	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
 	cargo +stable run --manifest-path {{HOST_TOOLS_MANIFEST}} --target "$host" --bin isolapurr-devd -- serve {{args}}
 
+devd-http-bridge +args:
+	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
+	cargo +stable run --manifest-path {{HOST_TOOLS_MANIFEST}} --target "$host" --bin isolapurr-devd -- bridge-http {{args}}
+
 isolapurr +args:
 	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
+	cargo +stable build --manifest-path {{HOST_TOOLS_MANIFEST}} --bins --target "$host" >/dev/null; \
 	cargo +stable run --manifest-path {{HOST_TOOLS_MANIFEST}} --target "$host" --bin isolapurr -- {{args}}
 
 sw2303-test:

@@ -10,7 +10,7 @@ Use this skill for owner-facing operation of released IsolaPurr USB Hub hardware
 ## Boundaries
 
 - Use released host tools from GitHub Releases: `isolapurr` and `isolapurr-devd`.
-- Agent-driven hardware operation defaults to CLI/devd, not browser automation.
+- Agent-driven hardware operation defaults to CLI/devd over local IPC, not browser automation or localhost HTTP.
 - Web Serial is still an official user path. Use it when the user is operating the Web UI directly or explicitly asks for browser Web Serial.
 - Do not require a source checkout, Rust, Bun, Just, `espflash`, or project-local caches for ordinary user operation.
 - Before giving a workflow, verify the installed CLI exposes it:
@@ -35,10 +35,10 @@ isolapurr --help
 
 ## Connect Hardware
 
-- Start the local daemon for CLI/devd USB operation:
+- Start the local IPC daemon for long-running CLI/devd USB operation, or let `isolapurr` auto-start a sibling `isolapurr-devd` when the installed tools are packaged together:
 
 ```bash
-isolapurr-devd serve --bind 127.0.0.1:51200
+isolapurr-devd serve
 ```
 
 - Prefer saved hardware before manual scanning:
@@ -49,7 +49,8 @@ isolapurr hardware recent
 isolapurr hardware available --scan
 ```
 
-- Use USB/devd first for Agent-run hardware operations, then HTTP only when USB is unavailable or the saved hardware intentionally uses HTTP.
+- Use USB/devd IPC first for Agent-run hardware operations. Use `--url http://<host-or-ip>` only for direct device LAN HTTP, never as a way to connect the CLI to devd.
+- Start `isolapurr-devd bridge-http` only when a browser or debug UI explicitly needs a localhost HTTP bridge.
 - Do not auto-select a serial port. A hardware-changing operation must show target evidence first.
 
 ## User Workflows

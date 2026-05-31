@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
-use isolapurr_host::{DEFAULT_BIND, DevdConfig, serve};
+use isolapurr_host::{
+    DEFAULT_BIND, DevdConfig, IpcConfig, default_ipc_endpoint, serve_http_bridge, serve_ipc,
+};
 use std::{net::SocketAddr, path::PathBuf};
 
 #[derive(Debug, Parser)]
@@ -16,6 +18,10 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Serve {
+        #[arg(long, default_value_t = default_ipc_endpoint())]
+        endpoint: String,
+    },
+    BridgeHttp {
         #[arg(long, default_value = DEFAULT_BIND)]
         bind: SocketAddr,
         #[arg(long)]
@@ -33,11 +39,12 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
-        Command::Serve {
+        Command::Serve { endpoint } => serve_ipc(IpcConfig::new(endpoint)).await?,
+        Command::BridgeHttp {
             bind,
             web_root,
             allow_dev_cors,
-        } => serve(DevdConfig::new(bind, web_root, allow_dev_cors)).await?,
+        } => serve_http_bridge(DevdConfig::new(bind, web_root, allow_dev_cors)).await?,
     }
     Ok(())
 }

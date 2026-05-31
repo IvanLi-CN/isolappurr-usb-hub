@@ -1,20 +1,27 @@
 use anyhow::{Context as _, anyhow};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use isolapurr_host::{
-    DEFAULT_DEVD_URL, DeviceIdentity, DeviceProfile, FirmwareCatalog, HardwareTransport,
-    SavedHardwareInput, api_url, read_hardware_registry, redact_sensitive, registry_path,
+    DeviceIdentity, DeviceProfile, FirmwareCatalog, HardwareTransport, SavedHardwareInput, api_url,
+    default_ipc_endpoint, ipc_call, read_hardware_registry, redact_sensitive, registry_path,
     save_hardware,
 };
 use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::PathBuf,
+    process::{Command as ProcessCommand, Stdio},
+    time::{Duration, Instant},
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "isolapurr", version, about = "IsolaPurr CLI")]
 struct Cli {
-    #[arg(long, default_value = DEFAULT_DEVD_URL)]
-    devd: String,
+    #[arg(long, global = true, default_value_t = default_ipc_endpoint())]
+    ipc: String,
+    #[arg(long, global = true)]
+    no_auto_start: bool,
     #[arg(long, global = true)]
     json: bool,
     #[command(subcommand)]
@@ -163,9 +170,19 @@ enum DiagnosticsCommand {
     Export(ApiSelectorArgs),
 }
 
-#[derive(Debug, Deserialize)]
-struct Bootstrap {
-    token: String,
+#[derive(Debug, Clone)]
+struct DevdClient {
+    endpoint: String,
+    auto_start: bool,
+}
+
+impl DevdClient {
+    fn with_endpoint(&self, endpoint: String) -> Self {
+        Self {
+            endpoint,
+            auto_start: self.auto_start,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -178,38 +195,28 @@ struct CliLease {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let client = Client::new();
+    let devd = DevdClient {
+        endpoint: cli.ipc.clone(),
+        auto_start: !cli.no_auto_start,
+    };
     let value = match cli.command {
         Command::Discover { scan } => {
             if scan {
-                devd_request(
-                    &client,
-                    &cli.devd,
-                    Method::POST,
-                    "/api/v1/devices/scan",
-                    None,
-                )
-                .await?
+                devd_request(&client, &devd, Method::POST, "/api/v1/devices/scan", None).await?
             } else {
-                devd_request(&client, &cli.devd, Method::GET, "/api/v1/devices", None).await?
+                devd_request(&client, &devd, Method::GET, "/api/v1/devices", None).await?
             }
         }
         Command::Devices => {
-            devd_request(
-                &client,
-                &cli.devd,
-                Method::POST,
-                "/api/v1/devices/scan",
-                None,
-            )
-            .await?
+            devd_request(&client, &devd, Method::POST, "/api/v1/devices/scan", None).await?
         }
         Command::Status(selector) => {
-            request_selected(&client, &cli.devd, selector, Method::GET, "/status", None).await?
+            request_selected(&client, &devd, selector, Method::GET, "/status", None).await?
         }
-        Command::Hardware { command } => handle_hardware(&client, &cli.devd, command).await?,
+        Command::Hardware { command } => handle_hardware(&client, &devd, command).await?,
         Command::Wifi { command } => match command {
             WifiCommand::Show(selector) => {
-                request_selected(&client, &cli.devd, selector, Method::GET, "/wifi", None).await?
+                request_selected(&client, &devd, selector, Method::GET, "/wifi", None).await?
             }
             WifiCommand::Set {
                 selector,
@@ -218,7 +225,7 @@ async fn main() -> anyhow::Result<()> {
             } => {
                 request_selected(
                     &client,
-                    &cli.devd,
+                    &devd,
                     selector,
                     Method::POST,
                     "/wifi",
@@ -227,24 +234,25 @@ async fn main() -> anyhow::Result<()> {
                 .await?
             }
             WifiCommand::Clear(selector) => {
-                request_selected(&client, &cli.devd, selector, Method::DELETE, "/wifi", None)
-                    .await?
+                request_selected(&client, &devd, selector, Method::DELETE, "/wifi", None).await?
             }
         },
         Command::Ports { selector, command } => {
-            handle_ports(&client, &cli.devd, selector, command).await?
+            handle_ports(&client, &devd, selector, command).await?
         }
-        Command::Flash(args) => handle_flash(&client, &cli.devd, args).await?,
+        Command::Flash(args) => handle_flash(&client, &devd, args).await?,
         Command::Reset(selector) => {
-            let device = resolve_usb_device(&selector, &cli.devd)?;
-            devd_device_post_with_lease(&client, &device.devd, &device.device, "/reset", json!({}))
+            let device = resolve_usb_device(&selector, &devd.endpoint)?;
+            let device_devd = devd.with_endpoint(device.devd.clone());
+            devd_device_post_with_lease(&client, &device_devd, &device.device, "/reset", json!({}))
                 .await?
         }
         Command::Monitor { selector, tail } => {
-            let device = resolve_usb_device(&selector, &cli.devd)?;
+            let device = resolve_usb_device(&selector, &devd.endpoint)?;
+            let device_devd = devd.with_endpoint(device.devd.clone());
             devd_request(
                 &client,
-                &device.devd,
+                &device_devd,
                 Method::GET,
                 &format!("/api/v1/devices/{}/session?tail={tail}", device.device),
                 None,
@@ -253,15 +261,8 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Diagnostics { command } => match command {
             DiagnosticsCommand::Export(selector) => {
-                request_selected(
-                    &client,
-                    &cli.devd,
-                    selector,
-                    Method::GET,
-                    "/diagnostics",
-                    None,
-                )
-                .await?
+                request_selected(&client, &devd, selector, Method::GET, "/diagnostics", None)
+                    .await?
             }
         },
     };
@@ -318,53 +319,189 @@ fn print_human(output: &Value) {
     );
 }
 
-async fn bootstrap(client: &Client, devd: &str) -> anyhow::Result<Bootstrap> {
-    Ok(client
-        .get(api_url(devd, "/api/v1/bootstrap")?)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<Bootstrap>()
-        .await?)
-}
-
 async fn devd_request(
-    client: &Client,
-    devd: &str,
+    _client: &Client,
+    devd: &DevdClient,
     method: Method,
     path: &str,
     body: Option<Value>,
 ) -> anyhow::Result<Value> {
-    let bootstrap = bootstrap(client, devd).await?;
-    let mut request = client
-        .request(method, api_url(devd, path)?)
-        .bearer_auth(bootstrap.token);
-    if let Some(body) = body {
-        request = request.json(&body);
+    let (ipc_method, params) = map_devd_ipc_endpoint(method, path, body)?;
+    devd_ipc_call(devd, &ipc_method, params).await
+}
+
+async fn devd_ipc_call(devd: &DevdClient, method: &str, params: Value) -> anyhow::Result<Value> {
+    match ipc_call(&devd.endpoint, method, params.clone()).await {
+        Ok(value) => Ok(value),
+        Err(err) if devd.auto_start && looks_like_ipc_connect_error(&err) => {
+            start_devd(&devd.endpoint)?;
+            wait_for_devd(&devd.endpoint, method, params).await
+        }
+        Err(err) => Err(err),
     }
-    Ok(request
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<Value>()
-        .await?)
+}
+
+fn looks_like_ipc_connect_error(err: &anyhow::Error) -> bool {
+    err.to_string().contains("connect IPC")
+}
+
+fn start_devd(endpoint: &str) -> anyhow::Result<()> {
+    let devd_bin = std::env::var_os("ISOLAPURR_DEVD_BIN")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let mut path = std::env::current_exe().ok()?;
+            let suffix = std::env::consts::EXE_SUFFIX;
+            path.set_file_name(format!("isolapurr-devd{suffix}"));
+            Some(path)
+        })
+        .ok_or_else(|| anyhow!("cannot resolve isolapurr-devd path"))?;
+    if !devd_bin.is_file() {
+        return Err(anyhow!(
+            "isolapurr-devd was not found next to isolapurr; run `just host-tools-build` or set ISOLAPURR_DEVD_BIN"
+        ));
+    }
+    ProcessCommand::new(devd_bin)
+        .arg("serve")
+        .arg("--endpoint")
+        .arg(endpoint)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("start isolapurr-devd IPC daemon")?;
+    Ok(())
+}
+
+async fn wait_for_devd(endpoint: &str, method: &str, params: Value) -> anyhow::Result<Value> {
+    let deadline = Instant::now() + Duration::from_secs(4);
+    let mut last_error = None;
+    while Instant::now() < deadline {
+        match ipc_call(endpoint, method, params.clone()).await {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                last_error = Some(err);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("isolapurr-devd IPC daemon did not start")))
+}
+
+fn map_devd_ipc_endpoint(
+    method: Method,
+    path: &str,
+    body: Option<Value>,
+) -> anyhow::Result<(String, Value)> {
+    let (path_only, query) = path.split_once('?').unwrap_or((path, ""));
+    if method == Method::GET && path_only == "/api/v1/devices" {
+        return Ok(("devices.list".to_string(), json!({})));
+    }
+    if method == Method::POST && path_only == "/api/v1/devices/scan" {
+        return Ok(("devices.scan".to_string(), json!({})));
+    }
+    if method == Method::POST && path_only == "/api/v1/serial/lease" {
+        return Ok((
+            "serial.lease.create".to_string(),
+            body.unwrap_or_else(|| json!({})),
+        ));
+    }
+    if method == Method::DELETE
+        && let Some(lease_id) = path_only.strip_prefix("/api/v1/serial/lease/")
+    {
+        return Ok((
+            "serial.lease.release".to_string(),
+            json!({"lease_id": lease_id}),
+        ));
+    }
+    let Some(rest) = path_only.strip_prefix("/api/v1/devices/") else {
+        return Err(anyhow!("unsupported devd IPC endpoint: {method} {path}"));
+    };
+    let (device_id, suffix) = rest
+        .split_once('/')
+        .ok_or_else(|| anyhow!("invalid devd device path: {path}"))?;
+    let mut params = json!({"device_id": device_id});
+    let params_map = params.as_object_mut().expect("object");
+
+    let ipc_method = match (method.as_str(), suffix) {
+        ("GET", "status") => "device.status",
+        ("GET", "wifi") => "device.wifi.get",
+        ("POST", "wifi") => {
+            merge_body(params_map, body);
+            "device.wifi.set"
+        }
+        ("DELETE", "wifi") => "device.wifi.clear",
+        ("GET", "ports") => "device.ports.get",
+        ("GET", "session") => {
+            if let Some(tail) = query
+                .split('&')
+                .find_map(|part| part.strip_prefix("tail="))
+                .and_then(|tail| tail.parse::<usize>().ok())
+            {
+                params_map.insert("tail".to_string(), json!(tail));
+            }
+            "device.session"
+        }
+        ("POST", "hub/route") => {
+            merge_body(params_map, body);
+            "device.hub.route_set"
+        }
+        ("POST", "flash") => {
+            merge_body(params_map, body);
+            "device.flash"
+        }
+        ("POST", "reset") => {
+            merge_body(params_map, body);
+            "device.reset"
+        }
+        ("GET", "diagnostics") => "device.diagnostics",
+        ("POST", _) if suffix.starts_with("ports/") && suffix.ends_with("/replug") => {
+            let port = suffix
+                .trim_start_matches("ports/")
+                .trim_end_matches("/replug");
+            params_map.insert("port".to_string(), json!(port));
+            "device.port.replug"
+        }
+        ("POST", _) if suffix.starts_with("ports/") && suffix.contains("/power") => {
+            let port = suffix
+                .trim_start_matches("ports/")
+                .trim_end_matches("/power");
+            let enabled = query
+                .split('&')
+                .find_map(|part| part.strip_prefix("enabled="))
+                .ok_or_else(|| anyhow!("enabled query is required"))?
+                .parse::<bool>()
+                .context("enabled must be a boolean")?;
+            params_map.insert("port".to_string(), json!(port));
+            params_map.insert("enabled".to_string(), json!(enabled));
+            "device.port.power"
+        }
+        _ => return Err(anyhow!("unsupported devd IPC endpoint: {method} {path}")),
+    };
+    Ok((ipc_method.to_string(), params))
+}
+
+fn merge_body(target: &mut serde_json::Map<String, Value>, body: Option<Value>) {
+    if let Some(Value::Object(map)) = body {
+        target.extend(map);
+    }
 }
 
 async fn request_selected(
     client: &Client,
-    devd: &str,
+    devd: &DevdClient,
     selector: ApiSelectorArgs,
     method: Method,
     suffix: &str,
     body: Option<Value>,
 ) -> anyhow::Result<Value> {
-    let selected = resolve_api_selector(selector, devd)?;
+    let selected = resolve_api_selector(selector, &devd.endpoint)?;
     match selected {
         ResolvedTarget::Usb(usb) => {
-            ensure_devd_device_registered(client, &usb.devd, &usb.device).await?;
+            let usb_devd = devd.with_endpoint(usb.devd.clone());
+            ensure_devd_device_registered(client, &usb_devd, &usb.device).await?;
             devd_request(
                 client,
-                &usb.devd,
+                &usb_devd,
                 method,
                 &format!("/api/v1/devices/{}{}", usb.device, suffix),
                 body,
@@ -439,7 +576,7 @@ fn map_http_endpoint(
 
 async fn handle_ports(
     client: &Client,
-    devd: &str,
+    devd: &DevdClient,
     selector: ApiSelectorArgs,
     command: Option<PortsCommand>,
 ) -> anyhow::Result<Value> {
@@ -483,7 +620,7 @@ async fn handle_ports(
 
 async fn handle_hardware(
     client: &Client,
-    devd: &str,
+    devd: &DevdClient,
     command: HardwareCommand,
 ) -> anyhow::Result<Value> {
     let path = registry_path()?;
@@ -520,7 +657,7 @@ async fn handle_hardware(
                 TransportArg::Usb => HardwareTransport::Usb {
                     device_id: device
                         .ok_or_else(|| anyhow!("--device is required for usb hardware"))?,
-                    devd_url: Some(devd.to_string()),
+                    devd_url: None,
                 },
                 TransportArg::Http => HardwareTransport::Http {
                     base_url: url.ok_or_else(|| anyhow!("--url is required for http hardware"))?,
@@ -544,8 +681,13 @@ async fn handle_hardware(
     }
 }
 
-async fn handle_flash(client: &Client, devd: &str, args: FlashArgs) -> anyhow::Result<Value> {
-    let device = resolve_usb_device(&args.selector, devd)?;
+async fn handle_flash(
+    client: &Client,
+    devd: &DevdClient,
+    args: FlashArgs,
+) -> anyhow::Result<Value> {
+    let device = resolve_usb_device(&args.selector, &devd.endpoint)?;
+    let device_devd = devd.with_endpoint(device.devd.clone());
     let expected_identity = DeviceIdentity {
         device_id: args.expected_device_id.clone().or_else(|| {
             device
@@ -592,7 +734,7 @@ async fn handle_flash(client: &Client, devd: &str, args: FlashArgs) -> anyhow::R
 
     devd_device_post_with_lease(
         client,
-        &device.devd,
+        &device_devd,
         &device.device,
         "/flash",
         json!({
@@ -608,7 +750,7 @@ async fn handle_flash(client: &Client, devd: &str, args: FlashArgs) -> anyhow::R
 
 async fn devd_device_post_with_lease(
     client: &Client,
-    devd: &str,
+    devd: &DevdClient,
     device: &str,
     suffix: &str,
     mut body: Value,
@@ -642,7 +784,7 @@ async fn devd_device_post_with_lease(
 
 async fn ensure_devd_device_registered(
     client: &Client,
-    devd: &str,
+    devd: &DevdClient,
     device: &str,
 ) -> anyhow::Result<()> {
     let value = devd_request(client, devd, Method::POST, "/api/v1/devices/scan", None).await?;
@@ -660,7 +802,11 @@ async fn ensure_devd_device_registered(
     Ok(())
 }
 
-async fn create_lease(client: &Client, devd: &str, device: &str) -> anyhow::Result<CliLease> {
+async fn create_lease(
+    client: &Client,
+    devd: &DevdClient,
+    device: &str,
+) -> anyhow::Result<CliLease> {
     let value = devd_request(
         client,
         devd,
@@ -722,6 +868,47 @@ mod tests {
                 .expect("route endpoint should map");
         assert_eq!(path, "/api/v1/hub/usb-c-downstream-route?route=mcu");
         assert!(body.is_none());
+    }
+
+    #[test]
+    fn maps_devd_device_endpoints_to_ipc_methods() {
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::POST,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/ports/port_a/power?enabled=false",
+            None,
+        )
+        .expect("power endpoint should map");
+        assert_eq!(method, "device.port.power");
+        assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
+        assert_eq!(params["port"], "port_a");
+        assert_eq!(params["enabled"], false);
+
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::POST,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/hub/route",
+            Some(json!({"route": "mcu"})),
+        )
+        .expect("route endpoint should map");
+        assert_eq!(method, "device.hub.route_set");
+        assert_eq!(params["route"], "mcu");
+    }
+
+    #[test]
+    fn cli_uses_ipc_instead_of_devd_http_flag() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "--ipc",
+            "/tmp/isolapurr-test.sock",
+            "--no-auto-start",
+            "devices",
+        ])
+        .expect("ipc flags should parse");
+        assert_eq!(cli.ipc, "/tmp/isolapurr-test.sock");
+        assert!(cli.no_auto_start);
+
+        let err = Cli::try_parse_from(["isolapurr", "--devd", "http://127.0.0.1:51200", "devices"])
+            .expect_err("legacy devd HTTP flag must not parse");
+        assert!(err.to_string().contains("unexpected argument"));
     }
 
     #[test]
@@ -791,11 +978,14 @@ fn resolve_api_selector(
         HardwareTransport::Usb {
             device_id,
             devd_url,
-        } => Ok(ResolvedTarget::Usb(ResolvedUsb {
-            device: device_id,
-            devd: devd_url.unwrap_or_else(|| default_devd.to_string()),
-            identity,
-        })),
+        } => {
+            let _ = devd_url;
+            Ok(ResolvedTarget::Usb(ResolvedUsb {
+                device: device_id,
+                devd: default_devd.to_string(),
+                identity,
+            }))
+        }
         HardwareTransport::Http { base_url } => Ok(ResolvedTarget::Http(base_url)),
         HardwareTransport::WebSerial { .. } => Err(anyhow!(
             "saved hardware {hardware_id} uses Web Serial; CLI automation requires devd USB or HTTP"
@@ -824,11 +1014,14 @@ fn resolve_usb_device(
         HardwareTransport::Usb {
             device_id,
             devd_url,
-        } => Ok(ResolvedUsb {
-            device: device_id,
-            devd: devd_url.unwrap_or_else(|| default_devd.to_string()),
-            identity,
-        }),
+        } => {
+            let _ = devd_url;
+            Ok(ResolvedUsb {
+                device: device_id,
+                devd: default_devd.to_string(),
+                identity,
+            })
+        }
         _ => Err(anyhow!(
             "saved hardware {hardware_id} is not devd USB hardware"
         )),
