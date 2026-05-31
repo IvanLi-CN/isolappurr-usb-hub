@@ -103,6 +103,11 @@ jobs:
             web
           sparse-checkout-cone-mode: false
 
+      - name: Detach Windows sparse checkout metadata
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: Remove-Item -Recurse -Force .git
+
       - name: Download web dist
         uses: actions/download-artifact@v4
         with:
@@ -348,6 +353,11 @@ jobs:
             desktop
             web
           sparse-checkout-cone-mode: false
+
+      - name: Detach Windows sparse checkout metadata
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        run: Remove-Item -Recurse -Force .git
 
       - name: Download web dist
         uses: actions/download-artifact@v4
