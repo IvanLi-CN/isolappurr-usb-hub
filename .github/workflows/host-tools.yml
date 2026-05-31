@@ -48,6 +48,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/workflows/host-tools.yml
+            Justfile
+            tools/firmware-catalog
+            tools/isolapurr-host
+          sparse-checkout-cone-mode: false
 
       - name: Linux deps
         if: runner.os == 'Linux'
