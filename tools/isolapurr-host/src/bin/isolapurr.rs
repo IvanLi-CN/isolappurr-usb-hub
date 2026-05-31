@@ -127,7 +127,7 @@ enum PortsCommand {
     Power {
         #[arg(long)]
         port: String,
-        #[arg(long)]
+        #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
         enabled: bool,
     },
     Replug {
@@ -722,6 +722,31 @@ mod tests {
                 .expect("route endpoint should map");
         assert_eq!(path, "/api/v1/hub/usb-c-downstream-route?route=mcu");
         assert!(body.is_none());
+    }
+
+    #[test]
+    fn ports_power_accepts_explicit_boolean_value() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "ports",
+            "--device",
+            "usb--dev-cu-usbmodem21221401",
+            "power",
+            "--port",
+            "port_a",
+            "--enabled",
+            "false",
+        ])
+        .expect("explicit boolean value should parse");
+
+        let Command::Ports {
+            command: Some(PortsCommand::Power { enabled, .. }),
+            ..
+        } = cli.command
+        else {
+            panic!("expected ports power command");
+        };
+        assert!(!enabled);
     }
 }
 

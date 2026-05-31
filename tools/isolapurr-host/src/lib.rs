@@ -648,17 +648,59 @@ async fn hub_route_set(
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
     }
-    match usb_jsonl_request(
-        &state,
-        &id,
-        "hub.route_set",
-        Some(json!({"route": req.route})),
-    )
-    .await
-    {
+    let route = req.route;
+    match usb_jsonl_request(&state, &id, "hub.route_set", Some(json!({"route": route}))).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
-        Err(err) => error_from_anyhow(err),
+        Err(err) => match verify_hub_route_after_disconnect(&state, &id, &route).await {
+            Ok(value) => Json(redact_sensitive(&value)).into_response(),
+            Err(_) => error_from_anyhow(err),
+        },
     }
+}
+
+async fn verify_hub_route_after_disconnect(
+    state: &AppState,
+    id: &str,
+    route: &str,
+) -> anyhow::Result<Value> {
+    let mut last_error = None;
+    for _ in 0..5 {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        match usb_jsonl_request(state, id, "ports.get", None).await {
+            Ok(value) => {
+                if let Some((actual_route, persisted)) = extract_hub_route(&value)
+                    && actual_route == route
+                {
+                    return Ok(json!({
+                        "ok": true,
+                        "result": {
+                            "accepted": true,
+                            "usb_c_downstream_route": actual_route,
+                            "persisted": persisted.unwrap_or(false),
+                            "verified_after_serial_reconnect": true
+                        }
+                    }));
+                }
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("USB-C route did not verify after reconnect")))
+}
+
+fn extract_hub_route(value: &Value) -> Option<(String, Option<bool>)> {
+    let hub = value
+        .get("result")
+        .and_then(|result| result.get("hub"))
+        .or_else(|| value.get("hub"))?;
+    let route = hub
+        .get("usb_c_downstream_route")
+        .and_then(Value::as_str)?
+        .to_string();
+    let persisted = hub
+        .get("usb_c_downstream_persisted")
+        .and_then(Value::as_bool);
+    Some((route, persisted))
 }
 
 async fn device_flash(
