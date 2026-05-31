@@ -1,0 +1,4 @@
+interface:
+  display_name: "IsolaPurr Developer Operations"
+  short_description: "Source, Just, host-tools, release, firmware, Web Serial, Local USB, and HIL workflows."
+  default_prompt: "Use $isolapurr-developer-operations to verify an IsolaPurr source checkout, build and run isolapurr-devd/isolapurr, maintain release firmware catalogs and host-tools, validate Web/Desktop/Firmware changes, and perform guarded HIL workflows."

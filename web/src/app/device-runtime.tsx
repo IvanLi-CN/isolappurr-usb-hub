@@ -31,7 +31,9 @@ import {
   type WifiMutationResponse,
 } from "../domain/deviceApi";
 import {
+  devdLocalUsbDeviceIdFromBaseUrl,
   nextJsonlRequestId,
+  sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
 } from "../domain/hardwareConsole";
 import {
@@ -196,20 +198,33 @@ export function DeviceRuntimeProvider({
       return agent;
     }, []);
 
-  const findLocalUsbPort = useCallback(
-    async (deviceId: string): Promise<string | null> => {
+  const findLocalUsbTarget = useCallback(
+    async (
+      deviceId: string,
+    ): Promise<
+      | { kind: "port_path"; portPath: string }
+      | { kind: "devd_device"; deviceId: string }
+      | null
+    > => {
       const cached = localUsbPortByDevice.current[deviceId];
       if (cached) {
-        return cached;
+        return { kind: "port_path", portPath: cached };
       }
       const linked = getLocalUsbDeviceLink(deviceId);
       if (linked) {
         localUsbPortByDevice.current[deviceId] = linked;
-        return linked;
+        return { kind: "port_path", portPath: linked };
+      }
+      const stored = devices.find((device) => device.id === deviceId);
+      const devdDeviceId = stored
+        ? devdLocalUsbDeviceIdFromBaseUrl(stored.baseUrl)
+        : null;
+      if (devdDeviceId) {
+        return { kind: "devd_device", deviceId: devdDeviceId };
       }
       return null;
     },
-    [],
+    [devices],
   );
 
   const requestLocalUsb = useCallback(
@@ -225,8 +240,8 @@ export function DeviceRuntimeProvider({
           error: { kind: "offline", message: "Local USB service unavailable" },
         };
       }
-      const portPath = await findLocalUsbPort(deviceId);
-      if (!portPath) {
+      const target = await findLocalUsbTarget(deviceId);
+      if (!target) {
         return {
           ok: false,
           error: { kind: "offline", message: "Local USB device not found" },
@@ -242,11 +257,15 @@ export function DeviceRuntimeProvider({
       localUsbRequestQueues.current[deviceId] = queued;
       await previous.catch(() => undefined);
       try {
-        const response = await sendLocalUsbJsonlRequest(agent, portPath, {
-          id: nextJsonlRequestId(),
-          method,
-          params,
-        });
+        const request = { id: nextJsonlRequestId(), method, params };
+        const response =
+          target.kind === "devd_device"
+            ? await sendDevdLocalUsbJsonlRequest(
+                agent,
+                target.deviceId,
+                request,
+              )
+            : await sendLocalUsbJsonlRequest(agent, target.portPath, request);
         const envelope = response as JsonlEnvelope<T>;
         if (envelope?.ok && envelope.result !== undefined) {
           return { ok: true, value: envelope.result };
@@ -282,7 +301,7 @@ export function DeviceRuntimeProvider({
         }
       }
     },
-    [findLocalUsbPort, getLocalUsbAgent],
+    [findLocalUsbTarget, getLocalUsbAgent],
   );
 
   const requestWebSerial = useCallback(
@@ -421,17 +440,24 @@ export function DeviceRuntimeProvider({
     (deviceId: string): DeviceTransport[] => {
       const preferred = preferredTransportByDevice.current[deviceId];
       const active = preferred ?? runtimeById[deviceId]?.transport;
+      const stored = devices.find((device) => device.id === deviceId);
+      const devdDeviceId = stored
+        ? devdLocalUsbDeviceIdFromBaseUrl(stored.baseUrl)
+        : null;
       const localUsbLinked =
         !!localUsbPortByDevice.current[deviceId] ||
-        !!getLocalUsbDeviceLink(deviceId);
-      return uniqueTransports([
-        active,
-        "http",
-        "web_serial",
-        localUsbLinked ? "local_usb" : null,
-      ]);
+        !!getLocalUsbDeviceLink(deviceId) ||
+        !!devdDeviceId;
+      return devdDeviceId
+        ? uniqueTransports([active, "local_usb", "web_serial"])
+        : uniqueTransports([
+            active,
+            "http",
+            "web_serial",
+            localUsbLinked ? "local_usb" : null,
+          ]);
     },
-    [runtimeById],
+    [devices, runtimeById],
   );
 
   const pollDevice = useCallback(
