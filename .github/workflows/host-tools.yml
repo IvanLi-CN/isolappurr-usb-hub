@@ -42,6 +42,10 @@ jobs:
             target: x86_64-pc-windows-msvc
             archive: isolapurr-host-tools-windows-x86_64.tar.gz
     steps:
+      - name: Enable Windows long paths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@v4
 
