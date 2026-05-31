@@ -35,7 +35,7 @@ isolapurr --help
 
 ## Connect Hardware
 
-- Start the local IPC daemon for long-running CLI/devd USB operation, or let `isolapurr` auto-start a sibling `isolapurr-devd` when the installed tools are packaged together:
+- Start the local IPC daemon for long-running CLI/devd USB operation, or let `isolapurr` auto-start a sibling `isolapurr-devd` when the installed tools are packaged together. The IPC daemon exits after its idle timeout when no clients remain connected:
 
 ```bash
 isolapurr-devd serve

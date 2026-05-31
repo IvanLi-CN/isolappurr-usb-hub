@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
 use isolapurr_host::{
-    DEFAULT_BIND, DevdConfig, IpcConfig, default_ipc_endpoint, serve_http_bridge, serve_ipc,
+    DEFAULT_BIND, DEFAULT_IPC_IDLE_TIMEOUT_SECS, DevdConfig, IpcConfig, default_ipc_endpoint,
+    serve_http_bridge, serve_ipc,
 };
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -20,6 +21,8 @@ enum Command {
     Serve {
         #[arg(long, default_value_t = default_ipc_endpoint())]
         endpoint: String,
+        #[arg(long, default_value_t = DEFAULT_IPC_IDLE_TIMEOUT_SECS)]
+        idle_timeout_secs: u64,
     },
     BridgeHttp {
         #[arg(long, default_value = DEFAULT_BIND)]
@@ -39,7 +42,14 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
-        Command::Serve { endpoint } => serve_ipc(IpcConfig::new(endpoint)).await?,
+        Command::Serve {
+            endpoint,
+            idle_timeout_secs,
+        } => {
+            let idle_timeout =
+                (idle_timeout_secs > 0).then(|| Duration::from_secs(idle_timeout_secs));
+            serve_ipc(IpcConfig::new(endpoint).with_idle_timeout(idle_timeout)).await?
+        }
         Command::BridgeHttp {
             bind,
             web_root,

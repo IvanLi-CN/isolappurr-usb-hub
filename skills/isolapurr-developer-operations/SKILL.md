@@ -26,7 +26,7 @@ test -d desktop
 - Build firmware: `just build`
 - Build host tools from source: `just host-tools-build`
 - Test host tools from source: `just host-tools-test`
-- Run IPC devd from source: `just devd-serve`
+- Run IPC devd from source: `just devd-serve`; use `just devd-serve --idle-timeout-secs 0` only for a deliberately persistent development session.
 - Run the explicit localhost HTTP bridge for browser/debug UI only: `just devd-http-bridge --bind 127.0.0.1:<port>`
 - Run CLI from source over IPC: `just isolapurr <args>`
 - Web checks: `cd web && bun run check && bun run build && bun run test:unit`

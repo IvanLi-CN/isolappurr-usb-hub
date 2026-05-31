@@ -26,6 +26,8 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST publish two host-tools binaries: `isolapurr-devd` and `isolapurr`.
 - MUST make `isolapurr-devd serve` expose only local IPC by default: Unix domain socket on macOS/Linux and named pipe on Windows.
 - MUST keep `isolapurr` CLI communication with devd on local IPC. The CLI must not connect to devd through HTTP.
+- MUST allow CLI and desktop clients to start `isolapurr-devd` on demand instead of requiring users to pre-start a daemon.
+- MUST stop the IPC daemon after a bounded idle period when no clients remain connected, unless explicitly configured for a persistent development session.
 - MUST expose localhost HTTP only through an explicit bridge command for browser/debug UI clients.
 - MUST keep Web Serial available in the Web app as a formal supported channel.
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
@@ -40,7 +42,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 
 ## Public Interfaces
 
-- `isolapurr-devd serve [--endpoint <ipc-endpoint>]`
+- `isolapurr-devd serve [--endpoint <ipc-endpoint>] [--idle-timeout-secs <seconds>]`
 - `isolapurr-devd bridge-http --bind 127.0.0.1:<port> [--web-root <path>] [--allow-dev-cors]`
 - `isolapurr [--ipc <ipc-endpoint>] [--no-auto-start] ...`
 - `isolapurr hardware available|recent|list|save|forget|path`
@@ -93,6 +95,8 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 ## Acceptance Criteria
 
 - Given released host tools are installed, when a user runs `isolapurr devices`, then the CLI connects to local IPC or auto-starts a sibling `isolapurr-devd serve` without requiring a source checkout or localhost HTTP server.
+- Given no IPC clients remain connected, when the configured idle timeout elapses, then `isolapurr-devd serve` exits and removes its Unix socket when applicable.
+- Given the desktop app needs native Local USB capabilities, when no devd is reachable, then the desktop app starts or connects to devd on demand instead of requiring a user-managed daemon.
 - Given `isolapurr-devd serve` is running, when localhost is scanned, then no HTTP devd API is exposed unless `isolapurr-devd bridge-http` was explicitly started.
 - Given a browser supports Web Serial, when the user connects through the Web app, then Web Serial remains a normal channel and can be promoted by the runtime without devd.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.

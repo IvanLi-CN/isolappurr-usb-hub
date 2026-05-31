@@ -42,6 +42,7 @@ const LEASE_HEARTBEAT_INTERVAL_MS: u64 = 2_000;
 const SERIAL_BAUD: u32 = 115_200;
 const SERIAL_TIMEOUT_MS: u64 = 1_500;
 const MAX_SESSION_ITEMS: usize = 500;
+pub const DEFAULT_IPC_IDLE_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug, Clone)]
 pub struct DevdConfig {
@@ -63,13 +64,20 @@ impl DevdConfig {
 #[derive(Debug, Clone)]
 pub struct IpcConfig {
     pub endpoint: String,
+    pub idle_timeout: Option<Duration>,
 }
 
 impl IpcConfig {
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self {
             endpoint: endpoint.into(),
+            idle_timeout: Some(Duration::from_secs(DEFAULT_IPC_IDLE_TIMEOUT_SECS)),
         }
+    }
+
+    pub fn with_idle_timeout(mut self, idle_timeout: Option<Duration>) -> Self {
+        self.idle_timeout = idle_timeout;
+        self
     }
 }
 
@@ -128,6 +136,35 @@ impl AppState {
             token: generate_token(),
             base_url: base_url.into(),
             inner: Arc::new(Mutex::new(DevdState::default())),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct IpcRuntime {
+    app: AppState,
+    lifecycle: Arc<Mutex<IpcLifecycle>>,
+}
+
+impl IpcRuntime {
+    fn new(app: AppState) -> Self {
+        Self {
+            app,
+            lifecycle: Arc::new(Mutex::new(IpcLifecycle::default())),
+        }
+    }
+}
+
+struct IpcLifecycle {
+    active_clients: usize,
+    last_activity: Instant,
+}
+
+impl Default for IpcLifecycle {
+    fn default() -> Self {
+        Self {
+            active_clients: 0,
+            last_activity: Instant::now(),
         }
     }
 }
@@ -389,17 +426,18 @@ pub async fn serve_ipc(config: IpcConfig) -> anyhow::Result<()> {
 }
 
 async fn serve_ipc_with_state(config: IpcConfig, state: AppState) -> anyhow::Result<()> {
+    let runtime = IpcRuntime::new(state);
     #[cfg(unix)]
     {
-        serve_ipc_unix(config, state).await
+        serve_ipc_unix(config, runtime).await
     }
     #[cfg(windows)]
     {
-        serve_ipc_windows(config, state).await
+        serve_ipc_windows(config, runtime).await
     }
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = (config, state);
+        let _ = (config, runtime);
         Err(anyhow!(
             "isolapurr-devd IPC is unsupported on this platform"
         ))
@@ -407,7 +445,7 @@ async fn serve_ipc_with_state(config: IpcConfig, state: AppState) -> anyhow::Res
 }
 
 #[cfg(unix)]
-async fn serve_ipc_unix(config: IpcConfig, state: AppState) -> anyhow::Result<()> {
+async fn serve_ipc_unix(config: IpcConfig, runtime: IpcRuntime) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
     use tokio::net::UnixListener;
 
@@ -428,19 +466,32 @@ async fn serve_ipc_unix(config: IpcConfig, state: AppState) -> anyhow::Result<()
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
         .with_context(|| format!("chmod {}", path.display()))?;
     tracing::info!("isolapurr-devd IPC listening on {}", path.display());
+    let cleanup_path = path.clone();
     loop {
-        let (stream, _) = listener.accept().await?;
-        let state = state.clone();
-        tokio::spawn(async move {
-            if let Err(err) = handle_ipc_stream(stream, state).await {
-                tracing::warn!("IPC client failed: {err:#}");
+        if let Some(idle_timeout) = config.idle_timeout {
+            tokio::select! {
+                accepted = listener.accept() => {
+                    let (stream, _) = accepted?;
+                    spawn_ipc_client(stream, runtime.clone()).await;
+                }
+                _ = tokio::time::sleep(idle_timeout) => {
+                    if ipc_should_shutdown(&runtime, idle_timeout).await {
+                        tracing::info!("isolapurr-devd IPC idle timeout reached; shutting down");
+                        break;
+                    }
+                }
             }
-        });
+        } else {
+            let (stream, _) = listener.accept().await?;
+            spawn_ipc_client(stream, runtime.clone()).await;
+        }
     }
+    let _ = fs::remove_file(cleanup_path);
+    Ok(())
 }
 
 #[cfg(windows)]
-async fn serve_ipc_windows(config: IpcConfig, state: AppState) -> anyhow::Result<()> {
+async fn serve_ipc_windows(config: IpcConfig, runtime: IpcRuntime) -> anyhow::Result<()> {
     use tokio::net::windows::named_pipe::ServerOptions;
 
     tracing::info!("isolapurr-devd IPC listening on {}", config.endpoint);
@@ -449,17 +500,62 @@ async fn serve_ipc_windows(config: IpcConfig, state: AppState) -> anyhow::Result
             .first_pipe_instance(false)
             .create(&config.endpoint)
             .with_context(|| format!("create IPC pipe {}", config.endpoint))?;
-        server.connect().await.context("connect IPC pipe client")?;
-        let state = state.clone();
-        tokio::spawn(async move {
-            if let Err(err) = handle_ipc_stream(server, state).await {
-                tracing::warn!("IPC client failed: {err:#}");
+        if let Some(idle_timeout) = config.idle_timeout {
+            tokio::select! {
+                connected = server.connect() => {
+                    connected.context("connect IPC pipe client")?;
+                    spawn_ipc_client(server, runtime.clone()).await;
+                }
+                _ = tokio::time::sleep(idle_timeout) => {
+                    if ipc_should_shutdown(&runtime, idle_timeout).await {
+                        tracing::info!("isolapurr-devd IPC idle timeout reached; shutting down");
+                        break;
+                    }
+                }
             }
-        });
+        } else {
+            server.connect().await.context("connect IPC pipe client")?;
+            spawn_ipc_client(server, runtime.clone()).await;
+        }
     }
+    Ok(())
 }
 
-async fn handle_ipc_stream<S>(stream: S, state: AppState) -> anyhow::Result<()>
+async fn spawn_ipc_client<S>(stream: S, runtime: IpcRuntime)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    ipc_client_connected(&runtime).await;
+    tokio::spawn(async move {
+        if let Err(err) = handle_ipc_stream(stream, runtime.clone()).await {
+            tracing::warn!("IPC client failed: {err:#}");
+        }
+        ipc_client_disconnected(&runtime).await;
+    });
+}
+
+async fn ipc_client_connected(runtime: &IpcRuntime) {
+    let mut lifecycle = runtime.lifecycle.lock().await;
+    lifecycle.active_clients += 1;
+    lifecycle.last_activity = Instant::now();
+}
+
+async fn ipc_client_disconnected(runtime: &IpcRuntime) {
+    let mut lifecycle = runtime.lifecycle.lock().await;
+    lifecycle.active_clients = lifecycle.active_clients.saturating_sub(1);
+    lifecycle.last_activity = Instant::now();
+}
+
+async fn ipc_mark_activity(runtime: &IpcRuntime) {
+    runtime.lifecycle.lock().await.last_activity = Instant::now();
+}
+
+async fn ipc_should_shutdown(runtime: &IpcRuntime, idle_timeout: Duration) -> bool {
+    let lifecycle = runtime.lifecycle.lock().await;
+    lifecycle.active_clients == 0 && lifecycle.last_activity.elapsed() >= idle_timeout
+}
+
+async fn handle_ipc_stream<S>(stream: S, runtime: IpcRuntime) -> anyhow::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -470,7 +566,7 @@ where
             continue;
         }
         let response = match serde_json::from_str::<IpcRequest>(&line) {
-            Ok(request) => handle_ipc_request(&state, request).await,
+            Ok(request) => handle_ipc_request(&runtime.app, request).await,
             Err(err) => IpcResponse {
                 id: "invalid".to_string(),
                 ok: false,
@@ -482,6 +578,7 @@ where
         encoded.push(b'\n');
         write.write_all(&encoded).await?;
         write.flush().await?;
+        ipc_mark_activity(&runtime).await;
     }
     Ok(())
 }
@@ -2974,5 +3071,45 @@ mod tests {
         };
         task.abort();
         assert_eq!(result["ok"], true);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn ipc_daemon_exits_after_idle_timeout() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let endpoint = temp.path().join("devd.sock");
+        let endpoint_string = endpoint.to_string_lossy().to_string();
+        let task = tokio::spawn({
+            let endpoint = endpoint_string.clone();
+            async move {
+                serve_ipc(
+                    IpcConfig::new(endpoint).with_idle_timeout(Some(Duration::from_millis(100))),
+                )
+                .await
+            }
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if endpoint.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("IPC socket was not created");
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let result = ipc_call(&endpoint_string, "devd.health", json!({}))
+            .await
+            .expect("health should pass");
+        assert_eq!(result["ok"], true);
+
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("daemon should stop after idle timeout")
+            .expect("join should pass")
+            .expect("serve should exit cleanly");
+        assert!(!endpoint.exists());
     }
 }
