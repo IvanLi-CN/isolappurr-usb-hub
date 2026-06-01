@@ -25,12 +25,21 @@ const LOCAL_USB_BUSY_RETRIES = 5;
 let jsonlRequestSeq = 1;
 const localUsbRequestQueues: Record<string, Promise<void>> = {};
 
-class LocalUsbAgentHttpError extends Error {
+export class LocalUsbAgentHttpError extends Error {
   readonly status: number;
+  readonly code: string;
+  readonly retryable: boolean;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    code = "local_usb_error",
+    retryable = false,
+  ) {
     super(message);
     this.status = status;
+    this.code = code;
+    this.retryable = retryable;
   }
 }
 
@@ -283,12 +292,14 @@ export async function sendDevdLocalUsbJsonlRequest(
     });
     const json = (await res.json().catch(() => null)) as {
       response?: unknown;
-      error?: { message?: string };
+      error?: { code?: string; message?: string; retryable?: boolean };
     } | null;
     if (!res.ok) {
       throw new LocalUsbAgentHttpError(
         json?.error?.message ?? `Local USB request failed (${res.status})`,
         res.status,
+        json?.error?.code,
+        json?.error?.retryable,
       );
     }
     return json?.response ?? json;
@@ -308,12 +319,14 @@ async function ensureDevdLocalUsbDeviceRegistered(
   });
   const json = (await res.json().catch(() => null)) as {
     devices?: Array<{ id?: string }>;
-    error?: { message?: string };
+    error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!res.ok) {
     throw new LocalUsbAgentHttpError(
       json?.error?.message ?? "Local USB scan failed",
       res.status,
+      json?.error?.code,
+      json?.error?.retryable,
     );
   }
   if (!json?.devices?.some((device) => device.id === deviceId)) {
@@ -344,7 +357,7 @@ async function sendLocalUsbJsonlRequestNow(
     });
     const json = (await res.json().catch(() => null)) as {
       response?: unknown;
-      error?: { message?: string };
+      error?: { code?: string; message?: string; retryable?: boolean };
     } | null;
     if (!res.ok) {
       if (res.status === 404) {
@@ -353,6 +366,8 @@ async function sendLocalUsbJsonlRequestNow(
       throw new LocalUsbAgentHttpError(
         json?.error?.message ?? `Local USB request failed (${res.status})`,
         res.status,
+        json?.error?.code,
+        json?.error?.retryable,
       );
     }
     return json?.response ?? json;
@@ -383,12 +398,14 @@ async function legacyLocalUsbJsonlRequest(
   });
   const json = (await res.json().catch(() => null)) as {
     response?: unknown;
-    error?: { message?: string };
+    error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!res.ok) {
     throw new LocalUsbAgentHttpError(
       json?.error?.message ?? `Local USB request failed (${res.status})`,
       res.status,
+      json?.error?.code,
+      json?.error?.retryable,
     );
   }
   return json?.response ?? json;
@@ -422,7 +439,7 @@ async function ensureLocalUsbDeviceRegistered(
   });
   const json = (await res.json().catch(() => null)) as {
     devices?: Array<{ id?: string; usb?: { portPath?: string } }>;
-    error?: { message?: string };
+    error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!res.ok) {
     if (res.status === 404) {
@@ -435,6 +452,8 @@ async function ensureLocalUsbDeviceRegistered(
     throw new LocalUsbAgentHttpError(
       json?.error?.message ?? "Local USB scan failed",
       res.status,
+      json?.error?.code,
+      json?.error?.retryable,
     );
   }
   const registered = json?.devices?.some(
@@ -507,12 +526,14 @@ async function createLocalUsbLease(
   });
   const json = (await res.json().catch(() => null)) as {
     lease_id?: string;
-    error?: { message?: string };
+    error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!res.ok || typeof json?.lease_id !== "string") {
     throw new LocalUsbAgentHttpError(
       json?.error?.message ?? "Local USB lease failed",
       res.status,
+      json?.error?.code,
+      json?.error?.retryable,
     );
   }
   return { lease_id: json.lease_id };
@@ -565,7 +586,7 @@ export async function flashWithLocalUsb(
     const json = (await res.json()) as {
       ok?: boolean;
       log?: string;
-      error?: { message?: string };
+      error?: { code?: string; message?: string; retryable?: boolean };
     };
     if (!res.ok || !json.ok) {
       if (res.status === 404) {
@@ -583,6 +604,8 @@ export async function flashWithLocalUsb(
           json.log ||
           `Local USB flash failed (${res.status})`,
         res.status,
+        json.error?.code,
+        json.error?.retryable,
       );
     }
     return json.log ?? "";
@@ -629,7 +652,7 @@ async function legacyFlashWithLocalUsb(
   const json = (await res.json()) as {
     ok?: boolean;
     log?: string;
-    error?: { message?: string };
+    error?: { code?: string; message?: string; retryable?: boolean };
   };
   if (!res.ok || !json.ok) {
     throw new LocalUsbAgentHttpError(
@@ -637,6 +660,8 @@ async function legacyFlashWithLocalUsb(
         json.log ||
         `Local USB flash failed (${res.status})`,
       res.status,
+      json.error?.code,
+      json.error?.retryable,
     );
   }
   return json.log ?? "";

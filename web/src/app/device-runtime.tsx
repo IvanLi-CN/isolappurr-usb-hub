@@ -32,6 +32,7 @@ import {
 } from "../domain/deviceApi";
 import {
   devdLocalUsbDeviceIdFromBaseUrl,
+  LocalUsbAgentHttpError,
   nextJsonlRequestId,
   sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
@@ -281,18 +282,13 @@ export function DeviceRuntimeProvider({
           },
         };
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Local USB request failed";
-        if (!message.includes("serial port is busy")) {
+        if (shouldResetLocalUsbConnectionCache(err)) {
           localUsbAgent.current = null;
           delete localUsbPortByDevice.current[deviceId];
         }
         return {
           ok: false,
-          error: {
-            kind: "offline",
-            message,
-          },
+          error: localUsbErrorToDeviceApiError(err),
         };
       } finally {
         releaseQueue();
@@ -1077,6 +1073,33 @@ function createEmptyChannels(): Record<DeviceTransport, ChannelRuntime> {
     http: { lastOkAt: null, lastError: null },
     web_serial: { lastOkAt: null, lastError: null },
     local_usb: { lastOkAt: null, lastError: null },
+  };
+}
+
+export function shouldResetLocalUsbConnectionCache(err: unknown): boolean {
+  if (err instanceof LocalUsbAgentHttpError) {
+    return false;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return !message.includes("serial port is busy");
+}
+
+export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {
+  if (err instanceof LocalUsbAgentHttpError) {
+    if (err.status === 409 && err.code === "busy") {
+      return { kind: "busy", message: err.message, retryable: true };
+    }
+    return {
+      kind: "api_error",
+      status: err.status,
+      code: err.code,
+      message: err.message,
+      retryable: err.retryable,
+    };
+  }
+  return {
+    kind: "offline",
+    message: err instanceof Error ? err.message : "Local USB request failed",
   };
 }
 

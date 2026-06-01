@@ -2067,7 +2067,7 @@ async fn run_flash_request(
             .expected_identity
             .as_ref()
             .ok_or_else(|| anyhow!("normal flash requires expectedIdentity"))?;
-        let identity = require_compatible_project_firmware(state, device_id).await?;
+        let identity = require_project_firmware_for_upgrade(state, device_id).await?;
         validate_device_identity(&identity, expected_identity)?;
     }
 
@@ -2163,7 +2163,7 @@ async fn run_uploaded_flash_request(
             .port_path
             .clone()
     };
-    let identity = require_compatible_project_firmware(state, device_id).await?;
+    let identity = require_project_firmware_for_upgrade(state, device_id).await?;
     validate_device_identity(&identity, &req.expected_identity)?;
 
     let bytes = {
@@ -2583,23 +2583,8 @@ async fn require_compatible_project_firmware(
 }
 
 fn validate_project_firmware(info: &Value) -> anyhow::Result<()> {
-    let device = info
-        .get("result")
-        .and_then(|value| value.get("device"))
-        .or_else(|| info.get("device"))
-        .ok_or_else(|| anyhow!("info response did not include device identity"))?;
-    let firmware = device
-        .get("firmware")
-        .ok_or_else(|| anyhow!("info response did not include firmware metadata"))?;
-    let name = firmware
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("info response did not include firmware.name"))?;
-    if name != PROJECT_FIRMWARE_NAME {
-        return Err(anyhow!(
-            "connected device is running firmware `{name}`, expected `{PROJECT_FIRMWARE_NAME}`; refusing operation"
-        ));
-    }
+    let firmware = project_firmware_metadata(info)?;
+    validate_project_firmware_name(firmware)?;
     let version = firmware
         .get("version")
         .and_then(Value::as_str)
@@ -2607,6 +2592,42 @@ fn validate_project_firmware(info: &Value) -> anyhow::Result<()> {
     if !version_at_least(version, MIN_COMPATIBLE_FIRMWARE_VERSION) {
         return Err(anyhow!(
             "connected device firmware version `{version}` is incompatible; upgrade firmware to `{MIN_COMPATIBLE_FIRMWARE_VERSION}` or newer"
+        ));
+    }
+    Ok(())
+}
+
+async fn require_project_firmware_for_upgrade(
+    state: &AppState,
+    device_id: &str,
+) -> anyhow::Result<Value> {
+    let info = usb_jsonl_request(state, device_id, "info", None).await.with_context(|| {
+        "device did not respond to IsolaPurr `info`; it may be in download mode or running non-IsolaPurr firmware"
+    })?;
+    let firmware = project_firmware_metadata(&info)?;
+    validate_project_firmware_name(firmware)?;
+    Ok(info)
+}
+
+fn project_firmware_metadata(info: &Value) -> anyhow::Result<&Value> {
+    let device = info
+        .get("result")
+        .and_then(|value| value.get("device"))
+        .or_else(|| info.get("device"))
+        .ok_or_else(|| anyhow!("info response did not include device identity"))?;
+    device
+        .get("firmware")
+        .ok_or_else(|| anyhow!("info response did not include firmware metadata"))
+}
+
+fn validate_project_firmware_name(firmware: &Value) -> anyhow::Result<()> {
+    let name = firmware
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("info response did not include firmware.name"))?;
+    if name != PROJECT_FIRMWARE_NAME {
+        return Err(anyhow!(
+            "connected device is running firmware `{name}`, expected `{PROJECT_FIRMWARE_NAME}`; refusing operation"
         ));
     }
     Ok(())
@@ -3165,6 +3186,10 @@ mod tests {
             }
         });
         assert!(validate_project_firmware(&old_version).is_err());
+
+        let firmware = project_firmware_metadata(&old_version).expect("firmware metadata");
+        validate_project_firmware_name(firmware)
+            .expect("upgrade path accepts old project firmware");
     }
 
     #[test]

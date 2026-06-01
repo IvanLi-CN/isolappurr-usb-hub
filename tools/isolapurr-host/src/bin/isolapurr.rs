@@ -281,11 +281,19 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn print_human(output: &Value) {
+    print!("{}", format_human_output(output));
+}
+
+fn format_human_output(output: &Value) -> String {
+    if output.get("saved").is_some() || output.get("devd").is_some() {
+        return format_hardware_available(output);
+    }
+
     if let Some(devices) = output.get("devices").and_then(Value::as_array) {
         if devices.is_empty() {
-            println!("No devices found.");
-            return;
+            return "No devices found.\n".to_string();
         }
+        let mut lines = Vec::new();
         for device in devices {
             let id = device
                 .get("id")
@@ -301,25 +309,109 @@ fn print_human(output: &Value) {
                 .get("connection")
                 .and_then(Value::as_str)
                 .unwrap_or("unknown");
-            println!("{name} ({id}) - {connection}");
+            lines.push(format!("{name} ({id}) - {connection}"));
         }
-        return;
+        return format!("{}\n", lines.join("\n"));
     }
 
     if let Some(path) = output.get("path").and_then(Value::as_str) {
-        println!("{path}");
-        return;
+        return format!("{path}\n");
     }
 
     if let Some(ok) = output.get("ok").and_then(Value::as_bool) {
-        println!("{}", if ok { "ok" } else { "failed" });
-        return;
+        return format!("{}\n", if ok { "ok" } else { "failed" });
     }
 
-    println!(
-        "{}",
+    format!(
+        "{}\n",
         serde_json::to_string_pretty(output).unwrap_or_else(|_| output.to_string())
-    );
+    )
+}
+
+fn format_hardware_available(output: &Value) -> String {
+    let mut lines = Vec::new();
+    if let Some(path) = output.get("path").and_then(Value::as_str) {
+        lines.push(format!("Registry: {path}"));
+    }
+
+    lines.push("Saved hardware:".to_string());
+    match output.get("saved").and_then(Value::as_array) {
+        Some(saved) if !saved.is_empty() => {
+            for device in saved {
+                let id = device
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown-hardware");
+                let name = device.get("name").and_then(Value::as_str).unwrap_or(id);
+                lines.push(format!("- {name} ({id}) {}", transport_label(device)));
+            }
+        }
+        _ => lines.push("- none".to_string()),
+    }
+
+    lines.push("Local devd devices:".to_string());
+    if let Some(error) = output
+        .get("devd")
+        .and_then(|devd| devd.get("error"))
+        .and_then(Value::as_str)
+    {
+        lines.push(format!("- unavailable: {error}"));
+    } else {
+        match output
+            .get("devd")
+            .and_then(|devd| devd.get("devices"))
+            .and_then(Value::as_array)
+        {
+            Some(devices) if !devices.is_empty() => {
+                for device in devices {
+                    let id = device
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown-device");
+                    let name = device
+                        .get("displayName")
+                        .or_else(|| device.get("display_name"))
+                        .or_else(|| device.get("name"))
+                        .and_then(Value::as_str)
+                        .unwrap_or(id);
+                    let connection = device
+                        .get("connection")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown");
+                    lines.push(format!("- {name} ({id}) - {connection}"));
+                }
+            }
+            _ => lines.push("- none".to_string()),
+        }
+    }
+
+    format!("{}\n", lines.join("\n"))
+}
+
+fn transport_label(device: &Value) -> String {
+    let Some(transport) = device.get("transport") else {
+        return "(unknown transport)".to_string();
+    };
+    let kind = transport
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    match kind {
+        "usb" => transport
+            .get("deviceId")
+            .or_else(|| transport.get("device_id"))
+            .and_then(Value::as_str)
+            .map(|device_id| format!("usb:{device_id}"))
+            .unwrap_or_else(|| "usb".to_string()),
+        "http" => transport
+            .get("baseUrl")
+            .or_else(|| transport.get("base_url"))
+            .and_then(Value::as_str)
+            .map(|base_url| format!("http:{base_url}"))
+            .unwrap_or_else(|| "http".to_string()),
+        "webSerial" | "web_serial" => "web_serial".to_string(),
+        other => other.to_string(),
+    }
 }
 
 async fn devd_request(
@@ -860,6 +952,35 @@ mod tests {
     fn ensure_success_envelope_ignores_non_envelope_output() {
         ensure_success_envelope(&json!({"devices": []})).expect("list output should pass");
         ensure_success_envelope(&json!({"ok": true})).expect("ok=true should pass");
+    }
+
+    #[test]
+    fn human_output_renders_hardware_available_sections() {
+        let output = json!({
+            "path": "/tmp/devices.json",
+            "saved": [{
+                "id": "isolapurr-01",
+                "name": "Bench Hub",
+                "transport": {
+                    "kind": "usb",
+                    "deviceId": "usb--dev-cu-usbmodem101"
+                }
+            }],
+            "devd": {
+                "devices": [{
+                    "id": "usb--dev-cu-usbmodem101",
+                    "displayName": "ESP32-S3 USB JTAG",
+                    "connection": "available"
+                }]
+            }
+        });
+
+        let rendered = format_human_output(&output);
+        assert!(rendered.contains("Registry: /tmp/devices.json"));
+        assert!(rendered.contains("Saved hardware:"));
+        assert!(rendered.contains("- Bench Hub (isolapurr-01) usb:usb--dev-cu-usbmodem101"));
+        assert!(rendered.contains("Local devd devices:"));
+        assert!(rendered.contains("- ESP32-S3 USB JTAG (usb--dev-cu-usbmodem101) - available"));
     }
 
     #[test]
