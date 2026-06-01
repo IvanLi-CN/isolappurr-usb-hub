@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event_name == 'push' && github.sha || inputs.target_sha || 'next-pending' }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
