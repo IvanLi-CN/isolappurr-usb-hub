@@ -11,6 +11,7 @@
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.
 - CI/release workflows build and publish host-tools plus firmware catalog assets.
 - `host-tools.yml` builds/tests/packages host-tools archives for Linux, macOS, and Windows.
+- Official host-tools installers added for Unix and Windows. Tag builds publish the host-tools archives, `SHA256SUMS`, and installer scripts to the matching GitHub Release.
 - `firmware.yml` emits a firmware catalog artifact after firmware build.
 
 ## Remaining hardening
