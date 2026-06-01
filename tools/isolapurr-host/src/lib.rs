@@ -1451,9 +1451,6 @@ async fn device_flash_upload(
     if let Err(response) = require_lease(&state, &id, Some(&req.lease_id)).await {
         return *response;
     }
-    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
-        return error_from_anyhow(err);
-    }
     let result = run_uploaded_flash_request(&state, &id, req).await;
     match result {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
