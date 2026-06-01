@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     fs,
+    io::IsTerminal as _,
     path::PathBuf,
     process::{Command as ProcessCommand, Stdio},
     time::{Duration, Instant},
@@ -159,6 +160,8 @@ struct FlashArgs {
     real: bool,
     #[arg(long, action = ArgAction::SetTrue)]
     first_time: bool,
+    #[arg(long)]
+    confirm_non_project_firmware: bool,
     #[arg(long)]
     expected_device_id: Option<String>,
     #[arg(long)]
@@ -719,7 +722,13 @@ async fn handle_flash(
         .find(|artifact| artifact.artifact_id == args.artifact)
         .ok_or_else(|| anyhow!("artifact not found in catalog: {}", args.artifact))?;
 
-    if args.first_time && args.real {
+    let mut confirm_non_project_firmware = args.confirm_non_project_firmware;
+    if args.first_time && args.real && !confirm_non_project_firmware {
+        if !std::io::stdin().is_terminal() {
+            return Err(anyhow!(
+                "first-time flash may target download-mode or non-IsolaPurr firmware; rerun interactively or pass --confirm-non-project-firmware after external target confirmation"
+            ));
+        }
         eprintln!("First-time full flash requested.");
         eprintln!("device={}", device.device);
         eprintln!("artifact={}", artifact.artifact_id);
@@ -730,6 +739,7 @@ async fn handle_flash(
         if line.trim() != format!("flash {}", artifact.artifact_id) {
             return Err(anyhow!("first-time flash confirmation did not match"));
         }
+        confirm_non_project_firmware = true;
     }
 
     devd_device_post_with_lease(
@@ -742,6 +752,7 @@ async fn handle_flash(
             "artifact_id": args.artifact,
             "real": args.real,
             "first_time": args.first_time,
+            "confirm_non_project_firmware": confirm_non_project_firmware,
             "expected_identity": expected_identity,
         }),
     )
@@ -934,6 +945,29 @@ mod tests {
             panic!("expected ports power command");
         };
         assert!(!enabled);
+    }
+
+    #[test]
+    fn flash_accepts_non_project_confirmation_flag() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "flash",
+            "--device",
+            "usb--dev-cu-usbmodem21221401",
+            "--catalog",
+            "catalog.json",
+            "--artifact",
+            "app",
+            "--real",
+            "--first-time",
+            "--confirm-non-project-firmware",
+        ])
+        .expect("confirmation flag should parse");
+
+        let Command::Flash(args) = cli.command else {
+            panic!("expected flash command");
+        };
+        assert!(args.confirm_non_project_firmware);
     }
 }
 

@@ -43,6 +43,8 @@ const SERIAL_BAUD: u32 = 115_200;
 const SERIAL_TIMEOUT_MS: u64 = 1_500;
 const MAX_SESSION_ITEMS: usize = 500;
 pub const DEFAULT_IPC_IDLE_TIMEOUT_SECS: u64 = 30;
+const PROJECT_FIRMWARE_NAME: &str = "isolapurr-usb-hub";
+const MIN_COMPATIBLE_FIRMWARE_VERSION: &str = "0.1.0";
 
 #[derive(Debug, Clone)]
 pub struct DevdConfig {
@@ -379,6 +381,8 @@ struct FlashRequest {
     #[serde(default)]
     first_time: bool,
     #[serde(default)]
+    confirm_non_project_firmware: bool,
+    #[serde(default)]
     expected_identity: Option<DeviceIdentity>,
     lease_id: Option<String>,
 }
@@ -614,7 +618,7 @@ async fn dispatch_ipc_request(
         "device.status" => {
             let req: DeviceIdRequest = serde_json::from_value(params)?;
             Ok(redact_sensitive(
-                &usb_jsonl_request(state, &req.device_id, "info", None).await?,
+                &require_compatible_project_firmware(state, &req.device_id).await?,
             ))
         }
         "device.session" => {
@@ -623,12 +627,15 @@ async fn dispatch_ipc_request(
         }
         "device.wifi.get" => {
             let req: DeviceIdRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
                 &usb_jsonl_request(state, &req.device_id, "wifi.get", None).await?,
             ))
         }
         "device.wifi.set" => {
             let req: DeviceWifiSetRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            let expected_ssid = req.ssid.clone();
             match usb_jsonl_request(
                 state,
                 &req.device_id,
@@ -639,7 +646,8 @@ async fn dispatch_ipc_request(
             {
                 Ok(value) => Ok(redact_sensitive(&value)),
                 Err(err) => {
-                    match verify_wifi_after_set_timeout(state, &req.device_id, &req.ssid).await {
+                    match verify_wifi_after_set_timeout(state, &req.device_id, &expected_ssid).await
+                    {
                         Ok(value) => Ok(redact_sensitive(&value)),
                         Err(_) => Err(err),
                     }
@@ -648,18 +656,21 @@ async fn dispatch_ipc_request(
         }
         "device.wifi.clear" => {
             let req: DeviceIdRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
                 &usb_jsonl_request(state, &req.device_id, "wifi.clear", None).await?,
             ))
         }
         "device.ports.get" => {
             let req: DeviceIdRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
                 &usb_jsonl_request(state, &req.device_id, "ports.get", None).await?,
             ))
         }
         "device.port.power" => {
             let req: DevicePortPowerRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
                 &usb_jsonl_request(
                     state,
@@ -672,6 +683,7 @@ async fn dispatch_ipc_request(
         }
         "device.port.replug" => {
             let req: DevicePortRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
                 &usb_jsonl_request(
                     state,
@@ -684,6 +696,7 @@ async fn dispatch_ipc_request(
         }
         "device.hub.route_set" => {
             let req: DeviceHubRouteRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
             match usb_jsonl_request(
                 state,
                 &req.device_id,
@@ -723,6 +736,7 @@ async fn dispatch_ipc_request(
         }
         "device.diagnostics" => {
             let req: DeviceIdRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
                 &usb_jsonl_request(state, &req.device_id, "pd.diagnostics", None).await?,
             ))
@@ -897,6 +911,7 @@ async fn ipc_device_reset(
     lease_id: Option<&str>,
 ) -> anyhow::Result<Value> {
     require_lease_value(state, device_id, lease_id).await?;
+    require_compatible_project_firmware(state, device_id).await?;
     let port_path = device_usb_port_path(state, device_id).await?;
     {
         let mut inner = state.inner.lock().await;
@@ -1157,7 +1172,7 @@ async fn device_status(
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
     }
-    match usb_jsonl_request(&state, &id, "info", None).await {
+    match require_compatible_project_firmware(&state, &id).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }
@@ -1197,6 +1212,9 @@ async fn wifi_get(
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
     }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
     match usb_jsonl_request(&state, &id, "wifi.get", None).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
@@ -1211,6 +1229,9 @@ async fn wifi_set(
 ) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
     }
     match usb_jsonl_request(
         &state,
@@ -1233,6 +1254,9 @@ async fn wifi_clear(
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
     }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
     match usb_jsonl_request(&state, &id, "wifi.clear", None).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
@@ -1246,6 +1270,9 @@ async fn device_ports(
 ) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
     }
     match usb_jsonl_request(&state, &id, "ports.get", None).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
@@ -1261,6 +1288,9 @@ async fn port_power(
 ) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
     }
     let enabled = matches!(query.get("enabled").map(String::as_str), Some("1" | "true"));
     match usb_jsonl_request(
@@ -1284,6 +1314,9 @@ async fn port_replug(
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
     }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
     match usb_jsonl_request(&state, &id, "port.replug", Some(json!({"port": port_id}))).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
@@ -1298,6 +1331,9 @@ async fn hub_route_set(
 ) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
     }
     let route = req.route;
     match usb_jsonl_request(&state, &id, "hub.route_set", Some(json!({"route": route}))).await {
@@ -1415,6 +1451,9 @@ async fn device_flash_upload(
     if let Err(response) = require_lease(&state, &id, Some(&req.lease_id)).await {
         return *response;
     }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
     let result = run_uploaded_flash_request(&state, &id, req).await;
     match result {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
@@ -1434,6 +1473,9 @@ async fn device_reset(
     let lease_id = body.get("lease_id").and_then(Value::as_str);
     if let Err(response) = require_lease(&state, &id, lease_id).await {
         return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
     }
     let port_path = match device_usb_port_path(&state, &id).await {
         Ok(port_path) => port_path,
@@ -1467,6 +1509,9 @@ async fn device_diagnostics(
 ) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
     }
     match usb_jsonl_request(&state, &id, "pd.diagnostics", None).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
@@ -1998,6 +2043,12 @@ async fn run_flash_request(
         }));
     }
 
+    if req.first_time && !req.confirm_non_project_firmware {
+        return Err(anyhow!(
+            "first-time full flash may target download-mode or non-IsolaPurr firmware; pass explicit non-project firmware confirmation"
+        ));
+    }
+
     let port_path = {
         let inner = state.inner.lock().await;
         inner
@@ -2016,7 +2067,7 @@ async fn run_flash_request(
             .expected_identity
             .as_ref()
             .ok_or_else(|| anyhow!("normal flash requires expectedIdentity"))?;
-        let identity = usb_jsonl_request(state, device_id, "info", None).await?;
+        let identity = require_compatible_project_firmware(state, device_id).await?;
         validate_device_identity(&identity, expected_identity)?;
     }
 
@@ -2112,7 +2163,7 @@ async fn run_uploaded_flash_request(
             .port_path
             .clone()
     };
-    let identity = usb_jsonl_request(state, device_id, "info", None).await?;
+    let identity = require_compatible_project_firmware(state, device_id).await?;
     validate_device_identity(&identity, &req.expected_identity)?;
 
     let bytes = {
@@ -2520,6 +2571,61 @@ fn resolve_catalog_file_path(catalog_path: &FsPath, relative: &str) -> PathBuf {
         .join(path)
 }
 
+async fn require_compatible_project_firmware(
+    state: &AppState,
+    device_id: &str,
+) -> anyhow::Result<Value> {
+    let info = usb_jsonl_request(state, device_id, "info", None).await.with_context(|| {
+        "device did not respond to IsolaPurr `info`; it may be in download mode or running non-IsolaPurr firmware"
+    })?;
+    validate_project_firmware(&info)?;
+    Ok(info)
+}
+
+fn validate_project_firmware(info: &Value) -> anyhow::Result<()> {
+    let device = info
+        .get("result")
+        .and_then(|value| value.get("device"))
+        .or_else(|| info.get("device"))
+        .ok_or_else(|| anyhow!("info response did not include device identity"))?;
+    let firmware = device
+        .get("firmware")
+        .ok_or_else(|| anyhow!("info response did not include firmware metadata"))?;
+    let name = firmware
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("info response did not include firmware.name"))?;
+    if name != PROJECT_FIRMWARE_NAME {
+        return Err(anyhow!(
+            "connected device is running firmware `{name}`, expected `{PROJECT_FIRMWARE_NAME}`; refusing operation"
+        ));
+    }
+    let version = firmware
+        .get("version")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("info response did not include firmware.version"))?;
+    if !version_at_least(version, MIN_COMPATIBLE_FIRMWARE_VERSION) {
+        return Err(anyhow!(
+            "connected device firmware version `{version}` is incompatible; upgrade firmware to `{MIN_COMPATIBLE_FIRMWARE_VERSION}` or newer"
+        ));
+    }
+    Ok(())
+}
+
+fn version_at_least(actual: &str, minimum: &str) -> bool {
+    let actual = parse_version_triplet(actual);
+    let minimum = parse_version_triplet(minimum);
+    matches!((actual, minimum), (Some(actual), Some(minimum)) if actual >= minimum)
+}
+
+fn parse_version_triplet(value: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = value.trim_start_matches('v').split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    let patch = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
+}
+
 fn validate_device_identity(info: &Value, expected: &DeviceIdentity) -> anyhow::Result<()> {
     if expected.device_id.is_none() && expected.mac.is_none() {
         return Err(anyhow!("expectedIdentity must include deviceId or mac"));
@@ -2740,10 +2846,18 @@ fn is_loopback_origin(origin: &HeaderValue) -> bool {
 }
 
 fn error_from_anyhow(err: anyhow::Error) -> Response {
-    if err.to_string().contains("busy") {
+    let message = err.to_string();
+    if message.contains("busy") {
         conflict(&err.to_string())
+    } else if message.contains("non-IsolaPurr")
+        || message.contains("not include firmware")
+        || message.contains("firmware version")
+        || message.contains("expected `isolapurr-usb-hub`")
+        || message.contains("did not respond to IsolaPurr")
+    {
+        bad_request(&message)
     } else {
-        internal_error(&err.to_string())
+        internal_error(&message)
     }
 }
 
@@ -3008,6 +3122,49 @@ mod tests {
             },
         )
         .expect("identity should match");
+    }
+
+    #[test]
+    fn validates_project_firmware_name_and_version() {
+        let info = json!({
+            "ok": true,
+            "result": {
+                "device": {
+                    "firmware": {
+                        "name": "isolapurr-usb-hub",
+                        "version": "0.1.0"
+                    }
+                }
+            }
+        });
+        validate_project_firmware(&info).expect("project firmware should pass");
+    }
+
+    #[test]
+    fn rejects_non_project_or_incompatible_firmware() {
+        let wrong_name = json!({
+            "result": {
+                "device": {
+                    "firmware": {
+                        "name": "other",
+                        "version": "0.1.0"
+                    }
+                }
+            }
+        });
+        assert!(validate_project_firmware(&wrong_name).is_err());
+
+        let old_version = json!({
+            "result": {
+                "device": {
+                    "firmware": {
+                        "name": "isolapurr-usb-hub",
+                        "version": "0.0.1"
+                    }
+                }
+            }
+        });
+        assert!(validate_project_firmware(&old_version).is_err());
     }
 
     #[test]

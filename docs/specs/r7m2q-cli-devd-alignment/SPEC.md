@@ -34,8 +34,12 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
 - MUST store local program hardware memory in the user's config directory, while pure Web stores the same profile shape in browser storage.
 - MUST support importing/merging browser profiles into devd storage when devd is available.
+- MUST verify Local USB targets are running IsolaPurr project firmware before ordinary device operations. The verification key is firmware metadata from `info`, including `firmware.name == "isolapurr-usb-hub"` and a compatible `firmware.version`.
+- MUST reject ordinary status-adjacent control operations when the device is in download mode, does not answer project `info`, is running non-IsolaPurr firmware, or reports an incompatible firmware version. The error must explain whether the user should select the correct device, perform a first-time flash, or upgrade firmware.
 - MUST validate firmware catalog target, flash address, file hash, and device identity before normal user flashing.
-- MUST allow first-time full flash from the user CLI only after explicit port selection, target/artifact evidence, typed confirmation, and post-flash identity capture.
+- MUST allow first-time full flash from the user CLI only after explicit port selection, target/artifact evidence, typed confirmation or explicit non-interactive confirmation, and post-flash identity capture.
+- MUST require an explicit confirmation path before destructive operations that may affect download-mode or non-project firmware. CLI clients use an interactive typed confirmation or a confirmation flag for non-interactive runs; GUI clients must use a confirmation dialog.
+- MUST instruct users to upgrade firmware when `firmware.version` is below the devd-compatible minimum instead of attempting normal port/Wi-Fi/diagnostic operations.
 - MUST redact PSKs, passwords, passphrases, secrets, and tokens in traces, diagnostics, and CLI output.
 - SHOULD expose bounded session logs/traces for Local USB operations.
 - SHOULD keep product docs and release workflows aligned with the shipped host-tools assets.
@@ -52,7 +56,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr ports power --port <port_id> --enabled <true|false>`
 - `isolapurr ports replug --port <port_id>`
 - `isolapurr ports route --route <mcu|usb_c>`
-- `isolapurr flash`, `isolapurr reset`, `isolapurr monitor`
+- `isolapurr flash [--confirm-non-project-firmware]`, `isolapurr reset`, `isolapurr monitor`
 - `isolapurr diagnostics export`
 
 The IPC daemon protocol is newline-delimited JSON request/response. Requests include `{id, method, params}` and responses include `{id, ok, result|error}`. CLI-visible method families include:
@@ -100,9 +104,12 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given `isolapurr-devd serve` is running, when localhost is scanned, then no HTTP devd API is exposed unless `isolapurr-devd bridge-http` was explicitly started.
 - Given a browser supports Web Serial, when the user connects through the Web app, then Web Serial remains a normal channel and can be promoted by the runtime without devd.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.
+- Given a Local USB target does not answer IsolaPurr `info`, when the user requests status, Wi-Fi, ports, diagnostics, route, replug, or power operations, then devd refuses the operation and reports that the target may be in download mode or running non-IsolaPurr firmware.
+- Given a Local USB target answers `info` with a different `firmware.name`, when any ordinary operation is requested, then devd refuses the operation and reports the expected firmware name.
+- Given a Local USB target answers `info` with an incompatible `firmware.version`, when any ordinary operation is requested, then devd refuses the operation and asks the user to upgrade firmware.
 - Given devd owns a Local USB session, when another devd client requests the same port during an exclusive flash/reset, then devd returns a busy error instead of opening the port concurrently.
 - Given a firmware catalog references an app image, when CLI/devd flashes a normal update, then the image hash, target, address, and identity are verified before writing.
-- Given first-time hardware lacks identity, when a user runs a full flash, then the CLI shows target/artifact evidence, requires a typed confirmation, flashes the full artifact, and writes confirmed identity after reboot.
+- Given first-time hardware lacks identity or is in download mode, when a user runs a full flash, then the CLI shows target/artifact evidence, requires a typed confirmation or explicit non-interactive confirmation flag, flashes the full artifact, and writes confirmed identity after reboot.
 - Given CLI Wi-Fi set includes a PSK, when session traces or diagnostics are exported, then the PSK is redacted.
 - Given the desktop app starts, when devd is available, then desktop UI uses the devd API rather than a divergent hardware-control implementation.
 

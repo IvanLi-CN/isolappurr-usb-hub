@@ -52,6 +52,7 @@ isolapurr hardware available --scan
 - Use USB/devd IPC first for Agent-run hardware operations. Use `--url http://<host-or-ip>` only for direct device LAN HTTP, never as a way to connect the CLI to devd.
 - Start `isolapurr-devd bridge-http` only when a browser or debug UI explicitly needs a localhost HTTP bridge.
 - Do not auto-select a serial port. A hardware-changing operation must show target evidence first.
+- If devd reports non-IsolaPurr firmware, download mode/no `info` response, or incompatible firmware, do not run ordinary Wi-Fi/port/diagnostic operations. Use first-time flash only after explicit target confirmation, or upgrade firmware when prompted.
 
 ## User Workflows
 
