@@ -2,6 +2,7 @@ set shell := ["/bin/sh", "-c"]
 
 ROOT := justfile_directory()
 DESKTOP_DIR := ROOT + "/desktop/src-tauri"
+HOST_TOOLS_MANIFEST := ROOT + "/tools/isolapurr-host/Cargo.toml"
 FIRMWARE_ELF := ROOT + "/target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub"
 FIRMWARE_BIN := ROOT + "/target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub.app.bin"
 
@@ -18,6 +19,28 @@ fmt:
 
 clean:
 	cargo clean
+
+# Released-style host tools (isolapurr CLI + isolapurr-devd).
+host-tools-build:
+	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
+	cargo +stable build --manifest-path {{HOST_TOOLS_MANIFEST}} --bins --target "$host"
+
+host-tools-test:
+	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
+	cargo +stable test --manifest-path {{HOST_TOOLS_MANIFEST}} --target "$host"
+
+devd-serve +args:
+	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
+	cargo +stable run --manifest-path {{HOST_TOOLS_MANIFEST}} --target "$host" --bin isolapurr-devd -- serve {{args}}
+
+devd-http-bridge +args:
+	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
+	cargo +stable run --manifest-path {{HOST_TOOLS_MANIFEST}} --target "$host" --bin isolapurr-devd -- bridge-http {{args}}
+
+isolapurr +args:
+	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
+	cargo +stable build --manifest-path {{HOST_TOOLS_MANIFEST}} --bins --target "$host" >/dev/null; \
+	cargo +stable run --manifest-path {{HOST_TOOLS_MANIFEST}} --target "$host" --bin isolapurr -- {{args}}
 
 sw2303-test:
 	./tools/test-sw2303-host.sh

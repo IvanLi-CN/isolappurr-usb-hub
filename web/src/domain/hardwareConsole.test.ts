@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  buildLocalUsbFlashRequestBody,
-  DEFAULT_LOCAL_USB_FLASH_ADDRESS,
+  devdLocalUsbDeviceIdFromBaseUrl,
   filterEsp32SerialPorts,
   isEsp32SerialPort,
+  stableLocalUsbDeviceId,
 } from "./hardwareConsole";
 
 describe("isEsp32SerialPort", () => {
@@ -65,28 +65,21 @@ describe("filterEsp32SerialPorts", () => {
   });
 });
 
-describe("buildLocalUsbFlashRequestBody", () => {
-  test("pins Local USB firmware updates to app image identity semantics", () => {
+describe("stableLocalUsbDeviceId", () => {
+  test("matches devd USB device id derivation", () => {
+    expect(stableLocalUsbDeviceId("/dev/cu.usbmodem21221401")).toBe(
+      "usb--dev-cu-usbmodem21221401",
+    );
+  });
+});
+
+describe("devdLocalUsbDeviceIdFromBaseUrl", () => {
+  test("extracts CLI/devd USB profile ids", () => {
     expect(
-      buildLocalUsbFlashRequestBody({
-        portPath: "/dev/cu.usbmodem21221401",
-        address: DEFAULT_LOCAL_USB_FLASH_ADDRESS,
-        fileName: "isolapurr-usb-hub.app.bin",
-        fileBase64: "AA==",
-        expectedIdentity: {
-          deviceId: "f293cc",
-          mac: "aa:bb:cc:dd:ee:ff",
-        },
-      }),
-    ).toEqual({
-      portPath: "/dev/cu.usbmodem21221401",
-      address: 0x10000,
-      fileName: "isolapurr-usb-hub.app.bin",
-      fileBase64: "AA==",
-      expectedIdentity: {
-        deviceId: "f293cc",
-        mac: "aa:bb:cc:dd:ee:ff",
-      },
-    });
+      devdLocalUsbDeviceIdFromBaseUrl(
+        "isolapurr-devd://usb--dev-cu-usbmodem21221401",
+      ),
+    ).toBe("usb--dev-cu-usbmodem21221401");
+    expect(devdLocalUsbDeviceIdFromBaseUrl("http://192.168.4.1")).toBeNull();
   });
 });

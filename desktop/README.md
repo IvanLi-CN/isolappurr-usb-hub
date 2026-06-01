@@ -1,10 +1,10 @@
 # isolapurr-desktop
 
-Desktop App（Plan `#0008`）：在本机运行一个 localhost agent，用于：
+Desktop App（Plan `#0008`）：桌面 GUI 壳。新的 released-style 本机硬件边界由 `isolapurr-devd` daemon 和 `isolapurr` CLI 承担；桌面 GUI 应按需启动或连接同一 devd IPC daemon，浏览器调试入口才使用显式 HTTP bridge。
 
 - 服务 UI（`web/` 构建产物）
-- 提供 discovery 本机能力（mDNS/DNS‑SD + IP scan）
-- 提供开发期 Local USB 能力（串口识别、JSONL、app `.bin` 生成、烧录、reset、monitor）
+- 按需连接本机 `isolapurr-devd` IPC API
+- 保留旧 CLI 子命令用于迁移期开发，但新用户/Agent 操作应优先使用 `isolapurr` + `isolapurr-devd`
 
 ## Dev
 
@@ -45,13 +45,13 @@ codesign --verify --deep --strict --verbose=2 src-tauri/target/aarch64-apple-dar
 
 ## CLI
 
-单一可执行文件，默认 `gui`：
+桌面可执行文件默认 `gui`：
 
 ```bash
 isolapurr-desktop
 ```
 
-子命令（见 Plan `#0008` 契约）：
+迁移期子命令（长期用户 CLI 见 `tools/isolapurr-host` 的 `isolapurr`）：
 
 - `gui`：启动 GUI（Tauri）+ localhost agent
 - `tray`：启动 Menubar/Tray + localhost agent

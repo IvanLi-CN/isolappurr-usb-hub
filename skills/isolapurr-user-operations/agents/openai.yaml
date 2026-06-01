@@ -1,0 +1,4 @@
+interface:
+  display_name: "IsolaPurr User Operations"
+  short_description: "Released CLI/devd and official Web Serial user workflows."
+  default_prompt: "Use $isolapurr-user-operations to install released IsolaPurr host tools, operate hardware through isolapurr/isolapurr-devd, preserve Web Serial as an official user path, manage saved hardware, provision Wi-Fi, flash catalog firmware, and export diagnostics."

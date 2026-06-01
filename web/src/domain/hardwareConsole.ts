@@ -25,6 +25,24 @@ const LOCAL_USB_BUSY_RETRIES = 5;
 let jsonlRequestSeq = 1;
 const localUsbRequestQueues: Record<string, Promise<void>> = {};
 
+export class LocalUsbAgentHttpError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly retryable: boolean;
+
+  constructor(
+    message: string,
+    status: number,
+    code = "local_usb_error",
+    retryable = false,
+  ) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
+
 export type HardwareTransportKind = "web_serial" | "local_usb";
 
 export type DeviceIdentityExpectation = {
@@ -92,6 +110,44 @@ export function nextJsonlRequestId(): number {
 }
 
 export async function listLocalUsbSerialPorts(
+  agent: DesktopAgent,
+): Promise<SerialPortInfo[]> {
+  const res = await agentFetch(agent, "/api/v1/devices/scan", {
+    method: "POST",
+  });
+  if (!res.ok) {
+    if (res.status === 404) {
+      return listLegacyLocalUsbSerialPorts(agent);
+    }
+    throw new Error(`Local USB port list failed (${res.status})`);
+  }
+  const json = (await res.json()) as {
+    devices?: Array<{
+      usb?: {
+        portPath?: string;
+        label?: string;
+        vendorId?: number | null;
+        productId?: number | null;
+        serialNumber?: string | null;
+      };
+    }>;
+  };
+  return Array.isArray(json.devices)
+    ? json.devices
+        .map((device) => device.usb)
+        .filter((usb): usb is NonNullable<typeof usb> => Boolean(usb))
+        .map((usb) => ({
+          path: usb.portPath ?? "",
+          label: usb.label ?? usb.portPath ?? "Local USB",
+          vendorId: usb.vendorId,
+          productId: usb.productId,
+          serialNumber: usb.serialNumber,
+        }))
+        .filter((port) => port.path.length > 0)
+    : [];
+}
+
+async function listLegacyLocalUsbSerialPorts(
   agent: DesktopAgent,
 ): Promise<SerialPortInfo[]> {
   const res = await agentFetch(agent, "/api/v1/serial/ports");
@@ -214,7 +270,120 @@ export async function sendLocalUsbJsonlRequest(
   }
 }
 
+export async function sendDevdLocalUsbJsonlRequest(
+  agent: DesktopAgent,
+  deviceId: string,
+  request: JsonlRequest,
+): Promise<unknown> {
+  await ensureDevdLocalUsbDeviceRegistered(agent, deviceId);
+  const endpoint = localUsbMethodEndpoint(deviceId, request);
+  let lease: { lease_id: string } | null = null;
+  try {
+    if (request.method === "reboot") {
+      lease = await createLocalUsbLease(agent, deviceId);
+      endpoint.body = {
+        ...(endpoint.body as object),
+        lease_id: lease.lease_id,
+      };
+    }
+    const res = await agentFetch(agent, endpoint.path, {
+      method: endpoint.method,
+      body: endpoint.body ? JSON.stringify(endpoint.body) : undefined,
+    });
+    const json = (await res.json().catch(() => null)) as {
+      response?: unknown;
+      error?: { code?: string; message?: string; retryable?: boolean };
+    } | null;
+    if (!res.ok) {
+      throw new LocalUsbAgentHttpError(
+        json?.error?.message ?? `Local USB request failed (${res.status})`,
+        res.status,
+        json?.error?.code,
+        json?.error?.retryable,
+      );
+    }
+    return json?.response ?? json;
+  } finally {
+    if (lease) {
+      await releaseLocalUsbLease(agent, lease.lease_id);
+    }
+  }
+}
+
+async function ensureDevdLocalUsbDeviceRegistered(
+  agent: DesktopAgent,
+  deviceId: string,
+): Promise<void> {
+  const res = await agentFetch(agent, "/api/v1/devices/scan", {
+    method: "POST",
+  });
+  const json = (await res.json().catch(() => null)) as {
+    devices?: Array<{ id?: string }>;
+    error?: { code?: string; message?: string; retryable?: boolean };
+  } | null;
+  if (!res.ok) {
+    throw new LocalUsbAgentHttpError(
+      json?.error?.message ?? "Local USB scan failed",
+      res.status,
+      json?.error?.code,
+      json?.error?.retryable,
+    );
+  }
+  if (!json?.devices?.some((device) => device.id === deviceId)) {
+    throw new Error(`Local USB device is not available: ${deviceId}`);
+  }
+}
+
 async function sendLocalUsbJsonlRequestNow(
+  agent: DesktopAgent,
+  portPath: string,
+  request: JsonlRequest,
+): Promise<unknown> {
+  const deviceId = stableLocalUsbDeviceId(portPath);
+  await ensureLocalUsbDeviceRegistered(agent, deviceId, portPath);
+  const endpoint = localUsbMethodEndpoint(deviceId, request);
+  let lease: { lease_id: string } | null = null;
+  try {
+    if (request.method === "reboot") {
+      lease = await createLocalUsbLease(agent, deviceId);
+      endpoint.body = {
+        ...(endpoint.body as object),
+        lease_id: lease.lease_id,
+      };
+    }
+    const res = await agentFetch(agent, endpoint.path, {
+      method: endpoint.method,
+      body: endpoint.body ? JSON.stringify(endpoint.body) : undefined,
+    });
+    const json = (await res.json().catch(() => null)) as {
+      response?: unknown;
+      error?: { code?: string; message?: string; retryable?: boolean };
+    } | null;
+    if (!res.ok) {
+      if (res.status === 404) {
+        return legacyLocalUsbJsonlRequest(agent, portPath, request);
+      }
+      throw new LocalUsbAgentHttpError(
+        json?.error?.message ?? `Local USB request failed (${res.status})`,
+        res.status,
+        json?.error?.code,
+        json?.error?.retryable,
+      );
+    }
+    return json?.response ?? json;
+  } catch (err) {
+    if (err instanceof LocalUsbAgentHttpError && err.status === 404) {
+      return legacyLocalUsbJsonlRequest(agent, portPath, request);
+    }
+    throw err;
+  } finally {
+    if (lease) {
+      await releaseLocalUsbLease(agent, lease.lease_id);
+    }
+  }
+}
+
+async function legacyLocalUsbJsonlRequest(
   agent: DesktopAgent,
   portPath: string,
   request: JsonlRequest,
@@ -229,14 +398,154 @@ async function sendLocalUsbJsonlRequestNow(
   });
   const json = (await res.json().catch(() => null)) as {
     response?: unknown;
-    error?: { message?: string };
+    error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!res.ok) {
-    throw new Error(
+    throw new LocalUsbAgentHttpError(
       json?.error?.message ?? `Local USB request failed (${res.status})`,
+      res.status,
+      json?.error?.code,
+      json?.error?.retryable,
     );
   }
   return json?.response ?? json;
+}
+
+export function stableLocalUsbDeviceId(portPath: string): string {
+  const sanitized = Array.from(portPath)
+    .map((ch) => (/[a-zA-Z0-9]/.test(ch) ? ch : "-"))
+    .join("");
+  return `usb-${sanitized}`;
+}
+
+export function devdLocalUsbDeviceIdFromBaseUrl(
+  baseUrl: string,
+): string | null {
+  const prefix = "isolapurr-devd://";
+  if (!baseUrl.startsWith(prefix)) {
+    return null;
+  }
+  const deviceId = baseUrl.slice(prefix.length).trim();
+  return deviceId.length > 0 ? deviceId : null;
+}
+
+async function ensureLocalUsbDeviceRegistered(
+  agent: DesktopAgent,
+  deviceId: string,
+  portPath: string,
+): Promise<void> {
+  const res = await agentFetch(agent, "/api/v1/devices/scan", {
+    method: "POST",
+  });
+  const json = (await res.json().catch(() => null)) as {
+    devices?: Array<{ id?: string; usb?: { portPath?: string } }>;
+    error?: { code?: string; message?: string; retryable?: boolean };
+  } | null;
+  if (!res.ok) {
+    if (res.status === 404) {
+      const ports = await listLegacyLocalUsbSerialPorts(agent);
+      if (ports.some((port) => port.path === portPath)) {
+        return;
+      }
+      throw new Error(`Local USB device is not available: ${portPath}`);
+    }
+    throw new LocalUsbAgentHttpError(
+      json?.error?.message ?? "Local USB scan failed",
+      res.status,
+      json?.error?.code,
+      json?.error?.retryable,
+    );
+  }
+  const registered = json?.devices?.some(
+    (device) => device.id === deviceId || device.usb?.portPath === portPath,
+  );
+  if (!registered) {
+    throw new Error(`Local USB device is not available: ${portPath}`);
+  }
+}
+
+function localUsbMethodEndpoint(
+  deviceId: string,
+  request: JsonlRequest,
+): { method: "GET" | "POST" | "DELETE"; path: string; body?: unknown } {
+  const params = request.params ?? {};
+  switch (request.method) {
+    case "info":
+      return { method: "GET", path: `/api/v1/devices/${deviceId}/status` };
+    case "ports.get":
+      return { method: "GET", path: `/api/v1/devices/${deviceId}/ports` };
+    case "wifi.get":
+      return { method: "GET", path: `/api/v1/devices/${deviceId}/wifi` };
+    case "wifi.set":
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/wifi`,
+        body: params,
+      };
+    case "wifi.clear":
+      return { method: "DELETE", path: `/api/v1/devices/${deviceId}/wifi` };
+    case "reboot":
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/reset`,
+        body: {},
+      };
+    case "port.power_set": {
+      const port = String(params.port ?? "");
+      const enabled = params.enabled ? "1" : "0";
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/ports/${port}/power?enabled=${enabled}`,
+      };
+    }
+    case "port.replug": {
+      const port = String(params.port ?? "");
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/ports/${port}/replug`,
+      };
+    }
+    case "hub.route_set":
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/hub/route`,
+        body: params,
+      };
+    default:
+      throw new Error(`Unsupported Local USB method: ${request.method}`);
+  }
+}
+
+async function createLocalUsbLease(
+  agent: DesktopAgent,
+  deviceId: string,
+): Promise<{ lease_id: string }> {
+  const res = await agentFetch(agent, "/api/v1/serial/lease", {
+    method: "POST",
+    body: JSON.stringify({ device_id: deviceId }),
+  });
+  const json = (await res.json().catch(() => null)) as {
+    lease_id?: string;
+    error?: { code?: string; message?: string; retryable?: boolean };
+  } | null;
+  if (!res.ok || typeof json?.lease_id !== "string") {
+    throw new LocalUsbAgentHttpError(
+      json?.error?.message ?? "Local USB lease failed",
+      res.status,
+      json?.error?.code,
+      json?.error?.retryable,
+    );
+  }
+  return { lease_id: json.lease_id };
+}
+
+async function releaseLocalUsbLease(
+  agent: DesktopAgent,
+  leaseId: string,
+): Promise<void> {
+  await agentFetch(agent, `/api/v1/serial/lease/${leaseId}`, {
+    method: "DELETE",
+  }).catch(() => undefined);
 }
 
 export async function flashWithLocalUsb(
@@ -251,51 +560,111 @@ export async function flashWithLocalUsb(
       "Local USB firmware flashing writes the app image at 0x10000.",
     );
   }
+  const deviceId = stableLocalUsbDeviceId(portPath);
   const firmware = await fileToBase64(file);
+  let lease: { lease_id: string } | null = null;
+  try {
+    await ensureLocalUsbDeviceRegistered(agent, deviceId, portPath);
+    lease = await createLocalUsbLease(agent, deviceId);
+    const res = await agentFetch(
+      agent,
+      `/api/v1/devices/${deviceId}/flash-upload`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          address,
+          fileName: file.name,
+          fileBase64: firmware,
+          expectedIdentity: {
+            deviceId: expectedIdentity.deviceId ?? undefined,
+            mac: expectedIdentity.mac ?? undefined,
+          },
+          leaseId: lease.lease_id,
+        }),
+      },
+    );
+    const json = (await res.json()) as {
+      ok?: boolean;
+      log?: string;
+      error?: { code?: string; message?: string; retryable?: boolean };
+    };
+    if (!res.ok || !json.ok) {
+      if (res.status === 404) {
+        return legacyFlashWithLocalUsb(
+          agent,
+          portPath,
+          file.name,
+          address,
+          firmware,
+          expectedIdentity,
+        );
+      }
+      throw new LocalUsbAgentHttpError(
+        json.error?.message ||
+          json.log ||
+          `Local USB flash failed (${res.status})`,
+        res.status,
+        json.error?.code,
+        json.error?.retryable,
+      );
+    }
+    return json.log ?? "";
+  } catch (err) {
+    if (err instanceof LocalUsbAgentHttpError && err.status === 404) {
+      return legacyFlashWithLocalUsb(
+        agent,
+        portPath,
+        file.name,
+        address,
+        firmware,
+        expectedIdentity,
+      );
+    }
+    throw err;
+  } finally {
+    if (lease) {
+      await releaseLocalUsbLease(agent, lease.lease_id);
+    }
+  }
+}
+
+async function legacyFlashWithLocalUsb(
+  agent: DesktopAgent,
+  portPath: string,
+  fileName: string,
+  address: number,
+  fileBase64: string,
+  expectedIdentity: DeviceIdentityExpectation,
+): Promise<string> {
   const res = await agentFetch(agent, "/api/v1/firmware/flash", {
     method: "POST",
-    body: JSON.stringify(
-      buildLocalUsbFlashRequestBody({
-        portPath,
-        address,
-        fileName: file.name,
-        fileBase64: firmware,
-        expectedIdentity,
-      }),
-    ),
+    body: JSON.stringify({
+      portPath,
+      address,
+      fileName,
+      fileBase64,
+      expectedIdentity: {
+        deviceId: expectedIdentity.deviceId ?? undefined,
+        mac: expectedIdentity.mac ?? undefined,
+      },
+    }),
   });
   const json = (await res.json()) as {
     ok?: boolean;
     log?: string;
-    error?: { message?: string };
+    error?: { code?: string; message?: string; retryable?: boolean };
   };
   if (!res.ok || !json.ok) {
-    throw new Error(
+    throw new LocalUsbAgentHttpError(
       json.error?.message ||
         json.log ||
         `Local USB flash failed (${res.status})`,
+      res.status,
+      json.error?.code,
+      json.error?.retryable,
     );
   }
   return json.log ?? "";
-}
-
-export function buildLocalUsbFlashRequestBody(input: {
-  portPath: string;
-  address: number;
-  fileName: string;
-  fileBase64: string;
-  expectedIdentity: DeviceIdentityExpectation;
-}) {
-  return {
-    portPath: input.portPath,
-    address: input.address,
-    fileName: input.fileName,
-    fileBase64: input.fileBase64,
-    expectedIdentity: {
-      deviceId: input.expectedIdentity.deviceId ?? undefined,
-      mac: input.expectedIdentity.mac ?? undefined,
-    },
-  };
 }
 
 export class WebSerialJsonlTransport {

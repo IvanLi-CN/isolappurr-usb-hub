@@ -1,0 +1,134 @@
+name: Host tools
+
+on:
+  pull_request:
+    paths:
+      - "tools/isolapurr-host/**"
+      - "tools/firmware-catalog/**"
+      - ".github/workflows/host-tools.yml"
+      - "Justfile"
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: host-tools-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: host tools (${{ matrix.slug }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: linux-x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            archive: isolapurr-host-tools-linux-x86_64.tar.gz
+          - slug: macos-aarch64
+            os: macos-14
+            target: aarch64-apple-darwin
+            archive: isolapurr-host-tools-macos-aarch64.tar.gz
+          - slug: windows-x86_64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            archive: isolapurr-host-tools-windows-x86_64.tar.gz
+    steps:
+      - name: Checkout (non-windows)
+        if: runner.os != 'Windows'
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/workflows/host-tools.yml
+            Justfile
+            tools/firmware-catalog
+            tools/isolapurr-host
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout (windows, sparse)
+        if: runner.os == 'Windows'
+        uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "core.protectNTFS"
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          sparse-checkout: |
+            .github/workflows/host-tools.yml
+            Justfile
+            tools/firmware-catalog
+            tools/isolapurr-host
+          sparse-checkout-cone-mode: false
+
+      - name: Detach Windows sparse checkout metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Remove-Item -Recurse -Force .git
+
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tools/isolapurr-host/target
+          key: ${{ runner.os }}-${{ matrix.target }}-isolapurr-host-${{ hashFiles('tools/isolapurr-host/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-isolapurr-host-
+
+      - name: Test host tools
+        run: cargo +stable test --manifest-path tools/isolapurr-host/Cargo.toml --target "${{ matrix.target }}"
+
+      - name: Build host tools
+        run: cargo +stable build --manifest-path tools/isolapurr-host/Cargo.toml --release --bins --target "${{ matrix.target }}"
+
+      - name: Smoke devd help
+        shell: bash
+        run: |
+          set -euo pipefail
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          "tools/isolapurr-host/target/${{ matrix.target }}/release/isolapurr-devd${ext}" --help >/dev/null
+          "tools/isolapurr-host/target/${{ matrix.target }}/release/isolapurr${ext}" --help >/dev/null
+
+      - name: Package host tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          out="dist/host-tools"
+          mkdir -p "$out"
+          cp "tools/isolapurr-host/target/${{ matrix.target }}/release/isolapurr${ext}" "$out/"
+          cp "tools/isolapurr-host/target/${{ matrix.target }}/release/isolapurr-devd${ext}" "$out/"
+          printf '%s\n' \
+            "IsolaPurr host tools" \
+            "" \
+            "- isolapurr: user CLI over local IPC" \
+            "- isolapurr-devd: local IPC device daemon; use bridge-http for browser/debug HTTP" \
+            > "$out/README.txt"
+          tar -czf "dist/${{ matrix.archive }}" -C "$out" .
+
+      - name: Upload host tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolapurr-host-tools-${{ matrix.slug }}
+          path: dist/${{ matrix.archive }}
+          if-no-files-found: error

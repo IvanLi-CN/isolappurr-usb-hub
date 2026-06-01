@@ -95,3 +95,48 @@ jobs:
       - name: cargo build
         if: steps.gate.outputs.run_build == 'true'
         run: cargo build
+
+      - name: Install host deps
+        if: steps.gate.outputs.run_build == 'true'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev
+
+      - name: Install espflash
+        if: steps.gate.outputs.run_build == 'true'
+        run: |
+          set -euo pipefail
+          host="$(rustc +stable -vV | sed -n 's/^host: //p')"
+          cargo +stable install espflash --locked --target "$host"
+
+      - name: Build firmware catalog
+        if: steps.gate.outputs.run_build == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p dist/firmware
+          ELF="target/xtensa-esp32s3-none-elf/debug/isolapurr-usb-hub"
+          APP_BIN="dist/firmware/isolapurr-usb-hub.app.bin"
+          cp "$ELF" dist/firmware/isolapurr-usb-hub.elf
+          espflash save-image --chip esp32s3 "$ELF" "$APP_BIN"
+          if [ ! -f "$APP_BIN" ]; then
+            generated="$(find dist/firmware -maxdepth 1 -type f -name '*0x10000*.bin' | head -n 1)"
+            if [ -z "$generated" ]; then
+              echo "espflash did not produce an app image at $APP_BIN or an address-prefixed 0x10000 image" >&2
+              exit 1
+            fi
+            cp "$generated" "$APP_BIN"
+          fi
+          python3 tools/firmware-catalog/build-catalog.py \
+            --out dist/firmware/isolapurr-firmware-catalog.json \
+            --artifact-id "isolapurr-${GITHUB_SHA::12}-debug" \
+            --version "${GITHUB_REF_NAME:-dev}" \
+            --git-sha "$GITHUB_SHA" \
+            --build-id "$GITHUB_RUN_ID" \
+            --app-bin "$APP_BIN" \
+            --elf "dist/firmware/isolapurr-usb-hub.elf"
+
+      - name: Upload firmware catalog and payloads
+        if: steps.gate.outputs.run_build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolapurr-firmware-catalog
+          path: dist/firmware/
+          if-no-files-found: error
