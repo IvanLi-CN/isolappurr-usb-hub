@@ -24,9 +24,24 @@ If the command is absent, stop and report that the installed release does not su
 
 ## Install Host Tools
 
-- Download the matching `isolapurr-host-tools-<platform>.tar.gz` from the chosen GitHub Release.
-- Extract `isolapurr` and `isolapurr-devd` into a user-owned directory on `PATH`.
-- Verify:
+- If `isolapurr` or `isolapurr-devd` is missing, install released host tools with the official installer from the chosen GitHub Release. Do not ask the user to clone the source repository.
+- Before running the installer, show the user the release source, target version (`latest` unless specified), install directory, and PATH impact, then ask for confirmation.
+- macOS/Linux installer:
+
+```bash
+curl -fsSLO https://github.com/IvanLi-CN/isolappurr-usb-hub/releases/latest/download/install-isolapurr-host.sh
+bash install-isolapurr-host.sh
+```
+
+- Windows installer:
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/IvanLi-CN/isolappurr-usb-hub/releases/latest/download/install-isolapurr-host.ps1 -OutFile install-isolapurr-host.ps1
+powershell -ExecutionPolicy Bypass -File .\install-isolapurr-host.ps1
+```
+
+- The installer downloads the matching host-tools archive, verifies it against `SHA256SUMS`, installs `isolapurr` and `isolapurr-devd` into a user-owned directory, and prints a PATH note when needed.
+- Verify after installation:
 
 ```bash
 isolapurr-devd --help

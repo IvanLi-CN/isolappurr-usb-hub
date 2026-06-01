@@ -132,3 +132,50 @@ jobs:
           name: isolapurr-host-tools-${{ matrix.slug }}
           path: dist/${{ matrix.archive }}
           if-no-files-found: error
+
+  release-assets:
+    if: startsWith(github.ref, 'refs/tags/')
+    name: publish host tools release assets
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout installer scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            tools/isolapurr-host/install
+          sparse-checkout-cone-mode: false
+
+      - name: Download host tools archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: isolapurr-host-tools-*
+          path: dist/downloaded-host-tools
+          merge-multiple: true
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="dist/release-assets"
+          mkdir -p "$out"
+          cp dist/downloaded-host-tools/isolapurr-host-tools-*.tar.gz "$out/"
+          cp tools/isolapurr-host/install/install-isolapurr-host.sh "$out/"
+          cp tools/isolapurr-host/install/install-isolapurr-host.ps1 "$out/"
+          chmod +x "$out/install-isolapurr-host.sh"
+          (cd "$out" && sha256sum isolapurr-host-tools-*.tar.gz > SHA256SUMS)
+          ls -lh "$out"
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "IsolaPurr release $TAG_NAME"
+          fi
+          gh release upload "$TAG_NAME" dist/release-assets/* --clobber
