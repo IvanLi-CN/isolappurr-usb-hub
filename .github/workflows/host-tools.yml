@@ -42,7 +42,8 @@ jobs:
             target: x86_64-pc-windows-msvc
             archive: isolapurr-host-tools-windows-x86_64.tar.gz
     steps:
-      - name: Checkout
+      - name: Checkout (non-windows)
+        if: runner.os != 'Windows'
         uses: actions/checkout@v4
         with:
           sparse-checkout: |
@@ -51,6 +52,26 @@ jobs:
             tools/firmware-catalog
             tools/isolapurr-host
           sparse-checkout-cone-mode: false
+
+      - name: Checkout (windows, sparse)
+        if: runner.os == 'Windows'
+        uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "core.protectNTFS"
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          sparse-checkout: |
+            .github/workflows/host-tools.yml
+            Justfile
+            tools/firmware-catalog
+            tools/isolapurr-host
+          sparse-checkout-cone-mode: false
+
+      - name: Detach Windows sparse checkout metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Remove-Item -Recurse -Force .git
 
       - name: Linux deps
         if: runner.os == 'Linux'
