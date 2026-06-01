@@ -1,0 +1,68 @@
+name: Notify release failure
+
+on:
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  preflight:
+    name: notification secret preflight
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require SHOUTRRR_URL
+        env:
+          SHOUTRRR_URL: ${{ secrets.SHOUTRRR_URL }}
+        run: |
+          if [ -z "$SHOUTRRR_URL" ]; then
+            echo "SHOUTRRR_URL is required for release failure notifications." >&2
+            exit 1
+          fi
+
+  notify-workflow-run:
+    name: notify failed release run
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure'
+    needs: preflight
+    uses: IvanLi-CN/github-workflows/.github/workflows/release-failure-telegram.yml@main
+    with:
+      alert_kind: release-failed
+      repository: ${{ github.repository }}
+      workflow_name: ${{ github.event.workflow_run.name }}
+      conclusion: ${{ github.event.workflow_run.conclusion }}
+      run_url: ${{ github.event.workflow_run.html_url }}
+      ref_label: "branch: ${{ github.event.workflow_run.head_branch }}"
+      head_sha: ${{ github.event.workflow_run.head_sha }}
+      run_attempt: ${{ github.event.workflow_run.run_attempt }}
+      actor: ${{ github.event.workflow_run.actor.login }}
+      event_name: ${{ github.event.workflow_run.event }}
+      extra_details: automated release workflow failure
+    secrets:
+      SHOUTRRR_URL: ${{ secrets.SHOUTRRR_URL }}
+
+  smoke-test:
+    name: smoke test notification
+    if: github.event_name == 'workflow_dispatch'
+    needs: preflight
+    uses: IvanLi-CN/github-workflows/.github/workflows/release-failure-telegram.yml@main
+    with:
+      alert_kind: release-alert-smoke
+      repository: ${{ github.repository }}
+      workflow_name: Release
+      conclusion: failure
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      ref_label: "branch: ${{ github.ref_name }}"
+      head_sha: ${{ github.sha }}
+      run_attempt: ${{ github.run_attempt }}
+      actor: ${{ github.actor }}
+      event_name: workflow_dispatch
+      extra_details: manual smoke test
+    secrets:
+      SHOUTRRR_URL: ${{ secrets.SHOUTRRR_URL }}

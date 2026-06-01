@@ -1,0 +1,41 @@
+name: Label Gate
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: label-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Label Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout base policy
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/quality-gates.json
+            .github/scripts/release_intent.py
+          sparse-checkout-cone-mode: false
+
+      - name: Validate release intent labels
+        run: |
+          python3 .github/scripts/release_intent.py validate \
+            --event "$GITHUB_EVENT_PATH" \
+            --policy .github/quality-gates.json

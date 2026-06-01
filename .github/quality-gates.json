@@ -1,0 +1,47 @@
+{
+  "releaseIntent": {
+    "typeLabels": ["type:major", "type:minor", "type:patch", "type:none"],
+    "channelLabels": ["channel:stable", "channel:dev"],
+    "componentLabels": [
+      "component:host-tools",
+      "component:firmware",
+      "component:desktop",
+      "component:web"
+    ],
+    "unknownReleaseLabelPrefixes": ["type:", "channel:", "component:"]
+  },
+  "requiredChecks": [
+    "Label Gate",
+    "CI / Web (quality gates)",
+    "CI / Rust fmt",
+    "Firmware (ESP32-S3) / build",
+    "Host tools / host tools (linux-x86_64)",
+    "Host tools / host tools (macos-aarch64)",
+    "Host tools / host tools (windows-x86_64)",
+    "desktop / web build (dist)",
+    "desktop / build (macos)",
+    "desktop / build (windows)",
+    "desktop / build (linux)",
+    "Deploy web to GitHub Pages / build"
+  ],
+  "postMergeRepositorySetup": {
+    "labels": [
+      "type:major",
+      "type:minor",
+      "type:patch",
+      "type:none",
+      "channel:stable",
+      "channel:dev",
+      "component:host-tools",
+      "component:firmware",
+      "component:desktop",
+      "component:web"
+    ],
+    "secrets": ["SHOUTRRR_URL"],
+    "branchProtection": [
+      "PR-only main",
+      "require signed commits",
+      "require requiredChecks"
+    ]
+  }
+}

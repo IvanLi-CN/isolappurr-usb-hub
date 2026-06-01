@@ -20,6 +20,7 @@ use heapless::{String as HString, Vec};
 use isolapurr_usb_hub::provisioning::{
     DEFAULT_USB_C_DOWNSTREAM_ROUTE, UsbCDownstreamRoute, WifiCredentials,
 };
+use isolapurr_usb_hub::release_version;
 use static_cell::StaticCell;
 
 use crate::mdns;
@@ -909,7 +910,7 @@ async fn handle_api_request(
                 device_names.hostname_fqdn.as_str(),
                 mac.as_str(),
                 env!("CARGO_PKG_NAME"),
-                env!("CARGO_PKG_VERSION"),
+                release_version(),
                 uptime_ms(),
                 wifi_state_s,
             );

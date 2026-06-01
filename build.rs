@@ -14,6 +14,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=USB_HUB_WIFI_NETMASK");
     println!("cargo:rerun-if-env-changed=USB_HUB_WIFI_GATEWAY");
     println!("cargo:rerun-if-env-changed=USB_HUB_WIFI_DNS");
+    println!("cargo:rerun-if-env-changed=ISOLAPURR_RELEASE_VERSION");
     println!("cargo:rerun-if-env-changed=PROFILE");
 
     inject_build_metadata();

@@ -17,7 +17,11 @@ use std::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "isolapurr", version, about = "IsolaPurr CLI")]
+#[command(
+    name = "isolapurr",
+    version = isolapurr_host::release_version(),
+    about = "IsolaPurr CLI"
+)]
 struct Cli {
     #[arg(long, global = true, default_value_t = default_ipc_endpoint())]
     ipc: String,

@@ -1,0 +1,570 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Specific main-branch merge commit SHA to release."
+        required: false
+        type: string
+      next_pending:
+        description: "Resolve the latest main commit when target_sha is omitted."
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.sha || inputs.target_sha || 'next-pending' }}
+  cancel-in-progress: false
+
+jobs:
+  intent:
+    name: resolve release intent
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      shouldRelease: ${{ steps.intent.outputs.shouldRelease }}
+      releaseType: ${{ steps.intent.outputs.type }}
+      channel: ${{ steps.intent.outputs.channel }}
+      components: ${{ steps.intent.outputs.components }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      isPrerelease: ${{ steps.version.outputs.isPrerelease }}
+      targetSha: ${{ steps.target.outputs.target_sha }}
+      prNumber: ${{ steps.pr.outputs.pr_number }}
+    steps:
+      - name: Checkout release policy
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            .github/quality-gates.json
+            .github/scripts/release_intent.py
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve target SHA
+        id: target
+        env:
+          INPUT_TARGET_SHA: ${{ inputs.target_sha }}
+          INPUT_NEXT_PENDING: ${{ inputs.next_pending }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=100 origin main
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            target_sha="${GITHUB_SHA}"
+          elif [ -n "${INPUT_TARGET_SHA}" ]; then
+            target_sha="${INPUT_TARGET_SHA}"
+          elif [ "${INPUT_NEXT_PENDING}" != "true" ]; then
+            echo "workflow_dispatch requires target_sha unless next_pending is true." >&2
+            exit 1
+          else
+            target_sha="$(git rev-parse origin/main)"
+          fi
+          if ! git merge-base --is-ancestor "$target_sha" origin/main; then
+            echo "target_sha must be on main." >&2
+            exit 1
+          fi
+          printf 'target_sha=%s\n' "$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Load associated pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/pulls" > prs.json
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          prs = json.load(open("prs.json", encoding="utf-8"))
+          if not prs:
+              print("No associated pull request found for target SHA.", file=sys.stderr)
+              raise SystemExit(1)
+          pr = prs[0]
+          labels = [label["name"] for label in pr.get("labels", [])]
+          with open("labels.json", "w", encoding="utf-8") as fh:
+              json.dump(labels, fh)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"pr_number={pr['number']}\n")
+          PY
+
+      - name: Validate release intent labels
+        id: intent
+        run: |
+          python3 .github/scripts/release_intent.py validate \
+            --labels-json-file labels.json \
+            --policy .github/quality-gates.json \
+            --out release-intent.json \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: List existing release tags
+        if: steps.intent.outputs.shouldRelease == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 200 --json tagName > release-tags.json
+
+      - name: Resolve release version
+        id: version
+        if: steps.intent.outputs.shouldRelease == 'true'
+        run: |
+          python3 .github/scripts/release_intent.py resolve-version \
+            --release-type "${{ steps.intent.outputs.type }}" \
+            --channel "${{ steps.intent.outputs.channel }}" \
+            --tags-json-file release-tags.json \
+            --out release-version.json \
+            --github-output "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import json
+          intent = json.load(open("release-intent.json", encoding="utf-8"))
+          version = json.load(open("release-version.json", encoding="utf-8"))
+          intent.update(version)
+          intent["targetSha"] = "${{ steps.target.outputs.target_sha }}"
+          intent["pullRequest"] = ${{ steps.pr.outputs.pr_number }}
+          with open("release-intent.json", "w", encoding="utf-8") as fh:
+              json.dump(intent, fh, indent=2)
+              fh.write("\n")
+          PY
+
+      - name: Upload release intent
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-intent
+          path: release-intent.json
+          if-no-files-found: error
+
+  host-tools:
+    name: host tools (${{ matrix.slug }})
+    if: needs.intent.outputs.shouldRelease == 'true'
+    needs: intent
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: linux-x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            archive: isolapurr-host-tools-linux-x86_64.tar.gz
+          - slug: macos-aarch64
+            os: macos-14
+            target: aarch64-apple-darwin
+            archive: isolapurr-host-tools-macos-aarch64.tar.gz
+          - slug: windows-x86_64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            archive: isolapurr-host-tools-windows-x86_64.tar.gz
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.intent.outputs.targetSha }}
+          persist-credentials: false
+
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Test host tools
+        env:
+          ISOLAPURR_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
+        run: cargo +stable test --manifest-path tools/isolapurr-host/Cargo.toml --target "${{ matrix.target }}"
+
+      - name: Build host tools
+        env:
+          ISOLAPURR_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
+        run: cargo +stable build --manifest-path tools/isolapurr-host/Cargo.toml --release --bins --target "${{ matrix.target }}"
+
+      - name: Package host tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          out="dist/host-tools"
+          mkdir -p "$out"
+          cp "tools/isolapurr-host/target/${{ matrix.target }}/release/isolapurr${ext}" "$out/"
+          cp "tools/isolapurr-host/target/${{ matrix.target }}/release/isolapurr-devd${ext}" "$out/"
+          printf '%s\n' \
+            "IsolaPurr host tools" \
+            "" \
+            "- isolapurr: user CLI over local IPC" \
+            "- isolapurr-devd: local IPC device daemon; use bridge-http for browser/debug HTTP" \
+            > "$out/README.txt"
+          tar -czf "dist/${{ matrix.archive }}" -C "$out" .
+
+      - name: Upload host tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-host-tools-${{ matrix.slug }}
+          path: dist/${{ matrix.archive }}
+          if-no-files-found: error
+
+  firmware:
+    name: firmware release build
+    if: needs.intent.outputs.shouldRelease == 'true'
+    needs: intent
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.intent.outputs.targetSha }}
+          persist-credentials: false
+
+      - name: Install Rust toolchain (Xtensa)
+        uses: esp-rs/xtensa-toolchain@v1.6.0
+        with:
+          default: true
+          buildtargets: esp32s3
+          ldproxy: false
+
+      - name: Checkout tps55288-rs
+        uses: actions/checkout@v4
+        with:
+          repository: IvanLi-CN/tps55288-rs
+          path: tps55288-rs
+
+      - name: Link ../tps55288-rs
+        run: ln -s "$GITHUB_WORKSPACE/tps55288-rs" ../tps55288-rs
+
+      - name: Checkout sw2303-rs
+        uses: actions/checkout@v4
+        with:
+          repository: IvanLi-CN/sw2303-rs
+          path: sw2303-rs
+
+      - name: Link ../sw2303-rs
+        run: ln -s "$GITHUB_WORKSPACE/sw2303-rs" ../sw2303-rs
+
+      - name: Build firmware
+        env:
+          ISOLAPURR_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
+        run: cargo build --release
+
+      - name: Install host deps
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev
+
+      - name: Install espflash
+        run: |
+          set -euo pipefail
+          host="$(rustc +stable -vV | sed -n 's/^host: //p')"
+          cargo +stable install espflash --locked --target "$host"
+
+      - name: Build firmware catalog
+        env:
+          RELEASE_VERSION: ${{ needs.intent.outputs.version }}
+          TARGET_SHA: ${{ needs.intent.outputs.targetSha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/firmware
+          ELF="target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub"
+          APP_BIN="dist/firmware/isolapurr-usb-hub.app.bin"
+          cp "$ELF" dist/firmware/isolapurr-usb-hub.elf
+          espflash save-image --chip esp32s3 "$ELF" "$APP_BIN"
+          python3 tools/firmware-catalog/build-catalog.py \
+            --out dist/firmware/isolapurr-firmware-catalog.json \
+            --artifact-id "isolapurr-${TARGET_SHA::12}" \
+            --version "$RELEASE_VERSION" \
+            --git-sha "$TARGET_SHA" \
+            --build-id "$GITHUB_RUN_ID" \
+            --app-bin "$APP_BIN" \
+            --elf "dist/firmware/isolapurr-usb-hub.elf"
+
+      - name: Upload firmware assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-firmware
+          path: dist/firmware/
+          if-no-files-found: error
+
+  web-dist:
+    name: web release dist
+    if: needs.intent.outputs.shouldRelease == 'true'
+    needs: intent
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.intent.outputs.targetSha }}
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+        working-directory: web
+
+      - name: Build web dist
+        env:
+          VITE_BASE: /
+          VITE_BUILD_SHA: ${{ needs.intent.outputs.targetSha }}
+          VITE_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
+        run: |
+          export VITE_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          bun run build
+          mkdir -p ../dist
+          tar -czf "../dist/isolapurr-web-dist-${{ needs.intent.outputs.version }}.tar.gz" -C dist .
+        working-directory: web
+
+      - name: Upload web dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-web-dist
+          path: dist/isolapurr-web-dist-*.tar.gz
+          if-no-files-found: error
+
+  desktop:
+    name: desktop (${{ matrix.slug }})
+    if: needs.intent.outputs.shouldRelease == 'true'
+    needs:
+      - intent
+      - web-dist
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: macos-aarch64
+            os: macos-14
+            tauri_target: aarch64-apple-darwin
+            tauri_args: "--ci --bundles app --no-sign"
+            portable: isolapurr-desktop-macos-aarch64.tar.gz
+          - slug: windows-x86_64
+            os: windows-2022
+            tauri_target: x86_64-pc-windows-msvc
+            tauri_args: "--ci --bundles msi"
+            portable: isolapurr-desktop-portable-x86_64.zip
+          - slug: linux-x86_64
+            os: ubuntu-24.04
+            tauri_target: x86_64-unknown-linux-gnu
+            tauri_args: "--ci --bundles deb"
+            portable: isolapurr-desktop-portable-x86_64.tar.gz
+    env:
+      ISOLAPURR_SKIP_WEB_BUILD: "1"
+      ISOLAPURR_WEB_DIST_DIR: web/dist
+      ISOLAPURR_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.intent.outputs.targetSha }}
+          persist-credentials: false
+
+      - name: Download web dist archive
+        uses: actions/download-artifact@v4
+        with:
+          name: release-web-dist
+          path: dist/web-archive
+
+      - name: Expand web dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p web/dist
+          tar -xzf dist/web-archive/isolapurr-web-dist-*.tar.gz -C web/dist
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - name: Linux deps (Tauri)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            libudev-dev \
+            librsvg2-dev \
+            pkg-config \
+            patchelf
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version 2.9.6 --locked --force
+        working-directory: desktop
+
+      - name: Desktop build
+        run: cargo tauri build --target ${{ matrix.tauri_target }} ${{ matrix.tauri_args }}
+        working-directory: desktop
+
+      - name: Ad-hoc sign macOS app
+        if: runner.os == 'macOS'
+        run: |
+          APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/isolapurr-desktop.app"
+          codesign -s - --force --deep --timestamp=none "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          mkdir -p ../dist/desktop
+          tar -C "$(dirname "$APP")" -czf "../dist/desktop/${{ matrix.portable }}" "$(basename "$APP")"
+        working-directory: desktop
+
+      - name: Create Windows portable bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = "src-tauri/target/${{ matrix.tauri_target }}/release/isolapurr-desktop.exe"
+          $outDir = "src-tauri/target/${{ matrix.tauri_target }}/release/bundle/portable"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $zip = Join-Path $outDir "${{ matrix.portable }}"
+          if (Test-Path $zip) { Remove-Item -Force $zip }
+          Compress-Archive -Path $bin -DestinationPath $zip
+        working-directory: desktop
+
+      - name: Create Linux portable bundle
+        if: runner.os == 'Linux'
+        run: |
+          BIN="src-tauri/target/${{ matrix.tauri_target }}/release/isolapurr-desktop"
+          OUT_DIR="src-tauri/target/${{ matrix.tauri_target }}/release/bundle/portable"
+          mkdir -p "$OUT_DIR"
+          tar -C "$(dirname "$BIN")" -czf "$OUT_DIR/${{ matrix.portable }}" "$(basename "$BIN")"
+        working-directory: desktop
+
+      - name: Gather desktop assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/desktop
+          find desktop/src-tauri/target/${{ matrix.tauri_target }}/release/bundle \
+            -type f \( -name '*.msi' -o -name '*.deb' -o -name '*.zip' -o -name '*.tar.gz' \) \
+            -exec cp {} dist/desktop/ \;
+          ls -lh dist/desktop
+
+      - name: Upload desktop assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop-${{ matrix.slug }}
+          path: dist/desktop/
+          if-no-files-found: error
+
+  publish:
+    name: publish GitHub release
+    if: needs.intent.outputs.shouldRelease == 'true'
+    needs:
+      - intent
+      - host-tools
+      - firmware
+      - web-dist
+      - desktop
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout installers
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.intent.outputs.targetSha }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/isolapurr-host/install
+          sparse-checkout-cone-mode: false
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist/downloaded
+
+      - name: Prepare release assets
+        env:
+          RELEASE_VERSION: ${{ needs.intent.outputs.version }}
+          RELEASE_TAG: ${{ needs.intent.outputs.tag }}
+          TARGET_SHA: ${{ needs.intent.outputs.targetSha }}
+          CHANNEL: ${{ needs.intent.outputs.channel }}
+        run: |
+          set -euo pipefail
+          out="dist/release-assets"
+          mkdir -p "$out"
+          find dist/downloaded -type f ! -name release-intent.json -exec cp {} "$out/" \;
+          cp dist/downloaded/release-intent/release-intent.json "$out/release-intent.json"
+          cp tools/isolapurr-host/install/install-isolapurr-host.sh "$out/"
+          cp tools/isolapurr-host/install/install-isolapurr-host.ps1 "$out/"
+          chmod +x "$out/install-isolapurr-host.sh"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          out = Path("dist/release-assets")
+          assets = []
+          for path in sorted(
+              p
+              for p in out.iterdir()
+              if p.is_file() and p.name not in {"asset-manifest.json", "SHA256SUMS"}
+          ):
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              assets.append({"name": path.name, "size": path.stat().st_size, "sha256": digest})
+          (out / "asset-manifest.json").write_text(json.dumps({"assets": assets}, indent=2) + "\n", encoding="utf-8")
+          with (out / "SHA256SUMS").open("w", encoding="utf-8") as fh:
+              for path in sorted(p for p in out.iterdir() if p.is_file() and p.name != "SHA256SUMS"):
+                  fh.write(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n")
+          PY
+          cat > release-notes.md <<EOF
+          IsolaPurr ${RELEASE_TAG}
+
+          Release channel: ${CHANNEL}
+          Target commit: ${TARGET_SHA}
+
+          Desktop signing note: macOS is ad-hoc signed. Windows and Linux desktop packages are unsigned.
+          EOF
+          ls -lh "$out"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.intent.outputs.tag }}
+          TARGET_SHA: ${{ needs.intent.outputs.targetSha }}
+          IS_PRERELEASE: ${{ needs.intent.outputs.isPrerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists." >&2
+            exit 1
+          fi
+          prerelease_arg=()
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            prerelease_arg=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            --target "$TARGET_SHA" \
+            --title "$RELEASE_TAG" \
+            --notes-file release-notes.md \
+            "${prerelease_arg[@]}" \
+            dist/release-assets/*

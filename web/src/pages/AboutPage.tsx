@@ -3,12 +3,14 @@ import { useDesktopAgent } from "../app/desktop-agent-ui";
 import { resetStorage } from "../domain/desktopStorage";
 import { useToast } from "../ui/toast/ToastProvider";
 
-function buildInfo(): { sha: string; date: string } {
+function buildInfo(): { sha: string; date: string; version: string } {
   const rawSha =
     (import.meta.env.VITE_BUILD_SHA as string | undefined) ?? "dev";
   const sha = rawSha === "dev" ? rawSha : rawSha.slice(0, 7);
   const date = (import.meta.env.VITE_BUILD_DATE as string | undefined) ?? "";
-  return { sha, date };
+  const version =
+    (import.meta.env.VITE_RELEASE_VERSION as string | undefined) ?? "dev";
+  return { sha, date, version };
 }
 
 function envLink(key: string): string | null {
@@ -17,7 +19,7 @@ function envLink(key: string): string | null {
 }
 
 export function AboutPage() {
-  const { sha, date } = buildInfo();
+  const { sha, date, version } = buildInfo();
   const { agent, status } = useDesktopAgent();
   const { pushToast } = useToast();
   const [resetting, setResetting] = useState(false);
@@ -63,6 +65,14 @@ export function AboutPage() {
           <div className="text-[16px] font-bold leading-5">Build</div>
 
           <div className="mt-3 flex flex-col gap-[10px] leading-4">
+            <div className="flex items-center">
+              <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
+                version
+              </div>
+              <div className="font-mono text-[12px] font-semibold">
+                {version}
+              </div>
+            </div>
             <div className="flex items-center">
               <div className="w-[54px] text-[12px] font-semibold text-[var(--muted)]">
                 build

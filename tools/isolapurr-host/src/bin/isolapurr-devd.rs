@@ -8,7 +8,7 @@ use std::{net::SocketAddr, path::PathBuf, time::Duration};
 #[derive(Debug, Parser)]
 #[command(
     name = "isolapurr-devd",
-    version,
+    version = isolapurr_host::release_version(),
     about = "IsolaPurr local device daemon"
 )]
 struct Cli {

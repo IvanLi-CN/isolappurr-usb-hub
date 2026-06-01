@@ -64,3 +64,4 @@
 | u5b2c | USB 通信、固件更新与 Wi-Fi provisioning | 已验证 | `u5b2c-usb-console-provisioning/SPEC.md` | 2026-05-14 | Web Serial, Local USB, EEPROM Wi-Fi config, firmware update, and saved-device Hardware page control flow |
 | tvhca | USB-C 下行通道路由切换 | 已完成 | `tvhca-usb-c-downstream-route/SPEC.md` | 2026-05-18 | MCU / USB-C route switching, EEPROM persistence, HTTP/USB JSONL API, Web UI, and dual-button shortcut |
 | r7m2q | CLI/devd host-tools alignment | 已验证 | `r7m2q-cli-devd-alignment/SPEC.md` | 2026-05-31 | Split `isolapurr-devd` + `isolapurr`, shared device profiles, firmware catalog, skills, and desktop-as-client boundary |
+| jdyh2 | PR label driven automatic release | 已完成 | `jdyh2-pr-label-release-automation/SPEC.md` | 2026-06-01 | Label Gate, centralized Release workflow, manifest-free version injection, and release failure notifier |

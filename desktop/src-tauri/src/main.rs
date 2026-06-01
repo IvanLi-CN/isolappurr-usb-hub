@@ -47,11 +47,15 @@ const PORT_CACHE_FILE_NAME: &str = ".esp32-port";
 const DEFAULT_FLASH_ADDRESS: u32 = 0x10000;
 const PORT_IDENTITY_UNCONFIRMED: &str = "unconfirmed";
 
+fn release_version() -> &'static str {
+    option_env!("ISOLAPURR_RELEASE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
 const EXIT_SERVER_FAILED: i32 = 10;
 const EXIT_DISCOVERY_UNAVAILABLE: i32 = 20;
 
 #[derive(Parser, Debug)]
-#[command(name = "isolapurr-desktop", version, about)]
+#[command(name = "isolapurr-desktop", version = release_version(), about)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -1974,7 +1978,7 @@ async fn api_bootstrap(State(state): State<AppState>) -> impl IntoResponse {
         agent_base_url: format!("http://127.0.0.1:{port}"),
         app: BootstrapApp {
             name: "isolapurr-desktop",
-            version: env!("CARGO_PKG_VERSION"),
+            version: release_version(),
             mode: state.mode,
         },
     };
