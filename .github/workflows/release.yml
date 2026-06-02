@@ -171,11 +171,32 @@ jobs:
             target: x86_64-pc-windows-msvc
             archive: isolapurr-host-tools-windows-x86_64.tar.gz
     steps:
-      - name: Checkout
+      - name: Checkout (non-windows)
+        if: runner.os != 'Windows'
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.intent.outputs.targetSha }}
           persist-credentials: false
+
+      - name: Checkout (windows, sparse)
+        if: runner.os == 'Windows'
+        uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "core.protectNTFS"
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          ref: ${{ needs.intent.outputs.targetSha }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/firmware-catalog
+            tools/isolapurr-host
+          sparse-checkout-cone-mode: false
+
+      - name: Detach Windows sparse checkout metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Remove-Item -Recurse -Force .git
 
       - name: Linux deps
         if: runner.os == 'Linux'
@@ -377,11 +398,34 @@ jobs:
       ISOLAPURR_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
       RUSTUP_TOOLCHAIN: stable
     steps:
-      - name: Checkout
+      - name: Checkout (non-windows)
+        if: runner.os != 'Windows'
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.intent.outputs.targetSha }}
           persist-credentials: false
+
+      - name: Checkout (windows, sparse)
+        if: runner.os == 'Windows'
+        uses: actions/checkout@v6
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "core.protectNTFS"
+          GIT_CONFIG_VALUE_0: "false"
+        with:
+          ref: ${{ needs.intent.outputs.targetSha }}
+          persist-credentials: false
+          sparse-checkout: |
+            desktop
+            web
+            package.json
+            bun.lock
+          sparse-checkout-cone-mode: false
+
+      - name: Detach Windows sparse checkout metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Remove-Item -Recurse -Force .git
 
       - name: Download web dist archive
         uses: actions/download-artifact@v4
