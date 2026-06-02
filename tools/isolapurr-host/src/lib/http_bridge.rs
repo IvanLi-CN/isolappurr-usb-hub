@@ -1,0 +1,902 @@
+pub async fn serve_http_bridge(config: DevdConfig) -> anyhow::Result<()> {
+    if !config.bind.ip().is_loopback() {
+        return Err(anyhow!(
+            "isolapurr-devd refuses non-loopback binds because /api/v1/bootstrap returns a local bearer token"
+        ));
+    }
+    let listener = TcpListener::bind(config.bind)
+        .await
+        .with_context(|| format!("bind {}", config.bind))?;
+    let port = listener.local_addr()?.port();
+    let state = AppState::new(format!("http://127.0.0.1:{port}"));
+
+    let router = router(state, config.web_root, config.allow_dev_cors);
+    tracing::info!("isolapurr-devd HTTP bridge listening on http://127.0.0.1:{port}");
+    axum::serve(listener, router).await?;
+    Ok(())
+}
+
+fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> Router {
+    let mut router = Router::new()
+        .route("/api/v1/bootstrap", get(bootstrap))
+        .route("/api/v1/health", get(health))
+        .route("/api/v1/devices", get(list_devices))
+        .route("/api/v1/devices/scan", post(scan_devices))
+        .route("/api/v1/devices/{id}/status", get(device_status))
+        .route("/api/v1/devices/{id}/session", get(device_session))
+        .route(
+            "/api/v1/devices/{id}/wifi",
+            get(wifi_get).post(wifi_set).delete(wifi_clear),
+        )
+        .route("/api/v1/devices/{id}/ports", get(device_ports))
+        .route(
+            "/api/v1/devices/{id}/ports/{port_id}/power",
+            post(port_power),
+        )
+        .route(
+            "/api/v1/devices/{id}/ports/{port_id}/replug",
+            post(port_replug),
+        )
+        .route("/api/v1/devices/{id}/hub/route", post(hub_route_set))
+        .route("/api/v1/devices/{id}/flash", post(device_flash))
+        .route(
+            "/api/v1/devices/{id}/flash-upload",
+            post(device_flash_upload),
+        )
+        .route("/api/v1/devices/{id}/reset", post(device_reset))
+        .route("/api/v1/devices/{id}/diagnostics", get(device_diagnostics))
+        .route("/api/v1/serial/lease", post(create_lease))
+        .route(
+            "/api/v1/serial/lease/{lease_id}",
+            post(heartbeat_lease).delete(release_lease),
+        )
+        .route(
+            "/api/v1/storage/devices",
+            get(storage_list).post(storage_save),
+        )
+        .route("/api/v1/storage/devices/{id}", delete(storage_delete))
+        .route(
+            "/api/v1/storage/settings",
+            get(storage_settings_get).put(storage_settings_put),
+        )
+        .route(
+            "/api/v1/storage/migrate/localstorage",
+            post(storage_migrate_localstorage),
+        )
+        .route("/api/v1/storage/export", get(storage_export))
+        .route("/api/v1/storage/reset", post(storage_reset))
+        .route("/api/v1/storage/import", post(storage_import))
+        .route("/api/v1/firmware/catalog/validate", post(validate_catalog))
+        .with_state(state)
+        .layer(DefaultBodyLimit::max(16 * 1024 * 1024));
+
+    if let Some(web_root) = web_root {
+        router = router.fallback_service(ServeDir::new(web_root));
+    }
+    if allow_dev_cors {
+        router = router.layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::predicate(|origin, _| {
+                    is_loopback_origin(origin)
+                }))
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::DELETE,
+                    Method::OPTIONS,
+                ])
+                .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]),
+        );
+    }
+    router
+}
+
+async fn bootstrap(State(state): State<AppState>) -> Json<Value> {
+    Json(json!(BootstrapResponse {
+        token: state.token,
+        agent_base_url: state.base_url,
+        app: BootstrapApp {
+            name: "isolapurr-devd",
+            version: release_version(),
+            mode: "devd",
+        },
+    }))
+}
+
+async fn health(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    Json(json!({"ok": true})).into_response()
+}
+
+async fn list_devices(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    cleanup_expired_leases(&state).await;
+    let devices = state
+        .inner
+        .lock()
+        .await
+        .devices
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    Json(json!({"devices": devices})).into_response()
+}
+
+async fn scan_devices(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let ports = match list_serial_ports() {
+        Ok(ports) => ports,
+        Err(err) => return internal_error(&format!("serial enumeration failed: {err}")),
+    };
+    let mut inner = state.inner.lock().await;
+    reconcile_scanned_usb_devices(&mut inner, ports);
+    let devices = inner.devices.values().cloned().collect::<Vec<_>>();
+    Json(json!({"devices": devices})).into_response()
+}
+
+fn reconcile_scanned_usb_devices(inner: &mut DevdState, ports: Vec<UsbTarget>) {
+    let mut scanned_ids = HashSet::new();
+    for port in ports {
+        let id = stable_usb_device_id(&port.port_path);
+        scanned_ids.insert(id.clone());
+        inner
+            .devices
+            .entry(id.clone())
+            .and_modify(|device| {
+                device.display_name = port.label.clone();
+                device.connection = "available".to_string();
+                device.usb = Some(port.clone());
+            })
+            .or_insert(DeviceRecord {
+                id,
+                display_name: port.label.clone(),
+                connection: "available".to_string(),
+                usb: Some(port),
+                http: None,
+                identity: None,
+                session: DeviceSession::default(),
+            });
+    }
+    inner.devices.retain(|id, device| {
+        if device.usb.is_some() && !scanned_ids.contains(id) {
+            device.usb = None;
+            if device.http.is_some() {
+                device.connection = "unavailable".to_string();
+                true
+            } else {
+                false
+            }
+        } else {
+            true
+        }
+    });
+}
+
+async fn device_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match require_compatible_project_firmware(&state, &id).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<DeviceQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let tail = query.tail.unwrap_or(200).min(MAX_SESSION_ITEMS);
+    let inner = state.inner.lock().await;
+    let Some(device) = inner.devices.get(&id) else {
+        return not_found("device not found");
+    };
+    if let Some(lease_id) = query.lease_id.as_deref()
+        && !inner.leases.contains_key(lease_id)
+    {
+        return unauthorized("lease not found or expired");
+    }
+    Json(json!({
+        "logs": tail_items(&device.session.logs, tail),
+        "traces": tail_items(&device.session.traces, tail),
+    }))
+    .into_response()
+}
+
+async fn wifi_get(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "wifi.get", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn wifi_set(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<WifiRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "wifi.set",
+        Some(json!({"ssid": req.ssid, "psk": req.psk})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn wifi_clear(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "wifi.clear", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_ports(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "ports.get", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn port_power(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((id, port_id)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    let enabled = matches!(query.get("enabled").map(String::as_str), Some("1" | "true"));
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "port.power_set",
+        Some(json!({"port": port_id, "enabled": enabled})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn port_replug(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((id, port_id)): Path<(String, String)>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "port.replug", Some(json!({"port": port_id}))).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn hub_route_set(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<HubRouteRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    let route = req.route;
+    match usb_jsonl_request(&state, &id, "hub.route_set", Some(json!({"route": route}))).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => match verify_hub_route_after_disconnect(&state, &id, &route).await {
+            Ok(value) => Json(redact_sensitive(&value)).into_response(),
+            Err(_) => error_from_anyhow(err),
+        },
+    }
+}
+
+async fn verify_hub_route_after_disconnect(
+    state: &AppState,
+    id: &str,
+    route: &str,
+) -> anyhow::Result<Value> {
+    let mut last_error = None;
+    for _ in 0..5 {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        match usb_jsonl_request(state, id, "ports.get", None).await {
+            Ok(value) => {
+                if let Some((actual_route, persisted)) = extract_hub_route(&value)
+                    && actual_route == route
+                {
+                    return Ok(json!({
+                        "ok": true,
+                        "result": {
+                            "accepted": true,
+                            "usb_c_downstream_route": actual_route,
+                            "persisted": persisted.unwrap_or(false),
+                            "verified_after_serial_reconnect": true
+                        }
+                    }));
+                }
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("USB-C route did not verify after reconnect")))
+}
+
+fn extract_hub_route(value: &Value) -> Option<(String, Option<bool>)> {
+    let hub = value
+        .get("result")
+        .and_then(|result| result.get("hub"))
+        .or_else(|| value.get("hub"))?;
+    let route = hub
+        .get("usb_c_downstream_route")
+        .and_then(Value::as_str)?
+        .to_string();
+    let persisted = hub
+        .get("usb_c_downstream_persisted")
+        .and_then(Value::as_bool);
+    Some((route, persisted))
+}
+
+async fn verify_wifi_after_set_timeout(
+    state: &AppState,
+    id: &str,
+    expected_ssid: &str,
+) -> anyhow::Result<Value> {
+    let mut last_error = None;
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        match usb_jsonl_request(state, id, "wifi.get", None).await {
+            Ok(mut value) => {
+                if wifi_matches_expected_ssid(&value, expected_ssid) {
+                    if let Some(result) = value.get_mut("result").and_then(Value::as_object_mut) {
+                        result.insert("verified_after_serial_timeout".to_string(), json!(true));
+                    }
+                    return Ok(value);
+                }
+                last_error = Some(anyhow!("Wi-Fi settings did not report expected SSID yet"));
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("Wi-Fi set did not verify after serial timeout")))
+}
+
+fn wifi_matches_expected_ssid(value: &Value, expected_ssid: &str) -> bool {
+    let wifi = value.get("result").unwrap_or(value);
+    wifi.get("configured").and_then(Value::as_bool) == Some(true)
+        && wifi.get("ssid").and_then(Value::as_str) == Some(expected_ssid)
+}
+
+async fn device_flash(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<FlashRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(response) = require_lease(&state, &id, req.lease_id.as_deref()).await {
+        return *response;
+    }
+    let result = run_flash_request(&state, &id, req).await;
+    match result {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_flash_upload(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<FirmwareUploadFlashRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(response) = require_lease(&state, &id, Some(&req.lease_id)).await {
+        return *response;
+    }
+    let result = run_uploaded_flash_request(&state, &id, req).await;
+    match result {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_reset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<Value>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let lease_id = body.get("lease_id").and_then(Value::as_str);
+    if let Err(response) = require_lease(&state, &id, lease_id).await {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    let port_path = match device_usb_port_path(&state, &id).await {
+        Ok(port_path) => port_path,
+        Err(err) => return error_from_anyhow(err),
+    };
+    {
+        let mut inner = state.inner.lock().await;
+        if inner.exclusive_ports.contains_key(&port_path) {
+            return conflict("device busy");
+        }
+        inner
+            .exclusive_ports
+            .insert(port_path.clone(), "reset".to_string());
+    }
+    let guard = ExclusiveGuard {
+        state: state.clone(),
+        port_path,
+    };
+    let result = usb_jsonl_request_with_exclusive(&state, &id, "reboot", None, Some("reset")).await;
+    drop(guard);
+    match result {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_diagnostics(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "pd.diagnostics", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn create_lease(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<LeaseRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    cleanup_expired_leases(&state).await;
+    let port_path = {
+        let inner = state.inner.lock().await;
+        let Some(device) = inner.devices.get(&req.device_id) else {
+            return not_found("device not found");
+        };
+        device.usb.as_ref().map(|usb| usb.port_path.clone())
+    };
+
+    let lease_id = next_id();
+    let lease = LeaseRecord {
+        lease_id: lease_id.clone(),
+        device_id: req.device_id.clone(),
+        port_path,
+        expires_at: Instant::now() + Duration::from_millis(LEASE_TTL_MS),
+    };
+    state
+        .inner
+        .lock()
+        .await
+        .leases
+        .insert(lease_id.clone(), lease);
+    Json(json!(LeaseResponse {
+        lease_id,
+        device_id: req.device_id,
+        heartbeat_interval_ms: LEASE_HEARTBEAT_INTERVAL_MS,
+        lease_ttl_ms: LEASE_TTL_MS,
+    }))
+    .into_response()
+}
+
+async fn heartbeat_lease(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(lease_id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let mut inner = state.inner.lock().await;
+    let Some(lease) = inner.leases.get_mut(&lease_id) else {
+        return not_found("lease not found");
+    };
+    lease.expires_at = Instant::now() + Duration::from_millis(LEASE_TTL_MS);
+    Json(json!({
+        "lease_id": lease.lease_id,
+        "device_id": lease.device_id,
+        "port_path": lease.port_path,
+        "lease_ttl_ms": LEASE_TTL_MS,
+    }))
+    .into_response()
+}
+
+async fn release_lease(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(lease_id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let removed = state.inner.lock().await.leases.remove(&lease_id).is_some();
+    Json(json!({"ok": true, "released": removed})).into_response()
+}
+
+async fn storage_list(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match read_hardware_registry() {
+        Ok(registry) => Json(json!({
+            "devices": registry.devices.iter().map(web_storage_device).collect::<Vec<_>>(),
+            "profiles": registry.devices,
+        }))
+        .into_response(),
+        Err(err) => internal_error(&format!("read storage failed: {err}")),
+    }
+}
+
+async fn storage_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<Value>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let input = match parse_storage_save_input(input) {
+        Ok(input) => input,
+        Err(err) => return bad_request(&err.to_string()),
+    };
+    match save_hardware(input) {
+        Ok(device) => Json(json!({
+            "device": web_storage_device(&device),
+            "profile": device,
+        }))
+        .into_response(),
+        Err(err) => bad_request(&format!("save storage failed: {err}")),
+    }
+}
+
+async fn storage_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match delete_hardware(&id) {
+        Ok(removed) => Json(json!({"removed": removed})).into_response(),
+        Err(err) => bad_request(&format!("delete storage failed: {err}")),
+    }
+}
+
+async fn storage_settings_get(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match read_storage_settings() {
+        Ok(settings) => Json(json!({"settings": settings})).into_response(),
+        Err(err) => internal_error(&format!("read settings failed: {err}")),
+    }
+}
+
+async fn storage_settings_put(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<StorageSettingsRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match write_storage_settings(&req.settings) {
+        Ok(()) => Json(json!({"settings": req.settings})).into_response(),
+        Err(err) => bad_request(&format!("write settings failed: {err}")),
+    }
+}
+
+async fn storage_migrate_localstorage(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<Value>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match migrate_localstorage_payload(input) {
+        Ok((devices, settings_written)) => Json(json!({
+            "migrated": devices > 0 || settings_written,
+            "imported": {"devices": devices, "settings": settings_written},
+        }))
+        .into_response(),
+        Err(err) => bad_request(&format!("migration failed: {err}")),
+    }
+}
+
+async fn storage_export(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let registry = match read_hardware_registry() {
+        Ok(registry) => registry,
+        Err(err) => return internal_error(&format!("read storage failed: {err}")),
+    };
+    let settings = match read_storage_settings() {
+        Ok(settings) => settings,
+        Err(err) => return internal_error(&format!("read settings failed: {err}")),
+    };
+    Json(json!({
+        "schema_version": STORAGE_SCHEMA_VERSION,
+        "devices": registry.devices.iter().map(web_storage_device).collect::<Vec<_>>(),
+        "profiles": registry.devices,
+        "settings": settings,
+        "meta": {},
+    }))
+    .into_response()
+}
+
+async fn storage_reset(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let registry = HardwareRegistry::default();
+    if let Err(err) = write_hardware_registry(&registry) {
+        return bad_request(&format!("reset storage failed: {err}"));
+    }
+    if let Err(err) = write_storage_settings(&default_storage_settings()) {
+        return bad_request(&format!("reset settings failed: {err}"));
+    }
+    Json(json!({"ok": true})).into_response()
+}
+
+fn parse_storage_save_input(value: Value) -> anyhow::Result<SavedHardwareInput> {
+    if let Some(device) = value.get("device").and_then(Value::as_object) {
+        let name = device
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("device.name is required"))?
+            .to_string();
+        let base_url = device
+            .get("baseUrl")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("device.baseUrl is required"))?
+            .to_string();
+        let id = device
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| stable_http_device_id(&base_url));
+        return Ok(SavedHardwareInput {
+            id,
+            name,
+            transport: hardware_transport_from_storage_url(&base_url),
+        });
+    }
+    #[derive(Deserialize)]
+    struct Wire {
+        id: String,
+        name: String,
+        transport: HardwareTransport,
+    }
+    let wire: Wire = serde_json::from_value(value)?;
+    Ok(SavedHardwareInput {
+        id: wire.id,
+        name: wire.name,
+        transport: wire.transport,
+    })
+}
+
+fn web_storage_device(profile: &DeviceProfile) -> Value {
+    let base_url = match &profile.transport {
+        HardwareTransport::Http { base_url } => base_url.clone(),
+        HardwareTransport::Usb { device_id, .. } => format!("isolapurr-devd://{device_id}"),
+        HardwareTransport::WebSerial { label } => {
+            format!("webserial://{}", label.as_deref().unwrap_or(&profile.id))
+        }
+    };
+    json!({
+        "id": profile.id,
+        "name": profile.name,
+        "baseUrl": base_url,
+        "lastSeenAt": profile.last_seen_at.map(|ts| ts.to_string()),
+    })
+}
+
+fn hardware_transport_from_storage_url(base_url: &str) -> HardwareTransport {
+    if let Some(device_id) = base_url.strip_prefix("isolapurr-devd://") {
+        HardwareTransport::Usb {
+            device_id: device_id.to_string(),
+            devd_url: None,
+        }
+    } else if let Some(label) = base_url.strip_prefix("webserial://") {
+        HardwareTransport::WebSerial {
+            label: Some(label.to_string()),
+        }
+    } else {
+        HardwareTransport::Http {
+            base_url: base_url.to_string(),
+        }
+    }
+}
+
+fn parse_web_storage_device(value: &Value) -> anyhow::Result<DeviceProfile> {
+    let device = value
+        .as_object()
+        .ok_or_else(|| anyhow!("device must be an object"))?;
+    let id = device
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("device.id is required"))?
+        .to_string();
+    let name = device
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("device.name is required"))?
+        .to_string();
+    let base_url = device
+        .get("baseUrl")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("device.baseUrl is required"))?;
+    Ok(DeviceProfile {
+        id,
+        name,
+        transport: hardware_transport_from_storage_url(base_url),
+        identity: None,
+        last_seen_at: Some(now_unix_seconds()),
+    })
+}
+
+fn parse_import_profiles(req: &StorageImportRequest) -> anyhow::Result<Vec<DeviceProfile>> {
+    if !req.profiles.is_empty() {
+        return Ok(req.profiles.clone());
+    }
+    req.devices
+        .iter()
+        .cloned()
+        .map(|device| {
+            if device.get("transport").is_some() {
+                serde_json::from_value(device).context("parse device profile")
+            } else {
+                parse_web_storage_device(&device)
+            }
+        })
+        .collect()
+}
+
+fn migrate_localstorage_payload(value: Value) -> anyhow::Result<(usize, bool)> {
+    let mut imported_devices = 0;
+    if let Some(devices) = value.get("devices").and_then(Value::as_array) {
+        let mut registry = read_hardware_registry()?;
+        for device in devices {
+            upsert_profile(&mut registry, parse_web_storage_device(device)?);
+            imported_devices += 1;
+        }
+        write_hardware_registry(&registry)?;
+    }
+
+    let mut settings_written = false;
+    if let Some(theme) = value
+        .get("settings")
+        .and_then(|settings| settings.get("theme"))
+        .and_then(Value::as_str)
+    {
+        write_storage_settings(&StorageSettings {
+            theme: theme.to_string(),
+        })?;
+        settings_written = true;
+    }
+    Ok((imported_devices, settings_written))
+}
+
+async fn storage_import(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<StorageImportRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let profiles = match parse_import_profiles(&req) {
+        Ok(profiles) => profiles,
+        Err(err) => return bad_request(&format!("import failed: {err}")),
+    };
+    let settings = req.settings;
+    match import_profiles(profiles) {
+        Ok(count) => {
+            let settings_written = if let Some(settings) = settings {
+                if let Err(err) = write_storage_settings(&settings) {
+                    return bad_request(&format!("import settings failed: {err}"));
+                }
+                true
+            } else {
+                false
+            };
+            Json(json!({"imported": {"devices": count, "settings": settings_written}}))
+                .into_response()
+        }
+        Err(err) => bad_request(&format!("import failed: {err}")),
+    }
+}
