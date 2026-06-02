@@ -492,14 +492,11 @@
         let sw2303_was_in_error = sw2303_error_latched;
         let tps_was_in_error = tps_error_latched;
         let ui_was_in_error = ui_error_latched;
-        let usb_c_pd_power_on = matches!(port_usb_c.power, PowerState::On);
-        let usb_c_power_off_setpoint = PowerSetpoint {
-            output_enabled: false,
-            ..boot_sp
-        };
+        let usb_c_pd_power_on: bool;
+        let usb_c_power_off_setpoint: PowerSetpoint;
         let request: Option<PowerRequest>;
         let setpoint: PowerSetpoint;
-        let mut loop_delay_ms = SW2303_POLL_MS;
+        let mut loop_delay_ms: u64;
         include!("main_loop_pd.inc");
         include!("main_loop_ports.inc");
         include!("main_loop_buttons.inc");

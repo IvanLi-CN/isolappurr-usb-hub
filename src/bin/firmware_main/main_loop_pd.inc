@@ -161,6 +161,11 @@
             api_isolated_usb_fault = fault;
         }
 
+        usb_c_pd_power_on = matches!(port_usb_c.power, PowerState::On);
+        usb_c_power_off_setpoint = PowerSetpoint {
+            output_enabled: false,
+            ..boot_sp
+        };
 
         let allow_sw2303_probe = usb_c_pd_power_on
             && (!sw2303_error_latched
@@ -331,6 +336,7 @@
             last_fast_protocol = None;
         }
 
+        loop_delay_ms = SW2303_POLL_MS;
 
         let tps_apply_needed = tps_state.last != Some(setpoint);
         let tps_voltage_update_needed = setpoint.v_out_mv > boot_sp.v_out_mv;
