@@ -65,3 +65,4 @@
 | tvhca | USB-C 下行通道路由切换 | 已完成 | `tvhca-usb-c-downstream-route/SPEC.md` | 2026-05-18 | MCU / USB-C route switching, EEPROM persistence, HTTP/USB JSONL API, Web UI, and dual-button shortcut |
 | r7m2q | CLI/devd host-tools alignment | 已验证 | `r7m2q-cli-devd-alignment/SPEC.md` | 2026-05-31 | Split `isolapurr-devd` + `isolapurr`, shared device profiles, firmware catalog, skills, and desktop-as-client boundary |
 | jdyh2 | PR label driven automatic release | 已完成 | `jdyh2-pr-label-release-automation/SPEC.md` | 2026-06-01 | Label Gate, centralized Release workflow, manifest-free version injection, and release failure notifier |
+| d8s4n | Source structure guard | 已完成 | `d8s4n-source-structure-guard/SPEC.md` | 2026-06-02 | Source length guard, generated-file exemption, and oversized source split |

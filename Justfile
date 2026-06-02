@@ -17,6 +17,9 @@ build:
 fmt:
 	cargo +stable fmt
 
+source-lengths:
+	python3 scripts/check_source_lengths.py --root {{ROOT}}
+
 clean:
 	cargo clean
 
