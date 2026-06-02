@@ -6,3 +6,4 @@
 - Added IPC daemon idle shutdown semantics for on-demand clients.
 - Added Local USB firmware guard requirements for project identity, compatibility, non-project firmware, and download-mode confirmation.
 - Added official user-machine host-tools installers so `isolapurr-user-operations` can install released CLI/devd tools without requiring a source checkout.
+- Tightened the user skill install gate so missing released host tools or unavailable installer assets cannot be answered with raw system USB/serial enumeration.
