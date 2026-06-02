@@ -75,6 +75,7 @@ use isolapurr_usb_hub::prompt_tone::{
 };
 #[cfg(feature = "net_http")]
 use isolapurr_usb_hub::provisioning;
+use isolapurr_usb_hub::release_version;
 use isolapurr_usb_hub::telemetry::{Field, NormalUiTelemetrySampler, TelemetryI2cAllowlist};
 
 #[cfg(feature = "net_http")]
@@ -654,7 +655,7 @@ fn write_usb_info_json(
         body,
         "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}},\"uptime_ms\":{},",
         env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
+        release_version(),
         firmware_uptime_ms()
     );
     write_usb_wifi_object(body, wifi);
@@ -1013,7 +1014,7 @@ fn copy_compact_line(line: &mut [u8; 20], text: &str) {
 fn about_toast_lines() -> [[u8; 20]; 3] {
     let mut lines = [*b"                    "; 3];
     copy_compact_line(&mut lines[0], "ISOLAPURR USB HUB");
-    copy_compact_line(&mut lines[1], env!("CARGO_PKG_VERSION"));
+    copy_compact_line(&mut lines[1], release_version());
     copy_compact_line(&mut lines[2], BUILD_GIT_SHA);
     lines
 }
@@ -1312,7 +1313,7 @@ async fn main(_spawner: Spawner) {
     info!("boot: isolapurr-usb-hub starting (pd i2c coordinator)");
     info!(
         "firmware: version={} profile={} git={} ref={} dirty={} dashboard_bg_rgb=({},{},{})",
-        env!("CARGO_PKG_VERSION"),
+        release_version(),
         BUILD_PROFILE,
         BUILD_GIT_SHA,
         BUILD_GIT_REF,

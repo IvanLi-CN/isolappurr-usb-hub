@@ -46,6 +46,10 @@ pub const DEFAULT_IPC_IDLE_TIMEOUT_SECS: u64 = 30;
 const PROJECT_FIRMWARE_NAME: &str = "isolapurr-usb-hub";
 const MIN_COMPATIBLE_FIRMWARE_VERSION: &str = "0.1.0";
 
+pub fn release_version() -> &'static str {
+    option_env!("ISOLAPURR_RELEASE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
 #[derive(Debug, Clone)]
 pub struct DevdConfig {
     pub bind: SocketAddr,
@@ -1083,7 +1087,7 @@ async fn bootstrap(State(state): State<AppState>) -> Json<Value> {
         agent_base_url: state.base_url,
         app: BootstrapApp {
             name: "isolapurr-devd",
-            version: env!("CARGO_PKG_VERSION"),
+            version: release_version(),
             mode: "devd",
         },
     }))
