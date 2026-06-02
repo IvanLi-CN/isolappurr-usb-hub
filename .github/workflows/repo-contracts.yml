@@ -1,0 +1,40 @@
+name: Repo Contracts
+
+on:
+  pull_request:
+    paths:
+      - ".github/scripts/**"
+      - ".github/workflows/repo-contracts.yml"
+      - "README.md"
+      - "docs/specs/r7m2q-cli-devd-alignment/**"
+      - "skills/isolapurr-user-operations/**"
+      - "tools/isolapurr-host/install/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/scripts/**"
+      - ".github/workflows/repo-contracts.yml"
+      - "README.md"
+      - "docs/specs/r7m2q-cli-devd-alignment/**"
+      - "skills/isolapurr-user-operations/**"
+      - "tools/isolapurr-host/install/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-contracts-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run contract tests
+        run: python3 -m unittest discover -s .github/scripts -p "test_*.py"
