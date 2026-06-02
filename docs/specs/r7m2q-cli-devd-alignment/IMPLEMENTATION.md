@@ -9,7 +9,9 @@
 - Local USB operations verify project firmware metadata from `info` before ordinary control paths. Non-project firmware, download-mode/no-JSONL targets, and incompatible firmware versions are rejected with corrective guidance; first-time full flash requires explicit confirmation.
 - Web Local USB discovery/request/flash code now targets the new `/api/v1/devices/*` and lease APIs while leaving Web Serial intact.
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.
+- `isolapurr-user-operations` treats missing released host tools and unavailable installer assets as hard stop conditions before hardware enumeration or operations.
 - CI/release workflows build and publish host-tools plus firmware catalog assets.
+- CI runs Python contract tests for release-intent and skill/install-gate consistency.
 - `host-tools.yml` builds/tests/packages host-tools archives for Linux, macOS, and Windows.
 - Official host-tools installers added for Unix and Windows. Tag builds publish the host-tools archives, `SHA256SUMS`, and installer scripts to the matching GitHub Release.
 - `firmware.yml` emits a firmware catalog artifact after firmware build.

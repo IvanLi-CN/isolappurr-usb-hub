@@ -13,19 +13,22 @@ Use this skill for owner-facing operation of released IsolaPurr USB Hub hardware
 - Agent-driven hardware operation defaults to CLI/devd over local IPC, not browser automation or localhost HTTP.
 - Web Serial is still an official user path. Use it when the user is operating the Web UI directly or explicitly asks for browser Web Serial.
 - Do not require a source checkout, Rust, Bun, Just, `espflash`, or project-local caches for ordinary user operation.
-- Before giving a workflow, verify the installed CLI exposes it:
+- Before giving any hardware workflow, first verify both host tools are installed and usable:
 
 ```bash
 isolapurr --help
 isolapurr-devd --help
 ```
 
-If the command is absent, stop and report that the installed release does not support the workflow. Do not invent commands or bypass with raw HTTP writes.
+If either command is absent, this is an install gate: stop before hardware listing, scanning, status, provisioning, flashing, reset, monitor, or diagnostics. Do not list system USB or serial ports as a substitute result. Do not switch to browser automation, localhost HTTP, project-local source commands, raw serial tools, or source checkout workflows unless the owner explicitly switches to `isolapurr-developer-operations`.
+
+If both commands exist but the requested subcommand is absent, stop and report that the installed release does not support the workflow. Do not invent commands or bypass with raw HTTP writes.
 
 ## Install Host Tools
 
 - If `isolapurr` or `isolapurr-devd` is missing, install released host tools with the official installer from the chosen GitHub Release. Do not ask the user to clone the source repository.
 - Before running the installer, show the user the release source, target version (`latest` unless specified), install directory, and PATH impact, then ask for confirmation.
+- If the chosen GitHub Release or installer asset is unavailable, report the release/asset blocker and stop. Do not fall back to raw USB/serial enumeration or any unrelated hardware discovery path.
 - macOS/Linux installer:
 
 ```bash
@@ -50,6 +53,7 @@ isolapurr --help
 
 ## Connect Hardware
 
+- Only enter this section after `isolapurr --help` and `isolapurr-devd --help` both succeed.
 - Start the local IPC daemon for long-running CLI/devd USB operation, or let `isolapurr` auto-start a sibling `isolapurr-devd` when the installed tools are packaged together. The IPC daemon exits after its idle timeout when no clients remain connected:
 
 ```bash
@@ -97,5 +101,5 @@ isolapurr hardware forget <id>
 
 ## Stop Conditions
 
-- Ambiguous target identity, missing command, missing firmware catalog, hash mismatch, target mismatch, busy Local USB session, unsupported Web Serial, or missing user confirmation before a destructive operation.
+- Missing `isolapurr` or `isolapurr-devd`, unavailable release/installer asset, ambiguous target identity, missing command, missing firmware catalog, hash mismatch, target mismatch, busy Local USB session, unsupported Web Serial, or missing user confirmation before a destructive operation.
 - If a requested workflow is only possible through source commands, switch to `isolapurr-developer-operations`.

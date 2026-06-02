@@ -33,6 +33,8 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST keep Web Serial available in the Web app as a formal supported channel.
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
+- MUST treat missing `isolapurr` or `isolapurr-devd` on a user machine as an install gate before any Agent-driven hardware listing, scan, status, provisioning, flash, reset, monitor, or diagnostics workflow. The user skill must not list system USB or serial ports as a substitute hardware result.
+- MUST report unavailable GitHub Release installer assets as a blocker for user-machine host-tool installation and stop instead of falling back to raw serial enumeration, localhost HTTP, browser automation, source checkout commands, or project-local tooling.
 - MUST store local program hardware memory in the user's config directory, while pure Web stores the same profile shape in browser storage.
 - MUST support importing/merging browser profiles into devd storage when devd is available.
 - MUST verify Local USB targets are running IsolaPurr project firmware before ordinary device operations. The verification key is firmware metadata from `info`, including `firmware.name == "isolapurr-usb-hub"` and a compatible `firmware.version`.
@@ -103,6 +105,8 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 
 - Given released host tools are installed, when a user runs `isolapurr devices`, then the CLI connects to local IPC or auto-starts a sibling `isolapurr-devd serve` without requiring a source checkout or localhost HTTP server.
 - Given a normal user machine does not have released host tools installed, when the user skill prepares hardware operation, then it must present the release source, version, install directory, and PATH impact, ask for confirmation, run the official installer, and verify `isolapurr --help` plus `isolapurr-devd --help`.
+- Given released host tools are missing, when the user asks the skill to list available hardware, then the skill stops at the install gate and does not enumerate system USB or serial ports as a substitute result.
+- Given the selected GitHub Release or installer asset is unavailable, when the user skill prepares host-tool installation, then it reports the release/asset blocker and stops without switching to source commands, raw serial tools, browser automation, or localhost HTTP.
 - Given an installer downloads a host-tools archive, when the archive hash does not match `SHA256SUMS`, then installation fails before replacing any installed tools.
 - Given no IPC clients remain connected, when the configured idle timeout elapses, then `isolapurr-devd serve` exits and removes its Unix socket when applicable.
 - Given the desktop app needs native Local USB capabilities, when no devd is reachable, then the desktop app starts or connects to devd on demand instead of requiring a user-managed daemon.
