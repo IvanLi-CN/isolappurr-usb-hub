@@ -358,6 +358,28 @@
         }
     }
     #[cfg(feature = "net_http")]
+    let (mut power_config, mut power_config_persisted) =
+        match provisioning::load_power_config(&mut telemetry_i2c).await {
+            Ok(Some(config)) => {
+                info!("provisioning: power config loaded from EEPROM U21");
+                (config, true)
+            }
+            Ok(None) => {
+                info!("provisioning: power config EEPROM record empty; defaulting to full auto profile");
+                (PowerConfig::defaults(), false)
+            }
+            Err(err) => {
+                defmt::warn!(
+                    "provisioning: failed to load power config from EEPROM U21: {:?}; defaulting to full auto profile",
+                    defmt::Debug2Format(&err)
+                );
+                (PowerConfig::defaults(), false)
+            }
+        };
+    #[cfg(not(feature = "net_http"))]
+    let mut power_config = PowerConfig::defaults();
+    let mut last_sw2303_path_control: Option<Sw2303PathControl> = None;
+    #[cfg(feature = "net_http")]
     let net_handles =
         net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state, wifi_credentials);
     #[cfg(feature = "net_http")]
@@ -495,7 +517,7 @@
         let usb_c_pd_power_on: bool;
         let usb_c_power_off_setpoint: PowerSetpoint;
         let request: Option<PowerRequest>;
-        let setpoint: PowerSetpoint;
+        let mut setpoint: PowerSetpoint;
         let mut loop_delay_ms: u64;
         include!("main_loop_pd.inc");
         include!("main_loop_ports.inc");

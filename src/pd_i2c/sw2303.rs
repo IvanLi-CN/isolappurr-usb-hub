@@ -1,6 +1,7 @@
 use embedded_hal_async::i2c::I2c;
 
 use super::{PowerRequest, SW2303_ADDR_7BIT};
+use crate::power_config::{PowerConfig, Sw2303PathControl};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnableProfileStatus {
@@ -29,49 +30,65 @@ where
     I2C: I2c,
     I2C::Error: core::fmt::Debug,
 {
+    apply_enable_profile(i2c, &PowerConfig::defaults()).await
+}
+
+pub async fn apply_enable_profile<I2C>(
+    i2c: &mut I2C,
+    config: &PowerConfig,
+) -> Result<EnableProfileStatus, sw2303::error::Error<I2C::Error>>
+where
+    I2C: I2c,
+    I2C::Error: core::fmt::Debug,
+{
     let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
 
     dev.init().await?;
     dev.unlock_write_enable_0().await?;
 
-    dev.set_power_config(100).await?;
+    dev.set_power_config(config.capability.power_watts).await?;
 
     dev.configure_protocols(sw2303::ProtocolConfiguration {
-        pd_enabled: true,
-        qc20_enabled: true,
-        qc30_enabled: true,
-        fcp_enabled: true,
-        afc_enabled: true,
-        scp_enabled: true,
-        pe20_enabled: true,
-        bc12_enabled: true,
-        sfcp_enabled: true,
+        pd_enabled: config.capability.pd_enabled,
+        qc20_enabled: config.capability.qc20_enabled,
+        qc30_enabled: config.capability.qc30_enabled,
+        fcp_enabled: config.capability.fcp_enabled,
+        afc_enabled: config.capability.afc_enabled,
+        scp_enabled: config.capability.scp_enabled,
+        pe20_enabled: config.capability.pe20_enabled,
+        bc12_enabled: config.capability.bc12_enabled,
+        sfcp_enabled: config.capability.sfcp_enabled,
     })
     .await?;
 
     dev.configure_pd(sw2303::PdConfiguration {
-        enabled: true,
+        enabled: config.capability.pd_enabled,
         vconn_swap: true,
         dr_swap: false,
         emarker_enabled: true,
-        pps_enabled: true,
+        pps_enabled: config.capability.pps_enabled,
         // Keep PPS advertisement in the chip's auto mode unless/until a full
         // register-backed PPS profile is explicitly configured.
         pps_config_mode: sw2303::PpsConfigMode::Auto,
-        fixed_voltages: [true, true, true, true],
+        fixed_voltages: [
+            config.capability.fixed_9v,
+            config.capability.fixed_12v,
+            config.capability.fixed_15v,
+            config.capability.fixed_20v,
+        ],
         emark_5a_bypass: false,
         emarker_60_70w: true,
     })
     .await?;
 
     dev.configure_fast_charge(sw2303::FastChargeConfiguration {
-        qc_enabled: true,
-        fcp_enabled: true,
-        afc_enabled: true,
-        scp_enabled: true,
-        pe20_enabled: true,
-        sfcp_enabled: true,
-        bc12_enabled: true,
+        qc_enabled: config.capability.qc20_enabled || config.capability.qc30_enabled,
+        fcp_enabled: config.capability.fcp_enabled,
+        afc_enabled: config.capability.afc_enabled,
+        scp_enabled: config.capability.scp_enabled,
+        pe20_enabled: config.capability.pe20_enabled,
+        sfcp_enabled: config.capability.sfcp_enabled,
+        bc12_enabled: config.capability.bc12_enabled,
         // Full profile: allow up to 5A tiers where applicable.
         scp_current_limit: 0,
         // Full profile: allow higher current tier where applicable.
@@ -117,6 +134,31 @@ where
         system_status1,
         system_status2,
     })
+}
+
+pub async fn set_path_control<I2C>(
+    i2c: &mut I2C,
+    control: Sw2303PathControl,
+) -> Result<(), sw2303::error::Error<I2C::Error>>
+where
+    I2C: I2c,
+    I2C::Error: core::fmt::Debug,
+{
+    let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
+    dev.unlock_write_enable_1().await?;
+
+    match control {
+        Sw2303PathControl::Auto => {
+            let mut flags = dev.get_force_control_raw().await?;
+            flags.remove(
+                sw2303::registers::ForceControlFlags::FORCE_OPEN_PATH
+                    | sw2303::registers::ForceControlFlags::FORCE_CLOSE_PATH,
+            );
+            dev.set_force_control_raw(flags).await
+        }
+        Sw2303PathControl::ForceClose => dev.force_path(false).await,
+        Sw2303PathControl::ForceOpen => dev.force_path(true).await,
+    }
 }
 
 /// Poll SW2303 status via structured driver APIs and decode them into a `PowerRequest`.

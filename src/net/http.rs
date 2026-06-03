@@ -194,7 +194,7 @@ async fn handle_api_request(
     method: &str,
     path: &str,
     query: &str,
-    _body: &str,
+    body: &str,
     origin: Option<&str>,
     device_names: &'static DeviceNames,
     wifi_state: &'static WifiStateMutex,
@@ -289,6 +289,151 @@ async fn handle_api_request(
             let state = { *api_state.lock().await };
             let mut body = String::new();
             write_pd_diagnostics_json(&mut body, &state.pd);
+            write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+            return Ok(());
+        }
+        ("GET", "/api/v1/power/config") => {
+            let state = { *api_state.lock().await };
+            let mut body = String::new();
+            write_power_config_json(&mut body, &state.power);
+            write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+            return Ok(());
+        }
+        ("PUT", "/api/v1/power/config") => {
+            let Some(config) = parse_power_config_body(body) else {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "missing or invalid power config",
+                    false,
+                )
+                .await?;
+                return Ok(());
+            };
+            let owner = parse_owner_query(query);
+            match try_set_power_config(api_state, ApiPowerConfigCommand::Set { config }, owner)
+                .await
+            {
+                Ok(()) => {
+                    if crate::wait_power_config_result().await {
+                        let mut body = String::new();
+                        let state = { *api_state.lock().await };
+                        write_power_config_json(&mut body, &state.power);
+                        write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+                    } else {
+                        write_api_error(
+                            socket,
+                            "500 Internal Server Error",
+                            allow_origin,
+                            "eeprom_failed",
+                            "Power configuration could not be saved to EEPROM U21",
+                            true,
+                        )
+                        .await?;
+                    }
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "power configuration is busy or locked",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
+        ("POST", "/api/v1/power/config/defaults") => {
+            let owner = parse_owner_query(query);
+            match try_set_power_config(api_state, ApiPowerConfigCommand::Defaults, owner).await {
+                Ok(()) => {
+                    if crate::wait_power_config_result().await {
+                        let mut body = String::new();
+                        let state = { *api_state.lock().await };
+                        write_power_config_json(&mut body, &state.power);
+                        write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+                    } else {
+                        write_api_error(
+                            socket,
+                            "500 Internal Server Error",
+                            allow_origin,
+                            "eeprom_failed",
+                            "Power defaults could not be saved to EEPROM U21",
+                            true,
+                        )
+                        .await?;
+                    }
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "power configuration is busy or locked",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
+        ("POST", "/api/v1/power/config/lock") => {
+            let Some(owner) = parse_owner_query(query) else {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "missing owner",
+                    false,
+                )
+                .await?;
+                return Ok(());
+            };
+            match try_set_power_lock(api_state, owner, true).await {
+                Ok(()) => {
+                    let state = { *api_state.lock().await };
+                    let mut body = String::new();
+                    write_power_config_json(&mut body, &state.power);
+                    write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "power configuration lock is owned by another host",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
+        ("POST", "/api/v1/power/config/release") => {
+            let Some(owner) = parse_owner_query(query) else {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "missing owner",
+                    false,
+                )
+                .await?;
+                return Ok(());
+            };
+            let _ = try_set_power_lock(api_state, owner, false).await;
+            let state = { *api_state.lock().await };
+            let mut body = String::new();
+            write_power_config_json(&mut body, &state.power);
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
         }
@@ -562,6 +707,16 @@ fn parse_enabled_query(query: &str) -> Option<bool> {
     None
 }
 
+fn parse_owner_query(query: &str) -> Option<u32> {
+    for part in query.split('&') {
+        let (k, v) = part.split_once('=')?;
+        if k == "owner" {
+            return v.parse::<u32>().ok().filter(|v| *v != 0);
+        }
+    }
+    None
+}
+
 fn parse_usb_c_downstream_route(query: &str) -> Option<UsbCDownstreamRoute> {
     for part in query.split('&') {
         let (key, value) = part.split_once('=')?;
@@ -573,6 +728,196 @@ fn parse_usb_c_downstream_route(query: &str) -> Option<UsbCDownstreamRoute> {
             "usb_c" => Some(UsbCDownstreamRoute::UsbC),
             _ => None,
         };
+    }
+    None
+}
+
+pub fn parse_power_config_body(body: &str) -> Option<PowerConfig> {
+    let hardware = extract_body_string(body, "hardware").unwrap_or_else(|| String::from("sw2303"));
+    if hardware.as_str() != "sw2303" {
+        return None;
+    }
+    let tps_mode = match extract_body_string(body, "tps_mode")?.as_str() {
+        "auto_follow" => TpsMode::AutoFollow,
+        "manual" => TpsMode::Manual,
+        _ => return None,
+    };
+    let manual_path = match extract_body_string(body, "usb_c_path_mode")
+        .unwrap_or_else(|| String::from("default"))
+        .as_str()
+    {
+        "default" => ManualUsbCPathMode::Default,
+        "disconnect" => ManualUsbCPathMode::Disconnect,
+        "force" => ManualUsbCPathMode::Force,
+        _ => return None,
+    };
+    let mut config = PowerConfig::defaults();
+    config.tps_mode = tps_mode;
+    config.manual = ManualTpsConfig {
+        voltage_mv: extract_body_u16(body, "voltage_mv").unwrap_or(config.manual.voltage_mv),
+        current_limit_ma: extract_body_u16(body, "current_limit_ma")
+            .unwrap_or(config.manual.current_limit_ma),
+        usb_c_path_mode: manual_path,
+    };
+    if let Some(power_watts) = extract_body_u8(body, "power_watts") {
+        config.capability.power_watts = power_watts;
+    }
+    set_bool_if_present(body, "pd", &mut config.capability.pd_enabled);
+    set_bool_if_present(body, "qc20", &mut config.capability.qc20_enabled);
+    set_bool_if_present(body, "qc30", &mut config.capability.qc30_enabled);
+    set_bool_if_present(body, "fcp", &mut config.capability.fcp_enabled);
+    set_bool_if_present(body, "afc", &mut config.capability.afc_enabled);
+    set_bool_if_present(body, "scp", &mut config.capability.scp_enabled);
+    set_bool_if_present(body, "pe20", &mut config.capability.pe20_enabled);
+    set_bool_if_present(body, "bc12", &mut config.capability.bc12_enabled);
+    set_bool_if_present(body, "sfcp", &mut config.capability.sfcp_enabled);
+    set_bool_if_present(body, "pps", &mut config.capability.pps_enabled);
+    apply_fixed_voltages_if_present(body, &mut config.capability)?;
+    config.validated().ok()
+}
+
+fn set_bool_if_present(body: &str, key: &str, target: &mut bool) {
+    if let Some(v) = extract_body_bool(body, key) {
+        *target = v;
+    }
+}
+
+fn extract_body_string(body: &str, key: &str) -> Option<String> {
+    let rest = json_value_after_key_body(body, key)?;
+    parse_json_string_value_body(rest).map(|(value, _)| value)
+}
+
+fn extract_body_bool(body: &str, key: &str) -> Option<bool> {
+    let rest = json_value_after_key_body(body, key)?;
+    if rest.starts_with("true") {
+        Some(true)
+    } else if rest.starts_with("false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn extract_body_u16(body: &str, key: &str) -> Option<u16> {
+    extract_body_u32(body, key).and_then(|v| u16::try_from(v).ok())
+}
+
+fn extract_body_u8(body: &str, key: &str) -> Option<u8> {
+    extract_body_u32(body, key).and_then(|v| u8::try_from(v).ok())
+}
+
+fn extract_body_u32(body: &str, key: &str) -> Option<u32> {
+    let rest = json_value_after_key_body(body, key)?;
+    let mut out = 0u32;
+    let mut seen = false;
+    for ch in rest.chars() {
+        if let Some(digit) = ch.to_digit(10) {
+            seen = true;
+            out = out.checked_mul(10)?.checked_add(digit)?;
+        } else {
+            break;
+        }
+    }
+    seen.then_some(out)
+}
+
+fn apply_fixed_voltages_if_present(
+    body: &str,
+    capability: &mut UsbCCapabilityConfig,
+) -> Option<()> {
+    let Some(rest) = json_value_after_key_body(body, "fixed_voltages_mv") else {
+        return Some(());
+    };
+    let mut rest = rest.strip_prefix('[')?.trim_start();
+    let mut fixed_9v = false;
+    let mut fixed_12v = false;
+    let mut fixed_15v = false;
+    let mut fixed_20v = false;
+
+    loop {
+        if rest.strip_prefix(']').is_some() {
+            capability.fixed_9v = fixed_9v;
+            capability.fixed_12v = fixed_12v;
+            capability.fixed_15v = fixed_15v;
+            capability.fixed_20v = fixed_20v;
+            return Some(());
+        }
+
+        let (voltage_mv, consumed) = parse_json_u32_prefix(rest)?;
+        match voltage_mv {
+            9000 => fixed_9v = true,
+            12000 => fixed_12v = true,
+            15000 => fixed_15v = true,
+            20000 => fixed_20v = true,
+            _ => return None,
+        }
+
+        rest = rest[consumed..].trim_start();
+        if let Some(after) = rest.strip_prefix(',') {
+            rest = after.trim_start();
+        } else if !rest.starts_with(']') {
+            return None;
+        }
+    }
+}
+
+fn parse_json_u32_prefix(value: &str) -> Option<(u32, usize)> {
+    let mut out = 0u32;
+    let mut seen = false;
+    let mut consumed = 0usize;
+    for (idx, ch) in value.char_indices() {
+        if let Some(digit) = ch.to_digit(10) {
+            seen = true;
+            out = out.checked_mul(10)?.checked_add(digit)?;
+            consumed = idx + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    seen.then_some((out, consumed))
+}
+
+fn json_value_after_key_body<'a>(body: &'a str, key: &str) -> Option<&'a str> {
+    let mut needle = String::new();
+    let _ = core::write!(needle, "\"{}\"", key);
+    let start = body.find(needle.as_str())?;
+    let colon = body[start..].find(':')?;
+    Some(body[start + colon + 1..].trim_start())
+}
+
+fn parse_json_string_value_body(rest: &str) -> Option<(String, usize)> {
+    let mut chars = rest.char_indices();
+    let (_, first) = chars.next()?;
+    if first != '"' {
+        return None;
+    }
+
+    let mut out = String::new();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => return Some((out, idx + ch.len_utf8())),
+            '\\' => {
+                let (_, escaped) = chars.next()?;
+                match escaped {
+                    '"' | '\\' | '/' => {
+                        let _ = out.push(escaped);
+                    }
+                    'n' => {
+                        let _ = out.push('\n');
+                    }
+                    'r' => {
+                        let _ = out.push('\r');
+                    }
+                    't' => {
+                        let _ = out.push('\t');
+                    }
+                    _ => return None,
+                }
+            }
+            _ => {
+                let _ = out.push(ch);
+            }
+        }
     }
     None
 }
@@ -710,6 +1055,67 @@ pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
     );
 }
 
+pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
+    let cfg = power.config;
+    let _ = core::write!(
+        body,
+        "{{\"hardware\":\"{}\",\"persisted\":{},\"tps_mode\":\"{}\",\"capability\":{{\"profile\":\"full\",\"power_watts\":{},\"protocols\":{{\"pd\":{},\"qc20\":{},\"qc30\":{},\"fcp\":{},\"afc\":{},\"scp\":{},\"pe20\":{},\"bc12\":{},\"sfcp\":{}}},\"pd\":{{\"pps\":{},\"fixed_voltages_mv\":[",
+        cfg.hardware.as_str(),
+        if power.persisted { "true" } else { "false" },
+        cfg.tps_mode.as_str(),
+        cfg.capability.power_watts,
+        cfg.capability.pd_enabled,
+        cfg.capability.qc20_enabled,
+        cfg.capability.qc30_enabled,
+        cfg.capability.fcp_enabled,
+        cfg.capability.afc_enabled,
+        cfg.capability.scp_enabled,
+        cfg.capability.pe20_enabled,
+        cfg.capability.bc12_enabled,
+        cfg.capability.sfcp_enabled,
+        cfg.capability.pps_enabled,
+    );
+    write_fixed_voltage_json(body, cfg.capability.fixed_9v, 9000);
+    write_fixed_voltage_json(body, cfg.capability.fixed_12v, 12000);
+    write_fixed_voltage_json(body, cfg.capability.fixed_15v, 15000);
+    write_fixed_voltage_json(body, cfg.capability.fixed_20v, 20000);
+    let _ = core::write!(
+        body,
+        "]}},\"manual\":{{\"voltage_mv\":{},\"current_limit_ma\":{},\"usb_c_path_mode\":\"{}\",\"path_policy\":\"{}\"}},\"lock\":",
+        cfg.manual.voltage_mv,
+        cfg.manual.current_limit_ma,
+        cfg.manual.usb_c_path_mode.as_str(),
+        power
+            .last_path_control
+            .map(|control| control.as_str())
+            .unwrap_or("unknown"),
+    );
+    match power.lock {
+        Some(lock) => {
+            let _ = core::write!(
+                body,
+                "{{\"owner\":{},\"expires_at_ms\":{}}}",
+                lock.owner,
+                lock.expires_at_ms
+            );
+        }
+        None => {
+            let _ = body.push_str("null");
+        }
+    }
+    let _ = body.push_str("}");
+}
+
+fn write_fixed_voltage_json(body: &mut String, enabled: bool, mv: u32) {
+    if !enabled {
+        return;
+    }
+    if !body.ends_with('[') {
+        let _ = body.push(',');
+    }
+    let _ = core::write!(body, "{}", mv);
+}
+
 fn write_json_bool_or_null(body: &mut String, v: Option<bool>) {
     match v {
         None => {
@@ -768,6 +1174,60 @@ fn write_json_string(body: &mut String, value: &str) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiActionError {
     Busy,
+}
+
+const POWER_LOCK_TTL_MS: u64 = 15_000;
+
+pub async fn try_set_power_lock(
+    api_state: &'static ApiSharedMutex,
+    owner: u32,
+    acquire: bool,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    let now = uptime_ms();
+    if let Some(lock) = guard.power.lock {
+        if lock.expires_at_ms <= now {
+            guard.power.lock = None;
+        }
+    }
+    if acquire {
+        if guard
+            .power
+            .lock
+            .is_some_and(|lock| lock.owner != owner && lock.expires_at_ms > now)
+        {
+            return Err(ApiActionError::Busy);
+        }
+        guard.power.lock = Some(ApiPowerLock {
+            owner,
+            expires_at_ms: now + POWER_LOCK_TTL_MS,
+        });
+    } else if guard.power.lock.is_some_and(|lock| lock.owner == owner) {
+        guard.power.lock = None;
+    }
+    Ok(())
+}
+
+pub async fn try_set_power_config(
+    api_state: &'static ApiSharedMutex,
+    command: ApiPowerConfigCommand,
+    owner: Option<u32>,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    let now = uptime_ms();
+    if let Some(lock) = guard.power.lock {
+        if lock.expires_at_ms <= now {
+            guard.power.lock = None;
+        } else if owner != Some(lock.owner) {
+            return Err(ApiActionError::Busy);
+        }
+    }
+    if guard.pending.power_config.is_some() {
+        return Err(ApiActionError::Busy);
+    }
+    crate::reset_power_config_result();
+    guard.pending.power_config = Some(command);
+    Ok(())
 }
 
 pub async fn try_set_action(
@@ -830,7 +1290,7 @@ async fn write_preflight_response(
         );
     }
 
-    let _ = headers.push_str("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n");
+    let _ = headers.push_str("Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n");
     let _ = core::write!(
         headers,
         "Access-Control-Allow-Headers: {}\r\n",

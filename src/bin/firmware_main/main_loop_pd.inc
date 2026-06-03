@@ -127,6 +127,51 @@
             }
         }
         #[cfg(feature = "net_http")]
+        {
+            let pending_power_config = {
+                let mut guard = api_state.lock().await;
+                guard.pending.power_config.take()
+            };
+
+            if let Some(command) = pending_power_config {
+                let next_config = match command {
+                    net::ApiPowerConfigCommand::Set { config } => config,
+                    net::ApiPowerConfigCommand::Defaults => PowerConfig::defaults(),
+                };
+                match provisioning::store_power_config(telemetry_sampler.i2c_mut(), next_config)
+                    .await
+                {
+                    Ok(()) => {
+                        power_config = next_config;
+                        power_config_persisted = true;
+                        sw2303_profile_applied = false;
+                        last_sw2303_profile_attempt = None;
+                        last_sw2303_path_control = None;
+                        {
+                            let mut guard = api_state.lock().await;
+                            guard.power.config = power_config;
+                            guard.power.persisted = power_config_persisted;
+                            guard.power.last_path_control = last_sw2303_path_control;
+                        }
+                        POWER_CONFIG_RESULT.signal(true);
+                        info!(
+                            "provisioning: power config saved to EEPROM U21 tps_mode={} manual_mv={} path={}",
+                            power_config.tps_mode.as_str(),
+                            power_config.manual.voltage_mv,
+                            power_config.manual.usb_c_path_mode.as_str()
+                        );
+                    }
+                    Err(err) => {
+                        POWER_CONFIG_RESULT.signal(false);
+                        defmt::warn!(
+                            "provisioning: failed to save power config to EEPROM U21: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "net_http")]
         if REBOOT_PENDING.load(Ordering::Acquire) && !has_wifi_provisioning_pending() {
             REBOOT_PENDING.store(false, Ordering::Release);
             Timer::after_millis(100).await;
@@ -295,7 +340,7 @@
                 .unwrap_or(true);
             if allow_retry {
                 last_sw2303_profile_attempt = Some(Instant::now());
-                match apply_enable_profile_full(&mut sw2303_i2c).await {
+                match apply_enable_profile(&mut sw2303_i2c, &power_config).await {
                     Ok(status) => {
                         sw2303_profile_applied = true;
                         log_sw2303_profile_status("applied after stable target reads", &status);
@@ -334,6 +379,55 @@
         } else {
             last_request = None;
             last_fast_protocol = None;
+        }
+
+        if usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual {
+            let manual_vout_mv = quantize_manual_voltage_mv(power_config.manual.voltage_mv);
+            setpoint = PowerSetpoint {
+                output_enabled: true,
+                v_out_mv: manual_vout_mv,
+                i_lim_ma: power_config.manual.current_limit_ma,
+            };
+
+            let sw_request_mv = request
+                .filter(|request| request.status_valid)
+                .map(|request| request.v_req_mv);
+            let path_control = resolve_manual_path_control(
+                power_config.manual.usb_c_path_mode,
+                manual_vout_mv,
+                sw_request_mv,
+            );
+
+            if sw2303_i2c_allowed && last_sw2303_path_control != Some(path_control) {
+                match set_path_control(&mut sw2303_i2c, path_control).await {
+                    Ok(()) => {
+                        last_sw2303_path_control = Some(path_control);
+                        info!("sw2303 path control: {}", path_control.as_str());
+                    }
+                    Err(err) => {
+                        defmt::warn!(
+                            "sw2303 path control failed: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                    }
+                }
+            }
+        } else if usb_c_pd_power_on
+            && sw2303_i2c_allowed
+            && last_sw2303_path_control != Some(Sw2303PathControl::Auto)
+        {
+            match set_path_control(&mut sw2303_i2c, Sw2303PathControl::Auto).await {
+                Ok(()) => {
+                    last_sw2303_path_control = Some(Sw2303PathControl::Auto);
+                    info!("sw2303 path control: auto");
+                }
+                Err(err) => {
+                    defmt::warn!(
+                        "sw2303 path control auto failed: {:?}",
+                        defmt::Debug2Format(&err)
+                    );
+                }
+            }
         }
 
         loop_delay_ms = SW2303_POLL_MS;

@@ -136,6 +136,136 @@
                                         );
                                     }
                                 }
+                                _ => {}
+                            },
+                            SettingsMenuItem::PowerPreset => match settings_menu_view {
+                                SettingsMenuView::Main => {
+                                    settings_menu_view = SettingsMenuView::PowerPresetDetail;
+                                    settings_menu_until =
+                                        Some(buttons_now + Duration::from_millis(SETTINGS_MENU_MS));
+                                    let lines = power_preset_lines(power_config);
+                                    let _ = ui
+                                        .show_lines_card(
+                                            buttons_now,
+                                            "POWER PRESET",
+                                            &lines,
+                                            TOAST_INFO_RAW,
+                                            Duration::from_millis(SETTINGS_MENU_MS),
+                                        )
+                                        .await;
+                                    prompt_tone.notify(SoundEvent::MenuConfirm);
+                                }
+                                SettingsMenuView::PowerPresetDetail => {
+                                    match net::try_set_power_config(
+                                        api_state,
+                                        net::ApiPowerConfigCommand::Defaults,
+                                        None,
+                                    )
+                                    .await
+                                    {
+                                        Ok(()) => {
+                                            let _ = ui
+                                                .show_message_card(
+                                                    buttons_now,
+                                                    "POWER PRESET",
+                                                    "FULL AUTO PENDING",
+                                                    "EEPROM SAVE",
+                                                    TOAST_OK_RAW,
+                                                    Duration::from_millis(TOAST_MS),
+                                                )
+                                                .await;
+                                            prompt_tone.notify(SoundEvent::MenuConfirm);
+                                            settings_menu_until = None;
+                                            settings_menu_view = SettingsMenuView::Main;
+                                            button_fast_loop_until = Some(
+                                                buttons_now
+                                                    + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                            );
+                                        }
+                                        Err(_) => {
+                                            let (lines, fg_raw) =
+                                                toast_spec(ButtonId::Right, ToastId::Busy);
+                                            let _ = ui
+                                                .show_toast(
+                                                    buttons_now,
+                                                    lines,
+                                                    fg_raw,
+                                                    Duration::from_millis(TOAST_MS),
+                                                )
+                                                .await;
+                                            prompt_tone.notify(SoundEvent::ActionFail);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            },
+                            SettingsMenuItem::PowerAdvanced => match settings_menu_view {
+                                SettingsMenuView::Main => {
+                                    settings_menu_view = SettingsMenuView::PowerAdvancedDetail;
+                                    settings_menu_until =
+                                        Some(buttons_now + Duration::from_millis(SETTINGS_MENU_MS));
+                                    let lines = power_advanced_lines(power_config);
+                                    let _ = ui
+                                        .show_lines_card(
+                                            buttons_now,
+                                            "POWER ADV",
+                                            &lines,
+                                            TOAST_INFO_RAW,
+                                            Duration::from_millis(SETTINGS_MENU_MS),
+                                        )
+                                        .await;
+                                    prompt_tone.notify(SoundEvent::MenuConfirm);
+                                }
+                                SettingsMenuView::PowerAdvancedDetail => {
+                                    let next_config = toggled_power_mode_config(power_config);
+                                    match net::try_set_power_config(
+                                        api_state,
+                                        net::ApiPowerConfigCommand::Set {
+                                            config: next_config,
+                                        },
+                                        None,
+                                    )
+                                    .await
+                                    {
+                                        Ok(()) => {
+                                            let next_label = match next_config.tps_mode {
+                                                TpsMode::AutoFollow => "AUTO FOLLOW PENDING",
+                                                TpsMode::Manual => "MANUAL TPS PENDING",
+                                            };
+                                            let _ = ui
+                                                .show_message_card(
+                                                    buttons_now,
+                                                    "POWER ADV",
+                                                    next_label,
+                                                    "EEPROM SAVE",
+                                                    TOAST_OK_RAW,
+                                                    Duration::from_millis(TOAST_MS),
+                                                )
+                                                .await;
+                                            prompt_tone.notify(SoundEvent::MenuConfirm);
+                                            settings_menu_until = None;
+                                            settings_menu_view = SettingsMenuView::Main;
+                                            button_fast_loop_until = Some(
+                                                buttons_now
+                                                    + Duration::from_millis(POWER_SWITCH_GUARD_MS),
+                                            );
+                                        }
+                                        Err(_) => {
+                                            let (lines, fg_raw) =
+                                                toast_spec(ButtonId::Right, ToastId::Busy);
+                                            let _ = ui
+                                                .show_toast(
+                                                    buttons_now,
+                                                    lines,
+                                                    fg_raw,
+                                                    Duration::from_millis(TOAST_MS),
+                                                )
+                                                .await;
+                                            prompt_tone.notify(SoundEvent::ActionFail);
+                                        }
+                                    }
+                                }
+                                _ => {}
                             },
                             SettingsMenuItem::Wifi => {
                                 let (short_id, ip) = if let Some(handles) = net_handles.as_ref() {
@@ -235,7 +365,7 @@
                                             .await;
                                         prompt_tone.notify(SoundEvent::MenuNavigate);
                                     }
-                                    SettingsMenuView::ModeDetail => {
+                                    _ => {
                                         settings_menu_until = Some(
                                             buttons_now + Duration::from_millis(SETTINGS_MENU_MS),
                                         );
@@ -398,7 +528,7 @@
                                             .await;
                                         prompt_tone.notify(SoundEvent::MenuNavigate);
                                     }
-                                    SettingsMenuView::ModeDetail => {
+                                    _ => {
                                         settings_menu_until = Some(
                                             buttons_now + Duration::from_millis(SETTINGS_MENU_MS),
                                         );
@@ -660,6 +790,14 @@
                 runtime_recovery_count: pd_runtime_recovery_count,
                 sample_uptime_ms: uptime_ms_from_instant(now),
             };
+            if let Some(lock) = guard.power.lock {
+                if lock.expires_at_ms <= uptime_ms_from_instant(now) {
+                    guard.power.lock = None;
+                }
+            }
+            guard.power.config = power_config;
+            guard.power.persisted = power_config_persisted;
+            guard.power.last_path_control = last_sw2303_path_control;
         }
 
         let now_us = esp_hal::time::Instant::now()

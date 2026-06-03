@@ -106,6 +106,130 @@ async fn handle_usb_jsonl_request(
         return body;
     }
 
+    if request.contains("\"method\":\"power.config_get\"")
+        || request.contains("\"method\": \"power.config_get\"")
+    {
+        let state = { *api_state.lock().await };
+        let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+        net::write_power_config_json(&mut body, &state.power);
+        let _ = body.push('}');
+        return body;
+    }
+
+    if request.contains("\"method\":\"power.config_set\"")
+        || request.contains("\"method\": \"power.config_set\"")
+    {
+        let Some(config) = net::parse_power_config_body(request) else {
+            write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "bad_request",
+                "missing or invalid power config",
+                false,
+            );
+            return body;
+        };
+        let owner = extract_json_u32(request, "owner");
+        match net::try_set_power_config(
+            api_state,
+            net::ApiPowerConfigCommand::Set { config },
+            owner,
+        )
+        .await
+        {
+            Ok(()) => {
+                if wait_power_config_result().await {
+                    let state = { *api_state.lock().await };
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+                    net::write_power_config_json(&mut body, &state.power);
+                    let _ = body.push('}');
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "eeprom_failed",
+                        "Power configuration could not be saved to EEPROM U21",
+                        true,
+                    );
+                }
+            }
+            Err(net::ApiActionError::Busy) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "busy",
+                    "power configuration is busy or locked",
+                    true,
+                );
+            }
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"power.config_defaults\"")
+        || request.contains("\"method\": \"power.config_defaults\"")
+    {
+        let owner = extract_json_u32(request, "owner");
+        match net::try_set_power_config(api_state, net::ApiPowerConfigCommand::Defaults, owner)
+            .await
+        {
+            Ok(()) => {
+                if wait_power_config_result().await {
+                    let state = { *api_state.lock().await };
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+                    net::write_power_config_json(&mut body, &state.power);
+                    let _ = body.push('}');
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "eeprom_failed",
+                        "Power defaults could not be saved to EEPROM U21",
+                        true,
+                    );
+                }
+            }
+            Err(net::ApiActionError::Busy) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "busy",
+                    "power configuration is busy or locked",
+                    true,
+                );
+            }
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"power.lock\"")
+        || request.contains("\"method\": \"power.lock\"")
+    {
+        let Some(owner) = extract_json_u32(request, "owner") else {
+            write_jsonl_error(&mut body, id.as_str(), "bad_request", "missing owner", false);
+            return body;
+        };
+        let acquire = extract_json_bool(request, "acquire").unwrap_or(true);
+        match net::try_set_power_lock(api_state, owner, acquire).await {
+            Ok(()) => {
+                let state = { *api_state.lock().await };
+                let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+                net::write_power_config_json(&mut body, &state.power);
+                let _ = body.push('}');
+            }
+            Err(net::ApiActionError::Busy) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "busy",
+                    "power configuration lock is owned by another host",
+                    true,
+                );
+            }
+        }
+        return body;
+    }
+
     if request.contains("\"method\":\"hub.route_set\"")
         || request.contains("\"method\": \"hub.route_set\"")
     {
@@ -382,6 +506,16 @@ pub(crate) fn reset_usb_c_route_result() {
 }
 
 #[cfg(feature = "net_http")]
+pub(crate) async fn wait_power_config_result() -> bool {
+    POWER_CONFIG_RESULT.wait().await
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) fn reset_power_config_result() {
+    POWER_CONFIG_RESULT.reset();
+}
+
+#[cfg(feature = "net_http")]
 fn extract_json_string(request: &str, key: &str) -> Option<alloc::string::String> {
     let rest = json_value_after_key(request, key)?;
     parse_json_string_value(rest).map(|(value, _)| value)
@@ -397,6 +531,22 @@ fn extract_json_bool(request: &str, key: &str) -> Option<bool> {
     } else {
         None
     }
+}
+
+#[cfg(feature = "net_http")]
+fn extract_json_u32(request: &str, key: &str) -> Option<u32> {
+    let rest = json_value_after_key(request, key)?;
+    let mut out = 0u32;
+    let mut seen = false;
+    for ch in rest.chars() {
+        if let Some(digit) = ch.to_digit(10) {
+            seen = true;
+            out = out.checked_mul(10)?.checked_add(digit)?;
+        } else {
+            break;
+        }
+    }
+    seen.then_some(out)
 }
 
 #[cfg(feature = "net_http")]

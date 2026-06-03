@@ -17,6 +17,9 @@ use esp_radio::{
     wifi::{self, ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent},
 };
 use heapless::{String as HString, Vec};
+use isolapurr_usb_hub::power_config::{
+    ManualTpsConfig, ManualUsbCPathMode, PowerConfig, TpsMode, UsbCCapabilityConfig,
+};
 use isolapurr_usb_hub::provisioning::{
     DEFAULT_USB_C_DOWNSTREAM_ROUTE, UsbCDownstreamRoute, WifiCredentials,
 };
@@ -262,9 +265,40 @@ impl ApiPdSnapshot {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiPowerLock {
+    pub owner: u32,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiPowerSnapshot {
+    pub config: PowerConfig,
+    pub persisted: bool,
+    pub lock: Option<ApiPowerLock>,
+    pub last_path_control: Option<isolapurr_usb_hub::power_config::Sw2303PathControl>,
+}
+
+impl ApiPowerSnapshot {
+    pub const fn unknown() -> Self {
+        Self {
+            config: PowerConfig::defaults(),
+            persisted: false,
+            lock: None,
+            last_path_control: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiPortAction {
     Replug,
     Power { enabled: bool },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiPowerConfigCommand {
+    Set { config: PowerConfig },
+    Defaults,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -272,6 +306,7 @@ pub struct ApiPendingActions {
     pub port_a: Option<ApiPortAction>,
     pub port_c: Option<ApiPortAction>,
     pub usb_c_downstream_route: Option<UsbCDownstreamRoute>,
+    pub power_config: Option<ApiPowerConfigCommand>,
 }
 
 impl ApiPendingActions {
@@ -280,6 +315,7 @@ impl ApiPendingActions {
             port_a: None,
             port_c: None,
             usb_c_downstream_route: None,
+            power_config: None,
         }
     }
 }
@@ -289,6 +325,7 @@ pub struct ApiSharedState {
     pub hub: ApiHubSnapshot,
     pub ports: ApiPortsSnapshot,
     pub pd: ApiPdSnapshot,
+    pub power: ApiPowerSnapshot,
     pub pending: ApiPendingActions,
 }
 
@@ -298,6 +335,7 @@ impl ApiSharedState {
             hub: ApiHubSnapshot::unknown(),
             ports: ApiPortsSnapshot::unknown(),
             pd: ApiPdSnapshot::unknown(),
+            power: ApiPowerSnapshot::unknown(),
             pending: ApiPendingActions::empty(),
         }
     }

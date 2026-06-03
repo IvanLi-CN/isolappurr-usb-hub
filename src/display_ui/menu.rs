@@ -1,5 +1,4 @@
 use super::dashboard_font;
-use super::icons::{ICON_H, ICON_W, LUCIDE_INFO_40, LUCIDE_TOGGLE_RIGHT_40, LUCIDE_WIFI_40};
 use super::surface::{FrameSurface, blend565, rgb565_raw};
 
 const MENU_BG_RAW: u16 = rgb565_raw(0xF5, 0xF8, 0xFA);
@@ -24,21 +23,29 @@ pub(super) fn render_settings_menu(surface: &mut FrameSurface<'_>, selected_inde
         "SETTINGS",
         MENU_MUTED_RAW,
     );
+    let selected_label = match selected_index {
+        0 => "USB-C MODE",
+        1 => "PRESET",
+        2 => "ADVANCED",
+        3 => "WIFI",
+        _ => "ABOUT",
+    };
     surface.draw_text_aa(
         22,
         44,
         &dashboard_font::MEDIUM,
         0,
-        "USB-C MODE",
+        selected_label,
         MENU_INK_RAW,
     );
 
-    let x0 = 34;
+    let labels = ["MODE", "PRE", "ADV", "WIFI", "INFO"];
+    let x0 = 12;
     let y0 = 88;
-    let segment_w = 64;
-    let segment_h = 64;
-    let gap = 29;
-    for index in 0..3 {
+    let segment_w = 52;
+    let segment_h = 56;
+    let gap = 8;
+    for (index, label) in labels.iter().enumerate() {
         let x = x0 + index as i32 * (segment_w + gap);
         let selected = index == selected_index;
         let fill = if selected {
@@ -59,7 +66,7 @@ pub(super) fn render_settings_menu(surface: &mut FrameSurface<'_>, selected_inde
 
         surface.fill_round_rect(x, y0, segment_w, segment_h, 12, border);
         surface.fill_round_rect(x + 2, y0 + 2, segment_w - 4, segment_h - 4, 10, fill);
-        draw_settings_menu_icon(surface, index, x, y0, segment_w, icon);
+        surface.draw_text_aa(x + 8, y0 + 22, &dashboard_font::SMALL, 0, label, icon);
     }
 }
 
@@ -105,30 +112,6 @@ pub(super) fn render_message_card(
             blend565(MENU_PANEL_RAW, accent_raw, 76),
         );
     }
-}
-
-fn draw_settings_menu_icon(
-    surface: &mut FrameSurface<'_>,
-    index: usize,
-    x: i32,
-    y: i32,
-    w: i32,
-    icon: u16,
-) {
-    let cx = x + w / 2;
-    let data = match index {
-        0 => &LUCIDE_TOGGLE_RIGHT_40,
-        1 => &LUCIDE_WIFI_40,
-        _ => &LUCIDE_INFO_40,
-    };
-    surface.draw_bitmap_1bpp(
-        cx - i32::from(ICON_W) / 2,
-        y + (64 - i32::from(ICON_H)) / 2,
-        ICON_W,
-        ICON_H,
-        data,
-        icon,
-    );
 }
 
 pub(super) fn trim_ascii_line<const N: usize>(line: &[u8; N]) -> &str {

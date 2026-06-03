@@ -4,6 +4,11 @@ use embassy_time::{Duration, Timer};
 use embedded_hal::i2c::{Error, ErrorKind, SevenBitAddress};
 use embedded_hal_async::i2c::{I2c, Operation};
 
+use crate::power_config::{
+    ManualTpsConfig, ManualUsbCPathMode, PowerConfig, PowerHardwareKind, TpsMode,
+    UsbCCapabilityConfig,
+};
+
 pub const WIFI_EEPROM_ADDR_7BIT: SevenBitAddress = 0x50;
 
 const RECORD_LEN: usize = 160;
@@ -21,6 +26,10 @@ const DEVICE_SETTINGS_VERSION: u8 = 1;
 const DEVICE_SETTINGS_RECORD_OFFSET: u16 = 256;
 const DEVICE_SETTINGS_ROUTE_MCU: u8 = 0;
 const DEVICE_SETTINGS_ROUTE_USB_C: u8 = 1;
+const POWER_SETTINGS_RECORD_LEN: usize = 96;
+const POWER_SETTINGS_MAGIC: &[u8; 8] = b"IPPWR01\0";
+const POWER_SETTINGS_VERSION: u8 = 1;
+const POWER_SETTINGS_RECORD_OFFSET: u16 = 320;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UsbCDownstreamRoute {
@@ -278,6 +287,152 @@ where
     let crc = checksum(&record);
     record[DEVICE_SETTINGS_RECORD_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
     eeprom_write(i2c, DEVICE_SETTINGS_RECORD_OFFSET, &record).await
+}
+
+pub async fn load_power_config<I2C>(
+    i2c: &mut I2C,
+) -> Result<Option<PowerConfig>, ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let mut record = [0u8; POWER_SETTINGS_RECORD_LEN];
+    eeprom_read(i2c, POWER_SETTINGS_RECORD_OFFSET, &mut record).await?;
+
+    if record.iter().all(|b| *b == 0x00 || *b == 0xff) {
+        return Ok(None);
+    }
+    if &record[..POWER_SETTINGS_MAGIC.len()] != POWER_SETTINGS_MAGIC
+        || record[POWER_SETTINGS_MAGIC.len()] != POWER_SETTINGS_VERSION
+    {
+        return Err(ProvisioningError::InvalidRecord);
+    }
+
+    let checksum_offset = POWER_SETTINGS_RECORD_LEN - 4;
+    let expected = u32::from_le_bytes([
+        record[checksum_offset],
+        record[checksum_offset + 1],
+        record[checksum_offset + 2],
+        record[checksum_offset + 3],
+    ]);
+    record[checksum_offset..].fill(0);
+    if checksum(&record) != expected {
+        return Err(ProvisioningError::InvalidRecord);
+    }
+
+    decode_power_config(&record)
+        .and_then(|config| config.validated().ok())
+        .map(Some)
+        .ok_or(ProvisioningError::InvalidRecord)
+}
+
+pub async fn store_power_config<I2C>(
+    i2c: &mut I2C,
+    config: PowerConfig,
+) -> Result<(), ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let config = config
+        .validated()
+        .map_err(|_| ProvisioningError::InvalidInput)?;
+    let mut record = [0u8; POWER_SETTINGS_RECORD_LEN];
+    record[..POWER_SETTINGS_MAGIC.len()].copy_from_slice(POWER_SETTINGS_MAGIC);
+    record[POWER_SETTINGS_MAGIC.len()] = POWER_SETTINGS_VERSION;
+    encode_power_config(&mut record, config);
+
+    let crc = checksum(&record);
+    record[POWER_SETTINGS_RECORD_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
+    eeprom_write(i2c, POWER_SETTINGS_RECORD_OFFSET, &record).await
+}
+
+fn encode_power_config(record: &mut [u8; POWER_SETTINGS_RECORD_LEN], config: PowerConfig) {
+    record[9] = match config.hardware {
+        PowerHardwareKind::Sw2303 => 0,
+    };
+    record[10] = match config.tps_mode {
+        TpsMode::AutoFollow => 0,
+        TpsMode::Manual => 1,
+    };
+    record[11] = match config.manual.usb_c_path_mode {
+        ManualUsbCPathMode::Default => 0,
+        ManualUsbCPathMode::Disconnect => 1,
+        ManualUsbCPathMode::Force => 2,
+    };
+    record[12..14].copy_from_slice(&config.manual.voltage_mv.to_le_bytes());
+    record[14..16].copy_from_slice(&config.manual.current_limit_ma.to_le_bytes());
+    record[16] = config.capability.power_watts;
+    record[17] = pack_capability_flags(config.capability);
+    record[18] = pack_pd_flags(config.capability);
+}
+
+fn decode_power_config(record: &[u8; POWER_SETTINGS_RECORD_LEN]) -> Option<PowerConfig> {
+    let hardware = match record[9] {
+        0 => PowerHardwareKind::Sw2303,
+        _ => return None,
+    };
+    let tps_mode = match record[10] {
+        0 => TpsMode::AutoFollow,
+        1 => TpsMode::Manual,
+        _ => return None,
+    };
+    let usb_c_path_mode = match record[11] {
+        0 => ManualUsbCPathMode::Default,
+        1 => ManualUsbCPathMode::Disconnect,
+        2 => ManualUsbCPathMode::Force,
+        _ => return None,
+    };
+    let manual = ManualTpsConfig {
+        voltage_mv: u16::from_le_bytes([record[12], record[13]]),
+        current_limit_ma: u16::from_le_bytes([record[14], record[15]]),
+        usb_c_path_mode,
+    };
+    let capability = unpack_capability(record[16], record[17], record[18]);
+    Some(PowerConfig {
+        hardware,
+        capability,
+        tps_mode,
+        manual,
+    })
+}
+
+fn pack_capability_flags(capability: UsbCCapabilityConfig) -> u8 {
+    (capability.pd_enabled as u8)
+        | ((capability.qc20_enabled as u8) << 1)
+        | ((capability.qc30_enabled as u8) << 2)
+        | ((capability.fcp_enabled as u8) << 3)
+        | ((capability.afc_enabled as u8) << 4)
+        | ((capability.scp_enabled as u8) << 5)
+        | ((capability.pe20_enabled as u8) << 6)
+        | ((capability.bc12_enabled as u8) << 7)
+}
+
+fn pack_pd_flags(capability: UsbCCapabilityConfig) -> u8 {
+    (capability.sfcp_enabled as u8)
+        | ((capability.pps_enabled as u8) << 1)
+        | ((capability.fixed_9v as u8) << 2)
+        | ((capability.fixed_12v as u8) << 3)
+        | ((capability.fixed_15v as u8) << 4)
+        | ((capability.fixed_20v as u8) << 5)
+}
+
+fn unpack_capability(power_watts: u8, flags: u8, pd_flags: u8) -> UsbCCapabilityConfig {
+    UsbCCapabilityConfig {
+        power_watts,
+        pd_enabled: flags & (1 << 0) != 0,
+        qc20_enabled: flags & (1 << 1) != 0,
+        qc30_enabled: flags & (1 << 2) != 0,
+        fcp_enabled: flags & (1 << 3) != 0,
+        afc_enabled: flags & (1 << 4) != 0,
+        scp_enabled: flags & (1 << 5) != 0,
+        pe20_enabled: flags & (1 << 6) != 0,
+        bc12_enabled: flags & (1 << 7) != 0,
+        sfcp_enabled: pd_flags & (1 << 0) != 0,
+        pps_enabled: pd_flags & (1 << 1) != 0,
+        fixed_9v: pd_flags & (1 << 2) != 0,
+        fixed_12v: pd_flags & (1 << 3) != 0,
+        fixed_15v: pd_flags & (1 << 4) != 0,
+        fixed_20v: pd_flags & (1 << 5) != 0,
+    }
 }
 
 async fn eeprom_read<I2C>(

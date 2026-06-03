@@ -18,12 +18,18 @@ import {
   type DeviceInfoResponse,
   getDeviceInfo,
   getPorts,
+  getPowerConfig,
   getWifiConfig,
+  type PowerConfigInput,
+  type PowerConfigResponse,
   type RebootResponse,
   type Result,
   rebootDevice,
   replugPort,
+  restorePowerDefaults,
   setPortPower,
+  setPowerConfig,
+  setPowerLock,
   setUsbCDownstreamRoute,
   setWifiConfig,
   type WifiConfigInput,
@@ -99,6 +105,21 @@ type DeviceRuntimeContextValue = {
   ) => Promise<Result<WifiMutationResponse>>;
   clearWifiConfig: (deviceId: string) => Promise<Result<WifiMutationResponse>>;
   rebootDevice: (deviceId: string) => Promise<Result<RebootResponse>>;
+  powerConfig: (deviceId: string) => Promise<Result<PowerConfigResponse>>;
+  savePowerConfig: (
+    deviceId: string,
+    input: PowerConfigInput,
+    owner: number,
+  ) => Promise<Result<PowerConfigResponse>>;
+  restorePowerDefaults: (
+    deviceId: string,
+    owner: number,
+  ) => Promise<Result<PowerConfigResponse>>;
+  setPowerLock: (
+    deviceId: string,
+    owner: number,
+    acquire: boolean,
+  ) => Promise<Result<PowerConfigResponse>>;
   setPower: (
     deviceId: string,
     portId: PortId,
@@ -365,6 +386,29 @@ export function DeviceRuntimeProvider({
         }
         if (method === "wifi.get") {
           return getWifiConfig(baseUrl) as Promise<Result<T>>;
+        }
+        if (method === "power.config_get") {
+          return getPowerConfig(baseUrl) as Promise<Result<T>>;
+        }
+        if (method === "power.config_set") {
+          return setPowerConfig(
+            baseUrl,
+            params?.config as PowerConfigInput,
+            Number(params?.owner ?? 0),
+          ) as Promise<Result<T>>;
+        }
+        if (method === "power.config_defaults") {
+          return restorePowerDefaults(
+            baseUrl,
+            Number(params?.owner ?? 0),
+          ) as Promise<Result<T>>;
+        }
+        if (method === "power.lock") {
+          return setPowerLock(
+            baseUrl,
+            Number(params?.owner ?? 0),
+            Boolean(params?.acquire ?? true),
+          ) as Promise<Result<T>>;
         }
         if (method === "wifi.set") {
           return setWifiConfig(baseUrl, {
@@ -769,6 +813,67 @@ export function DeviceRuntimeProvider({
     [runDeviceCommand],
   );
 
+  const powerConfig = useCallback(
+    async (deviceId: string): Promise<Result<PowerConfigResponse>> => {
+      return runDeviceCommand<PowerConfigResponse>(
+        deviceId,
+        "power.config_get",
+      );
+    },
+    [runDeviceCommand],
+  );
+
+  const savePowerConfig = useCallback(
+    async (
+      deviceId: string,
+      input: PowerConfigInput,
+      owner: number,
+    ): Promise<Result<PowerConfigResponse>> => {
+      const res = await runDeviceCommand<PowerConfigResponse>(
+        deviceId,
+        "power.config_set",
+        { config: input, owner },
+      );
+      if (res.ok) {
+        await refreshDevice(deviceId);
+      }
+      return res;
+    },
+    [refreshDevice, runDeviceCommand],
+  );
+
+  const restoreDefaults = useCallback(
+    async (
+      deviceId: string,
+      owner: number,
+    ): Promise<Result<PowerConfigResponse>> => {
+      const res = await runDeviceCommand<PowerConfigResponse>(
+        deviceId,
+        "power.config_defaults",
+        { owner },
+      );
+      if (res.ok) {
+        await refreshDevice(deviceId);
+      }
+      return res;
+    },
+    [refreshDevice, runDeviceCommand],
+  );
+
+  const setLock = useCallback(
+    async (
+      deviceId: string,
+      owner: number,
+      acquire: boolean,
+    ): Promise<Result<PowerConfigResponse>> => {
+      return runDeviceCommand<PowerConfigResponse>(deviceId, "power.lock", {
+        owner,
+        acquire,
+      });
+    },
+    [runDeviceCommand],
+  );
+
   const handleApiErrorToast = useCallback(
     (deviceName: string, label: string, err: DeviceApiError) => {
       if (err.kind === "busy") {
@@ -1043,6 +1148,10 @@ export function DeviceRuntimeProvider({
       saveWifiConfig,
       clearWifiConfig: clearWifi,
       rebootDevice: reboot,
+      powerConfig,
+      savePowerConfig,
+      restorePowerDefaults: restoreDefaults,
+      setPowerLock: setLock,
       setPower,
       replug,
       setUsbCDownstreamRoute: setRoute,
@@ -1051,11 +1160,15 @@ export function DeviceRuntimeProvider({
     clearWifi,
     deviceInfo,
     now,
+    powerConfig,
     reboot,
     refreshDevice,
     replug,
+    restoreDefaults,
     runtimeById,
+    savePowerConfig,
     saveWifiConfig,
+    setLock,
     setRoute,
     setPower,
     wifiConfig,

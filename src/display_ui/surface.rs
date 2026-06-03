@@ -115,27 +115,6 @@ impl<'a> FrameSurface<'a> {
         self.draw_text_centered_aa(x, y, w, h, font, spacing, text, text_color);
     }
 
-    pub(super) fn draw_bitmap_1bpp(
-        &mut self,
-        x: i32,
-        y: i32,
-        width: u16,
-        height: u16,
-        data: &[u8],
-        color: u16,
-    ) {
-        for py in 0..height as usize {
-            for px in 0..width as usize {
-                let bit_index = py * width as usize + px;
-                let byte = data[bit_index / 8];
-                let mask = 1 << (7 - (bit_index % 8));
-                if byte & mask != 0 {
-                    self.set(x + px as i32, y + py as i32, color);
-                }
-            }
-        }
-    }
-
     fn draw_alpha_glyph(&mut self, x: i32, y: i32, glyph: &dashboard_font::AaGlyph, color: u16) {
         let width = glyph.width as usize;
         for gy in 0..glyph.height as usize {
