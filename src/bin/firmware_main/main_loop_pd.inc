@@ -154,19 +154,9 @@
                             guard.power.last_path_control = last_sw2303_path_control;
                         }
                         POWER_CONFIG_RESULT.signal(true);
-                        info!(
-                            "provisioning: power config saved to EEPROM U21 tps_mode={} manual_mv={} path={}",
-                            power_config.tps_mode.as_str(),
-                            power_config.manual.voltage_mv,
-                            power_config.manual.usb_c_path_mode.as_str()
-                        );
                     }
-                    Err(err) => {
+                    Err(_) => {
                         POWER_CONFIG_RESULT.signal(false);
-                        defmt::warn!(
-                            "provisioning: failed to save power config to EEPROM U21: {:?}",
-                            defmt::Debug2Format(&err)
-                        );
                     }
                 }
             }

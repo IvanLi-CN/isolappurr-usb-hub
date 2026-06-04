@@ -164,12 +164,15 @@ impl PowerConfig {
         }
         self.manual.current_limit_ma =
             clamp_manual_current_ma(self.manual.voltage_mv, self.manual.current_limit_ma);
+        if self.manual.current_limit_ma == 0 {
+            return Err(PowerConfigError::InvalidCurrent);
+        }
         Ok(self)
     }
 }
 
 pub fn clamp_manual_current_ma(voltage_mv: u16, requested_ma: u16) -> u16 {
-    let power_limited_ma = (POWER_CAP_MW / voltage_mv.max(1) as u32) as u16;
+    let power_limited_ma = (POWER_CAP_MW.saturating_mul(1_000) / voltage_mv.max(1) as u32) as u16;
     quantize_manual_current_ma(requested_ma.min(power_limited_ma).min(TPS_MAX_CURRENT_MA))
 }
 

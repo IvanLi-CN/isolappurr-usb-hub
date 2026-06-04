@@ -1081,7 +1081,7 @@ pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
     write_fixed_voltage_json(body, cfg.capability.fixed_20v, 20000);
     let _ = core::write!(
         body,
-        "]}},\"manual\":{{\"voltage_mv\":{},\"current_limit_ma\":{},\"usb_c_path_mode\":\"{}\",\"path_policy\":\"{}\"}},\"lock\":",
+        "]}}}},\"manual\":{{\"voltage_mv\":{},\"current_limit_ma\":{},\"usb_c_path_mode\":\"{}\",\"path_policy\":\"{}\"}},\"lock\":",
         cfg.manual.voltage_mv,
         cfg.manual.current_limit_ma,
         cfg.manual.usb_c_path_mode.as_str(),
