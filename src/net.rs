@@ -18,7 +18,8 @@ use esp_radio::{
 };
 use heapless::{String as HString, Vec};
 use isolapurr_usb_hub::power_config::{
-    ManualTpsConfig, ManualUsbCPathMode, PowerConfig, TpsMode, UsbCCapabilityConfig,
+    ManualTpsConfig, ManualUsbCPathMode, PowerConfig, Sw2303CapabilityReadback, TpsMode,
+    UsbCCapabilityConfig,
 };
 use isolapurr_usb_hub::provisioning::{
     DEFAULT_USB_C_DOWNSTREAM_ROUTE, UsbCDownstreamRoute, WifiCredentials,
@@ -231,6 +232,8 @@ pub struct ApiPdSnapshot {
     pub sw2303_stable_reads: u32,
     pub sw2303_error_latched: bool,
     pub tps_error_latched: bool,
+    pub sw2303_readback_config: Sw2303CapabilityReadback,
+    pub sw2303_readback_matches_config: bool,
     pub sw2303_request_mv: Option<u32>,
     pub sw2303_request_ma: Option<u32>,
     pub sw2303_last_valid_mv: Option<u32>,
@@ -251,6 +254,8 @@ impl ApiPdSnapshot {
             sw2303_stable_reads: 0,
             sw2303_error_latched: false,
             tps_error_latched: false,
+            sw2303_readback_config: Sw2303CapabilityReadback::unavailable(),
+            sw2303_readback_matches_config: false,
             sw2303_request_mv: None,
             sw2303_request_ma: None,
             sw2303_last_valid_mv: None,

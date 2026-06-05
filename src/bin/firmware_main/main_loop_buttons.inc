@@ -574,6 +574,9 @@
                                         tps_5v_setpoint_since = None;
                                         sw2303_i2c_allowed = false;
                                         sw2303_profile_applied = false;
+                                        sw2303_readback_config =
+                                            Sw2303CapabilityReadback::unavailable();
+                                        sw2303_recontract_pending = false;
                                         sw2303_stable_reads = 0;
                                         sw2303_consecutive_errors = 0;
                                         tps_consecutive_errors = 0;
@@ -632,6 +635,9 @@
                                         tps_5v_setpoint_since = None;
                                         sw2303_i2c_allowed = false;
                                         sw2303_profile_applied = false;
+                                        sw2303_readback_config =
+                                            Sw2303CapabilityReadback::unavailable();
+                                        sw2303_recontract_pending = false;
                                         sw2303_stable_reads = 0;
                                         sw2303_consecutive_errors = 0;
                                         tps_consecutive_errors = 0;
@@ -778,6 +784,8 @@
                 sw2303_stable_reads: sw2303_stable_reads as u32,
                 sw2303_error_latched,
                 tps_error_latched,
+                sw2303_readback_config,
+                sw2303_readback_matches_config: sw2303_readback_config.matches_config(&power_config),
                 sw2303_request_mv: request.map(|request| request.v_req_mv as u32),
                 sw2303_request_ma: request.map(|request| request.i_req_ma as u32),
                 sw2303_last_valid_mv: last_valid_sw2303_request

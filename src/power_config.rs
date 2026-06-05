@@ -117,6 +117,69 @@ pub struct PowerConfig {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Sw2303CapabilityReadback {
+    pub available: bool,
+    pub power_watts: Option<u8>,
+    pub pd_enabled: Option<bool>,
+    pub qc20_enabled: Option<bool>,
+    pub qc30_enabled: Option<bool>,
+    pub fcp_enabled: Option<bool>,
+    pub afc_enabled: Option<bool>,
+    pub scp_enabled: Option<bool>,
+    pub pe20_enabled: Option<bool>,
+    pub bc12_enabled: Option<bool>,
+    pub sfcp_enabled: Option<bool>,
+    pub pps_enabled: Option<bool>,
+    pub fixed_9v: Option<bool>,
+    pub fixed_12v: Option<bool>,
+    pub fixed_15v: Option<bool>,
+    pub fixed_20v: Option<bool>,
+}
+
+impl Sw2303CapabilityReadback {
+    pub const fn unavailable() -> Self {
+        Self {
+            available: false,
+            power_watts: None,
+            pd_enabled: None,
+            qc20_enabled: None,
+            qc30_enabled: None,
+            fcp_enabled: None,
+            afc_enabled: None,
+            scp_enabled: None,
+            pe20_enabled: None,
+            bc12_enabled: None,
+            sfcp_enabled: None,
+            pps_enabled: None,
+            fixed_9v: None,
+            fixed_12v: None,
+            fixed_15v: None,
+            fixed_20v: None,
+        }
+    }
+
+    pub fn matches_config(self, config: &PowerConfig) -> bool {
+        let cap = config.capability;
+        self.available
+            && self.power_watts == Some(cap.power_watts)
+            && self.pd_enabled == Some(cap.pd_enabled)
+            && self.qc20_enabled == Some(cap.qc20_enabled)
+            && self.qc30_enabled == Some(cap.qc30_enabled)
+            && self.fcp_enabled == Some(cap.fcp_enabled)
+            && self.afc_enabled == Some(cap.afc_enabled)
+            && self.scp_enabled == Some(cap.scp_enabled)
+            && self.pe20_enabled == Some(cap.pe20_enabled)
+            && self.bc12_enabled == Some(cap.bc12_enabled)
+            && self.sfcp_enabled == Some(cap.sfcp_enabled)
+            && self.pps_enabled == Some(cap.pps_enabled)
+            && self.fixed_9v == Some(cap.fixed_9v)
+            && self.fixed_12v == Some(cap.fixed_12v)
+            && self.fixed_15v == Some(cap.fixed_15v)
+            && self.fixed_20v == Some(cap.fixed_20v)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PowerConfigError {
     UnsupportedHardware,
     InvalidVoltage,

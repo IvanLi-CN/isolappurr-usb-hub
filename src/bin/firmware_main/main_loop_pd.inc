@@ -138,6 +138,7 @@
                     net::ApiPowerConfigCommand::Set { config } => config,
                     net::ApiPowerConfigCommand::Defaults => PowerConfig::defaults(),
                 };
+                let capability_changed = power_config.capability != next_config.capability;
                 match provisioning::store_power_config(telemetry_sampler.i2c_mut(), next_config)
                     .await
                 {
@@ -145,8 +146,15 @@
                         power_config = next_config;
                         power_config_persisted = true;
                         sw2303_profile_applied = false;
+                        sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
+                        sw2303_recontract_pending =
+                            capability_changed && matches!(port_usb_c.power, PowerState::On);
                         last_sw2303_profile_attempt = None;
                         last_sw2303_path_control = None;
+                        sw2303_stable_reads = 0;
+                        last_valid_sw2303_request = None;
+                        last_request = None;
+                        last_fast_protocol = None;
                         {
                             let mut guard = api_state.lock().await;
                             guard.power.config = power_config;
@@ -320,22 +328,65 @@
             prompt_tone.notify(SoundEvent::ExitError(ErrorKind::Sw2303I2c));
         }
 
-        // Apply the SW2303 profile after target-register polling is stable.
+        // Boot profile apply waits for stable target reads; runtime config changes
+        // apply immediately once SW2303 I2C is usable so source caps do not lag EEPROM.
         if !sw2303_profile_applied
-            && request.is_some()
-            && sw2303_stable_reads >= SW2303_STABLE_READS_BEFORE_PROFILE
+            && sw2303_i2c_allowed
+            && (sw2303_recontract_pending
+                || (request.is_some() && sw2303_stable_reads >= SW2303_STABLE_READS_BEFORE_PROFILE))
         {
             let allow_retry = last_sw2303_profile_attempt
                 .map(|t| t.elapsed() >= Duration::from_secs(60))
-                .unwrap_or(true);
+                .unwrap_or(true)
+                || sw2303_recontract_pending;
             if allow_retry {
+                let apply_context = if sw2303_recontract_pending {
+                    "applied after runtime config change"
+                } else {
+                    "applied after stable target reads"
+                };
                 last_sw2303_profile_attempt = Some(Instant::now());
                 match apply_enable_profile(&mut sw2303_i2c, &power_config).await {
                     Ok(status) => {
-                        sw2303_profile_applied = true;
-                        log_sw2303_profile_status("applied after stable target reads", &status);
+                        sw2303_readback_config = status.readback;
+                        let readback_matches = status.matches_config(&power_config);
+                        sw2303_profile_applied = readback_matches;
+                        log_sw2303_profile_status(apply_context, &status);
+                        if readback_matches {
+                            if sw2303_recontract_pending {
+                                info!(
+                                    "sw2303 profile: readback matched config; triggering CC un-driving to refresh sink contract"
+                                );
+                                match trigger_cc_un_driving(&mut sw2303_i2c).await {
+                                    Ok(()) => {
+                                        Timer::after_millis(SW2303_CC_UN_DRIVING_MS).await;
+                                        info!(
+                                            "sw2303 profile: CC un-driving pulse requested after config refresh"
+                                        );
+                                    }
+                                    Err(err) => {
+                                        defmt::warn!(
+                                            "sw2303 profile: CC un-driving trigger failed after config refresh: {:?}",
+                                            defmt::Debug2Format(&err)
+                                        );
+                                    }
+                                }
+                                request = None;
+                                setpoint = boot_sp;
+                                last_valid_sw2303_request = None;
+                                last_request = None;
+                                last_fast_protocol = None;
+                                sw2303_stable_reads = 0;
+                                sw2303_recontract_pending = false;
+                            }
+                        } else {
+                            defmt::warn!(
+                                "sw2303 profile: readback did not match requested power config; keeping profile_applied=false"
+                            );
+                        }
                     }
                     Err(err) => {
+                        sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
                         defmt::warn!(
                             "sw2303 profile: apply failed after stable target reads: {:?}",
                             defmt::Debug2Format(&err)
@@ -640,6 +691,8 @@
                 tps_error_latched = false;
                 sw2303_stable_reads = 0;
                 sw2303_profile_applied = false;
+                sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
+                sw2303_recontract_pending = false;
                 last_sw2303_read_attempt = None;
                 last_sw2303_profile_attempt = None;
                 last_valid_sw2303_request = None;

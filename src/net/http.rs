@@ -1006,7 +1006,7 @@ fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &Ap
 pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
     let _ = core::write!(
         body,
-        "{{\"usb_c_power_enabled\":{},\"sw2303_i2c_allowed\":{},\"sw2303_profile_applied\":{},\"sw2303_stable_reads\":{},\"sw2303_error_latched\":{},\"tps_error_latched\":{},\"sw2303_request\":{{\"mv\":",
+        "{{\"usb_c_power_enabled\":{},\"sw2303_i2c_allowed\":{},\"sw2303_profile_applied\":{},\"sw2303_stable_reads\":{},\"sw2303_error_latched\":{},\"tps_error_latched\":{},\"sw2303_readback_config\":",
         if pd.usb_c_power_enabled {
             "true"
         } else {
@@ -1034,6 +1034,12 @@ pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
             "false"
         },
     );
+    write_sw2303_readback_json(
+        body,
+        pd.sw2303_readback_config,
+        pd.sw2303_readback_matches_config,
+    );
+    let _ = body.push_str(",\"sw2303_request\":{\"mv\":");
     write_json_u32_or_null(body, pd.sw2303_request_mv);
     let _ = body.push_str(",\"ma\":");
     write_json_u32_or_null(body, pd.sw2303_request_ma);
@@ -1053,6 +1059,46 @@ pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
         pd.runtime_recovery_count,
         pd.sample_uptime_ms
     );
+}
+
+fn write_sw2303_readback_json(
+    body: &mut String,
+    readback: isolapurr_usb_hub::power_config::Sw2303CapabilityReadback,
+    matches_config: bool,
+) {
+    let _ = core::write!(
+        body,
+        "{{\"available\":{},\"matches_config\":{},\"power_watts\":",
+        if readback.available { "true" } else { "false" },
+        if matches_config { "true" } else { "false" },
+    );
+    write_json_u32_or_null(body, readback.power_watts.map(|v| v as u32));
+    let _ = body.push_str(",\"protocols\":{\"pd\":");
+    write_json_bool_or_null(body, readback.pd_enabled);
+    let _ = body.push_str(",\"qc20\":");
+    write_json_bool_or_null(body, readback.qc20_enabled);
+    let _ = body.push_str(",\"qc30\":");
+    write_json_bool_or_null(body, readback.qc30_enabled);
+    let _ = body.push_str(",\"fcp\":");
+    write_json_bool_or_null(body, readback.fcp_enabled);
+    let _ = body.push_str(",\"afc\":");
+    write_json_bool_or_null(body, readback.afc_enabled);
+    let _ = body.push_str(",\"scp\":");
+    write_json_bool_or_null(body, readback.scp_enabled);
+    let _ = body.push_str(",\"pe20\":");
+    write_json_bool_or_null(body, readback.pe20_enabled);
+    let _ = body.push_str(",\"bc12\":");
+    write_json_bool_or_null(body, readback.bc12_enabled);
+    let _ = body.push_str(",\"sfcp\":");
+    write_json_bool_or_null(body, readback.sfcp_enabled);
+    let _ = body.push_str("},\"pd\":{\"pps\":");
+    write_json_bool_or_null(body, readback.pps_enabled);
+    let _ = body.push_str(",\"fixed_voltages_mv\":[");
+    write_fixed_voltage_json(body, readback.fixed_9v.unwrap_or(false), 9000);
+    write_fixed_voltage_json(body, readback.fixed_12v.unwrap_or(false), 12000);
+    write_fixed_voltage_json(body, readback.fixed_15v.unwrap_or(false), 15000);
+    write_fixed_voltage_json(body, readback.fixed_20v.unwrap_or(false), 20000);
+    let _ = body.push_str("]}}");
 }
 
 pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
