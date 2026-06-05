@@ -510,22 +510,6 @@ export function DevicePowerPanel({
 
         <aside className="grid gap-5">
           <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-            <div className="text-[14px] font-semibold">Advanced guardrails</div>
-            <div className="mt-3 grid gap-2 text-[12px] leading-5 text-[var(--muted)]">
-              <div>Manual TPS range: 3 V to 21 V.</div>
-              <div>
-                Current is capped by TPS and a hard 100 W product ceiling.
-              </div>
-              <div>Default manual output targets the banana / 2 mm path.</div>
-              <div>
-                {advancedDisabled
-                  ? "Advanced controls are locked while a host settings session is active."
-                  : "Advanced controls are writable from this surface."}
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
             <div className="text-[14px] font-semibold">Actions</div>
             <div className="mt-4 flex flex-col gap-3">
               <button
