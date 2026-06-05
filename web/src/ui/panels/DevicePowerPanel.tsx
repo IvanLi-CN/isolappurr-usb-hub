@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type {
   PowerConfigInput,
@@ -144,25 +144,6 @@ export function DevicePowerPanel({
     config?.lock !== undefined &&
     config.lock.owner !== ownerRef.current;
   const advancedDisabled = localAdvancedLocked || lockedByOtherHost;
-  const protocolBadges = useMemo(() => {
-    const capability = form?.capability;
-    if (!capability) {
-      return [];
-    }
-    return [
-      ["PD", capability.protocols.pd],
-      ["PPS", capability.pd.pps],
-      ["QC2", capability.protocols.qc20],
-      ["QC3", capability.protocols.qc30],
-      ["FCP", capability.protocols.fcp],
-      ["AFC", capability.protocols.afc],
-      ["SCP", capability.protocols.scp],
-      ["PE2", capability.protocols.pe20],
-      ["BC1.2", capability.protocols.bc12],
-      ["SFCP", capability.protocols.sfcp],
-    ] as const;
-  }, [form]);
-
   if (!form && error) {
     return (
       <section className="flex min-h-[240px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-6 py-8">
@@ -385,23 +366,18 @@ export function DevicePowerPanel({
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {protocolBadges.map(([label, enabled]) => (
-                <span
-                  key={label}
-                  className={`inline-flex h-7 items-center rounded-full px-3 text-[12px] font-semibold ${enabled ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
-                >
-                  {label}
-                </span>
-              ))}
-            </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {protocolToggles.map((protocol) => (
                 <label
-                  className="flex min-h-11 items-center justify-between rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[13px]"
+                  className={`flex min-h-[58px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"}`}
                   key={protocol.label}
                 >
-                  <span>{protocol.label}</span>
+                  <span className="grid gap-0.5">
+                    <span className="font-semibold">{protocol.label}</span>
+                    <span className="text-[11px] font-semibold uppercase">
+                      {protocol.checked ? "On" : "Off"}
+                    </span>
+                  </span>
                   <input
                     checked={protocol.checked}
                     className="toggle toggle-sm"
