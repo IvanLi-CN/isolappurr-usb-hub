@@ -236,6 +236,77 @@ export function DevicePowerPanel({
     setDirty(true);
   };
 
+  const setPps = (value: boolean) => {
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            capability: {
+              ...current.capability,
+              pd: {
+                ...current.capability.pd,
+                pps: value,
+              },
+            },
+          }
+        : current,
+    );
+    setDirty(true);
+  };
+
+  const protocolToggles = [
+    {
+      label: "PD",
+      checked: form.capability.protocols.pd,
+      onChange: (value: boolean) => setProtocol("pd", value),
+    },
+    {
+      label: "PPS",
+      checked: form.capability.pd.pps,
+      onChange: setPps,
+    },
+    {
+      label: "QC2",
+      checked: form.capability.protocols.qc20,
+      onChange: (value: boolean) => setProtocol("qc20", value),
+    },
+    {
+      label: "QC3",
+      checked: form.capability.protocols.qc30,
+      onChange: (value: boolean) => setProtocol("qc30", value),
+    },
+    {
+      label: "FCP",
+      checked: form.capability.protocols.fcp,
+      onChange: (value: boolean) => setProtocol("fcp", value),
+    },
+    {
+      label: "AFC",
+      checked: form.capability.protocols.afc,
+      onChange: (value: boolean) => setProtocol("afc", value),
+    },
+    {
+      label: "SCP",
+      checked: form.capability.protocols.scp,
+      onChange: (value: boolean) => setProtocol("scp", value),
+    },
+    {
+      label: "PE2",
+      checked: form.capability.protocols.pe20,
+      onChange: (value: boolean) => setProtocol("pe20", value),
+    },
+    {
+      label: "BC1.2",
+      checked: form.capability.protocols.bc12,
+      onChange: (value: boolean) => setProtocol("bc12", value),
+    },
+    {
+      label: "SFCP",
+      checked: form.capability.protocols.sfcp,
+      onChange: (value: boolean) => setProtocol("sfcp", value),
+    },
+  ];
+
   const submit = async () => {
     setBusy(true);
     setStatus("Saving and applying power configuration…");
@@ -324,41 +395,23 @@ export function DevicePowerPanel({
                 </span>
               ))}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[13px]">
-                <span>PD</span>
-                <input
-                  checked={form.capability.protocols.pd}
-                  className="toggle toggle-sm"
-                  onChange={(event) => setProtocol("pd", event.target.checked)}
-                  type="checkbox"
-                />
-              </label>
-              <label className="flex items-center justify-between rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[13px]">
-                <span>PPS</span>
-                <input
-                  checked={form.capability.pd.pps}
-                  className="toggle toggle-sm"
-                  onChange={() => {
-                    setForm((current) =>
-                      current
-                        ? {
-                            ...current,
-                            capability: {
-                              ...current.capability,
-                              pd: {
-                                ...current.capability.pd,
-                                pps: !current.capability.pd.pps,
-                              },
-                            },
-                          }
-                        : current,
-                    );
-                    setDirty(true);
-                  }}
-                  type="checkbox"
-                />
-              </label>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {protocolToggles.map((protocol) => (
+                <label
+                  className="flex min-h-11 items-center justify-between rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[13px]"
+                  key={protocol.label}
+                >
+                  <span>{protocol.label}</span>
+                  <input
+                    checked={protocol.checked}
+                    className="toggle toggle-sm"
+                    onChange={(event) =>
+                      protocol.onChange(event.target.checked)
+                    }
+                    type="checkbox"
+                  />
+                </label>
+              ))}
             </div>
           </section>
 
