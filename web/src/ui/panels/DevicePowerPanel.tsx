@@ -348,57 +348,55 @@ export function DevicePowerPanel({
         </div>
       </header>
 
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.9fr]">
-        <div className="flex flex-col gap-5">
-          <section className="grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="text-[14px] font-semibold">Safe profile</div>
-                <div className="mt-1 text-[12px] text-[var(--muted)]">
-                  Source capability stays on SW2303. Changes save to EEPROM and
-                  apply immediately.
-                </div>
-              </div>
-              <div className="text-left sm:text-right">
-                <div className="text-[12px] text-[var(--muted)]">Power cap</div>
-                <div className="text-[20px] font-semibold">
-                  {form.capability.power_watts} W
-                </div>
+      <div className="grid gap-5">
+        <section className="grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-[14px] font-semibold">Safe profile</div>
+              <div className="mt-1 text-[12px] text-[var(--muted)]">
+                Source capability stays on SW2303. Changes save to EEPROM and
+                apply immediately.
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {protocolToggles.map((protocol) => (
-                <label
-                  className={`flex min-h-[58px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"}`}
-                  key={protocol.label}
+            <div className="text-left sm:text-right">
+              <div className="text-[12px] text-[var(--muted)]">Power cap</div>
+              <div className="text-[20px] font-semibold">
+                {form.capability.power_watts} W
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {protocolToggles.map((protocol) => (
+              <label
+                className={`flex min-h-[58px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"}`}
+                key={protocol.label}
+              >
+                <span className="grid gap-0.5">
+                  <span className="font-semibold">{protocol.label}</span>
+                  <span className="text-[11px] font-semibold uppercase">
+                    {protocol.checked ? "On" : "Off"}
+                  </span>
+                </span>
+                <input
+                  checked={protocol.checked}
+                  className="peer sr-only"
+                  onChange={(event) => protocol.onChange(event.target.checked)}
+                  type="checkbox"
+                />
+                <span
+                  aria-hidden="true"
+                  className={`relative h-6 w-11 shrink-0 rounded-full border transition peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--focus)] ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)]"}`}
                 >
-                  <span className="grid gap-0.5">
-                    <span className="font-semibold">{protocol.label}</span>
-                    <span className="text-[11px] font-semibold uppercase">
-                      {protocol.checked ? "On" : "Off"}
-                    </span>
-                  </span>
-                  <input
-                    checked={protocol.checked}
-                    className="peer sr-only"
-                    onChange={(event) =>
-                      protocol.onChange(event.target.checked)
-                    }
-                    type="checkbox"
-                  />
                   <span
-                    aria-hidden="true"
-                    className={`relative h-6 w-11 shrink-0 rounded-full border transition peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--focus)] ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)]"}`}
-                  >
-                    <span
-                      className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-[var(--panel)] shadow-sm transition ${protocol.checked ? "left-[24px]" : "left-[3px]"}`}
-                    />
-                  </span>
-                </label>
-              ))}
-            </div>
-          </section>
+                    className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-[var(--panel)] shadow-sm transition ${protocol.checked ? "left-[24px]" : "left-[3px]"}`}
+                  />
+                </span>
+              </label>
+            ))}
+          </div>
+        </section>
 
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
           <section className="grid gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -506,41 +504,41 @@ export function DevicePowerPanel({
               </div>
             </div>
           </section>
-        </div>
 
-        <aside className="grid gap-5">
-          <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-            <div className="text-[14px] font-semibold">Actions</div>
-            <div className="mt-4 flex flex-col gap-3">
-              <button
-                className="flex h-11 items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={busy || !dirty}
-                onClick={() => void submit()}
-                type="button"
-              >
-                Save and apply
-              </button>
-              <button
-                className="flex h-11 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={busy}
-                onClick={() => void restore()}
-                type="button"
-              >
-                Restore defaults
-              </button>
-            </div>
-            {status ? (
-              <div className="mt-3 text-[12px] text-[var(--badge-success-text)]">
-                {status}
+          <aside className="grid gap-5">
+            <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+              <div className="text-[14px] font-semibold">Actions</div>
+              <div className="mt-4 flex flex-col gap-3">
+                <button
+                  className="flex h-11 items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={busy || !dirty}
+                  onClick={() => void submit()}
+                  type="button"
+                >
+                  Save and apply
+                </button>
+                <button
+                  className="flex h-11 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() => void restore()}
+                  type="button"
+                >
+                  Restore defaults
+                </button>
               </div>
-            ) : null}
-            {error ? (
-              <div className="mt-3 text-[12px] text-[var(--badge-error-text)]">
-                {error}
-              </div>
-            ) : null}
-          </section>
-        </aside>
+              {status ? (
+                <div className="mt-3 text-[12px] text-[var(--badge-success-text)]">
+                  {status}
+                </div>
+              ) : null}
+              {error ? (
+                <div className="mt-3 text-[12px] text-[var(--badge-error-text)]">
+                  {error}
+                </div>
+              ) : null}
+            </section>
+          </aside>
+        </div>
       </div>
     </section>
   );
