@@ -53,6 +53,12 @@ source capabilities and contracts. API readback alone is not sufficient.
 Use `bash tools/hil-sw2303-matrix.sh ...` for repeatable manual runs. The script
 forces LoadLynx CLI calls to run from `$HOME` so the IsolaPurr repo
 `.esp32-port` selector does not pollute LoadLynx device discovery.
+For modes that call `loadlynx pd set`, the saved LoadLynx hardware must be on
+USB/devd transport; HTTP transport is rejected before any IsolaPurr config is
+changed. The script acquires and heartbeats the IsolaPurr host lock, disables
+the LoadLynx output on exit, restores the starting IsolaPurr power config by
+default, and releases the HIL lock after restoration. When saving output with
+`tee`, run through a shell with `pipefail` so script failures are not hidden.
 
 Automated with LoadLynx:
 
@@ -109,6 +115,36 @@ Executed LoadLynx HIL results:
 - Final recovery to full defaults and fixed 12 V passed; final state was full
   defaults, fixed 12 V, link up, LoadLynx fault flags `0`, and no SW2303/TPS
   fault latch.
+- `bash tools/hil-sw2303-matrix.sh --power --with-load --load-percent 50
+  --settle-sec 3`: passed with `pass=14 fail=0 skip=0` against IsolaPurr
+  `856a14` and LoadLynx `loadlynx-d68638` over USB/devd. The run verified
+  SW2303 read-back match, sink-visible source-cap current tiers, sink-side
+  loaded voltage, link state, and fault latches for:
+  - 15 W cap: 20 V fixed PDO limited to 750 mA; PPS windows limited to
+    3.3-5.9 V at 3 A and 3.3-11 V at 1.65 A; 5 V / 500 mA load held at
+    about 5.04 V on IsolaPurr telemetry and about 5.00 V on LoadLynx.
+  - 27 W cap: 20 V fixed PDO limited to 1.35 A; PPS limited to 3.3-11 V at
+    3 A; 9 V / 500 mA load held at about 9.03 V on IsolaPurr telemetry and
+    about 8.97 V on LoadLynx.
+  - 45 W cap: 20 V fixed PDO limited to 2.25 A; PPS limited to 3.3-16 V at
+    3 A; 15 V / 500 mA load held at about 15.01 V on IsolaPurr telemetry and
+    about 14.99 V on LoadLynx.
+  - 60 W cap: 20 V fixed PDO limited to 3 A; PPS limited to 3.3-21 V at 3 A;
+    20 V / 500 mA load held at about 20.00 V on IsolaPurr telemetry and
+    about 20.01 V on LoadLynx.
+  - 65 W cap: 20 V fixed PDO limited to 3.25 A; PPS limited to 3.3-21 V at
+    3.25 A; 20 V / 500 mA load held at about 20.00 V on IsolaPurr telemetry
+    and about 19.98 V on LoadLynx.
+  - 100 W cap: 20 V fixed PDO limited to 5 A; PPS limited to 3.3-21 V at 5 A;
+    20 V / 500 mA load held at about 20.00 V on IsolaPurr telemetry and
+    about 19.95 V on LoadLynx.
+  - Defaults recovery: full profile restored and final 12 V / 500 mA load held
+    at about 12.02 V on IsolaPurr telemetry and about 11.99 V on LoadLynx.
+
+The power-cap load run stays within the documented safe debug range of
+500 mA. It proves source-cap advertisement, SW2303 register read-back, and
+stable loaded output at that sink current. It is not a maximum-power stress or
+overload trip test at the configured wattage limit.
 
 Runtime remediation:
 

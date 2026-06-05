@@ -15,6 +15,8 @@ Environment:
   LOADLYNX_WORKDIR    default: $HOME
   HIL_OWNER           default: 991230
   WAIT_APPLY_TIMEOUT_SEC default: 8
+  HIL_USE_LOCK        default: 1; acquire and refresh the power-config host lock
+  HIL_RESTORE_CONFIG  default: 1; restore the starting IsolaPurr power config on exit
 
 Modes:
   --smoke             defaults + fixed 12V + PPS 11V + restore 12V
@@ -84,16 +86,52 @@ require_cmd loadlynx
 PASS=0
 FAIL=0
 SKIP=0
+ORIGINAL_CONFIG=""
+RESTORE_POWER_CONFIG="${HIL_RESTORE_CONFIG:-1}"
+USE_HIL_LOCK="${HIL_USE_LOCK:-1}"
+LOCK_ACQUIRED=0
+LOCK_HEARTBEAT_PID=""
 
 cleanup() {
   if [ "${WITH_LOAD}" = "1" ]; then
     ll output set --hardware "$LOADLYNX_HARDWARE" --disable --json >/dev/null 2>&1 || true
   fi
+  restore_original_config
+  stop_lock_heartbeat
+  release_hil_lock
 }
 trap cleanup EXIT
 
 ll() {
   (cd "$LOADLYNX_WORKDIR" && loadlynx "$@")
+}
+
+require_loadlynx_usb_pd_control() {
+  case "$MODE" in
+    smoke|pd|prune|power) ;;
+    *) return 0 ;;
+  esac
+
+  hardware_json="$(ll hardware list --json)" || {
+    echo "error: failed to read LoadLynx hardware memory" >&2
+    exit 2
+  }
+  transport="$(echo "$hardware_json" | jq -r --arg id "$LOADLYNX_HARDWARE" '
+    (.hardware[]? | select(.id == $id) | .last_transport) // empty
+  ')"
+  if [ -z "$transport" ]; then
+    echo "error: LoadLynx hardware '${LOADLYNX_HARDWARE}' is not saved" >&2
+    exit 2
+  fi
+  if [ "$transport" != "usb" ]; then
+    echo "error: LoadLynx hardware '${LOADLYNX_HARDWARE}' uses transport '${transport}', but pd set requires USB/devd hardware" >&2
+    echo "hint: connect the LoadLynx USB control cable, then run: loadlynx hardware use ${LOADLYNX_HARDWARE} --transport usb" >&2
+    exit 2
+  fi
+  if ! ll status --hardware "$LOADLYNX_HARDWARE" --json >/dev/null; then
+    echo "error: LoadLynx hardware '${LOADLYNX_HARDWARE}' is not reachable over USB/devd" >&2
+    exit 2
+  fi
 }
 
 note() {
@@ -191,6 +229,10 @@ set_config() {
   label="$1"
   body="$2"
   note "CONFIG $label"
+  refresh_hil_lock || {
+    fail "$label" "failed to refresh HIL host lock"
+    return 1
+  }
   out="$(http_json PUT "/api/v1/power/config?owner=${HIL_OWNER}" "$body")"
   echo "$out" | jq -e -c 'if .error then error(.error.message) else {persisted,tps_mode,power_watts:.capability.power_watts,protocols:.capability.protocols,pps:.capability.pd.pps,fixed:.capability.pd.fixed_voltages_mv,lock} end' || {
     fail "$label" "config response was an error or not JSON"
@@ -202,6 +244,10 @@ set_config() {
 
 defaults() {
   note "CONFIG defaults"
+  refresh_hil_lock || {
+    fail "defaults" "failed to refresh HIL host lock"
+    return 1
+  }
   out="$(http_json POST "/api/v1/power/config/defaults?owner=${HIL_OWNER}")"
   echo "$out" | jq -e -c 'if .error then error(.error.message) else {persisted,tps_mode,power_watts:.capability.power_watts,protocols:.capability.protocols,pps:.capability.pd.pps,fixed:.capability.pd.fixed_voltages_mv,lock} end' || {
     fail "defaults" "defaults response was an error or not JSON"
@@ -209,6 +255,83 @@ defaults() {
   }
   wait_sw2303_apply defaults "$out" || return 1
   sleep "$SETTLE_SEC"
+}
+
+acquire_hil_lock() {
+  if [ "$USE_HIL_LOCK" != "1" ]; then
+    return 0
+  fi
+  note "LOCK acquire"
+  out="$(http_json POST "/api/v1/power/config/lock?owner=${HIL_OWNER}")" || {
+    echo "error: failed to acquire IsolaPurr power config lock" >&2
+    exit 1
+  }
+  echo "$out" | jq -e 'if .error then error(.error.message) else true end' >/dev/null || {
+    echo "error: IsolaPurr power config lock is busy" >&2
+    exit 1
+  }
+  LOCK_ACQUIRED=1
+}
+
+start_lock_heartbeat() {
+  if [ "$USE_HIL_LOCK" != "1" ] || [ "$LOCK_ACQUIRED" != "1" ]; then
+    return 0
+  fi
+  (
+    while true; do
+      sleep 3
+      http_json POST "/api/v1/power/config/lock?owner=${HIL_OWNER}" >/dev/null 2>&1 || true
+    done
+  ) &
+  LOCK_HEARTBEAT_PID="$!"
+}
+
+stop_lock_heartbeat() {
+  if [ -z "$LOCK_HEARTBEAT_PID" ]; then
+    return 0
+  fi
+  kill "$LOCK_HEARTBEAT_PID" >/dev/null 2>&1 || true
+  wait "$LOCK_HEARTBEAT_PID" 2>/dev/null || true
+  LOCK_HEARTBEAT_PID=""
+}
+
+refresh_hil_lock() {
+  if [ "$USE_HIL_LOCK" != "1" ]; then
+    return 0
+  fi
+  out="$(http_json POST "/api/v1/power/config/lock?owner=${HIL_OWNER}")" || return 1
+  echo "$out" | jq -e 'if .error then error(.error.message) else true end' >/dev/null
+}
+
+release_hil_lock() {
+  if [ "$USE_HIL_LOCK" != "1" ] || [ "$LOCK_ACQUIRED" != "1" ]; then
+    return 0
+  fi
+  printf '\n== LOCK release ==\n' >&2
+  http_json POST "/api/v1/power/config/release?owner=${HIL_OWNER}" >/dev/null || true
+  LOCK_ACQUIRED=0
+}
+
+capture_original_config() {
+  if [ "$RESTORE_POWER_CONFIG" != "1" ]; then
+    return 0
+  fi
+  ORIGINAL_CONFIG="$(http_json GET /api/v1/power/config)" || {
+    echo "error: failed to capture original IsolaPurr power config" >&2
+    exit 1
+  }
+}
+
+restore_original_config() {
+  if [ "$RESTORE_POWER_CONFIG" != "1" ] || [ -z "$ORIGINAL_CONFIG" ]; then
+    return 0
+  fi
+  printf '\n== RESTORE original power config ==\n' >&2
+  refresh_hil_lock || true
+  if ! http_json PUT "/api/v1/power/config?owner=${HIL_OWNER}" "$ORIGINAL_CONFIG" >/dev/null; then
+    echo "WARN failed to restore original IsolaPurr power config" >&2
+  fi
+  ORIGINAL_CONFIG=""
 }
 
 wait_sw2303_apply() {
@@ -451,14 +574,14 @@ MANUAL
 }
 
 run_smoke() {
-  defaults
+  defaults || return
   pd_case smoke_fixed_12 fixed 3 12000 1000 accept true 500
   pd_case smoke_pps_11 pps 6 11000 1000 accept true 500
   pd_case smoke_restore_fixed_12 fixed 3 12000 1000 accept true 500
 }
 
 run_pd_matrix() {
-  defaults
+  defaults || return
   pd_case full_fixed_5 fixed 1 5000 1000 accept true 500
   pd_case full_fixed_9 fixed 2 9000 1000 accept true 500
   pd_case full_fixed_12 fixed 3 12000 1000 accept true 500
@@ -473,20 +596,20 @@ run_pd_matrix() {
 }
 
 run_prune_matrix() {
-  set_config fixed_none_no_pps "$(make_config 100 true false false false false false false false false false '')"
+  set_config fixed_none_no_pps "$(make_config 100 true false false false false false false false false false '')" || return
   pd_case fixed_none_reject_9 fixed 2 9000 1000 reject true 500
 
-  set_config fixed_9_only "$(make_config 100 true false false false false false false false false false '9000')"
+  set_config fixed_9_only "$(make_config 100 true false false false false false false false false false '9000')" || return
   pd_case fixed_9_only_accept fixed 2 9000 1000 accept true 500
   pd_case fixed_9_only_reject_12 fixed 3 12000 1000 reject true 500
 
-  set_config fixed_9_12_no_pps "$(make_config 100 true false false false false false false false false false '9000,12000')"
+  set_config fixed_9_12_no_pps "$(make_config 100 true false false false false false false false false false '9000,12000')" || return
   pd_case fixed_9_12_accept_9 fixed 2 9000 1000 accept true 500
   pd_case fixed_9_12_accept_12 fixed 3 12000 1000 accept true 500
   pd_case fixed_9_12_reject_15 fixed 4 15000 1000 reject true 500
   pd_case fixed_9_12_reject_pps pps 6 7000 1000 reject true 500
 
-  defaults
+  defaults || return
   pd_case restored_pps_11 pps 6 11000 1000 accept true 500
   pd_case reject_pps_22 pps 6 22000 1000 reject true 800
   pd_case final_fixed_12 fixed 3 12000 1000 accept true 500
@@ -494,7 +617,7 @@ run_prune_matrix() {
 
 run_power_matrix() {
   for power in 15 27 45 60 65 100; do
-    set_config "power_${power}w_full_pd" "$(make_config "$power" true false false false false false false false false true '9000,12000,15000,20000')"
+    set_config "power_${power}w_full_pd" "$(make_config "$power" true false false false false false false false false true '9000,12000,15000,20000')" || continue
     case "$power" in
       15) pd_case "power_${power}w_5v" fixed 1 5000 1000 accept true 500 ;;
       27) pd_case "power_${power}w_9v" fixed 2 9000 1000 accept true 500 ;;
@@ -502,12 +625,26 @@ run_power_matrix() {
       60|65|100) pd_case "power_${power}w_20v" fixed 5 20000 1000 accept true 800 ;;
     esac
   done
-  defaults
+  defaults || return
   pd_case power_matrix_final_12 fixed 3 12000 1000 accept true 500
 }
 
 printf 'SW2303 HIL start mode=%s isolapurr=%s loadlynx=%s loadlynx_workdir=%s with_load=%s load_percent=%s\n' \
   "$MODE" "$ISOLAPURR_URL" "$LOADLYNX_HARDWARE" "$LOADLYNX_WORKDIR" "$WITH_LOAD" "$LOAD_PERCENT"
+
+require_loadlynx_usb_pd_control
+
+case "$MODE" in
+  smoke|pd|prune|power) capture_original_config ;;
+esac
+
+case "$MODE" in
+  smoke|pd|prune|power) acquire_hil_lock ;;
+esac
+
+case "$MODE" in
+  smoke|pd|prune|power) start_lock_heartbeat ;;
+esac
 
 case "$MODE" in
   smoke) run_smoke ;;
