@@ -380,12 +380,20 @@ export function DevicePowerPanel({
                   </span>
                   <input
                     checked={protocol.checked}
-                    className="toggle toggle-sm"
+                    className="peer sr-only"
                     onChange={(event) =>
                       protocol.onChange(event.target.checked)
                     }
                     type="checkbox"
                   />
+                  <span
+                    aria-hidden="true"
+                    className={`relative h-6 w-11 shrink-0 rounded-full border transition peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--focus)] ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)]"}`}
+                  >
+                    <span
+                      className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-[var(--panel)] shadow-sm transition ${protocol.checked ? "left-[24px]" : "left-[3px]"}`}
+                    />
+                  </span>
                 </label>
               ))}
             </div>
