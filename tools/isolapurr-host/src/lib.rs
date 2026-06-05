@@ -365,6 +365,11 @@ struct DeviceQuery {
 }
 
 #[derive(Debug, Deserialize)]
+struct PowerOwnerQuery {
+    owner: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WifiRequest {
     ssid: String,

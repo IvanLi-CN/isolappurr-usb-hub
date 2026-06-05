@@ -489,7 +489,13 @@ export function DeviceRuntimeProvider({
   const orderedTransports = useCallback(
     (deviceId: string): DeviceTransport[] => {
       const preferred = preferredTransportByDevice.current[deviceId];
-      const active = preferred ?? runtimeById[deviceId]?.transport;
+      const currentRuntime = runtimeById[deviceId];
+      const currentActive = preferred ?? currentRuntime?.transport;
+      const active =
+        currentActive &&
+        (preferred || currentRuntime?.channels[currentActive]?.lastOkAt)
+          ? currentActive
+          : null;
       const stored = devices.find((device) => device.id === deviceId);
       const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
       const httpLinked =
@@ -502,8 +508,8 @@ export function DeviceRuntimeProvider({
       return devdDeviceId
         ? uniqueTransports([
             active,
-            httpLinked ? "http" : null,
             "local_usb",
+            httpLinked ? "http" : null,
             "web_serial",
           ])
         : uniqueTransports([
@@ -592,7 +598,7 @@ export function DeviceRuntimeProvider({
             [deviceId]: {
               ...current,
               lastError: res.error,
-              transport,
+              transport: current.transport,
             },
           };
         });

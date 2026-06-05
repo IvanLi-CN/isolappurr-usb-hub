@@ -61,12 +61,22 @@ export function DevicePowerPanel({
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const lockedRef = useRef(false);
+  const loadPowerConfigRef = useRef(loadPowerConfig);
+  const setPowerLockRef = useRef(setPowerLock);
   const ownerRef = useRef(createLockOwner());
+
+  useEffect(() => {
+    loadPowerConfigRef.current = loadPowerConfig;
+  }, [loadPowerConfig]);
+
+  useEffect(() => {
+    setPowerLockRef.current = setPowerLock;
+  }, [setPowerLock]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const res = await loadPowerConfig();
+      const res = await loadPowerConfigRef.current();
       if (cancelled) {
         return;
       }
@@ -83,7 +93,7 @@ export function DevicePowerPanel({
     return () => {
       cancelled = true;
     };
-  }, [loadPowerConfig]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +101,7 @@ export function DevicePowerPanel({
       if (!lockedRef.current) {
         return;
       }
-      const res = await setPowerLock(ownerRef.current, true);
+      const res = await setPowerLockRef.current(ownerRef.current, true);
       if (!cancelled && !res.ok) {
         setError(res.error.message);
       } else if (!cancelled && res.ok) {
@@ -104,15 +114,15 @@ export function DevicePowerPanel({
       cancelled = true;
       window.clearInterval(id);
       if (lockedRef.current) {
-        void setPowerLock(ownerRef.current, false);
+        void setPowerLockRef.current(ownerRef.current, false);
       }
     };
-  }, [setPowerLock]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     const acquire = async () => {
-      const res = await setPowerLock(ownerRef.current, true);
+      const res = await setPowerLockRef.current(ownerRef.current, true);
       if (cancelled) {
         return;
       }
@@ -127,7 +137,7 @@ export function DevicePowerPanel({
     return () => {
       cancelled = true;
     };
-  }, [setPowerLock]);
+  }, []);
 
   const lockedByOtherHost =
     config?.lock !== null &&

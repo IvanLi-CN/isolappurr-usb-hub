@@ -88,6 +88,10 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `POST /api/v1/devices/{id}/ports/{port_id}/power`
 - `POST /api/v1/devices/{id}/ports/{port_id}/replug`
 - `POST /api/v1/devices/{id}/hub/route`
+- `GET|PUT /api/v1/devices/{id}/power/config`
+- `POST /api/v1/devices/{id}/power/config/defaults`
+- `POST /api/v1/devices/{id}/power/config/lock`
+- `POST /api/v1/devices/{id}/power/config/release`
 - `POST /api/v1/devices/{id}/flash`
 - `POST /api/v1/devices/{id}/flash-upload`
 - `POST /api/v1/devices/{id}/reset`

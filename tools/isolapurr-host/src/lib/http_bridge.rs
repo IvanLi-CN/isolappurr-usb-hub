@@ -38,6 +38,22 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             post(port_replug),
         )
         .route("/api/v1/devices/{id}/hub/route", post(hub_route_set))
+        .route(
+            "/api/v1/devices/{id}/power/config",
+            get(device_power_config_get).put(device_power_config_set),
+        )
+        .route(
+            "/api/v1/devices/{id}/power/config/defaults",
+            post(device_power_config_defaults),
+        )
+        .route(
+            "/api/v1/devices/{id}/power/config/lock",
+            post(device_power_config_lock),
+        )
+        .route(
+            "/api/v1/devices/{id}/power/config/release",
+            post(device_power_config_release),
+        )
         .route("/api/v1/devices/{id}/flash", post(device_flash))
         .route(
             "/api/v1/devices/{id}/flash-upload",
@@ -526,6 +542,118 @@ async fn device_diagnostics(
         return error_from_anyhow(err);
     }
     match usb_jsonl_request(&state, &id, "pd.diagnostics", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_get(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "power.config_get", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_set(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+    Json(config): Json<Value>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    let params = json!({"config": config, "owner": query.owner});
+    match usb_jsonl_request(&state, &id, "power.config_set", Some(params)).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_defaults(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "power.config_defaults",
+        Some(json!({"owner": query.owner})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_lock(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "power.lock",
+        Some(json!({"owner": query.owner, "acquire": true})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "power.lock",
+        Some(json!({"owner": query.owner, "acquire": false})),
+    )
+    .await
+    {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }
