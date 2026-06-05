@@ -5,6 +5,11 @@ export type StoredDevice = {
   name: string;
   baseUrl: string;
   lastSeenAt?: string;
+  transports?: {
+    httpBaseUrl?: string;
+    localUsbDeviceId?: string;
+    webSerialLabel?: string;
+  };
 };
 
 export type AddDeviceInput = {
@@ -39,6 +44,29 @@ function isStoredDevice(value: unknown): value is StoredDevice {
     isNonEmptyString(record.baseUrl) &&
     (record.lastSeenAt === undefined || typeof record.lastSeenAt === "string")
   );
+}
+
+function parseStoredDeviceTransports(
+  value: unknown,
+): StoredDevice["transports"] {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const transports: NonNullable<StoredDevice["transports"]> = {};
+  if (typeof record.httpBaseUrl === "string") {
+    const normalized = normalizeBaseUrl(record.httpBaseUrl);
+    transports.httpBaseUrl = normalized.ok
+      ? normalized.baseUrl
+      : record.httpBaseUrl;
+  }
+  if (typeof record.localUsbDeviceId === "string") {
+    transports.localUsbDeviceId = record.localUsbDeviceId;
+  }
+  if (typeof record.webSerialLabel === "string") {
+    transports.webSerialLabel = record.webSerialLabel;
+  }
+  return Object.keys(transports).length > 0 ? transports : undefined;
 }
 
 export function normalizeBaseUrl(
@@ -136,7 +164,11 @@ export function loadStoredDevices(): StoredDevice[] {
 
     return parsed.filter(isStoredDevice).map((d) => {
       const normalized = normalizeBaseUrl(d.baseUrl);
-      return normalized.ok ? { ...d, baseUrl: normalized.baseUrl } : d;
+      return {
+        ...d,
+        baseUrl: normalized.ok ? normalized.baseUrl : d.baseUrl,
+        transports: parseStoredDeviceTransports(d.transports),
+      };
     });
   } catch {
     return [];
