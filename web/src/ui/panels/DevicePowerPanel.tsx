@@ -45,6 +45,156 @@ function createLockOwner(): number {
   return Math.floor(Math.random() * 0x7fffffff) + 1;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function quantize(value: number, step: number): number {
+  return Math.round(value / step) * step;
+}
+
+function normalizeUnit(raw: string): string {
+  return raw.trim().toLowerCase().replaceAll("μ", "u").replaceAll("µ", "u");
+}
+
+function parseUnitNumber(raw: string): { value: number; unit: string } | null {
+  const match = normalizeUnit(raw).match(/^([+-]?\d+(?:\.\d*)?)\s*([a-z.]*)$/);
+  if (!match) {
+    return null;
+  }
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return { value, unit: match[2] };
+}
+
+function parseVoltageInput(raw: string): number | null {
+  const parsed = parseUnitNumber(raw);
+  if (!parsed) {
+    return null;
+  }
+  if (parsed.unit === "" || parsed.unit === "v") {
+    return parsed.value * 1000;
+  }
+  if (parsed.unit === "mv") {
+    return parsed.value;
+  }
+  return null;
+}
+
+function parseCurrentInput(raw: string): number | null {
+  const parsed = parseUnitNumber(raw);
+  if (!parsed) {
+    return null;
+  }
+  if (parsed.unit === "" || parsed.unit === "ma") {
+    return parsed.value;
+  }
+  if (parsed.unit === "a") {
+    return parsed.value * 1000;
+  }
+  return null;
+}
+
+function parsePowerInput(raw: string): number | null {
+  const parsed = parseUnitNumber(raw);
+  if (!parsed || (parsed.unit !== "" && parsed.unit !== "w")) {
+    return null;
+  }
+  return parsed.value;
+}
+
+function formatVoltageInput(mv: number): string {
+  return `${Number.isInteger(mv / 1000) ? mv / 1000 : (mv / 1000).toFixed(2)} V`;
+}
+
+function formatCurrentInput(ma: number): string {
+  return ma >= 1000 && ma % 1000 === 0 ? `${ma / 1000} A` : `${ma} mA`;
+}
+
+function formatPowerInput(watts: number): string {
+  return `${watts} W`;
+}
+
+type UnitSliderFieldProps = {
+  disabled?: boolean;
+  label: string;
+  max: number;
+  min: number;
+  onChange: (value: number) => void;
+  parseValue: (raw: string) => number | null;
+  formatValue: (value: number) => string;
+  step: number;
+  value: number;
+};
+
+function UnitSliderField({
+  disabled = false,
+  label,
+  max,
+  min,
+  onChange,
+  parseValue,
+  formatValue,
+  step,
+  value,
+}: UnitSliderFieldProps) {
+  const [draft, setDraft] = useState(() => formatValue(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) {
+      setDraft(formatValue(value));
+    }
+  }, [focused, formatValue, value]);
+
+  const commitValue = (nextValue: number) => {
+    onChange(clamp(quantize(nextValue, step), min, max));
+  };
+
+  return (
+    <label className="grid gap-2 text-[13px]">
+      <span className="font-medium text-[var(--muted)]">{label}</span>
+      <span className="grid grid-cols-[minmax(0,1fr)_118px] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_132px]">
+        <input
+          className="accent-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled}
+          max={max}
+          min={min}
+          onChange={(event) => commitValue(Number(event.target.value))}
+          step={step}
+          type="range"
+          value={value}
+        />
+        <input
+          className="h-10 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 text-[14px] disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled}
+          onBlur={() => {
+            setFocused(false);
+            setDraft(formatValue(value));
+          }}
+          onChange={(event) => {
+            const nextDraft = event.target.value;
+            setDraft(nextDraft);
+            const parsed = parseValue(nextDraft);
+            if (parsed !== null) {
+              commitValue(parsed);
+            }
+          }}
+          onClick={(event) => event.currentTarget.select()}
+          onFocus={(event) => {
+            setFocused(true);
+            event.currentTarget.select();
+          }}
+          type="text"
+          value={draft}
+        />
+      </span>
+    </label>
+  );
+}
+
 export function DevicePowerPanel({
   deviceName,
   transportLabel,
@@ -183,6 +333,21 @@ export function DevicePowerPanel({
             manual: {
               ...current.manual,
               [key]: Number.isFinite(value) ? value : current.manual[key],
+            },
+          }
+        : current,
+    );
+    setDirty(true);
+  };
+
+  const setPowerWatts = (value: number) => {
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            capability: {
+              ...current.capability,
+              power_watts: value,
             },
           }
         : current,
@@ -358,13 +523,17 @@ export function DevicePowerPanel({
                 apply immediately.
               </div>
             </div>
-            <div className="text-left sm:text-right">
-              <div className="text-[12px] text-[var(--muted)]">Power cap</div>
-              <div className="text-[20px] font-semibold">
-                {form.capability.power_watts} W
-              </div>
-            </div>
           </div>
+          <UnitSliderField
+            formatValue={formatPowerInput}
+            label="Power cap"
+            max={100}
+            min={1}
+            onChange={setPowerWatts}
+            parseValue={parsePowerInput}
+            step={1}
+            value={form.capability.power_watts}
+          />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {protocolToggles.map((protocol) => (
               <label
@@ -424,42 +593,29 @@ export function DevicePowerPanel({
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-[13px]">
-                <span className="font-medium text-[var(--muted)]">Voltage</span>
-                <input
-                  className="h-11 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 text-[15px]"
-                  disabled={advancedDisabled || form.tps_mode !== "manual"}
-                  max={21000}
-                  min={3000}
-                  onChange={(event) =>
-                    setManualNumber("voltage_mv", Number(event.target.value))
-                  }
-                  step={20}
-                  type="number"
-                  value={form.manual.voltage_mv}
-                />
-              </label>
-              <label className="grid gap-2 text-[13px]">
-                <span className="font-medium text-[var(--muted)]">
-                  Current limit
-                </span>
-                <input
-                  className="h-11 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 text-[15px]"
-                  disabled={advancedDisabled || form.tps_mode !== "manual"}
-                  max={6350}
-                  min={1000}
-                  onChange={(event) =>
-                    setManualNumber(
-                      "current_limit_ma",
-                      Number(event.target.value),
-                    )
-                  }
-                  step={50}
-                  type="number"
-                  value={form.manual.current_limit_ma}
-                />
-              </label>
+            <div className="grid gap-4">
+              <UnitSliderField
+                disabled={advancedDisabled || form.tps_mode !== "manual"}
+                formatValue={formatVoltageInput}
+                label="Voltage"
+                max={21000}
+                min={3000}
+                onChange={(value) => setManualNumber("voltage_mv", value)}
+                parseValue={parseVoltageInput}
+                step={20}
+                value={form.manual.voltage_mv}
+              />
+              <UnitSliderField
+                disabled={advancedDisabled || form.tps_mode !== "manual"}
+                formatValue={formatCurrentInput}
+                label="Current limit"
+                max={6350}
+                min={1000}
+                onChange={(value) => setManualNumber("current_limit_ma", value)}
+                parseValue={parseCurrentInput}
+                step={50}
+                value={form.manual.current_limit_ma}
+              />
             </div>
 
             <div className="grid gap-2">
