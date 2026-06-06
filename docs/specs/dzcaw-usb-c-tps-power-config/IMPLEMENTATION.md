@@ -142,12 +142,12 @@ Executed LoadLynx HIL results:
     at about 12.02 V on IsolaPurr telemetry and about 11.99 V on LoadLynx.
   - `cd /Users/ivan && loadlynx ...` 65 W percentage sweep with 10 s holds on
     the 20 V fixed PDO:
-    95% (`3087 mA`) stayed up without latches and sat around `19.6 V` /
-    `1.54 A` on LoadLynx telemetry; 100% (`3250 mA`) stayed around `19.6 V` /
-    `1.63 A`; 105% (`3412 mA`) stayed around `18.6 V` / `1.71 A`; 110%
-    (`3575 mA`) dropped back to the safe `5 V` request path without setting a
-    latch. That confirms the cap boundary is enforced by the source-control
-    loop rather than only by the sink current request.
+    the recorded sink-current values do not correspond to the requested
+    95/100/105/110% current setpoints, so they must not be read as proof of
+    exact target-current delivery. The only safe conclusion from that sweep is
+    that 110% dropped back to the safe `5 V` request path without setting a
+    latch. A dedicated over-limit CC sweep is still needed to validate the
+    source's behavior at the actual `3087/3250/3412/3575 mA` setpoints.
 
 The power-cap load run stays within the documented safe debug range of
 500 mA. It proves source-cap advertisement, SW2303 register read-back, and
