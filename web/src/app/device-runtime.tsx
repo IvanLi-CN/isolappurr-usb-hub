@@ -79,6 +79,10 @@ export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
+export {
+  localUsbErrorToDeviceApiError,
+  shouldResetLocalUsbConnectionCache,
+} from "./device-runtime-support";
 
 const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
   null,
