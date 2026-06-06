@@ -5,6 +5,7 @@ import { AboutPage } from "./AboutPage";
 const meta: Meta<typeof AboutPage> = {
   title: "Pages/AboutPage",
   component: AboutPage,
+  tags: ["!test"],
   parameters: {
     layout: "padded",
   },

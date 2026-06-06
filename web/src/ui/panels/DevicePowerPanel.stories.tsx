@@ -111,7 +111,9 @@ export const HostLocked: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Host lock active")).toBeVisible();
-    await expect(canvas.getByLabelText("Voltage")).toBeDisabled();
+    await expect(
+      canvas.getByRole("slider", { name: /Voltage/ }),
+    ).toBeDisabled();
   },
 };
 
@@ -136,8 +138,9 @@ export const SaveManualFlow: Story = {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Manual TPS" }),
     );
-    await userEvent.clear(canvas.getByLabelText("Voltage"));
-    await userEvent.type(canvas.getByLabelText("Voltage"), "9000");
+    const voltageInput = canvas.getAllByRole("textbox")[0];
+    await userEvent.clear(voltageInput);
+    await userEvent.type(voltageInput, "9000");
     await userEvent.click(
       canvas.getByRole("button", { name: "Save and apply" }),
     );
