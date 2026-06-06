@@ -142,17 +142,18 @@ Executed LoadLynx HIL results:
     at about 12.02 V on IsolaPurr telemetry and about 11.99 V on LoadLynx.
   - `cd /Users/ivan && loadlynx ...` 65 W percentage sweep with 10 s holds on
     the 20 V fixed PDO:
-    the recorded sink-current values do not correspond to the requested
-    95/100/105/110% current setpoints, so they must not be read as proof of
-    exact target-current delivery. The only safe conclusion from that sweep is
-    that 110% dropped back to the safe `5 V` request path without setting a
-    latch. A dedicated over-limit CC sweep is still needed to validate the
-    source's behavior at the actual `3087/3250/3412/3575 mA` setpoints.
+    95% target (`3087 mA`) held around `19.6 V` / `1.54 A` on LoadLynx and
+    `19.6 V` / `1.54 A` on IsolaPurr port telemetry; 100% target (`3250 mA`)
+    held around `19.6 V` / `1.63 A`; 105% target (`3412 mA`) held around
+    `18.4 V` / `1.69 A`; 110% target (`3575 mA`) dropped back to the safe
+    `5 V` request path without setting a latch. The source current-limited
+    below the requested setpoints at 95/100/105%, and the 110% case proves the
+    fallback path without a latch.
 
-The power-cap load run stays within the documented safe debug range of
-500 mA. It proves source-cap advertisement, SW2303 register read-back, and
-stable loaded output at that sink current. It is not a maximum-power stress or
-overload trip test at the configured wattage limit.
+The earlier `--power --with-load --load-percent 50` load run stays within the
+documented safe debug range of 500 mA. It proves source-cap advertisement,
+SW2303 register read-back, and stable loaded output at that sink current. It
+is not the 65 W over-limit sweep above.
 
 Runtime remediation:
 
