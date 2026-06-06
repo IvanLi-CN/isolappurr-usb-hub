@@ -75,6 +75,11 @@ import {
 } from "./device-runtime-support";
 import { useDevices } from "./devices-store";
 
+export type {
+  ConnectionState,
+  DeviceTransport,
+} from "./device-runtime-support";
+
 const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
   null,
 );
@@ -414,7 +419,7 @@ export function DeviceRuntimeProvider({
       const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
       const httpLinked =
         !!stored?.transports?.httpBaseUrl ||
-        (stored ? !devdLocalUsbDeviceIdFromBaseUrl(stored.baseUrl) : false);
+        (stored ? !localUsbDeviceIdForDevice(stored) : false);
       const localUsbLinked =
         !!localUsbPortByDevice.current[deviceId] ||
         !!getLocalUsbDeviceLink(deviceId) ||
