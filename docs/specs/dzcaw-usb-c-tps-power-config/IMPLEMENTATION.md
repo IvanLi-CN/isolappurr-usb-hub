@@ -142,13 +142,13 @@ Executed LoadLynx HIL results:
     at about 12.02 V on IsolaPurr telemetry and about 11.99 V on LoadLynx.
   - `cd /Users/ivan && loadlynx ...` 65 W percentage sweep with 10 s holds on
     the 20 V fixed PDO:
-    95% target (`3087 mA`) held around `19.6 V` / `1.54 A` on LoadLynx and
-    `19.6 V` / `1.54 A` on IsolaPurr port telemetry; 100% target (`3250 mA`)
-    held around `19.6 V` / `1.63 A`; 105% target (`3412 mA`) held around
-    `18.4 V` / `1.69 A`; 110% target (`3575 mA`) dropped back to the safe
-    `5 V` request path without setting a latch. The source current-limited
-    below the requested setpoints at 95/100/105%, and the 110% case proves the
-    fallback path without a latch.
+    95% target (`3087 mA`) held around `19.6 V` / `i_total_ma=3074 mA` on
+    LoadLynx; 100% target (`3250 mA`) held around `19.6 V` / `i_total_ma=3237
+    mA`; 105% target (`3412 mA`) held around `18.3 V` / `i_total_ma=3396 mA`;
+    110% target (`3575 mA`) dropped back to the safe `5 V` request path
+    without setting a latch. The lower-level LoadLynx status view splits the
+    current across `i_local_ma` and `i_remote_ma`, so `i_total_ma` is the
+    correct sink-side current field for this sweep.
 
 The earlier `--power --with-load --load-percent 50` load run stays within the
 documented safe debug range of 500 mA. It proves source-cap advertisement,
