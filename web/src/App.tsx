@@ -16,6 +16,7 @@ import { AboutPage } from "./pages/AboutPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DeviceDashboardPage } from "./pages/DeviceDashboardPage";
 import { DeviceInfoPage } from "./pages/DeviceInfoPage";
+import { DevicePowerPage } from "./pages/DevicePowerPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { AppLayout } from "./ui/layout/AppLayout";
 import { DeviceListPanel } from "./ui/panels/DeviceListPanel";
@@ -82,6 +83,10 @@ export default function App() {
                     <Route
                       path="devices/:deviceId/info"
                       element={<DeviceInfoPage />}
+                    />
+                    <Route
+                      path="devices/:deviceId/power"
+                      element={<DevicePowerPage />}
                     />
                     <Route path="about" element={<AboutPage />} />
                     <Route path="*" element={<NotFoundPage />} />

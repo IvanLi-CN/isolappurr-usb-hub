@@ -11,7 +11,8 @@ tags:
   - tps55288
   - loadlynx
 status: active
-related_specs: []
+related_specs:
+  - dzcaw-usb-c-tps-power-config
 applicability: Sink-side voltage verification applies to all tps-sw hardware; shared SDA_TPS/SCL_TPS recovery notes apply only to hardware where SW2303 and TPS55288 share one I2C bus.
 symptoms:
   - TPS output telemetry reports the requested voltage, but the USB-C sink may still see no or wrong output.
@@ -180,8 +181,10 @@ Observed diagnostic pattern:
   front-end observation point only.
 - Do not use `INA226` readings for TPS/SW2303 gating decisions.
 - Do not read, model, log, display, or use the SW2303 connection-indicator field.
-- Do not force `SW2303` pass-path control to make a test pass; that can bypass
-  SW2303 protection/voltage matching logic.
+- Do not force `SW2303` pass-path control to make a test pass. The only
+  exception is the explicit manual power-config path policy in spec `dzcaw`,
+  where `default` force-closes unsafe/no-request cases and otherwise returns
+  control to SW2303 automatic behavior.
 - Keep LoadLynx debug requests in the agreed safe range unless the owner
   explicitly changes it: PD sink voltage 3.3-7 V and load current 0-500 mA.
 - When the bus is stuck, avoid repeated `CE_TPS` probing during output

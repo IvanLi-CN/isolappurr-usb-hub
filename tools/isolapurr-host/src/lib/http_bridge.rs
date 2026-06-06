@@ -38,6 +38,22 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             post(port_replug),
         )
         .route("/api/v1/devices/{id}/hub/route", post(hub_route_set))
+        .route(
+            "/api/v1/devices/{id}/power/config",
+            get(device_power_config_get).put(device_power_config_set),
+        )
+        .route(
+            "/api/v1/devices/{id}/power/config/defaults",
+            post(device_power_config_defaults),
+        )
+        .route(
+            "/api/v1/devices/{id}/power/config/lock",
+            post(device_power_config_lock),
+        )
+        .route(
+            "/api/v1/devices/{id}/power/config/release",
+            post(device_power_config_release),
+        )
         .route("/api/v1/devices/{id}/flash", post(device_flash))
         .route(
             "/api/v1/devices/{id}/flash-upload",
@@ -531,6 +547,118 @@ async fn device_diagnostics(
     }
 }
 
+async fn device_power_config_get(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "power.config_get", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_set(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+    Json(config): Json<Value>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    let params = json!({"config": config, "owner": query.owner});
+    match usb_jsonl_request(&state, &id, "power.config_set", Some(params)).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_defaults(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "power.config_defaults",
+        Some(json!({"owner": query.owner})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_lock(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "power.lock",
+        Some(json!({"owner": query.owner, "acquire": true})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_config_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "power.lock",
+        Some(json!({"owner": query.owner, "acquire": false})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
 async fn create_lease(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -610,7 +738,7 @@ async fn storage_list(State(state): State<AppState>, headers: HeaderMap) -> Resp
     }
     match read_hardware_registry() {
         Ok(registry) => Json(json!({
-            "devices": registry.devices.iter().map(web_storage_device).collect::<Vec<_>>(),
+            "devices": web_storage_devices(&registry),
             "profiles": registry.devices,
         }))
         .into_response(),
@@ -631,11 +759,17 @@ async fn storage_save(
         Err(err) => return bad_request(&err.to_string()),
     };
     match save_hardware(input) {
-        Ok(device) => Json(json!({
-            "device": web_storage_device(&device),
-            "profile": device,
-        }))
-        .into_response(),
+        Ok(device) => {
+            let web_device = read_hardware_registry()
+                .ok()
+                .and_then(|registry| web_storage_device_for_profile(&registry, &device))
+                .unwrap_or_else(|| web_storage_device(&device));
+            Json(json!({
+                "device": web_device,
+                "profile": device,
+            }))
+            .into_response()
+        }
         Err(err) => bad_request(&format!("save storage failed: {err}")),
     }
 }
@@ -710,7 +844,7 @@ async fn storage_export(State(state): State<AppState>, headers: HeaderMap) -> Re
     };
     Json(json!({
         "schema_version": STORAGE_SCHEMA_VERSION,
-        "devices": registry.devices.iter().map(web_storage_device).collect::<Vec<_>>(),
+        "devices": web_storage_devices(&registry),
         "profiles": registry.devices,
         "settings": settings,
         "meta": {},
@@ -770,19 +904,154 @@ fn parse_storage_save_input(value: Value) -> anyhow::Result<SavedHardwareInput> 
 }
 
 fn web_storage_device(profile: &DeviceProfile) -> Value {
-    let base_url = match &profile.transport {
-        HardwareTransport::Http { base_url } => base_url.clone(),
-        HardwareTransport::Usb { device_id, .. } => format!("isolapurr-devd://{device_id}"),
-        HardwareTransport::WebSerial { label } => {
-            format!("webserial://{}", label.as_deref().unwrap_or(&profile.id))
+    web_storage_group_device(&[profile])
+}
+
+fn web_storage_devices(registry: &HardwareRegistry) -> Vec<Value> {
+    let mut groups: Vec<(String, Vec<&DeviceProfile>)> = Vec::new();
+    for profile in &registry.devices {
+        let key = profile_group_key(profile);
+        if let Some((_, profiles)) = groups.iter_mut().find(|(existing, _)| existing == &key) {
+            profiles.push(profile);
+        } else {
+            groups.push((key, vec![profile]));
         }
-    };
+    }
+    groups
+        .into_iter()
+        .map(|(_, profiles)| web_storage_group_device(&profiles))
+        .collect()
+}
+
+fn web_storage_device_for_profile(
+    registry: &HardwareRegistry,
+    profile: &DeviceProfile,
+) -> Option<Value> {
+    let key = profile_group_key(profile);
+    let profiles = registry
+        .devices
+        .iter()
+        .filter(|candidate| profile_group_key(candidate) == key)
+        .collect::<Vec<_>>();
+    (!profiles.is_empty()).then(|| web_storage_group_device(&profiles))
+}
+
+fn web_storage_group_device(profiles: &[&DeviceProfile]) -> Value {
+    let primary = profiles
+        .iter()
+        .find(|profile| matches!(profile.transport, HardwareTransport::Usb { .. }))
+        .or_else(|| profiles.first())
+        .expect("web storage group must contain at least one profile");
+
+    let mut http_base_url = None;
+    let mut local_usb_device_id = None;
+    let mut web_serial_label = None;
+    let mut last_seen_at = primary.last_seen_at;
+    for profile in profiles {
+        last_seen_at = last_seen_at.max(profile.last_seen_at);
+        match &profile.transport {
+            HardwareTransport::Http { base_url } => {
+                http_base_url = Some(base_url.clone());
+            }
+            HardwareTransport::Usb { device_id, .. } => {
+                local_usb_device_id = Some(device_id.clone());
+            }
+            HardwareTransport::WebSerial { label } => {
+                web_serial_label = label.clone().or_else(|| Some(profile.id.clone()));
+            }
+        }
+    }
+
+    let base_url = http_base_url
+        .clone()
+        .unwrap_or_else(|| match &primary.transport {
+            HardwareTransport::Http { base_url } => base_url.clone(),
+            HardwareTransport::Usb { device_id, .. } => format!("isolapurr-devd://{device_id}"),
+            HardwareTransport::WebSerial { label } => {
+                format!("webserial://{}", label.as_deref().unwrap_or(&primary.id))
+            }
+        });
+
+    let mut transports = serde_json::Map::new();
+    if let Some(value) = http_base_url {
+        transports.insert("httpBaseUrl".to_string(), json!(value));
+    }
+    if let Some(value) = local_usb_device_id {
+        transports.insert("localUsbDeviceId".to_string(), json!(value));
+    }
+    if let Some(value) = web_serial_label {
+        transports.insert("webSerialLabel".to_string(), json!(value));
+    }
+
     json!({
-        "id": profile.id,
-        "name": profile.name,
+        "id": primary.id,
+        "name": primary.name,
         "baseUrl": base_url,
-        "lastSeenAt": profile.last_seen_at.map(|ts| ts.to_string()),
+        "lastSeenAt": last_seen_at.map(|ts| ts.to_string()),
+        "transports": Value::Object(transports),
     })
+}
+
+fn profile_group_key(profile: &DeviceProfile) -> String {
+    profile_identity_key(profile).unwrap_or_else(|| {
+        let id = profile.id.trim().to_ascii_lowercase();
+        if is_short_device_id(&id) {
+            format!("device:{id}")
+        } else {
+            format!("id:{id}")
+        }
+    })
+}
+
+fn profile_identity_key(profile: &DeviceProfile) -> Option<String> {
+    profile
+        .identity
+        .as_ref()
+        .and_then(device_identity_key)
+        .or_else(|| match &profile.transport {
+            HardwareTransport::Http { base_url } => {
+                default_hostname_short_id(base_url).map(|id| format!("device:{id}"))
+            }
+            _ => None,
+        })
+}
+
+fn device_identity_key(identity: &DeviceIdentity) -> Option<String> {
+    identity
+        .device_id
+        .as_deref()
+        .map(normalize_device_id)
+        .filter(|id| !id.is_empty())
+        .or_else(|| identity.mac.as_deref().and_then(mac_short_id))
+        .map(|id| format!("device:{id}"))
+}
+
+fn normalize_device_id(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn mac_short_id(value: &str) -> Option<String> {
+    let hex = value
+        .chars()
+        .filter(|ch| ch.is_ascii_hexdigit())
+        .collect::<String>();
+    if hex.len() < 6 {
+        return None;
+    }
+    let short_id = &hex[hex.len() - 6..];
+    is_short_device_id(short_id).then(|| short_id.to_string())
+}
+
+fn default_hostname_short_id(base_url: &str) -> Option<String> {
+    let url = reqwest::Url::parse(base_url).ok()?;
+    let host = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
+    let host = host.strip_suffix(".local").unwrap_or(&host);
+    let short_id = host.strip_prefix("isolapurr-usb-hub-")?;
+    is_short_device_id(short_id).then(|| short_id.to_string())
+}
+
+fn is_short_device_id(value: &str) -> bool {
+    value.len() == 6 && value.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 fn hardware_transport_from_storage_url(base_url: &str) -> HardwareTransport {

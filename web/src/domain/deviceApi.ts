@@ -59,6 +59,45 @@ export type RebootResponse = {
   accepted: true;
 };
 
+export type PowerConfigResponse = {
+  hardware: "sw2303" | string;
+  persisted: boolean;
+  tps_mode: "auto_follow" | "manual";
+  capability: {
+    profile: "full" | string;
+    power_watts: number;
+    protocols: {
+      pd: boolean;
+      qc20: boolean;
+      qc30: boolean;
+      fcp: boolean;
+      afc: boolean;
+      scp: boolean;
+      pe20: boolean;
+      bc12: boolean;
+      sfcp: boolean;
+    };
+    pd: {
+      pps: boolean;
+      fixed_voltages_mv: number[];
+    };
+  };
+  manual: {
+    voltage_mv: number;
+    current_limit_ma: number;
+    usb_c_path_mode: "default" | "disconnect" | "force";
+    path_policy?: string;
+  };
+  lock: { owner: number; expires_at_ms: number } | null;
+};
+
+export type PowerConfigInput = {
+  hardware: "sw2303";
+  tps_mode: "auto_follow" | "manual";
+  capability: PowerConfigResponse["capability"];
+  manual: PowerConfigResponse["manual"];
+};
+
 type ErrorEnvelope = {
   error: {
     code: string;
@@ -256,6 +295,53 @@ export async function setUsbCDownstreamRoute(
   }>(baseUrl, `/api/v1/hub/usb-c-downstream-route?route=${route}`, {
     method: "POST",
   });
+}
+
+export async function getPowerConfig(
+  baseUrl: string,
+): Promise<Result<PowerConfigResponse>> {
+  return fetchJson<PowerConfigResponse>(baseUrl, "/api/v1/power/config", {
+    method: "GET",
+  });
+}
+
+export async function setPowerConfig(
+  baseUrl: string,
+  config: PowerConfigInput,
+  owner: number,
+): Promise<Result<PowerConfigResponse>> {
+  return fetchJson<PowerConfigResponse>(
+    baseUrl,
+    `/api/v1/power/config?owner=${owner}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    },
+  );
+}
+
+export async function restorePowerDefaults(
+  baseUrl: string,
+  owner: number,
+): Promise<Result<PowerConfigResponse>> {
+  return fetchJson<PowerConfigResponse>(
+    baseUrl,
+    `/api/v1/power/config/defaults?owner=${owner}`,
+    { method: "POST" },
+  );
+}
+
+export async function setPowerLock(
+  baseUrl: string,
+  owner: number,
+  acquire: boolean,
+): Promise<Result<PowerConfigResponse>> {
+  return fetchJson<PowerConfigResponse>(
+    baseUrl,
+    `/api/v1/power/config/${acquire ? "lock" : "release"}?owner=${owner}`,
+    { method: "POST" },
+  );
 }
 
 export async function getDeviceInfo(

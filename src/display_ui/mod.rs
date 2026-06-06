@@ -3,7 +3,6 @@
 mod dashboard;
 mod dashboard_font;
 mod font6x8;
-mod icons;
 mod menu;
 mod normal_ui_policy;
 mod surface;

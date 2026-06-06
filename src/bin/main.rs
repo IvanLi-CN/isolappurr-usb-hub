@@ -63,11 +63,16 @@ use isolapurr_usb_hub::pd_i2c::PowerRequest;
 use isolapurr_usb_hub::pd_i2c::PowerSetpoint;
 use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
 use isolapurr_usb_hub::pd_i2c::sw2303::{
-    EnableProfileStatus, apply_enable_profile_full, read_power_request,
+    EnableProfileStatus, apply_enable_profile, read_power_request, set_path_control,
+    trigger_cc_un_driving,
 };
 use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_setpoint, boot_supply_setpoint, power_request_to_setpoint,
     stop_output_and_enable_discharge,
+};
+use isolapurr_usb_hub::power_config::{
+    PowerConfig, Sw2303CapabilityReadback, Sw2303PathControl, TpsMode, quantize_manual_voltage_mv,
+    resolve_manual_path_control,
 };
 use isolapurr_usb_hub::prompt_tone::{
     DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitWarnReason, PromptToneManager, SafetyKind,
@@ -109,6 +114,9 @@ static WIFI_PROVISIONING_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal:
 
 #[cfg(feature = "net_http")]
 static USB_C_ROUTE_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+
+#[cfg(feature = "net_http")]
+static POWER_CONFIG_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
 #[cfg(feature = "net_http")]
 static WIFI_CREDENTIALS_CACHE: Mutex<RefCell<Option<provisioning::WifiCredentials>>> =

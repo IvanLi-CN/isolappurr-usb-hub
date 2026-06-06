@@ -127,6 +127,49 @@
             }
         }
         #[cfg(feature = "net_http")]
+        {
+            let pending_power_config = {
+                let mut guard = api_state.lock().await;
+                guard.pending.power_config.take()
+            };
+
+            if let Some(command) = pending_power_config {
+                let next_config = match command {
+                    net::ApiPowerConfigCommand::Set { config } => config,
+                    net::ApiPowerConfigCommand::Defaults => PowerConfig::defaults(),
+                };
+                let capability_changed = power_config.capability != next_config.capability;
+                match provisioning::store_power_config(telemetry_sampler.i2c_mut(), next_config)
+                    .await
+                {
+                    Ok(()) => {
+                        power_config = next_config;
+                        power_config_persisted = true;
+                        sw2303_profile_applied = false;
+                        sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
+                        sw2303_recontract_pending =
+                            capability_changed && matches!(port_usb_c.power, PowerState::On);
+                        last_sw2303_profile_attempt = None;
+                        last_sw2303_path_control = None;
+                        sw2303_stable_reads = 0;
+                        last_valid_sw2303_request = None;
+                        last_request = None;
+                        last_fast_protocol = None;
+                        {
+                            let mut guard = api_state.lock().await;
+                            guard.power.config = power_config;
+                            guard.power.persisted = power_config_persisted;
+                            guard.power.last_path_control = last_sw2303_path_control;
+                        }
+                        POWER_CONFIG_RESULT.signal(true);
+                    }
+                    Err(_) => {
+                        POWER_CONFIG_RESULT.signal(false);
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "net_http")]
         if REBOOT_PENDING.load(Ordering::Acquire) && !has_wifi_provisioning_pending() {
             REBOOT_PENDING.store(false, Ordering::Release);
             Timer::after_millis(100).await;
@@ -285,22 +328,65 @@
             prompt_tone.notify(SoundEvent::ExitError(ErrorKind::Sw2303I2c));
         }
 
-        // Apply the SW2303 profile after target-register polling is stable.
+        // Boot profile apply waits for stable target reads; runtime config changes
+        // apply immediately once SW2303 I2C is usable so source caps do not lag EEPROM.
         if !sw2303_profile_applied
-            && request.is_some()
-            && sw2303_stable_reads >= SW2303_STABLE_READS_BEFORE_PROFILE
+            && sw2303_i2c_allowed
+            && (sw2303_recontract_pending
+                || (request.is_some() && sw2303_stable_reads >= SW2303_STABLE_READS_BEFORE_PROFILE))
         {
             let allow_retry = last_sw2303_profile_attempt
                 .map(|t| t.elapsed() >= Duration::from_secs(60))
-                .unwrap_or(true);
+                .unwrap_or(true)
+                || sw2303_recontract_pending;
             if allow_retry {
+                let apply_context = if sw2303_recontract_pending {
+                    "applied after runtime config change"
+                } else {
+                    "applied after stable target reads"
+                };
                 last_sw2303_profile_attempt = Some(Instant::now());
-                match apply_enable_profile_full(&mut sw2303_i2c).await {
+                match apply_enable_profile(&mut sw2303_i2c, &power_config).await {
                     Ok(status) => {
-                        sw2303_profile_applied = true;
-                        log_sw2303_profile_status("applied after stable target reads", &status);
+                        sw2303_readback_config = status.readback;
+                        let readback_matches = status.matches_config(&power_config);
+                        sw2303_profile_applied = readback_matches;
+                        log_sw2303_profile_status(apply_context, &status);
+                        if readback_matches {
+                            if sw2303_recontract_pending {
+                                info!(
+                                    "sw2303 profile: readback matched config; triggering CC un-driving to refresh sink contract"
+                                );
+                                match trigger_cc_un_driving(&mut sw2303_i2c).await {
+                                    Ok(()) => {
+                                        Timer::after_millis(SW2303_CC_UN_DRIVING_MS).await;
+                                        info!(
+                                            "sw2303 profile: CC un-driving pulse requested after config refresh"
+                                        );
+                                    }
+                                    Err(err) => {
+                                        defmt::warn!(
+                                            "sw2303 profile: CC un-driving trigger failed after config refresh: {:?}",
+                                            defmt::Debug2Format(&err)
+                                        );
+                                    }
+                                }
+                                request = None;
+                                setpoint = boot_sp;
+                                last_valid_sw2303_request = None;
+                                last_request = None;
+                                last_fast_protocol = None;
+                                sw2303_stable_reads = 0;
+                                sw2303_recontract_pending = false;
+                            }
+                        } else {
+                            defmt::warn!(
+                                "sw2303 profile: readback did not match requested power config; keeping profile_applied=false"
+                            );
+                        }
                     }
                     Err(err) => {
+                        sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
                         defmt::warn!(
                             "sw2303 profile: apply failed after stable target reads: {:?}",
                             defmt::Debug2Format(&err)
@@ -334,6 +420,55 @@
         } else {
             last_request = None;
             last_fast_protocol = None;
+        }
+
+        if usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual {
+            let manual_vout_mv = quantize_manual_voltage_mv(power_config.manual.voltage_mv);
+            setpoint = PowerSetpoint {
+                output_enabled: true,
+                v_out_mv: manual_vout_mv,
+                i_lim_ma: power_config.manual.current_limit_ma,
+            };
+
+            let sw_request_mv = request
+                .filter(|request| request.status_valid)
+                .map(|request| request.v_req_mv);
+            let path_control = resolve_manual_path_control(
+                power_config.manual.usb_c_path_mode,
+                manual_vout_mv,
+                sw_request_mv,
+            );
+
+            if sw2303_i2c_allowed && last_sw2303_path_control != Some(path_control) {
+                match set_path_control(&mut sw2303_i2c, path_control).await {
+                    Ok(()) => {
+                        last_sw2303_path_control = Some(path_control);
+                        info!("sw2303 path control: {}", path_control.as_str());
+                    }
+                    Err(err) => {
+                        defmt::warn!(
+                            "sw2303 path control failed: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                    }
+                }
+            }
+        } else if usb_c_pd_power_on
+            && sw2303_i2c_allowed
+            && last_sw2303_path_control != Some(Sw2303PathControl::Auto)
+        {
+            match set_path_control(&mut sw2303_i2c, Sw2303PathControl::Auto).await {
+                Ok(()) => {
+                    last_sw2303_path_control = Some(Sw2303PathControl::Auto);
+                    info!("sw2303 path control: auto");
+                }
+                Err(err) => {
+                    defmt::warn!(
+                        "sw2303 path control auto failed: {:?}",
+                        defmt::Debug2Format(&err)
+                    );
+                }
+            }
         }
 
         loop_delay_ms = SW2303_POLL_MS;
@@ -556,6 +691,8 @@
                 tps_error_latched = false;
                 sw2303_stable_reads = 0;
                 sw2303_profile_applied = false;
+                sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
+                sw2303_recontract_pending = false;
                 last_sw2303_read_attempt = None;
                 last_sw2303_profile_attempt = None;
                 last_valid_sw2303_request = None;

@@ -467,7 +467,7 @@ async function ensureLocalUsbDeviceRegistered(
 function localUsbMethodEndpoint(
   deviceId: string,
   request: JsonlRequest,
-): { method: "GET" | "POST" | "DELETE"; path: string; body?: unknown } {
+): { method: "GET" | "POST" | "PUT" | "DELETE"; path: string; body?: unknown } {
   const params = request.params ?? {};
   switch (request.method) {
     case "info":
@@ -510,6 +510,27 @@ function localUsbMethodEndpoint(
         method: "POST",
         path: `/api/v1/devices/${deviceId}/hub/route`,
         body: params,
+      };
+    case "power.config_get":
+      return {
+        method: "GET",
+        path: `/api/v1/devices/${deviceId}/power/config`,
+      };
+    case "power.config_set":
+      return {
+        method: "PUT",
+        path: `/api/v1/devices/${deviceId}/power/config?owner=${Number(params.owner ?? 0)}`,
+        body: params.config,
+      };
+    case "power.config_defaults":
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/power/config/defaults?owner=${Number(params.owner ?? 0)}`,
+      };
+    case "power.lock":
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/power/config/${params.acquire === false ? "release" : "lock"}?owner=${Number(params.owner ?? 0)}`,
       };
     default:
       throw new Error(`Unsupported Local USB method: ${request.method}`);

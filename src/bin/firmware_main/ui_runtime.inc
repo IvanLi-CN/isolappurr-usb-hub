@@ -81,6 +81,7 @@ const SW2303_READ_RETRY_DELAY_MS: u64 = 5;
 const SW2303_STABLE_READS_BEFORE_TPS: u16 = 1;
 const SW2303_STABLE_READS_BEFORE_TPS_STATUS: u16 = 500;
 const SW2303_STABLE_READS_BEFORE_PROFILE: u16 = 50;
+const SW2303_CC_UN_DRIVING_MS: u64 = 1_200;
 const PD_RUNTIME_RECOVERY_ERROR_LIMIT: u8 = 3;
 const PD_RUNTIME_RECOVERY_MIN_INTERVAL_MS: u64 = 1_000;
 const PD_RUNTIME_RECOVERY_TPS_RETRIES: u8 = 4;
@@ -126,6 +127,8 @@ const TOAST_USB_C_BADTIME: [[u8; 13]; 3] =
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SettingsMenuItem {
     Mode,
+    PowerPreset,
+    PowerAdvanced,
     Wifi,
     About,
 }
@@ -135,20 +138,26 @@ enum SettingsMenuItem {
 enum SettingsMenuView {
     Main,
     ModeDetail,
+    PowerPresetDetail,
+    PowerAdvancedDetail,
 }
 
 impl SettingsMenuItem {
     fn prev(self) -> Self {
         match self {
             Self::Mode => Self::About,
-            Self::Wifi => Self::Mode,
+            Self::PowerPreset => Self::Mode,
+            Self::PowerAdvanced => Self::PowerPreset,
+            Self::Wifi => Self::PowerAdvanced,
             Self::About => Self::Wifi,
         }
     }
 
     fn next(self) -> Self {
         match self {
-            Self::Mode => Self::Wifi,
+            Self::Mode => Self::PowerPreset,
+            Self::PowerPreset => Self::PowerAdvanced,
+            Self::PowerAdvanced => Self::Wifi,
             Self::Wifi => Self::About,
             Self::About => Self::Mode,
         }
@@ -157,8 +166,10 @@ impl SettingsMenuItem {
     fn index(self) -> usize {
         match self {
             Self::Mode => 0,
-            Self::Wifi => 1,
-            Self::About => 2,
+            Self::PowerPreset => 1,
+            Self::PowerAdvanced => 2,
+            Self::Wifi => 3,
+            Self::About => 4,
         }
     }
 }
@@ -217,6 +228,68 @@ fn route_current_label(route: provisioning::UsbCDownstreamRoute) -> &'static str
         provisioning::UsbCDownstreamRoute::Mcu => "CURRENT: UPGRADE",
         provisioning::UsbCDownstreamRoute::UsbC => "CURRENT: NORMAL",
     }
+}
+
+#[cfg(feature = "net_http")]
+fn power_preset_label(config: PowerConfig) -> &'static str {
+    if config == PowerConfig::defaults() {
+        "FULL AUTO"
+    } else if config.tps_mode == TpsMode::Manual {
+        "MANUAL TPS"
+    } else {
+        "CUSTOM AUTO"
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn power_preset_lines(config: PowerConfig) -> [[u8; 20]; 3] {
+    let mut lines = [*b"                    "; 3];
+    let mut current = heapless::String::<20>::new();
+    let _ = write!(current, "CURRENT: {}", power_preset_label(config));
+    copy_compact_line(&mut lines[0], current.as_str());
+    copy_compact_line(&mut lines[1], "FULL SW2303 100W");
+    copy_compact_line(&mut lines[2], "PRESS AGAIN DEFAULT");
+    lines
+}
+
+#[cfg(feature = "net_http")]
+fn path_mode_label(mode: isolapurr_usb_hub::power_config::ManualUsbCPathMode) -> &'static str {
+    match mode {
+        isolapurr_usb_hub::power_config::ManualUsbCPathMode::Default => "PATH DEFAULT",
+        isolapurr_usb_hub::power_config::ManualUsbCPathMode::Disconnect => "PATH DISCONNECT",
+        isolapurr_usb_hub::power_config::ManualUsbCPathMode::Force => "PATH FORCE",
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn power_advanced_lines(config: PowerConfig) -> [[u8; 20]; 3] {
+    let mut lines = [*b"                    "; 3];
+    copy_compact_line(
+        &mut lines[0],
+        match config.tps_mode {
+            TpsMode::AutoFollow => "MODE AUTO FOLLOW",
+            TpsMode::Manual => "MODE MANUAL TPS",
+        },
+    );
+    let mut setpoint = heapless::String::<20>::new();
+    let _ = write!(
+        setpoint,
+        "V {}MV I {}MA",
+        config.manual.voltage_mv, config.manual.current_limit_ma
+    );
+    copy_compact_line(&mut lines[1], setpoint.as_str());
+    copy_compact_line(&mut lines[2], path_mode_label(config.manual.usb_c_path_mode));
+    lines
+}
+
+#[cfg(feature = "net_http")]
+fn toggled_power_mode_config(config: PowerConfig) -> PowerConfig {
+    let mut next = config;
+    next.tps_mode = match config.tps_mode {
+        TpsMode::AutoFollow => TpsMode::Manual,
+        TpsMode::Manual => TpsMode::AutoFollow,
+    };
+    next.validated().unwrap_or(PowerConfig::defaults())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

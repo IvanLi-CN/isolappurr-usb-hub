@@ -365,6 +365,11 @@ struct DeviceQuery {
 }
 
 #[derive(Debug, Deserialize)]
+struct PowerOwnerQuery {
+    owner: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WifiRequest {
     ssid: String,
@@ -564,6 +569,55 @@ mod tests {
                 .as_ref()
                 .and_then(|identity| identity.device_id.as_deref()),
             Some("isolapurr-abc")
+        );
+    }
+
+    #[test]
+    fn web_storage_coalesces_usb_and_default_wifi_hostname_profiles() {
+        let registry = HardwareRegistry {
+            schema_version: STORAGE_SCHEMA_VERSION,
+            devices: vec![
+                DeviceProfile {
+                    id: "isolapurr-01".to_string(),
+                    name: "isolapurr-01".to_string(),
+                    transport: HardwareTransport::Usb {
+                        device_id: "usb--dev-cu-usbmodem21221401".to_string(),
+                        devd_url: None,
+                    },
+                    identity: Some(DeviceIdentity {
+                        device_id: Some("856a14".to_string()),
+                        mac: Some("1c:db:d4:85:6a:14".to_string()),
+                    }),
+                    last_seen_at: Some(10),
+                },
+                DeviceProfile {
+                    id: "isolapurr-01-wifi".to_string(),
+                    name: "isolapurr-01 Wi-Fi".to_string(),
+                    transport: HardwareTransport::Http {
+                        base_url: "http://isolapurr-usb-hub-856a14.local".to_string(),
+                    },
+                    identity: None,
+                    last_seen_at: Some(11),
+                },
+            ],
+        };
+
+        let devices = web_storage_devices(&registry);
+
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0]["id"], "isolapurr-01");
+        assert_eq!(devices[0]["name"], "isolapurr-01");
+        assert_eq!(
+            devices[0]["baseUrl"],
+            "http://isolapurr-usb-hub-856a14.local"
+        );
+        assert_eq!(
+            devices[0]["transports"]["httpBaseUrl"],
+            "http://isolapurr-usb-hub-856a14.local"
+        );
+        assert_eq!(
+            devices[0]["transports"]["localUsbDeviceId"],
+            "usb--dev-cu-usbmodem21221401"
         );
     }
 
