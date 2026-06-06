@@ -140,6 +140,13 @@ Executed LoadLynx HIL results:
     about 19.95 V on LoadLynx.
   - Defaults recovery: full profile restored and final 12 V / 500 mA load held
     at about 12.02 V on IsolaPurr telemetry and about 11.99 V on LoadLynx.
+  - `cd /Users/ivan && loadlynx ...` 65 W percentage sweep with 10 s holds:
+    95% (`3087 mA`) stayed up without latches and sat around `11.6 V` /
+    `1.54 A` on LoadLynx telemetry; 100% (`3250 mA`), 105% (`3412 mA`), and
+    110% (`3575 mA`) all stayed latch-free but fell back to the safe `5 V`
+    request path instead of sustaining a higher-voltage loaded state. That
+    confirms the cap boundary is enforced by the source-control loop rather than
+    only by the sink current request.
 
 The power-cap load run stays within the documented safe debug range of
 500 mA. It proves source-cap advertisement, SW2303 register read-back, and
