@@ -36,10 +36,7 @@ import {
   type WifiConfigResponse,
   type WifiMutationResponse,
 } from "../domain/deviceApi";
-import type { StoredDevice } from "../domain/devices";
 import {
-  devdLocalUsbDeviceIdFromBaseUrl,
-  LocalUsbAgentHttpError,
   nextJsonlRequestId,
   sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
@@ -62,94 +59,27 @@ import {
   subscribeWebSerialDeviceLinks,
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
+import {
+  type ConnectionState,
+  createEmptyChannels,
+  type DeviceRuntime,
+  type DeviceRuntimeContextValue,
+  type DeviceTransport,
+  httpBaseUrlForDevice,
+  isDeviceInfoResponse,
+  localUsbDeviceIdForDevice,
+  localUsbErrorToDeviceApiError,
+  shortApiError,
+  shouldResetLocalUsbConnectionCache,
+  uniqueTransports,
+} from "./device-runtime-support";
 import { useDevices } from "./devices-store";
-
-export type ConnectionState = "online" | "offline" | "unknown";
-export type DeviceTransport = "http" | "web_serial" | "local_usb";
-
-type ChannelRuntime = {
-  lastOkAt: number | null;
-  lastError: DeviceApiError | null;
-};
-
-type DeviceRuntime = {
-  lastOkAt: number | null;
-  lastError: DeviceApiError | null;
-  transport: DeviceTransport | null;
-  channels: Record<DeviceTransport, ChannelRuntime>;
-  hub: HubState | null;
-  ports: Record<PortId, Port> | null;
-  pending: Record<PortId, boolean>;
-};
-
-type DeviceRuntimeContextValue = {
-  now: number;
-  runtimeById: Record<string, DeviceRuntime>;
-  connectionState: (deviceId: string) => ConnectionState;
-  lastOkAt: (deviceId: string) => number | null;
-  lastErrorLabel: (deviceId: string) => string | null;
-  transport: (deviceId: string) => DeviceTransport | null;
-  wifiManagementTransport: (deviceId: string) => DeviceTransport | null;
-  channelState: (
-    deviceId: string,
-    transport: DeviceTransport,
-  ) => ConnectionState;
-  hub: (deviceId: string) => HubState | null;
-  port: (deviceId: string, portId: PortId) => Port | null;
-  pending: (deviceId: string, portId: PortId) => boolean;
-  refreshDevice: (deviceId: string) => Promise<void>;
-  deviceInfo: (deviceId: string) => Promise<Result<DeviceInfoResponse>>;
-  wifiConfig: (deviceId: string) => Promise<Result<WifiConfigResponse>>;
-  saveWifiConfig: (
-    deviceId: string,
-    input: WifiConfigInput,
-  ) => Promise<Result<WifiMutationResponse>>;
-  clearWifiConfig: (deviceId: string) => Promise<Result<WifiMutationResponse>>;
-  rebootDevice: (deviceId: string) => Promise<Result<RebootResponse>>;
-  powerConfig: (deviceId: string) => Promise<Result<PowerConfigResponse>>;
-  savePowerConfig: (
-    deviceId: string,
-    input: PowerConfigInput,
-    owner: number,
-  ) => Promise<Result<PowerConfigResponse>>;
-  restorePowerDefaults: (
-    deviceId: string,
-    owner: number,
-  ) => Promise<Result<PowerConfigResponse>>;
-  setPowerLock: (
-    deviceId: string,
-    owner: number,
-    acquire: boolean,
-  ) => Promise<Result<PowerConfigResponse>>;
-  setPower: (
-    deviceId: string,
-    portId: PortId,
-    enabled: boolean,
-  ) => Promise<void>;
-  replug: (deviceId: string, portId: PortId) => Promise<void>;
-  setUsbCDownstreamRoute: (
-    deviceId: string,
-    route: UsbCDownstreamRoute,
-  ) => Promise<void>;
-};
 
 const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
   null,
 );
 
 const OFFLINE_THRESHOLD_MS = 10_000;
-const TRANSPORTS: DeviceTransport[] = ["http", "web_serial", "local_usb"];
-
-function httpBaseUrlForDevice(device: StoredDevice): string {
-  return device.transports?.httpBaseUrl ?? device.baseUrl;
-}
-
-function localUsbDeviceIdForDevice(device: StoredDevice): string | null {
-  return (
-    device.transports?.localUsbDeviceId ??
-    devdLocalUsbDeviceIdFromBaseUrl(device.baseUrl)
-  );
-}
 
 type JsonlEnvelope<T> = {
   id?: number | string | null;
@@ -157,22 +87,6 @@ type JsonlEnvelope<T> = {
   result?: T;
   error?: { code: string; message: string; retryable: boolean };
 };
-
-function shortApiError(err: DeviceApiError): string {
-  if (err.kind === "offline") {
-    return "Offline: device unreachable";
-  }
-  if (err.kind === "preflight_blocked") {
-    return "Blocked: CORS/PNA preflight";
-  }
-  if (err.kind === "invalid_response") {
-    return "Invalid response";
-  }
-  if (err.kind === "busy") {
-    return "Busy";
-  }
-  return `API error: ${err.code}`;
-}
 
 export function DeviceRuntimeProvider({
   children,
@@ -1228,67 +1142,6 @@ export function DeviceRuntimeProvider({
       {children}
     </DeviceRuntimeContext.Provider>
   );
-}
-
-function createEmptyChannels(): Record<DeviceTransport, ChannelRuntime> {
-  return {
-    http: { lastOkAt: null, lastError: null },
-    web_serial: { lastOkAt: null, lastError: null },
-    local_usb: { lastOkAt: null, lastError: null },
-  };
-}
-
-export function shouldResetLocalUsbConnectionCache(err: unknown): boolean {
-  if (err instanceof LocalUsbAgentHttpError) {
-    return false;
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return !message.includes("serial port is busy");
-}
-
-export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {
-  if (err instanceof LocalUsbAgentHttpError) {
-    if (err.status === 409 && err.code === "busy") {
-      return { kind: "busy", message: err.message, retryable: true };
-    }
-    return {
-      kind: "api_error",
-      status: err.status,
-      code: err.code,
-      message: err.message,
-      retryable: err.retryable,
-    };
-  }
-  return {
-    kind: "offline",
-    message: err instanceof Error ? err.message : "Local USB request failed",
-  };
-}
-
-function uniqueTransports(
-  candidates: Array<DeviceTransport | null | undefined>,
-): DeviceTransport[] {
-  const seen = new Set<DeviceTransport>();
-  const ordered: DeviceTransport[] = [];
-  for (const candidate of candidates) {
-    if (!candidate || seen.has(candidate)) {
-      continue;
-    }
-    if (!TRANSPORTS.includes(candidate)) {
-      continue;
-    }
-    seen.add(candidate);
-    ordered.push(candidate);
-  }
-  return ordered;
-}
-
-function isDeviceInfoResponse(value: unknown): value is DeviceInfoResponse {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const device = (value as { device?: unknown }).device;
-  return !!device && typeof device === "object";
 }
 
 export function useDeviceRuntime(): DeviceRuntimeContextValue {
