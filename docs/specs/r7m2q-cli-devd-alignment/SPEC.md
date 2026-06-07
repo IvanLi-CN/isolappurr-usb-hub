@@ -37,6 +37,11 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST report unavailable GitHub Release installer assets as a blocker for user-machine host-tool installation and stop instead of falling back to raw serial enumeration, localhost HTTP, browser automation, source checkout commands, or project-local tooling.
 - MUST store local program hardware memory in the user's config directory, while pure Web stores the same profile shape in browser storage.
 - MUST support importing/merging browser profiles into devd storage when devd is available.
+- MUST make `isolapurr discover` perform real discovery instead of replaying
+  saved bindings: LAN results come from mDNS/DNS-SD service discovery with
+  `GET /api/v1/info` verification, Local USB results come from the current
+  local hardware scan, and saved hardware records may only annotate matching
+  results rather than replace discovery.
 - MUST verify Local USB targets are running IsolaPurr project firmware before ordinary device operations. The verification key is firmware metadata from `info`, including `firmware.name == "isolapurr-usb-hub"` and a compatible `firmware.version`.
 - MUST reject ordinary status-adjacent control operations when the device is in download mode, does not answer project `info`, is running non-IsolaPurr firmware, or reports an incompatible firmware version. The error must explain whether the user should select the correct device, perform a first-time flash, or upgrade firmware.
 - MUST validate firmware catalog target, flash address, file hash, and device identity before normal user flashing.
@@ -148,6 +153,12 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given `isolapurr-devd serve` is running, when localhost is scanned, then no HTTP devd API is exposed unless `isolapurr-devd bridge-http` was explicitly started.
 - Given a browser supports Web Serial, when the user connects through the Web app, then Web Serial remains a normal channel and can be promoted by the runtime without devd.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.
+- Given the user runs `isolapurr discover`, when LAN devices advertise the
+  IsolaPurr HTTP service and Local USB candidates are currently attached, then
+  the CLI must return one combined discovery list where LAN entries come from
+  mDNS + verified `info`, USB entries come from the current local scan, and any
+  matching saved hardware IDs are shown only as annotations on those live
+  discovery results.
 - Given a Local USB target does not answer IsolaPurr `info`, when the user requests status, Wi-Fi, ports, diagnostics, route, replug, or power operations, then devd refuses the operation and reports that the target may be in download mode or running non-IsolaPurr firmware.
 - Given a Local USB target answers `info` with a different `firmware.name`, when any ordinary operation is requested, then devd refuses the operation and reports the expected firmware name.
 - Given a Local USB target answers `info` with an incompatible `firmware.version`, when any ordinary operation is requested, then devd refuses the operation and asks the user to upgrade firmware.

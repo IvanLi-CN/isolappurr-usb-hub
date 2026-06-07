@@ -6,6 +6,11 @@
 - `isolapurr-devd serve` exposes a local IPC daemon by default: Unix domain socket on macOS/Linux and Windows named pipe on Windows. It tracks connected IPC clients and exits after the configured idle timeout when no clients remain.
 - `isolapurr-devd bridge-http` exposes the device-centric localhost HTTP bridge, token bootstrap, Local USB scanning, leases, session traces, storage import/list/save, Wi-Fi/ports/status/route/diagnostics/power-config proxy methods, firmware catalog validation, and guarded flash/reset endpoints.
 - `isolapurr` exposes released-style CLI entrypoints for hardware memory, discovery/devices/status, Wi-Fi, ports, flash, reset, monitor, and diagnostics over IPC, with sibling daemon auto-start when available.
+- `isolapurr discover` now performs actual mixed discovery: LAN candidates come
+  from mDNS/DNS-SD `_http._tcp.local` browsing plus verified `GET /api/v1/info`
+  responses, Local USB candidates come from the current devd scan, and saved
+  hardware records are attached back as annotations when identity or transport
+  keys match.
 - `isolapurr` now also exposes owner-facing power commands over the same IPC
   path: `power show`, `power defaults`, `power output manual|auto`, and
   `power source-capability set`.

@@ -1,15 +1,13 @@
 use anyhow::{Context as _, anyhow};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
-    terminal,
-};
+use crossterm::terminal;
 use dialoguer::{MultiSelect, Select};
 use isolapurr_host::{
     DeviceIdentity, DeviceProfile, DeviceRecord, FirmwareCatalog, HardwareTransport,
     SavedHardwareInput, api_url, default_ipc_endpoint, ipc_call, read_hardware_registry,
     redact_sensitive, registry_path, save_hardware,
 };
+use mdns_sd::{ServiceDaemon, ServiceEvent};
 use ratatui::{
     DefaultTerminal, Frame, TerminalOptions, Viewport,
     layout::{Constraint, Direction, Layout, Rect},
@@ -21,6 +19,7 @@ use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    collections::HashMap,
     fs,
     io::{self, IsTerminal as _},
     path::PathBuf,
@@ -551,13 +550,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let value_result: anyhow::Result<Value> = async {
         Ok(match cli.command {
-            Command::Discover { scan } => {
-                if scan {
-                    devd_request(&client, &devd, Method::POST, "/api/v1/devices/scan", None).await?
-                } else {
-                    devd_request(&client, &devd, Method::GET, "/api/v1/devices", None).await?
-                }
-            }
+            Command::Discover { scan } => handle_discover(&client, &devd, scan).await?,
             Command::Devices => {
                 devd_request(&client, &devd, Method::POST, "/api/v1/devices/scan", None).await?
             }
@@ -678,6 +671,14 @@ fn format_human_output(output: &Value) -> String {
         return format_hardware_available(output);
     }
 
+    if let Some(devices) = output.get("devices").and_then(Value::as_array)
+        && devices
+            .first()
+            .is_some_and(|device| device.get("transport").is_some())
+    {
+        return format_discover_output(output);
+    }
+
     if let Some(devices) = output.get("devices").and_then(Value::as_array) {
         if devices.is_empty() {
             return "No devices found.\n".to_string();
@@ -715,6 +716,98 @@ fn format_human_output(output: &Value) -> String {
         "{}\n",
         serde_json::to_string_pretty(output).unwrap_or_else(|_| output.to_string())
     )
+}
+
+fn format_discover_output(output: &Value) -> String {
+    let mut lines = Vec::new();
+    if let Some(warnings) = output.get("warnings").and_then(Value::as_array) {
+        for warning in warnings.iter().filter_map(Value::as_str) {
+            lines.push(format!("warning: {warning}"));
+        }
+        if !warnings.is_empty() {
+            lines.push(String::new());
+        }
+    }
+
+    let Some(devices) = output.get("devices").and_then(Value::as_array) else {
+        return "No devices found.\n".to_string();
+    };
+    if devices.is_empty() {
+        if lines.is_empty() {
+            return "No devices found.\n".to_string();
+        }
+        lines.push("No devices found.".to_string());
+        return format!("{}\n", lines.join("\n"));
+    }
+
+    for device in devices {
+        let transport = device.get("transport").unwrap_or(&Value::Null);
+        let kind = transport
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let display_name = device
+            .get("displayName")
+            .or_else(|| device.get("display_name"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown-device");
+        let mut detail = match kind {
+            "http" => device
+                .get("deviceId")
+                .or_else(|| device.get("device_id"))
+                .and_then(Value::as_str)
+                .map(|device_id| format!("LAN {display_name} ({device_id})"))
+                .unwrap_or_else(|| format!("LAN {display_name}")),
+            "usb" => transport
+                .get("deviceId")
+                .or_else(|| transport.get("device_id"))
+                .and_then(Value::as_str)
+                .map(|device_id| format!("USB {display_name} ({device_id})"))
+                .unwrap_or_else(|| format!("USB {display_name}")),
+            _ => display_name.to_string(),
+        };
+
+        let endpoint = match kind {
+            "http" => transport
+                .get("baseUrl")
+                .or_else(|| transport.get("base_url"))
+                .and_then(Value::as_str),
+            "usb" => transport
+                .get("portPath")
+                .or_else(|| transport.get("port_path"))
+                .and_then(Value::as_str),
+            _ => None,
+        };
+        if let Some(endpoint) = endpoint {
+            detail.push_str(" - ");
+            detail.push_str(endpoint);
+        }
+
+        let saved = device
+            .get("savedHardware")
+            .or_else(|| device.get("saved_hardware"))
+            .and_then(Value::as_array)
+            .map(|saved| {
+                saved
+                    .iter()
+                    .filter_map(|entry| {
+                        let id = entry.get("id").and_then(Value::as_str)?;
+                        let name = entry.get("name").and_then(Value::as_str).unwrap_or(id);
+                        Some(format!("{name} ({id})"))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if !saved.is_empty() {
+            detail.push_str(" [saved: ");
+            detail.push_str(&saved.join(", "));
+            detail.push(']');
+        }
+
+        lines.push(detail);
+    }
+
+    format!("{}\n", lines.join("\n"))
 }
 
 fn format_hardware_available(output: &Value) -> String {
@@ -3235,6 +3328,370 @@ async fn request_selected(
     }
 }
 
+async fn discover_usb_devices(
+    client: &Client,
+    devd: &DevdClient,
+    saved: &[DeviceProfile],
+) -> anyhow::Result<Vec<DiscoverDevice>> {
+    let scanned = devd_request(client, devd, Method::POST, "/api/v1/devices/scan", None).await?;
+    let devices = scanned
+        .get("devices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("device scan returned no device list"))?
+        .iter()
+        .cloned()
+        .map(serde_json::from_value::<DeviceRecord>)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut discovered = Vec::new();
+    for device in devices {
+        let Some(usb) = device.usb.clone() else {
+            continue;
+        };
+        let info = request_selected(
+            client,
+            devd,
+            ApiSelectorArgs {
+                hardware: None,
+                device: Some(device.id.clone()),
+                url: None,
+            },
+            Method::GET,
+            "/status",
+            None,
+        )
+        .await
+        .ok();
+        let identity = info.as_ref().and_then(parse_device_identity_from_info);
+        let firmware = info
+            .as_ref()
+            .and_then(parse_discovered_http_info_from_value)
+            .map(|parsed| parsed.firmware);
+        let mut keys = vec![format!("usb:{}", normalize_discovery_key(&device.id))];
+        if let Some(identity) = &identity {
+            extend_unique(&mut keys, discover_identity_match_keys(identity));
+        }
+        let saved_hardware = saved_hardware_matches(saved, &keys);
+        let display_name = identity
+            .as_ref()
+            .and_then(|identity| identity.device_id.clone())
+            .unwrap_or_else(|| usb.label.clone());
+        discovered.push(DiscoverDevice {
+            id: device.id.clone(),
+            display_name,
+            connection: "available".to_string(),
+            transport: DiscoverTransport::Usb {
+                device_id: device.id,
+                port_path: usb.port_path,
+            },
+            device_id: identity.and_then(|identity| identity.device_id),
+            hostname: None,
+            fqdn: None,
+            ipv4: None,
+            firmware,
+            saved_hardware: (!saved_hardware.is_empty()).then_some(saved_hardware),
+        });
+    }
+    Ok(discovered)
+}
+
+async fn discover_lan_devices(
+    client: &Client,
+    saved: &[DeviceProfile],
+) -> (Vec<DiscoverDevice>, Vec<String>) {
+    let mdns = match ServiceDaemon::new() {
+        Ok(mdns) => mdns,
+        Err(err) => {
+            return (
+                Vec::new(),
+                vec![format!("LAN discovery unavailable: {err}")],
+            );
+        }
+    };
+    let receiver = match mdns.browse("_http._tcp.local.") {
+        Ok(receiver) => receiver,
+        Err(err) => {
+            return (
+                Vec::new(),
+                vec![format!("LAN discovery unavailable: {err}")],
+            );
+        }
+    };
+
+    let started = Instant::now();
+    let mut devices = HashMap::<String, DiscoverDevice>::new();
+    while started.elapsed() < Duration::from_secs(3) {
+        let Ok(event) = receiver.recv_timeout(Duration::from_millis(200)) else {
+            continue;
+        };
+        let ServiceEvent::ServiceResolved(service) = event else {
+            continue;
+        };
+        if !service.is_valid() {
+            continue;
+        }
+
+        let hostname = service.get_hostname().trim_end_matches('.').to_string();
+        let port = service.get_port();
+        let scanned_ipv4 = service.get_addresses_v4().into_iter().next();
+        let validation_base_url = if let Some(ip) = scanned_ipv4 {
+            if port == 80 {
+                format!("http://{ip}")
+            } else {
+                format!("http://{ip}:{port}")
+            }
+        } else if port == 80 {
+            format!("http://{hostname}")
+        } else {
+            format!("http://{hostname}:{port}")
+        };
+
+        let info = match fetch_http_info(client, &validation_base_url).await {
+            Ok(info) => info,
+            Err(_) => continue,
+        };
+        let Some(parsed) = parse_discovered_http_info(&validation_base_url, info, scanned_ipv4)
+        else {
+            continue;
+        };
+        let mut keys = vec![format!("http:{}", canonical_base_url(&parsed.base_url))];
+        if let Some(identity) = &parsed.identity {
+            extend_unique(&mut keys, discover_identity_match_keys(identity));
+        }
+        let saved_hardware = saved_hardware_matches(saved, &keys);
+        let dedup_key = parsed
+            .identity
+            .as_ref()
+            .and_then(|identity| identity.device_id.as_deref())
+            .map(|device_id| format!("id:{}", normalize_discovery_key(device_id)))
+            .unwrap_or_else(|| format!("url:{}", canonical_base_url(&parsed.base_url)));
+        devices.insert(
+            dedup_key,
+            DiscoverDevice {
+                id: parsed
+                    .identity
+                    .as_ref()
+                    .and_then(|identity| identity.device_id.clone())
+                    .unwrap_or_else(|| parsed.base_url.clone()),
+                display_name: parsed
+                    .hostname
+                    .clone()
+                    .or_else(|| {
+                        parsed
+                            .identity
+                            .as_ref()
+                            .and_then(|identity| identity.device_id.clone())
+                    })
+                    .unwrap_or_else(|| parsed.base_url.clone()),
+                connection: "available".to_string(),
+                transport: DiscoverTransport::Http {
+                    base_url: parsed.base_url,
+                },
+                device_id: parsed.identity.and_then(|identity| identity.device_id),
+                hostname: parsed.hostname,
+                fqdn: parsed.fqdn,
+                ipv4: parsed.ipv4,
+                firmware: Some(parsed.firmware),
+                saved_hardware: (!saved_hardware.is_empty()).then_some(saved_hardware),
+            },
+        );
+    }
+
+    (devices.into_values().collect(), Vec::new())
+}
+
+async fn fetch_http_info(client: &Client, base_url: &str) -> anyhow::Result<Value> {
+    Ok(client
+        .get(api_url(base_url, "/api/v1/info")?)
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?)
+}
+
+fn parse_discovered_http_info(
+    base_url_by_ip: &str,
+    value: Value,
+    scanned_ipv4: Option<std::net::Ipv4Addr>,
+) -> Option<ParsedDiscoverHttpInfo> {
+    let env: DiscoverApiInfoEnvelope = serde_json::from_value(value).ok()?;
+    let firmware_name = env.device.firmware.as_ref()?.name.as_deref()?.trim();
+    if firmware_name != "isolapurr-usb-hub" {
+        return None;
+    }
+    let firmware = DiscoverFirmware {
+        name: firmware_name.to_string(),
+        version: env
+            .device
+            .firmware
+            .as_ref()
+            .and_then(|firmware| firmware.version.clone())
+            .unwrap_or_else(|| "unknown".to_string()),
+    };
+    let fqdn = env.device.fqdn.and_then(non_empty_string);
+    let base_url = if let Some(fqdn) = fqdn.as_deref().filter(|fqdn| fqdn.ends_with(".local")) {
+        format!("http://{fqdn}")
+    } else {
+        base_url_by_ip.to_string()
+    };
+    let identity = match (
+        env.device.device_id.and_then(non_empty_string),
+        env.device.mac.and_then(non_empty_string),
+    ) {
+        (None, None) => None,
+        (device_id, mac) => Some(DeviceIdentity { device_id, mac }),
+    };
+    Some(ParsedDiscoverHttpInfo {
+        base_url,
+        hostname: env.device.hostname.and_then(non_empty_string),
+        fqdn,
+        ipv4: env
+            .device
+            .wifi
+            .and_then(|wifi| wifi.ipv4.and_then(non_empty_string))
+            .or_else(|| scanned_ipv4.map(|ipv4| ipv4.to_string())),
+        firmware,
+        identity,
+    })
+}
+
+fn parse_discovered_http_info_from_value(value: &Value) -> Option<ParsedDiscoverHttpInfo> {
+    parse_discovered_http_info("http://127.0.0.1", value.clone(), None)
+}
+
+fn parse_device_identity_from_info(value: &Value) -> Option<DeviceIdentity> {
+    let device = value.get("device")?;
+    let device_id = device
+        .get("device_id")
+        .or_else(|| device.get("deviceId"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
+    let mac = device
+        .get("mac")
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
+    if device_id.is_none() && mac.is_none() {
+        None
+    } else {
+        Some(DeviceIdentity { device_id, mac })
+    }
+}
+
+fn saved_hardware_matches(
+    saved: &[DeviceProfile],
+    live_keys: &[String],
+) -> Vec<DiscoverSavedHardware> {
+    let mut matches = Vec::new();
+    for profile in saved {
+        let profile_keys = saved_profile_match_keys(profile);
+        if profile_keys
+            .iter()
+            .any(|key| live_keys.iter().any(|live_key| live_key == key))
+        {
+            matches.push(DiscoverSavedHardware {
+                id: profile.id.clone(),
+                name: profile.name.clone(),
+                transport: match &profile.transport {
+                    HardwareTransport::Usb { .. } => "usb".to_string(),
+                    HardwareTransport::Http { .. } => "http".to_string(),
+                    HardwareTransport::WebSerial { .. } => "web-serial".to_string(),
+                },
+            });
+        }
+    }
+    matches.sort_by(|a, b| a.id.cmp(&b.id));
+    matches
+}
+
+fn saved_profile_match_keys(profile: &DeviceProfile) -> Vec<String> {
+    let mut keys = Vec::new();
+    if let Some(identity) = &profile.identity {
+        extend_unique(&mut keys, discover_identity_match_keys(identity));
+    }
+    match &profile.transport {
+        HardwareTransport::Usb { device_id, .. } => {
+            keys.push(format!("usb:{}", normalize_discovery_key(device_id)));
+        }
+        HardwareTransport::Http { base_url } => {
+            keys.push(format!("http:{}", canonical_base_url(base_url)));
+            if let Some(short_id) = default_hostname_short_id(base_url) {
+                keys.push(format!("device:{short_id}"));
+            }
+        }
+        HardwareTransport::WebSerial { .. } => {}
+    }
+    dedupe_strings(keys)
+}
+
+fn discover_identity_match_keys(identity: &DeviceIdentity) -> Vec<String> {
+    let mut keys = Vec::new();
+    if let Some(device_id) = identity.device_id.as_deref().map(normalize_discovery_key) {
+        keys.push(format!("device:{device_id}"));
+    }
+    if let Some(mac_short) = identity.mac.as_deref().and_then(mac_short_id) {
+        keys.push(format!("device:{mac_short}"));
+    }
+    dedupe_strings(keys)
+}
+
+fn dedupe_strings(values: Vec<String>) -> Vec<String> {
+    let mut deduped = Vec::new();
+    for value in values {
+        if !deduped.iter().any(|existing| existing == &value) {
+            deduped.push(value);
+        }
+    }
+    deduped
+}
+
+fn extend_unique(target: &mut Vec<String>, extras: Vec<String>) {
+    for extra in extras {
+        if !target.iter().any(|existing| existing == &extra) {
+            target.push(extra);
+        }
+    }
+}
+
+fn canonical_base_url(base_url: &str) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/').to_string();
+    reqwest::Url::parse(&trimmed)
+        .ok()
+        .map(|url| url.to_string().trim_end_matches('/').to_string())
+        .unwrap_or(trimmed)
+}
+
+fn normalize_discovery_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn non_empty_string(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+fn mac_short_id(value: &str) -> Option<String> {
+    let hex = value
+        .chars()
+        .filter(|ch| ch.is_ascii_hexdigit())
+        .collect::<String>();
+    if hex.len() < 6 {
+        return None;
+    }
+    let short_id = &hex[hex.len() - 6..];
+    (short_id.len() == 6 && short_id.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .then(|| short_id.to_ascii_lowercase())
+}
+
+fn default_hostname_short_id(base_url: &str) -> Option<String> {
+    let url = reqwest::Url::parse(base_url).ok()?;
+    let host = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
+    let host = host.strip_suffix(".local").unwrap_or(&host);
+    let short_id = host.strip_prefix("isolapurr-usb-hub-")?;
+    (short_id.len() == 6 && short_id.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .then(|| short_id.to_string())
+}
+
 fn map_http_endpoint(
     method: Method,
     suffix: &str,
@@ -3402,6 +3859,25 @@ async fn handle_hardware(
             isolapurr_host::write_hardware_registry(&registry)?;
             Ok(json!({"path": path, "id": id, "removed": before != registry.devices.len()}))
         }
+    }
+}
+
+async fn handle_discover(client: &Client, devd: &DevdClient, _scan: bool) -> anyhow::Result<Value> {
+    let registry = read_hardware_registry()?;
+    let usb_devices = discover_usb_devices(client, devd, &registry.devices).await?;
+    let (lan_devices, warnings) = discover_lan_devices(client, &registry.devices).await;
+
+    let mut devices = Vec::with_capacity(lan_devices.len() + usb_devices.len());
+    devices.extend(lan_devices);
+    devices.extend(usb_devices);
+
+    if warnings.is_empty() {
+        Ok(json!({ "devices": devices }))
+    } else {
+        Ok(json!({
+            "devices": devices,
+            "warnings": warnings,
+        }))
     }
 }
 
@@ -3922,6 +4398,90 @@ enum ResolvedTarget {
     Http(String),
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct DiscoverDevice {
+    id: String,
+    display_name: String,
+    connection: String,
+    transport: DiscoverTransport,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    device_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hostname: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fqdn: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ipv4: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    firmware: Option<DiscoverFirmware>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    saved_hardware: Option<Vec<DiscoverSavedHardware>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+enum DiscoverTransport {
+    Usb {
+        device_id: String,
+        port_path: String,
+    },
+    Http {
+        base_url: String,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct DiscoverFirmware {
+    name: String,
+    version: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct DiscoverSavedHardware {
+    id: String,
+    name: String,
+    transport: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscoverApiInfoEnvelope {
+    device: DiscoverApiInfoDevice,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscoverApiInfoDevice {
+    device_id: Option<String>,
+    hostname: Option<String>,
+    fqdn: Option<String>,
+    mac: Option<String>,
+    firmware: Option<DiscoverApiInfoFirmware>,
+    wifi: Option<DiscoverApiInfoWifi>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscoverApiInfoFirmware {
+    name: Option<String>,
+    version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscoverApiInfoWifi {
+    ipv4: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedDiscoverHttpInfo {
+    base_url: String,
+    hostname: Option<String>,
+    fqdn: Option<String>,
+    ipv4: Option<String>,
+    firmware: DiscoverFirmware,
+    identity: Option<DeviceIdentity>,
+}
+
 fn resolve_api_selector(
     selector: ApiSelectorArgs,
     default_devd: &str,
@@ -4010,8 +4570,10 @@ fn find_hardware(id: &str) -> anyhow::Result<DeviceProfile> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CliPowerConfig, CliPowerDiagnostics, ManualOutputArgs, OutputUsbCPathArg,
-        apply_manual_output_args, format_power_config_output, format_power_show_output,
+        CliPowerConfig, CliPowerDiagnostics, DeviceIdentity, DeviceProfile, DiscoverFirmware,
+        HardwareTransport, ManualOutputArgs, OutputUsbCPathArg, apply_manual_output_args,
+        format_power_config_output, format_power_show_output, parse_discovered_http_info,
+        saved_hardware_matches,
     };
     use serde_json::json;
 
@@ -4323,5 +4885,84 @@ mod tests {
         assert_eq!(updated.manual.current_limit_ma, 6_350);
         assert_eq!(updated.manual.usb_c_path_mode, "disconnect");
         assert!(updated.manual.voltage_mv >= 3_000);
+    }
+
+    #[test]
+    fn parse_discover_http_info_prefers_fqdn_base_url() {
+        let parsed = parse_discovered_http_info(
+            "http://192.168.1.42",
+            json!({
+                "device": {
+                    "device_id": "aabbccdd",
+                    "hostname": "isolapurr-usb-hub-aabbcc",
+                    "fqdn": "isolapurr-usb-hub-aabbcc.local",
+                    "mac": "AA:BB:CC:DD:EE:FF",
+                    "firmware": {
+                        "name": "isolapurr-usb-hub",
+                        "version": "0.1.0"
+                    },
+                    "wifi": {
+                        "ipv4": "192.168.1.42"
+                    }
+                }
+            }),
+            Some(std::net::Ipv4Addr::new(192, 168, 1, 42)),
+        )
+        .expect("discover info should parse");
+
+        assert_eq!(parsed.base_url, "http://isolapurr-usb-hub-aabbcc.local");
+        assert_eq!(parsed.ipv4.as_deref(), Some("192.168.1.42"));
+        let identity = parsed.identity.expect("identity should exist");
+        assert_eq!(identity.device_id.as_deref(), Some("aabbccdd"));
+        assert_eq!(identity.mac.as_deref(), Some("AA:BB:CC:DD:EE:FF"));
+        assert_eq!(
+            parsed.firmware,
+            DiscoverFirmware {
+                name: "isolapurr-usb-hub".to_string(),
+                version: "0.1.0".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn saved_hardware_matches_by_shared_identity_and_transport() {
+        let saved = vec![
+            DeviceProfile {
+                id: "isolapurr-01".to_string(),
+                name: "Bench USB".to_string(),
+                transport: HardwareTransport::Usb {
+                    device_id: "usb--dev-cu-usbmodem21221401".to_string(),
+                    devd_url: None,
+                },
+                identity: Some(DeviceIdentity {
+                    device_id: Some("856a14".to_string()),
+                    mac: Some("AA:BB:CC:85:6A:14".to_string()),
+                }),
+                last_seen_at: None,
+            },
+            DeviceProfile {
+                id: "isolapurr-01-wifi".to_string(),
+                name: "Bench LAN".to_string(),
+                transport: HardwareTransport::Http {
+                    base_url: "http://isolapurr-usb-hub-856a14.local".to_string(),
+                },
+                identity: Some(DeviceIdentity {
+                    device_id: Some("856a14".to_string()),
+                    mac: Some("AA:BB:CC:85:6A:14".to_string()),
+                }),
+                last_seen_at: None,
+            },
+        ];
+
+        let matches = saved_hardware_matches(
+            &saved,
+            &[
+                "usb:usb--dev-cu-usbmodem21221401".to_string(),
+                "device:856a14".to_string(),
+            ],
+        );
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].id, "isolapurr-01");
+        assert_eq!(matches[1].id, "isolapurr-01-wifi");
     }
 }
