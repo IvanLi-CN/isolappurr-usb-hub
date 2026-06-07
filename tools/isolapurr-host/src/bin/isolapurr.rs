@@ -208,6 +208,11 @@ enum PowerCommand {
         #[command(flatten)]
         selector: ApiSelectorArgs,
     },
+    #[command(about = "Switch output mode or update the saved manual output target")]
+    Output {
+        #[command(subcommand)]
+        command: OutputCommand,
+    },
     #[command(
         name = "source-capability",
         about = "Inspect or update advertised fast-charge protocols and source limits"
@@ -230,6 +235,42 @@ enum SourceCapabilityCommand {
         #[command(flatten)]
         args: SourceCapabilitySetArgs,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum OutputCommand {
+    #[command(
+        about = "Switch to manual output mode and optionally update the saved target",
+        after_help = "When voltage, current limit, or USB-C path flags are omitted, the existing saved manual target is kept."
+    )]
+    Manual {
+        #[command(flatten)]
+        selector: ApiSelectorArgs,
+        #[command(flatten)]
+        args: ManualOutputArgs,
+    },
+    #[command(about = "Return to automatic USB-C request tracking")]
+    Auto {
+        #[command(flatten)]
+        selector: ApiSelectorArgs,
+    },
+}
+
+#[derive(Debug, clap::Args, Clone, Default)]
+struct ManualOutputArgs {
+    #[arg(long, value_parser = clap::value_parser!(u16).range(3000..=21000))]
+    voltage_mv: Option<u16>,
+    #[arg(long, value_parser = clap::value_parser!(u16).range(1..=6350))]
+    current_limit_ma: Option<u16>,
+    #[arg(long, value_enum)]
+    usb_c_path: Option<OutputUsbCPathArg>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum OutputUsbCPathArg {
+    Automatic,
+    Disconnected,
+    ForcedOn,
 }
 
 #[derive(Debug, clap::Args, Clone, Default)]
@@ -424,6 +465,9 @@ struct CliPowerSetpoint {
     ilim_ma: Option<u32>,
 }
 
+const MANUAL_OUTPUT_DEFAULT_VOLTAGE_MV: u16 = 5_000;
+const MANUAL_OUTPUT_DEFAULT_CURRENT_MA: u16 = 1_000;
+
 impl SourceCapabilitySetArgs {
     fn has_updates(&self) -> bool {
         self.power_watts.is_some()
@@ -443,6 +487,16 @@ impl SourceCapabilitySetArgs {
             || self.type_c_broadcast_ma.is_some()
             || self.scp_limit_ma.is_some()
             || self.fcp_afc_sfcp_limit_ma.is_some()
+    }
+}
+
+impl OutputUsbCPathArg {
+    fn as_config_value(self) -> &'static str {
+        match self {
+            Self::Automatic => "default",
+            Self::Disconnected => "disconnect",
+            Self::ForcedOn => "force",
+        }
     }
 }
 
@@ -1199,6 +1253,18 @@ fn apply_source_capability_args(
     Ok(())
 }
 
+fn apply_manual_output_args(config: &mut CliPowerConfig, args: &ManualOutputArgs) {
+    if let Some(voltage_mv) = args.voltage_mv {
+        config.manual.voltage_mv = voltage_mv;
+    }
+    if let Some(current_limit_ma) = args.current_limit_ma {
+        config.manual.current_limit_ma = current_limit_ma;
+    }
+    if let Some(usb_c_path) = args.usb_c_path {
+        config.manual.usb_c_path_mode = usb_c_path.as_config_value().to_string();
+    }
+}
+
 fn power_config_update_payload(config: &CliPowerConfig) -> Value {
     json!({
         "hardware": config.hardware,
@@ -1233,6 +1299,46 @@ fn same_power_config_contents(left: &CliPowerConfig, right: &CliPowerConfig) -> 
         && left.manual == right.manual
 }
 
+fn full_power_capability_defaults() -> CliPowerCapability {
+    CliPowerCapability {
+        profile: "full".to_string(),
+        power_watts: 100,
+        protocols: json!({
+            "pd": true,
+            "qc20": true,
+            "qc30": true,
+            "fcp": true,
+            "afc": true,
+            "scp": true,
+            "pe20": true,
+            "bc12": true,
+            "sfcp": true,
+        }),
+        pd: CliPowerPd {
+            pps: true,
+            fixed_voltages_mv: vec![9000, 12000, 15000, 20000],
+        },
+        current: CliPowerCurrentProfile::default(),
+    }
+}
+
+fn expected_default_power_config(current: &CliPowerConfig) -> CliPowerConfig {
+    let mut expected = current.clone();
+    expected.tps_mode = "auto_follow".to_string();
+    expected.capability = full_power_capability_defaults();
+    expected.manual = CliPowerManual {
+        voltage_mv: MANUAL_OUTPUT_DEFAULT_VOLTAGE_MV,
+        current_limit_ma: MANUAL_OUTPUT_DEFAULT_CURRENT_MA,
+        usb_c_path_mode: "default".to_string(),
+        path_policy: current
+            .manual
+            .path_policy
+            .clone()
+            .or_else(|| Some("auto".to_string())),
+    };
+    expected
+}
+
 async fn save_power_config_with_timeout_recovery(
     client: &Client,
     devd: &DevdClient,
@@ -1256,6 +1362,39 @@ async fn save_power_config_with_timeout_recovery(
             tokio::time::sleep(Duration::from_millis(500)).await;
             let observed = fetch_power_config(client, devd, selector).await?;
             if same_power_config_contents(&observed, config) {
+                Ok(serde_json::to_value(observed)?)
+            } else {
+                Err(err)
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn restore_power_defaults_with_timeout_recovery(
+    client: &Client,
+    devd: &DevdClient,
+    selector: &ApiSelectorArgs,
+    owner: u32,
+) -> anyhow::Result<Value> {
+    let expected =
+        expected_default_power_config(&fetch_power_config(client, devd, selector).await?);
+    let request = request_selected(
+        client,
+        devd,
+        selector.clone(),
+        Method::POST,
+        &format!("/power/config/defaults?owner={owner}"),
+        None,
+    )
+    .await;
+
+    match request {
+        Ok(value) => Ok(value),
+        Err(err) if err.to_string().contains("serial response timed out") => {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let observed = fetch_power_config(client, devd, selector).await?;
+            if same_power_config_contents(&observed, &expected) {
                 Ok(serde_json::to_value(observed)?)
             } else {
                 Err(err)
@@ -2131,6 +2270,8 @@ async fn handle_power(
 ) -> anyhow::Result<Value> {
     match command {
         PowerCommand::Show(selector) => {
+            let selector =
+                maybe_select_power_target(client, devd, selector, allow_interactive).await?;
             let config = unwrap_device_success_result(
                 request_selected(
                     client,
@@ -2151,26 +2292,47 @@ async fn handle_power(
             }))
         }
         PowerCommand::Defaults { selector } => {
+            let selector =
+                maybe_select_power_target(client, devd, selector, allow_interactive).await?;
             let owner = next_power_owner();
             unwrap_device_success_result(
-                request_selected(
-                    client,
-                    devd,
-                    selector,
-                    Method::POST,
-                    &format!("/power/config/defaults?owner={owner}"),
-                    None,
-                )
-                .await?,
+                restore_power_defaults_with_timeout_recovery(client, devd, &selector, owner)
+                    .await?,
             )
         }
+        PowerCommand::Output { command } => match command {
+            OutputCommand::Manual { selector, args } => {
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                let owner = next_power_owner();
+                let mut config = fetch_power_config(client, devd, &selector).await?;
+                config.tps_mode = "manual".to_string();
+                apply_manual_output_args(&mut config, &args);
+                unwrap_device_success_result(
+                    save_power_config_with_timeout_recovery(
+                        client, devd, &selector, owner, &config,
+                    )
+                    .await?,
+                )
+            }
+            OutputCommand::Auto { selector } => {
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                let owner = next_power_owner();
+                let mut config = fetch_power_config(client, devd, &selector).await?;
+                config.tps_mode = "auto_follow".to_string();
+                unwrap_device_success_result(
+                    save_power_config_with_timeout_recovery(
+                        client, devd, &selector, owner, &config,
+                    )
+                    .await?,
+                )
+            }
+        },
         PowerCommand::SourceCapability { command } => match command {
             SourceCapabilityCommand::Set { selector, args } => {
-                let selector = if allow_interactive {
-                    select_api_target_interactively(client, devd, selector).await?
-                } else {
-                    selector
-                };
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
                 if !args.has_updates() {
                     if !allow_interactive {
                         return Err(anyhow!(
@@ -2190,6 +2352,19 @@ async fn handle_power(
                 )
             }
         },
+    }
+}
+
+async fn maybe_select_power_target(
+    client: &Client,
+    devd: &DevdClient,
+    selector: ApiSelectorArgs,
+    allow_interactive: bool,
+) -> anyhow::Result<ApiSelectorArgs> {
+    if allow_interactive {
+        select_api_target_interactively(client, devd, selector).await
+    } else {
+        Ok(selector)
     }
 }
 
@@ -3037,6 +3212,71 @@ mod power_output_tests {
         assert_eq!(scp_limit_ma, Some(5000));
         assert_eq!(fcp_afc_sfcp_limit_ma, Some(3250));
     }
+
+    #[test]
+    fn power_output_manual_accepts_owner_facing_flags() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "output",
+            "manual",
+            "--device",
+            "usb--dev-cu-usbmodem21221401",
+            "--voltage-mv",
+            "9000",
+            "--current-limit-ma",
+            "3000",
+            "--usb-c-path",
+            "forced-on",
+        ])
+        .expect("power output manual command should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::Output {
+                    command:
+                        OutputCommand::Manual {
+                            args:
+                                ManualOutputArgs {
+                                    voltage_mv,
+                                    current_limit_ma,
+                                    usb_c_path,
+                                },
+                            ..
+                        },
+                },
+        } = cli.command
+        else {
+            panic!("expected power output manual command");
+        };
+
+        assert_eq!(voltage_mv, Some(9000));
+        assert_eq!(current_limit_ma, Some(3000));
+        assert!(matches!(usb_c_path, Some(OutputUsbCPathArg::ForcedOn)));
+    }
+
+    #[test]
+    fn power_output_auto_parses_without_manual_flags() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "output",
+            "auto",
+            "--device",
+            "usb--dev-cu-usbmodem21221401",
+        ])
+        .expect("power output auto command should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::Output {
+                    command: OutputCommand::Auto { .. },
+                },
+        } = cli.command
+        else {
+            panic!("expected power output auto command");
+        };
+    }
 }
 
 #[derive(Clone)]
@@ -3139,7 +3379,8 @@ fn find_hardware(id: &str) -> anyhow::Result<DeviceProfile> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CliPowerConfig, CliPowerDiagnostics, format_power_config_output, format_power_show_output,
+        CliPowerConfig, CliPowerDiagnostics, ManualOutputArgs, OutputUsbCPathArg,
+        apply_manual_output_args, format_power_config_output, format_power_show_output,
     };
     use serde_json::json;
 
@@ -3391,5 +3632,65 @@ mod tests {
             parsed.sw2303_readback_config.current.fcp_afc_sfcp_limit_ma,
             None
         );
+    }
+
+    #[test]
+    fn manual_output_updates_only_manual_section() {
+        let original: CliPowerConfig = serde_json::from_value(json!({
+            "hardware": "legacy-hardware",
+            "persisted": true,
+            "tps_mode": "auto_follow",
+            "capability": {
+                "profile": "full",
+                "power_watts": 65,
+                "protocols": {
+                    "pd": true,
+                    "qc20": false,
+                    "qc30": true,
+                    "fcp": false,
+                    "afc": false,
+                    "scp": false,
+                    "pe20": false,
+                    "bc12": true,
+                    "sfcp": false
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 15000]
+                },
+                "current": {
+                    "pps3_limit_ma": 5000,
+                    "pd_pps_5a": false,
+                    "type_c_broadcast_ma": 1500,
+                    "scp_limit_ma": 5000,
+                    "fcp_afc_sfcp_limit_ma": 3250
+                }
+            },
+            "manual": {
+                "voltage_mv": 5000,
+                "current_limit_ma": 1000,
+                "usb_c_path_mode": "default",
+                "path_policy": "auto"
+            },
+            "lock": null
+        }))
+        .expect("power config should deserialize");
+        let capability_before = original.capability.clone();
+        let mut updated = original.clone();
+
+        apply_manual_output_args(
+            &mut updated,
+            &ManualOutputArgs {
+                voltage_mv: Some(21_000),
+                current_limit_ma: Some(6_350),
+                usb_c_path: Some(OutputUsbCPathArg::Disconnected),
+            },
+        );
+
+        assert_eq!(updated.capability, capability_before);
+        assert_eq!(updated.manual.voltage_mv, 21_000);
+        assert_eq!(updated.manual.current_limit_ma, 6_350);
+        assert_eq!(updated.manual.usb_c_path_mode, "disconnect");
+        assert!(updated.manual.voltage_mv >= 3_000);
     }
 }

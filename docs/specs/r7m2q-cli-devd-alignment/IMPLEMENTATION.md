@@ -7,11 +7,16 @@
 - `isolapurr-devd bridge-http` exposes the device-centric localhost HTTP bridge, token bootstrap, Local USB scanning, leases, session traces, storage import/list/save, Wi-Fi/ports/status/route/diagnostics/power-config proxy methods, firmware catalog validation, and guarded flash/reset endpoints.
 - `isolapurr` exposes released-style CLI entrypoints for hardware memory, discovery/devices/status, Wi-Fi, ports, flash, reset, monitor, and diagnostics over IPC, with sibling daemon auto-start when available.
 - `isolapurr` now also exposes owner-facing power commands over the same IPC
-  path: `power show`, `power defaults`, and `power source-capability set`.
+  path: `power show`, `power defaults`, `power output manual|auto`, and
+  `power source-capability set`.
 - The CLI power flow reads the whole persisted config, mutates only the
   requested source-capability fields requested by the user, including protocol
   toggles, PD options, power cap, and current tiers, and writes the full config
   back through the aligned `power.config_*` transport contract.
+- `power output manual` switches the saved output mode to manual and updates
+  only the requested manual voltage/current/path fields while preserving the
+  existing source-capability profile; `power output auto` switches back to
+  automatic request tracking without clearing the saved manual target.
 - `power source-capability set` now has a terminal-only interactive mode when
   no update flags are supplied: it reads current config plus live status first,
   then renders a `ratatui`-based inline chip editor: one source-capability
@@ -24,6 +29,9 @@
 - Human-readable `power show` and `power defaults` output now translates the
   underlying chip-specific config/diagnostics payload into product-language
   summaries, while `--json` keeps the transport-shaped payload for automation.
+- `power defaults` now shares the same timeout-recovery behavior as config
+  writes: after a serial timeout it re-reads the saved config and returns
+  success when the expected default profile actually applied.
 - Local USB operations verify project firmware metadata from `info` before ordinary control paths. Non-project firmware, download-mode/no-JSONL targets, and incompatible firmware versions are rejected with corrective guidance; first-time full flash requires explicit confirmation.
 - Web Local USB discovery/request/flash code now targets the new `/api/v1/devices/*` and lease APIs while leaving Web Serial intact. Device profiles can retain HTTP and Local USB transports for one hardware identity, and the runtime prefers successful Local USB operations for unsupported or unreachable Wi-Fi/HTTP paths.
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.
