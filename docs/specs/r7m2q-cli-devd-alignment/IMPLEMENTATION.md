@@ -10,7 +10,8 @@
   from mDNS/DNS-SD `_http._tcp.local` browsing plus verified `GET /api/v1/info`
   responses, Local USB candidates come from the current devd scan, and saved
   hardware records are attached back as annotations when identity or transport
-  keys match.
+  keys match. The owner-facing render now chooses one canonical saved record
+  per live result, preferring the same transport before identity-only fallbacks.
 - `isolapurr` now also exposes owner-facing power commands over the same IPC
   path: `power show`, `power defaults`, `power output manual|auto`, and
   `power source-capability set`.

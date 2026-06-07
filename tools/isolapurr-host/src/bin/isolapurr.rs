@@ -3371,7 +3371,7 @@ async fn discover_usb_devices(
         if let Some(identity) = &identity {
             extend_unique(&mut keys, discover_identity_match_keys(identity));
         }
-        let saved_hardware = saved_hardware_matches(saved, &keys);
+        let saved_hardware = saved_hardware_match_for_transport(saved, &keys, Some("usb"));
         let display_name = identity
             .as_ref()
             .and_then(|identity| identity.device_id.clone())
@@ -3458,7 +3458,7 @@ async fn discover_lan_devices(
         if let Some(identity) = &parsed.identity {
             extend_unique(&mut keys, discover_identity_match_keys(identity));
         }
-        let saved_hardware = saved_hardware_matches(saved, &keys);
+        let saved_hardware = saved_hardware_match_for_transport(saved, &keys, Some("http"));
         let dedup_key = parsed
             .identity
             .as_ref()
@@ -3578,30 +3578,33 @@ fn parse_device_identity_from_info(value: &Value) -> Option<DeviceIdentity> {
     }
 }
 
-fn saved_hardware_matches(
+fn saved_hardware_match_for_transport(
     saved: &[DeviceProfile],
     live_keys: &[String],
+    preferred_transport: Option<&str>,
 ) -> Vec<DiscoverSavedHardware> {
-    let mut matches = Vec::new();
-    for profile in saved {
-        let profile_keys = saved_profile_match_keys(profile);
-        if profile_keys
-            .iter()
-            .any(|key| live_keys.iter().any(|live_key| live_key == key))
-        {
-            matches.push(DiscoverSavedHardware {
-                id: profile.id.clone(),
-                name: profile.name.clone(),
-                transport: match &profile.transport {
-                    HardwareTransport::Usb { .. } => "usb".to_string(),
-                    HardwareTransport::Http { .. } => "http".to_string(),
-                    HardwareTransport::WebSerial { .. } => "web-serial".to_string(),
-                },
-            });
-        }
+    let best = saved
+        .iter()
+        .filter_map(|profile| {
+            let score = saved_profile_match_score(profile, live_keys, preferred_transport)?;
+            Some((score, profile))
+        })
+        .max_by(|(score_a, profile_a), (score_b, profile_b)| {
+            score_a
+                .cmp(score_b)
+                .then_with(|| profile_a.last_seen_at.cmp(&profile_b.last_seen_at))
+                .then_with(|| profile_b.id.cmp(&profile_a.id))
+        })
+        .map(|(_, profile)| DiscoverSavedHardware {
+            id: profile.id.clone(),
+            name: profile.name.clone(),
+            transport: saved_profile_transport_name(profile).to_string(),
+        });
+
+    match best {
+        Some(best) => vec![best],
+        None => Vec::new(),
     }
-    matches.sort_by(|a, b| a.id.cmp(&b.id));
-    matches
 }
 
 fn saved_profile_match_keys(profile: &DeviceProfile) -> Vec<String> {
@@ -3622,6 +3625,41 @@ fn saved_profile_match_keys(profile: &DeviceProfile) -> Vec<String> {
         HardwareTransport::WebSerial { .. } => {}
     }
     dedupe_strings(keys)
+}
+
+fn saved_profile_match_score(
+    profile: &DeviceProfile,
+    live_keys: &[String],
+    preferred_transport: Option<&str>,
+) -> Option<(bool, bool, usize)> {
+    let profile_keys = saved_profile_match_keys(profile);
+    let matched_keys = profile_keys
+        .iter()
+        .filter(|key| live_keys.iter().any(|live_key| live_key == *key))
+        .cloned()
+        .collect::<Vec<_>>();
+    if matched_keys.is_empty() {
+        return None;
+    }
+
+    let transport_name = saved_profile_transport_name(profile);
+    let exact_transport_match = matched_keys
+        .iter()
+        .any(|key| key.starts_with(&format!("{transport_name}:")));
+    let transport_preferred = preferred_transport == Some(transport_name);
+    Some((
+        exact_transport_match,
+        transport_preferred,
+        matched_keys.len(),
+    ))
+}
+
+fn saved_profile_transport_name(profile: &DeviceProfile) -> &'static str {
+    match &profile.transport {
+        HardwareTransport::Usb { .. } => "usb",
+        HardwareTransport::Http { .. } => "http",
+        HardwareTransport::WebSerial { .. } => "web-serial",
+    }
 }
 
 fn discover_identity_match_keys(identity: &DeviceIdentity) -> Vec<String> {
@@ -4573,7 +4611,7 @@ mod tests {
         CliPowerConfig, CliPowerDiagnostics, DeviceIdentity, DeviceProfile, DiscoverFirmware,
         HardwareTransport, ManualOutputArgs, OutputUsbCPathArg, apply_manual_output_args,
         format_power_config_output, format_power_show_output, parse_discovered_http_info,
-        saved_hardware_matches,
+        saved_hardware_match_for_transport,
     };
     use serde_json::json;
 
@@ -4925,7 +4963,7 @@ mod tests {
     }
 
     #[test]
-    fn saved_hardware_matches_by_shared_identity_and_transport() {
+    fn saved_hardware_match_prefers_matching_transport() {
         let saved = vec![
             DeviceProfile {
                 id: "isolapurr-01".to_string(),
@@ -4954,15 +4992,27 @@ mod tests {
             },
         ];
 
-        let matches = saved_hardware_matches(
+        let usb_match = saved_hardware_match_for_transport(
             &saved,
             &[
                 "usb:usb--dev-cu-usbmodem21221401".to_string(),
                 "device:856a14".to_string(),
             ],
+            Some("usb"),
         );
-        assert_eq!(matches.len(), 2);
-        assert_eq!(matches[0].id, "isolapurr-01");
-        assert_eq!(matches[1].id, "isolapurr-01-wifi");
+
+        let http_match = saved_hardware_match_for_transport(
+            &saved,
+            &[
+                "http:http://isolapurr-usb-hub-856a14.local".to_string(),
+                "device:856a14".to_string(),
+            ],
+            Some("http"),
+        );
+
+        assert_eq!(usb_match.len(), 1);
+        assert_eq!(usb_match[0].id, "isolapurr-01");
+        assert_eq!(http_match.len(), 1);
+        assert_eq!(http_match[0].id, "isolapurr-01-wifi");
     }
 }

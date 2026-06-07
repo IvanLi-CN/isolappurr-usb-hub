@@ -41,7 +41,9 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
   saved bindings: LAN results come from mDNS/DNS-SD service discovery with
   `GET /api/v1/info` verification, Local USB results come from the current
   local hardware scan, and saved hardware records may only annotate matching
-  results rather than replace discovery.
+  results rather than replace discovery. When multiple saved records still
+  match one live result, the CLI MUST surface only one canonical owner-facing
+  saved record instead of listing duplicates for alternate transports.
 - MUST verify Local USB targets are running IsolaPurr project firmware before ordinary device operations. The verification key is firmware metadata from `info`, including `firmware.name == "isolapurr-usb-hub"` and a compatible `firmware.version`.
 - MUST reject ordinary status-adjacent control operations when the device is in download mode, does not answer project `info`, is running non-IsolaPurr firmware, or reports an incompatible firmware version. The error must explain whether the user should select the correct device, perform a first-time flash, or upgrade firmware.
 - MUST validate firmware catalog target, flash address, file hash, and device identity before normal user flashing.
@@ -156,9 +158,9 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given the user runs `isolapurr discover`, when LAN devices advertise the
   IsolaPurr HTTP service and Local USB candidates are currently attached, then
   the CLI must return one combined discovery list where LAN entries come from
-  mDNS + verified `info`, USB entries come from the current local scan, and any
-  matching saved hardware IDs are shown only as annotations on those live
-  discovery results.
+  mDNS + verified `info`, USB entries come from the current local scan, and at
+  most one canonical saved hardware record is shown as the owner-facing
+  annotation on each live discovery result.
 - Given a Local USB target does not answer IsolaPurr `info`, when the user requests status, Wi-Fi, ports, diagnostics, route, replug, or power operations, then devd refuses the operation and reports that the target may be in download mode or running non-IsolaPurr firmware.
 - Given a Local USB target answers `info` with a different `firmware.name`, when any ordinary operation is requested, then devd refuses the operation and reports the expected firmware name.
 - Given a Local USB target answers `info` with an incompatible `firmware.version`, when any ordinary operation is requested, then devd refuses the operation and asks the user to upgrade firmware.
