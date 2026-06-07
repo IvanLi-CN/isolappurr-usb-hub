@@ -23,9 +23,9 @@
   field per row, row-local choices on the same line, `Up/Down` field
   navigation, `Left/Right` inline choice changes, `Enter/Space` chip toggles,
   and an inline action row for reload and save/apply.
-  When the owner does not supply `--hardware`, `--device`, or `--url`, the CLI
-  first scans devd devices and prompts for a target with the same terminal
-  selector instead of exiting with a selector error.
+  When the owner does not supply `--hardware`, the CLI now prompts from saved
+  hardware only; power commands no longer accept temporary devd `--device`
+  selectors or direct `--url` targets.
 - Human-readable `power show` and `power defaults` output now translates the
   underlying chip-specific config/diagnostics payload into product-language
   summaries, while `--json` keeps the transport-shaped payload for automation.

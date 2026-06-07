@@ -140,13 +140,16 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   line-by-line editor where each row represents one source-capability field,
   shows that field's inline chips/options on the same line, and supports
   arrow-key field/choice navigation before save; if no selector was supplied,
-  the CLI must first prompt for a scanned device choice with the same friendly
-  terminal selector instead of failing immediately.
+  the CLI must first prompt for a saved hardware choice with the same friendly
+  terminal selector instead of falling back to a temporary devd target.
 - Given the user runs `isolapurr power output manual`, when manual output flags
   are supplied, then the CLI reads the current whole power config, switches the
   saved output mode to manual, updates only the requested manual output fields,
   preserves the existing source-capability fields, and reports the resulting
   saved config with owner-facing path labels instead of transport enums.
+- Given the user runs a power command, when they try to pass a temporary devd
+  target selector, then the CLI must reject that input at parse time and only
+  accept saved hardware IDs or the saved-hardware interactive picker.
 - Given the user runs `isolapurr power output auto`, when the saved config is
   written successfully, then the CLI returns the output mode to automatic
   USB-C request tracking without discarding the saved manual voltage/current

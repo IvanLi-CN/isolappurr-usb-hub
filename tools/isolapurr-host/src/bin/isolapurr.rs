@@ -101,6 +101,18 @@ impl ApiSelectorArgs {
     }
 }
 
+#[derive(Debug, clap::Args, Clone, Default)]
+struct PowerSelectorArgs {
+    #[arg(long)]
+    hardware: Option<String>,
+}
+
+impl PowerSelectorArgs {
+    fn is_empty(&self) -> bool {
+        self.hardware.is_none()
+    }
+}
+
 #[derive(Debug, clap::Args, Clone)]
 struct UsbSelectorArgs {
     #[arg(long)]
@@ -202,11 +214,11 @@ enum DiagnosticsCommand {
 #[derive(Debug, Subcommand)]
 enum PowerCommand {
     #[command(about = "Show saved power settings and live USB-C source status")]
-    Show(ApiSelectorArgs),
+    Show(PowerSelectorArgs),
     #[command(about = "Restore the default USB-C source capability profile")]
     Defaults {
         #[command(flatten)]
-        selector: ApiSelectorArgs,
+        selector: PowerSelectorArgs,
     },
     #[command(about = "Switch output mode or update the saved manual output target")]
     Output {
@@ -231,7 +243,7 @@ enum SourceCapabilityCommand {
     )]
     Set {
         #[command(flatten)]
-        selector: ApiSelectorArgs,
+        selector: PowerSelectorArgs,
         #[command(flatten)]
         args: SourceCapabilitySetArgs,
     },
@@ -245,14 +257,14 @@ enum OutputCommand {
     )]
     Manual {
         #[command(flatten)]
-        selector: ApiSelectorArgs,
+        selector: PowerSelectorArgs,
         #[command(flatten)]
         args: ManualOutputArgs,
     },
     #[command(about = "Return to automatic USB-C request tracking")]
     Auto {
         #[command(flatten)]
-        selector: ApiSelectorArgs,
+        selector: PowerSelectorArgs,
     },
 }
 
@@ -2142,6 +2154,76 @@ async fn fetch_power_diagnostics(
     )?)?)
 }
 
+fn saved_hardware_target_label(device: &DeviceProfile) -> String {
+    let target = match &device.transport {
+        HardwareTransport::Usb { device_id, .. } => format!("usb {device_id}"),
+        HardwareTransport::Http { base_url } => format!("http {base_url}"),
+        HardwareTransport::WebSerial { label } => label
+            .as_ref()
+            .map(|value| format!("web-serial {value}"))
+            .unwrap_or_else(|| "web-serial".to_string()),
+    };
+    format!("{} ({}) - {}", device.name, device.id, target)
+}
+
+fn power_selector_to_api_selector(selector: PowerSelectorArgs) -> ApiSelectorArgs {
+    ApiSelectorArgs {
+        hardware: selector.hardware,
+        device: None,
+        url: None,
+    }
+}
+
+async fn select_saved_power_target_interactively(
+    selector: PowerSelectorArgs,
+) -> anyhow::Result<ApiSelectorArgs> {
+    if !selector.is_empty() {
+        return Ok(power_selector_to_api_selector(selector));
+    }
+    if !io::stdin().is_terminal() {
+        return Err(anyhow!(
+            "select --hardware; interactive power target selection requires a terminal"
+        ));
+    }
+
+    let mut saved = read_hardware_registry()?.devices;
+    saved.retain(|device| !matches!(device.transport, HardwareTransport::WebSerial { .. }));
+    saved.sort_by(|a, b| b.last_seen_at.cmp(&a.last_seen_at));
+
+    if saved.is_empty() {
+        return Err(anyhow!(
+            "no saved hardware is available; bind hardware first with `isolapurr hardware save`"
+        ));
+    }
+
+    if saved.len() == 1 {
+        return Ok(ApiSelectorArgs {
+            hardware: Some(saved.remove(0).id),
+            device: None,
+            url: None,
+        });
+    }
+
+    let items = saved
+        .iter()
+        .map(saved_hardware_target_label)
+        .collect::<Vec<_>>();
+    let selected = run_tui_list_menu(
+        "Select saved hardware for power control",
+        Some("Only saved hardware is shown. Use Up/Down to move, Enter to select, Esc to cancel."),
+        &items,
+        &[],
+    )?;
+    let Some(selected) = selected else {
+        return Err(UserCancelled.into());
+    };
+    Ok(ApiSelectorArgs {
+        hardware: Some(saved.swap_remove(selected).id),
+        device: None,
+        url: None,
+    })
+}
+
 async fn select_api_target_interactively(
     client: &Client,
     devd: &DevdClient,
@@ -2356,15 +2438,15 @@ async fn handle_power(
 }
 
 async fn maybe_select_power_target(
-    client: &Client,
-    devd: &DevdClient,
-    selector: ApiSelectorArgs,
+    _client: &Client,
+    _devd: &DevdClient,
+    selector: PowerSelectorArgs,
     allow_interactive: bool,
 ) -> anyhow::Result<ApiSelectorArgs> {
     if allow_interactive {
-        select_api_target_interactively(client, devd, selector).await
+        select_saved_power_target_interactively(selector).await
     } else {
-        Ok(selector)
+        Ok(power_selector_to_api_selector(selector))
     }
 }
 
@@ -3122,8 +3204,8 @@ mod power_output_tests {
             "power",
             "source-capability",
             "set",
-            "--device",
-            "usb--dev-cu-usbmodem21221401",
+            "--hardware",
+            "f293cc",
             "--power-watts",
             "65",
             "--pd",
@@ -3220,8 +3302,8 @@ mod power_output_tests {
             "power",
             "output",
             "manual",
-            "--device",
-            "usb--dev-cu-usbmodem21221401",
+            "--hardware",
+            "f293cc",
             "--voltage-mv",
             "9000",
             "--current-limit-ma",
@@ -3262,8 +3344,8 @@ mod power_output_tests {
             "power",
             "output",
             "auto",
-            "--device",
-            "usb--dev-cu-usbmodem21221401",
+            "--hardware",
+            "f293cc",
         ])
         .expect("power output auto command should parse");
 
@@ -3276,6 +3358,20 @@ mod power_output_tests {
         else {
             panic!("expected power output auto command");
         };
+    }
+
+    #[test]
+    fn power_commands_reject_temporary_device_selector() {
+        let err = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "show",
+            "--device",
+            "usb--dev-cu-usbmodem21221401",
+        ])
+        .expect_err("power show should reject devd temporary device selector");
+
+        assert!(err.to_string().contains("unexpected argument '--device'"));
     }
 }
 
