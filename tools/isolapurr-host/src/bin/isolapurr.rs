@@ -4,6 +4,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     terminal,
 };
+use dialoguer::{MultiSelect, Select};
 use isolapurr_host::{
     DeviceIdentity, DeviceProfile, DeviceRecord, FirmwareCatalog, HardwareTransport,
     SavedHardwareInput, api_url, default_ipc_endpoint, ipc_call, read_hardware_registry,
@@ -1547,29 +1548,18 @@ fn with_tui_terminal<T>(
     run: impl FnOnce(&mut DefaultTerminal) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
     let viewport_height = viewport_height.max(3);
-    let mut terminal = match ratatui::try_init_with_options(TerminalOptions {
-        viewport: Viewport::Inline(viewport_height),
-    }) {
-        Ok(terminal) => terminal,
-        Err(inline_error) => {
-            let (width, height) =
-                terminal::size().context("failed to read terminal size for fallback viewport")?;
-            let fallback_height = viewport_height.min(height.max(1));
-            ratatui::try_init_with_options(TerminalOptions {
-                viewport: Viewport::Fixed(Rect::new(
-                    0,
-                    height.saturating_sub(fallback_height),
-                    width,
-                    fallback_height,
-                )),
-            })
-            .map_err(|fixed_error| {
-                anyhow!(
-                    "failed to initialize compact TUI viewport; inline failed: {inline_error}; fixed fallback failed: {fixed_error}"
-                )
-            })?
-        }
-    };
+    let (width, height) =
+        terminal::size().context("failed to read terminal size for compact TUI viewport")?;
+    let viewport_height = viewport_height.min(height.max(1));
+    let mut terminal = ratatui::try_init_with_options(TerminalOptions {
+        viewport: Viewport::Fixed(Rect::new(
+            0,
+            height.saturating_sub(viewport_height),
+            width,
+            viewport_height,
+        )),
+    })
+    .context("failed to initialize compact TUI viewport")?;
     let result = run(&mut terminal);
     ratatui::restore();
     result
@@ -1754,33 +1744,19 @@ fn run_tui_list_menu(
     title: &str,
     subtitle: Option<&str>,
     items: &[String],
-    footer: &[&str],
+    _footer: &[&str],
 ) -> anyhow::Result<Option<usize>> {
-    with_tui_terminal(
-        list_menu_viewport_height(subtitle, items, footer),
-        |terminal| {
-            let mut selected = 0usize;
-            loop {
-                terminal.draw(|frame| {
-                    draw_tui_list_menu(frame, title, subtitle, items, footer, selected)
-                })?;
-                match event::read()? {
-                    Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                        KeyCode::Up => {
-                            selected = cycle_index(selected, items.len(), -1);
-                        }
-                        KeyCode::Down => {
-                            selected = cycle_index(selected, items.len(), 1);
-                        }
-                        KeyCode::Enter => return Ok(Some(selected)),
-                        KeyCode::Esc => return Ok(None),
-                        _ => {}
-                    },
-                    _ => {}
-                }
-            }
-        },
-    )
+    if items.is_empty() {
+        return Ok(None);
+    }
+    if let Some(subtitle) = subtitle {
+        println!("{subtitle}");
+    }
+    Ok(Select::new()
+        .with_prompt(title)
+        .items(items)
+        .default(0)
+        .interact_opt()?)
 }
 
 fn field_label(label: &str, selected: bool) -> Span<'static> {
@@ -2202,6 +2178,325 @@ enum EditorSubmit {
     Cancel,
 }
 
+fn select_choice<T: Copy + PartialEq>(
+    prompt: &str,
+    choices: &[T],
+    current: T,
+    mut label: impl FnMut(T) -> String,
+) -> anyhow::Result<Option<T>> {
+    let items = choices.iter().copied().map(&mut label).collect::<Vec<_>>();
+    let default = choices
+        .iter()
+        .position(|value| *value == current)
+        .unwrap_or(0);
+    Ok(Select::new()
+        .with_prompt(prompt)
+        .items(&items)
+        .default(default)
+        .interact_opt()?
+        .map(|index| choices[index]))
+}
+
+fn source_capability_row_label(config: &CliPowerConfig, row: SourceCapabilityEditorRow) -> String {
+    match row {
+        SourceCapabilityEditorRow::PowerWatts => {
+            format!("Power cap: {} W", config.capability.power_watts)
+        }
+        SourceCapabilityEditorRow::Pd => format!(
+            "PD: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "pd"))
+        ),
+        SourceCapabilityEditorRow::Pps => format!("PPS: {}", on_off(config.capability.pd.pps)),
+        SourceCapabilityEditorRow::Qc20 => format!(
+            "QC2.0: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "qc20"))
+        ),
+        SourceCapabilityEditorRow::Qc30 => format!(
+            "QC3.0: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "qc30"))
+        ),
+        SourceCapabilityEditorRow::Fcp => format!(
+            "FCP: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "fcp"))
+        ),
+        SourceCapabilityEditorRow::Afc => format!(
+            "AFC: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "afc"))
+        ),
+        SourceCapabilityEditorRow::Scp => format!(
+            "SCP: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "scp"))
+        ),
+        SourceCapabilityEditorRow::Pe20 => format!(
+            "PE2.0: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "pe20"))
+        ),
+        SourceCapabilityEditorRow::Bc12 => format!(
+            "BC1.2: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "bc12"))
+        ),
+        SourceCapabilityEditorRow::Sfcp => format!(
+            "SFCP: {}",
+            on_off(protocol_enabled(&config.capability.protocols, "sfcp"))
+        ),
+        SourceCapabilityEditorRow::FixedPd => {
+            let enabled = FIXED_PD_OPTIONS
+                .iter()
+                .filter(|value| config.capability.pd.fixed_voltages_mv.contains(value))
+                .map(|value| format!("{} V", value / 1000))
+                .collect::<Vec<_>>();
+            let summary = if enabled.is_empty() {
+                "none".to_string()
+            } else {
+                enabled.join(", ")
+            };
+            format!("Fixed PD voltages: {summary}")
+        }
+        SourceCapabilityEditorRow::Pps3Limit => {
+            format!("PPS3 limit: {} mA", config.capability.current.pps3_limit_ma)
+        }
+        SourceCapabilityEditorRow::PdPps5a => {
+            format!(
+                "PD/PPS 5 A: {}",
+                on_off(config.capability.current.pd_pps_5a)
+            )
+        }
+        SourceCapabilityEditorRow::TypeCBroadcast => format!(
+            "Type-C current: {} mA",
+            config.capability.current.type_c_broadcast_ma
+        ),
+        SourceCapabilityEditorRow::ScpLimit => {
+            format!("SCP current: {} mA", config.capability.current.scp_limit_ma)
+        }
+        SourceCapabilityEditorRow::FcpAfcSfcpLimit => format!(
+            "FCP/AFC/SFCP current: {} mA",
+            config.capability.current.fcp_afc_sfcp_limit_ma
+        ),
+        SourceCapabilityEditorRow::Actions => "Actions: save, reload, cancel".to_string(),
+    }
+}
+
+fn edit_source_capability_row(
+    config: &mut CliPowerConfig,
+    row: SourceCapabilityEditorRow,
+) -> anyhow::Result<Option<EditorSubmit>> {
+    match row {
+        SourceCapabilityEditorRow::PowerWatts => {
+            if let Some(value) = select_choice(
+                "Power cap",
+                &power_watt_choices(config.capability.power_watts),
+                config.capability.power_watts,
+                |value| format!("{value} W"),
+            )? {
+                config.capability.power_watts = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Pd => {
+            if let Some(value) = select_choice(
+                "PD",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "pd"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "pd", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Pps => {
+            if let Some(value) =
+                select_choice("PPS", &[false, true], config.capability.pd.pps, |value| {
+                    on_off(value).to_string()
+                })?
+            {
+                config.capability.pd.pps = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Qc20 => {
+            if let Some(value) = select_choice(
+                "QC2.0",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "qc20"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "qc20", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Qc30 => {
+            if let Some(value) = select_choice(
+                "QC3.0",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "qc30"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "qc30", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Fcp => {
+            if let Some(value) = select_choice(
+                "FCP",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "fcp"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "fcp", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Afc => {
+            if let Some(value) = select_choice(
+                "AFC",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "afc"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "afc", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Scp => {
+            if let Some(value) = select_choice(
+                "SCP",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "scp"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "scp", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Pe20 => {
+            if let Some(value) = select_choice(
+                "PE2.0",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "pe20"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "pe20", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Bc12 => {
+            if let Some(value) = select_choice(
+                "BC1.2",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "bc12"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "bc12", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Sfcp => {
+            if let Some(value) = select_choice(
+                "SFCP",
+                &[false, true],
+                protocol_enabled(&config.capability.protocols, "sfcp"),
+                |value| on_off(value).to_string(),
+            )? {
+                set_protocol_flag(&mut config.capability.protocols, "sfcp", value)?;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::FixedPd => {
+            let items = FIXED_PD_OPTIONS
+                .iter()
+                .map(|value| format!("{} V", value / 1000))
+                .collect::<Vec<_>>();
+            let defaults = FIXED_PD_OPTIONS
+                .iter()
+                .map(|value| config.capability.pd.fixed_voltages_mv.contains(value))
+                .collect::<Vec<_>>();
+            if let Some(selected) = MultiSelect::new()
+                .with_prompt("Fixed PD voltages")
+                .items(&items)
+                .defaults(&defaults)
+                .interact_opt()?
+            {
+                config.capability.pd.fixed_voltages_mv = selected
+                    .into_iter()
+                    .map(|index| FIXED_PD_OPTIONS[index])
+                    .collect();
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Pps3Limit => {
+            if let Some(value) = select_choice(
+                "PPS3 limit",
+                &[3000_u16, 5000],
+                config.capability.current.pps3_limit_ma,
+                |value| format!("{value} mA"),
+            )? {
+                config.capability.current.pps3_limit_ma = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::PdPps5a => {
+            if let Some(value) = select_choice(
+                "PD/PPS 5 A",
+                &[false, true],
+                config.capability.current.pd_pps_5a,
+                |value| on_off(value).to_string(),
+            )? {
+                config.capability.current.pd_pps_5a = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::TypeCBroadcast => {
+            if let Some(value) = select_choice(
+                "Type-C current",
+                &[500_u16, 1500],
+                config.capability.current.type_c_broadcast_ma,
+                |value| format!("{value} mA"),
+            )? {
+                config.capability.current.type_c_broadcast_ma = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::ScpLimit => {
+            if let Some(value) = select_choice(
+                "SCP current",
+                &[2000_u16, 4000, 5000],
+                config.capability.current.scp_limit_ma,
+                |value| format!("{value} mA"),
+            )? {
+                config.capability.current.scp_limit_ma = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::FcpAfcSfcpLimit => {
+            if let Some(value) = select_choice(
+                "FCP/AFC/SFCP current",
+                &[2250_u16, 3250],
+                config.capability.current.fcp_afc_sfcp_limit_ma,
+                |value| format!("{value} mA"),
+            )? {
+                config.capability.current.fcp_afc_sfcp_limit_ma = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Actions => {
+            let actions = ACTION_OPTIONS
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect::<Vec<_>>();
+            let selected = Select::new()
+                .with_prompt("Choose an action")
+                .items(&actions)
+                .default(0)
+                .interact_opt()?;
+            Ok(selected.map(|index| match index {
+                0 => EditorSubmit::Save,
+                1 => EditorSubmit::Reload,
+                _ => EditorSubmit::Cancel,
+            }))
+        }
+    }
+}
+
 fn submit_editor_row(
     config: &mut CliPowerConfig,
     state: &mut SourceCapabilityEditorState,
@@ -2227,39 +2522,32 @@ fn run_source_capability_editor_tui(
     config: &mut CliPowerConfig,
     diagnostics: &str,
 ) -> anyhow::Result<EditorSubmit> {
-    let mut state = SourceCapabilityEditorState::default();
-    with_tui_terminal(source_capability_viewport_height(diagnostics), |terminal| {
-        loop {
-            terminal
-                .draw(|frame| draw_source_capability_editor(frame, diagnostics, config, &state))?;
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    KeyCode::Up => {
-                        state.selected_row = cycle_index(
-                            state.selected_row,
-                            SOURCE_CAPABILITY_EDITOR_ROWS.len(),
-                            -1,
-                        );
-                    }
-                    KeyCode::Down => {
-                        state.selected_row =
-                            cycle_index(state.selected_row, SOURCE_CAPABILITY_EDITOR_ROWS.len(), 1);
-                    }
-                    KeyCode::Left => apply_row_direction(config, &mut state, -1)?,
-                    KeyCode::Right => apply_row_direction(config, &mut state, 1)?,
-                    KeyCode::Enter | KeyCode::Char(' ') => {
-                        let submit = submit_editor_row(config, &mut state)?;
-                        if !matches!(submit, EditorSubmit::Continue) {
-                            return Ok(submit);
-                        }
-                    }
-                    KeyCode::Esc => return Ok(EditorSubmit::Cancel),
-                    _ => {}
-                },
-                _ => {}
+    let mut selected_row = 0usize;
+    loop {
+        println!();
+        println!("Source capability");
+        println!("{}", truncate_lines(diagnostics, 6));
+        let items = SOURCE_CAPABILITY_EDITOR_ROWS
+            .iter()
+            .map(|row| source_capability_row_label(config, *row))
+            .collect::<Vec<_>>();
+        let selected = Select::new()
+            .with_prompt("Choose a field to edit")
+            .items(&items)
+            .default(selected_row.min(items.len().saturating_sub(1)))
+            .interact_opt()?;
+        let Some(selected) = selected else {
+            return Ok(EditorSubmit::Cancel);
+        };
+        selected_row = selected;
+        if let Some(submit) =
+            edit_source_capability_row(config, SOURCE_CAPABILITY_EDITOR_ROWS[selected])?
+        {
+            if !matches!(submit, EditorSubmit::Continue) {
+                return Ok(submit);
             }
         }
-    })
+    }
 }
 
 async fn fetch_power_config(
