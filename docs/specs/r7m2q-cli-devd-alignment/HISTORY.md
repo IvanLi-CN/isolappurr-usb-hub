@@ -7,3 +7,10 @@
 - Added Local USB firmware guard requirements for project identity, compatibility, non-project firmware, and download-mode confirmation.
 - Added official user-machine host-tools installers so `isolapurr-user-operations` can install released CLI/devd tools without requiring a source checkout.
 - Tightened the user skill install gate so missing released host tools or unavailable installer assets cannot be answered with raw system USB/serial enumeration.
+- Clarified and implemented `isolapurr discover` so LAN results come from live
+  mDNS discovery, USB results come from the current local scan, and saved
+  hardware only annotates matching live results instead of standing in for
+  discovery.
+- Tightened discover annotation rendering so one live result surfaces only one
+  canonical saved hardware record instead of echoing duplicate saved entries
+  from alternate transports of the same device.

@@ -70,6 +70,13 @@ async fn device_usb_port_path(state: &AppState, device_id: &str) -> anyhow::Resu
         .clone())
 }
 
+fn serial_timeout_ms_for_method(method: &str) -> u64 {
+    match method {
+        "power.config_set" | "power.config_defaults" => SERIAL_POWER_CONFIG_TIMEOUT_MS,
+        _ => SERIAL_TIMEOUT_MS,
+    }
+}
+
 fn serial_jsonl_roundtrip(port_path: &str, request: Value) -> anyhow::Result<Value> {
     let mut port = serialport::new(port_path, SERIAL_BAUD)
         .timeout(Duration::from_millis(50))
@@ -82,7 +89,11 @@ fn serial_jsonl_roundtrip(port_path: &str, request: Value) -> anyhow::Result<Val
     port.flush().context("serial flush")?;
 
     let expected_id = request.get("id").cloned();
-    let deadline = Instant::now() + Duration::from_millis(SERIAL_TIMEOUT_MS);
+    let method = request
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let deadline = Instant::now() + Duration::from_millis(serial_timeout_ms_for_method(method));
     let mut raw = Vec::<u8>::new();
     let mut buf = [0_u8; 256];
     while Instant::now() < deadline {
