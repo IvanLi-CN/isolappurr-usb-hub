@@ -540,7 +540,11 @@ struct CliLease {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let client = Client::new();
+    let client = Client::builder()
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
+        .build()
+        .context("build host HTTP client")?;
     let devd = DevdClient {
         endpoint: cli.ipc.clone(),
         auto_start: !cli.no_auto_start,
@@ -2609,6 +2613,8 @@ fn power_selector_to_api_selector(selector: PowerSelectorArgs) -> ApiSelectorArg
 }
 
 async fn select_saved_power_target_interactively(
+    client: &Client,
+    devd: &DevdClient,
     selector: PowerSelectorArgs,
 ) -> anyhow::Result<ApiSelectorArgs> {
     if !selector.is_empty() {
@@ -2630,21 +2636,47 @@ async fn select_saved_power_target_interactively(
         ));
     }
 
-    if saved.len() == 1 {
+    let mut compatible = Vec::new();
+    let mut rejected = Vec::new();
+    for device in saved {
+        let selector = ApiSelectorArgs {
+            hardware: Some(device.id.clone()),
+            device: None,
+            url: None,
+        };
+        match request_selected(client, devd, selector.clone(), Method::GET, "/status", None).await {
+            Ok(_) => compatible.push(device),
+            Err(err) => rejected.push(format!("{} ({}) - {}", device.name, device.id, err)),
+        }
+    }
+
+    if compatible.is_empty() {
+        let mut message =
+            String::from("no reachable saved hardware is available for power control");
+        if !rejected.is_empty() {
+            message.push_str(":\n");
+            message.push_str(&rejected.join("\n"));
+        }
+        return Err(anyhow!(message));
+    }
+
+    if compatible.len() == 1 {
         return Ok(ApiSelectorArgs {
-            hardware: Some(saved.remove(0).id),
+            hardware: Some(compatible.remove(0).id),
             device: None,
             url: None,
         });
     }
 
-    let items = saved
+    let items = compatible
         .iter()
         .map(saved_hardware_target_label)
         .collect::<Vec<_>>();
     let selected = run_tui_list_menu(
         "Select saved hardware for power control",
-        Some("Only saved hardware is shown. Use Up/Down to move, Enter to select, Esc to cancel."),
+        Some(
+            "Only reachable saved hardware is shown. Use Up/Down to move, Enter to select, Esc to cancel.",
+        ),
         &items,
         &[],
     )?;
@@ -2652,7 +2684,7 @@ async fn select_saved_power_target_interactively(
         return Err(UserCancelled.into());
     };
     Ok(ApiSelectorArgs {
-        hardware: Some(saved.swap_remove(selected).id),
+        hardware: Some(compatible.swap_remove(selected).id),
         device: None,
         url: None,
     })
@@ -2872,13 +2904,13 @@ async fn handle_power(
 }
 
 async fn maybe_select_power_target(
-    _client: &Client,
-    _devd: &DevdClient,
+    client: &Client,
+    devd: &DevdClient,
     selector: PowerSelectorArgs,
     allow_interactive: bool,
 ) -> anyhow::Result<ApiSelectorArgs> {
     if allow_interactive {
-        select_saved_power_target_interactively(selector).await
+        select_saved_power_target_interactively(client, devd, selector).await
     } else {
         Ok(power_selector_to_api_selector(selector))
     }
