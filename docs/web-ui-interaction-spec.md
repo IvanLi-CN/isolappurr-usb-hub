@@ -22,7 +22,7 @@
 
 ### Non-goals
 
-- 不改变业务规则（连接协议、串口筛选、HTTP fallback、去重逻辑等以对应 spec 为准）。
+- 不改变业务规则（连接协议、串口筛选、HTTP 通道、去重逻辑等以对应 spec 为准）。
 - 不要求引入新依赖或重做整体 IA（Information Architecture）。
 
 ## 自适应与窗口变化（Responsive / Resize）
@@ -81,6 +81,7 @@
 ### 状态与反馈
 
 - Add device modal 以连接方式为首要分组：`Wi-Fi / LAN`、`Web Serial`、`Local USB`。
+- 三种连接方式都是正式产品路径；UI 不得用文案或布局暗示主次等级。只有路径不可用或功能确实需要特定能力时，才展示禁用、切换或替代路径提示。
 - Web Serial 与 Local USB 的连接、端口选择、进度与错误必须留在当前 modal 内完成，不跳转到其他页面。
 - 不得新增独立设备连接页；设备连接必须经由 Add device modal 发起。
 - 固件更新不得出现在 Add device modal 内；它属于已添加设备的 Hardware 页。
@@ -94,7 +95,7 @@
 ### Web Serial
 
 - 浏览器支持 Web Serial 时，连接过程应先请求串口选择，再读取设备 `info` / `ports`。
-- 若浏览器不支持 Web Serial，或目标设备不是 ESP32 系列，应显示明确的 fallback 提示，并允许改走 Local USB 或 Wi-Fi。
+- 若浏览器不支持 Web Serial，或目标设备不是 ESP32 系列，应显示明确的替代路径提示，并允许改走 Local USB 或 Wi-Fi。
 - 串口输出中夹杂的非 JSONL 内容不应直接中断流程；应提示未读到有效设备响应，而不是抛出原始乱码。
 
 ### Local USB
@@ -105,7 +106,7 @@
 
 ### Wi‑Fi / LAN
 
-- Wi‑Fi / LAN 保留网络可达路径、已有设备接入与 HTTP fallback。
+- Wi‑Fi / LAN 保留网络可达路径、已有设备接入与 HTTP 通道。
 - 若网络侧不可达，应展示可读状态，但不要把当前流程写成“手动添加”。
 
 ### 选择与提交
@@ -123,7 +124,7 @@
 
 - Given：浏览器不支持 Web Serial
   When：用户切换到 Web Serial
-  Then：UI 给出可执行的 fallback 提示
+  Then：UI 给出可执行的替代路径提示
   And：用户仍可改走 Local USB 或 Wi-Fi
 
 - Given：Local USB service 未启动
@@ -145,7 +146,7 @@
 - 小高度窗口下滚动是否“列内滚动”，且 CTA 可达？
 - Add device 是否只暴露 `Wi-Fi / LAN`、`Web Serial`、`Local USB` 三种连接路径？
 - 是否不存在独立的硬件连接路由或第二套连接按钮？
-- Web Serial 不支持或无有效 JSONL 响应时是否给出可执行 fallback？
+- Web Serial 不支持或无有效 JSONL 响应时是否给出可执行替代路径？
 - Local USB 端口列表是否先过滤 ESP32 串口候选？
 - 关键错误提示是否包含“原因 + 下一步”？
 - 视口在 360×640 / 768×800 / 1024×700 下是否仍无横向滚动？
