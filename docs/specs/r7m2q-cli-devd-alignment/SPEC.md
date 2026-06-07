@@ -46,6 +46,18 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST expose owner-facing power-config inspection, semantic USB-C source
   capability commands, and manual output mode controls through `isolapurr`
   over IPC without falling back to raw register editing UX.
+- MUST treat saved hardware IDs and temporary devd targets as different
+  selector classes with different usage scope.
+- MUST treat `--hardware <saved-id>` as the owner-facing selector for ordinary
+  device control commands, including `status`, `wifi`, `ports`, `diagnostics`,
+  and all `power` commands.
+- MUST treat `--device <temporary-devd-id>` as a temporary devd-target
+  selector that is only valid for flows whose scope is inherently tied to a
+  transient Local USB target, such as pre-bind identification, flashing, and
+  reset/maintenance actions.
+- MUST NOT accept temporary devd-target selectors for owner-facing `power`
+  commands. `power` commands may only use saved hardware IDs or a selector
+  flow that resolves to a saved hardware record.
 - MUST redact PSKs, passwords, passphrases, secrets, and tokens in traces, diagnostics, and CLI output.
 - SHOULD expose bounded session logs/traces for Local USB operations.
 - SHOULD keep product docs and release workflows aligned with the shipped host-tools assets.
@@ -71,6 +83,16 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr diagnostics export`
 - `install-isolapurr-host.sh [--version <tag>] [--install-dir <dir>] [--force] [--dry-run]`
 - `install-isolapurr-host.ps1 [-Version <tag>] [-InstallDir <dir>] [-Force] [-DryRun]`
+
+Selector scope for the released CLI is part of the public contract:
+
+- `--hardware <saved-id>` addresses a saved hardware record and is the
+  owner-facing selector for ordinary control commands.
+- `--device <temporary-devd-id>` addresses a transient devd scan result and is
+  reserved for temporary-target Local USB maintenance flows.
+- `power` commands are in the first category only: they must use
+  `--hardware <saved-id>` or a saved-hardware picker, and they must not expose
+  `--device <temporary-devd-id>` as a supported selector.
 
 The IPC daemon protocol is newline-delimited JSON request/response. Requests include `{id, method, params}` and responses include `{id, ok, result|error}`. CLI-visible method families include:
 
