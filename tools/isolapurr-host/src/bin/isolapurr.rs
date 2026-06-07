@@ -3583,28 +3583,43 @@ fn saved_hardware_match_for_transport(
     live_keys: &[String],
     preferred_transport: Option<&str>,
 ) -> Vec<DiscoverSavedHardware> {
-    let best = saved
+    let matches = saved
         .iter()
         .filter_map(|profile| {
             let score = saved_profile_match_score(profile, live_keys, preferred_transport)?;
             Some((score, profile))
         })
-        .max_by(|(score_a, profile_a), (score_b, profile_b)| {
-            score_a
-                .cmp(score_b)
+        .collect::<Vec<_>>();
+
+    let Some((_, preferred_profile)) =
+        matches
+            .iter()
+            .max_by(|(score_a, profile_a), (score_b, profile_b)| {
+                score_a
+                    .cmp(score_b)
+                    .then_with(|| profile_a.last_seen_at.cmp(&profile_b.last_seen_at))
+                    .then_with(|| profile_b.id.cmp(&profile_a.id))
+            })
+    else {
+        return Vec::new();
+    };
+
+    let canonical_profile = matches
+        .iter()
+        .map(|(_, profile)| *profile)
+        .max_by(|profile_a, profile_b| {
+            saved_profile_canonical_rank(profile_a)
+                .cmp(&saved_profile_canonical_rank(profile_b))
                 .then_with(|| profile_a.last_seen_at.cmp(&profile_b.last_seen_at))
                 .then_with(|| profile_b.id.cmp(&profile_a.id))
         })
-        .map(|(_, profile)| DiscoverSavedHardware {
-            id: profile.id.clone(),
-            name: profile.name.clone(),
-            transport: saved_profile_transport_name(profile).to_string(),
-        });
+        .unwrap_or(*preferred_profile);
 
-    match best {
-        Some(best) => vec![best],
-        None => Vec::new(),
-    }
+    vec![DiscoverSavedHardware {
+        id: canonical_profile.id.clone(),
+        name: canonical_profile.name.clone(),
+        transport: saved_profile_transport_name(preferred_profile).to_string(),
+    }]
 }
 
 fn saved_profile_match_keys(profile: &DeviceProfile) -> Vec<String> {
@@ -3660,6 +3675,25 @@ fn saved_profile_transport_name(profile: &DeviceProfile) -> &'static str {
         HardwareTransport::Http { .. } => "http",
         HardwareTransport::WebSerial { .. } => "web-serial",
     }
+}
+
+fn saved_profile_canonical_rank(profile: &DeviceProfile) -> (bool, bool, usize) {
+    let has_identity = profile.identity.is_some();
+    let transport_suffix_free = !looks_like_transport_qualified_name(&profile.name);
+    let inverse_len = usize::MAX - profile.name.len();
+    (has_identity, transport_suffix_free, inverse_len)
+}
+
+fn looks_like_transport_qualified_name(name: &str) -> bool {
+    let normalized = name.trim().to_ascii_lowercase();
+    normalized.ends_with(" wifi")
+        || normalized.ends_with("-wifi")
+        || normalized.ends_with(" lan")
+        || normalized.ends_with("-lan")
+        || normalized.ends_with(" usb")
+        || normalized.ends_with("-usb")
+        || normalized.ends_with(" web serial")
+        || normalized.ends_with("-web-serial")
 }
 
 fn discover_identity_match_keys(identity: &DeviceIdentity) -> Vec<String> {
@@ -4963,11 +4997,11 @@ mod tests {
     }
 
     #[test]
-    fn saved_hardware_match_prefers_matching_transport() {
+    fn saved_hardware_match_uses_canonical_owner_facing_name() {
         let saved = vec![
             DeviceProfile {
                 id: "isolapurr-01".to_string(),
-                name: "Bench USB".to_string(),
+                name: "Bench Hub".to_string(),
                 transport: HardwareTransport::Usb {
                     device_id: "usb--dev-cu-usbmodem21221401".to_string(),
                     devd_url: None,
@@ -4980,7 +5014,7 @@ mod tests {
             },
             DeviceProfile {
                 id: "isolapurr-01-wifi".to_string(),
-                name: "Bench LAN".to_string(),
+                name: "Bench Hub Wi-Fi".to_string(),
                 transport: HardwareTransport::Http {
                     base_url: "http://isolapurr-usb-hub-856a14.local".to_string(),
                 },
@@ -5012,7 +5046,10 @@ mod tests {
 
         assert_eq!(usb_match.len(), 1);
         assert_eq!(usb_match[0].id, "isolapurr-01");
+        assert_eq!(usb_match[0].name, "Bench Hub");
         assert_eq!(http_match.len(), 1);
-        assert_eq!(http_match[0].id, "isolapurr-01-wifi");
+        assert_eq!(http_match[0].id, "isolapurr-01");
+        assert_eq!(http_match[0].name, "Bench Hub");
+        assert_eq!(http_match[0].transport, "http");
     }
 }
