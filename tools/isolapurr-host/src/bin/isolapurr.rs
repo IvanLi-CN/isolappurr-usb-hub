@@ -2612,6 +2612,84 @@ fn power_selector_to_api_selector(selector: PowerSelectorArgs) -> ApiSelectorArg
     }
 }
 
+#[derive(Clone)]
+struct PowerTargetCandidate {
+    hardware: DeviceProfile,
+    verify_http_after_select: bool,
+}
+
+async fn finalize_power_target_candidate(
+    client: &Client,
+    devd: &DevdClient,
+    candidate: PowerTargetCandidate,
+) -> anyhow::Result<ApiSelectorArgs> {
+    let selector = ApiSelectorArgs {
+        hardware: Some(candidate.hardware.id.clone()),
+        device: None,
+        url: None,
+    };
+    if candidate.verify_http_after_select {
+        request_selected(client, devd, selector.clone(), Method::GET, "/status", None)
+            .await
+            .with_context(|| {
+                format!(
+                    "saved LAN hardware {} is not reachable right now",
+                    candidate.hardware.id
+                )
+            })?;
+    }
+    Ok(selector)
+}
+
+async fn collect_scanned_saved_usb_power_targets(
+    client: &Client,
+    devd: &DevdClient,
+    saved: &[DeviceProfile],
+) -> anyhow::Result<Vec<DeviceProfile>> {
+    let scanned = devd_request(client, devd, Method::POST, "/api/v1/devices/scan", None).await?;
+    let devices = scanned
+        .get("devices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("device scan returned no device list"))?
+        .iter()
+        .cloned()
+        .map(serde_json::from_value::<DeviceRecord>)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut matched = Vec::new();
+    for device in devices {
+        let Some(_usb) = &device.usb else {
+            continue;
+        };
+        if request_selected(
+            client,
+            devd,
+            ApiSelectorArgs {
+                hardware: None,
+                device: Some(device.id.clone()),
+                url: None,
+            },
+            Method::GET,
+            "/status",
+            None,
+        )
+        .await
+        .is_err()
+        {
+            continue;
+        }
+        if let Some(saved_device) = saved.iter().find(|saved_device| {
+            matches!(
+                &saved_device.transport,
+                HardwareTransport::Usb { device_id, .. } if device_id == &device.id
+            )
+        }) {
+            matched.push(saved_device.clone());
+        }
+    }
+    Ok(matched)
+}
+
 async fn select_saved_power_target_interactively(
     client: &Client,
     devd: &DevdClient,
@@ -2636,46 +2714,41 @@ async fn select_saved_power_target_interactively(
         ));
     }
 
-    let mut compatible = Vec::new();
-    let mut rejected = Vec::new();
-    for device in saved {
-        let selector = ApiSelectorArgs {
-            hardware: Some(device.id.clone()),
-            device: None,
-            url: None,
-        };
-        match request_selected(client, devd, selector.clone(), Method::GET, "/status", None).await {
-            Ok(_) => compatible.push(device),
-            Err(err) => rejected.push(format!("{} ({}) - {}", device.name, device.id, err)),
-        }
-    }
-
-    if compatible.is_empty() {
-        let mut message =
-            String::from("no reachable saved hardware is available for power control");
-        if !rejected.is_empty() {
-            message.push_str(":\n");
-            message.push_str(&rejected.join("\n"));
-        }
-        return Err(anyhow!(message));
-    }
-
-    if compatible.len() == 1 {
-        return Ok(ApiSelectorArgs {
-            hardware: Some(compatible.remove(0).id),
-            device: None,
-            url: None,
-        });
-    }
-
-    let items = compatible
+    let lan_candidates = saved
         .iter()
-        .map(saved_hardware_target_label)
+        .filter(|device| matches!(device.transport, HardwareTransport::Http { .. }))
+        .cloned()
+        .map(|hardware| PowerTargetCandidate {
+            hardware,
+            verify_http_after_select: true,
+        });
+    let usb_candidates = collect_scanned_saved_usb_power_targets(client, devd, &saved)
+        .await?
+        .into_iter()
+        .map(|hardware| PowerTargetCandidate {
+            hardware,
+            verify_http_after_select: false,
+        });
+    let mut candidates = lan_candidates.chain(usb_candidates).collect::<Vec<_>>();
+
+    if candidates.is_empty() {
+        return Err(anyhow!(
+            "no power-control target is available; save a LAN target or connect a saved USB target so it appears in the current scan"
+        ));
+    }
+
+    if candidates.len() == 1 {
+        return finalize_power_target_candidate(client, devd, candidates.remove(0)).await;
+    }
+
+    let items = candidates
+        .iter()
+        .map(|candidate| saved_hardware_target_label(&candidate.hardware))
         .collect::<Vec<_>>();
     let selected = run_tui_list_menu(
         "Select saved hardware for power control",
         Some(
-            "Only reachable saved hardware is shown. Use Up/Down to move, Enter to select, Esc to cancel.",
+            "Saved LAN hardware is listed first. Saved USB hardware appears only after the current scan sees it online. Use Up/Down to move, Enter to select, Esc to cancel.",
         ),
         &items,
         &[],
@@ -2683,11 +2756,7 @@ async fn select_saved_power_target_interactively(
     let Some(selected) = selected else {
         return Err(UserCancelled.into());
     };
-    Ok(ApiSelectorArgs {
-        hardware: Some(compatible.swap_remove(selected).id),
-        device: None,
-        url: None,
-    })
+    finalize_power_target_candidate(client, devd, candidates.swap_remove(selected)).await
 }
 
 async fn select_api_target_interactively(
