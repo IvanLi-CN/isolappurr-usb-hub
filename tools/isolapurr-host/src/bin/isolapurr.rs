@@ -1575,29 +1575,25 @@ fn with_tui_terminal<T>(
     result
 }
 
-fn popup_area(area: Rect, desired_width: u16, desired_height: u16) -> Rect {
+fn anchored_panel_area(area: Rect, desired_width: u16, desired_height: u16) -> Rect {
     let width = desired_width.min(area.width).max(1);
     let height = desired_height.min(area.height).max(1);
-    let horizontal_margin = area.width.saturating_sub(width) / 2;
-    let vertical_margin = area.height.saturating_sub(height) / 2;
     Rect::new(
-        area.x + horizontal_margin,
-        area.y + vertical_margin,
+        area.x,
+        area.y + area.height.saturating_sub(height),
         width,
         height,
     )
 }
 
-fn popup_block(title: &str) -> Block<'static> {
+fn panel_block(title: &str) -> Block<'static> {
     Block::bordered()
         .title(Span::styled(
             title.to_string(),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            Style::default().add_modifier(Modifier::BOLD),
         ))
-        .border_style(Style::default().fg(Color::Cyan))
-        .style(Style::default().fg(Color::White).bg(Color::Rgb(17, 24, 39)))
+        .border_style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(Color::White))
 }
 
 fn text_width(text: &str) -> u16 {
@@ -1683,13 +1679,13 @@ fn draw_tui_list_menu(
                 .unwrap_or(0),
         )
         + 8;
-    let popup = popup_area(
+    let popup = anchored_panel_area(
         frame.area(),
         clamp_popup_width(frame.area(), desired_width, 48),
         popup_height,
     );
     frame.render_widget(Clear, popup);
-    let outer = popup_block(title);
+    let outer = panel_block(title);
     let inner = outer.inner(popup);
     frame.render_widget(outer, popup);
 
@@ -1710,7 +1706,7 @@ fn draw_tui_list_menu(
     if let Some(subtitle) = subtitle {
         frame.render_widget(
             Paragraph::new(subtitle)
-                .style(Style::default().fg(Color::Gray))
+                .style(Style::default().fg(Color::DarkGray))
                 .wrap(Wrap { trim: false }),
             sections[0],
         );
@@ -1730,8 +1726,7 @@ fn draw_tui_list_menu(
         .highlight_symbol("› ")
         .highlight_style(
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Yellow)
+                .add_modifier(Modifier::REVERSED)
                 .add_modifier(Modifier::BOLD),
         )
         .repeat_highlight_symbol(true);
@@ -1746,7 +1741,7 @@ fn draw_tui_list_menu(
                 .map(|line| {
                     Line::from(Span::styled(
                         (*line).to_string(),
-                        Style::default().fg(Color::Gray),
+                        Style::default().fg(Color::DarkGray),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -1792,13 +1787,9 @@ fn field_label(label: &str, selected: bool) -> Span<'static> {
     Span::styled(
         format!("{label}: "),
         if selected {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
+            Style::default().add_modifier(Modifier::BOLD)
         } else {
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD)
+            Style::default().fg(Color::Gray)
         },
     )
 }
@@ -1812,17 +1803,11 @@ fn choice_chip(label: impl Into<String>, active: bool, focused: bool) -> Span<'s
     };
     let style = match (active, focused) {
         (true, true) => Style::default()
-            .fg(Color::Black)
-            .bg(Color::Yellow)
+            .add_modifier(Modifier::REVERSED)
             .add_modifier(Modifier::BOLD),
-        (false, true) => Style::default()
-            .fg(Color::White)
-            .bg(Color::Blue)
-            .add_modifier(Modifier::BOLD),
-        (true, false) => Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD),
-        (false, false) => Style::default().fg(Color::Gray),
+        (false, true) => Style::default().add_modifier(Modifier::REVERSED),
+        (true, false) => Style::default().add_modifier(Modifier::BOLD),
+        (false, false) => Style::default().fg(Color::DarkGray),
     };
     Span::styled(text, style)
 }
@@ -2029,13 +2014,13 @@ fn draw_source_capability_editor(
     let status_lines = diagnostics.lines().count().max(1) as u16;
     let footer_lines = 2_u16;
     let popup_height = status_lines + SOURCE_CAPABILITY_EDITOR_ROWS.len() as u16 + footer_lines + 4;
-    let popup = popup_area(
+    let popup = anchored_panel_area(
         frame.area(),
         clamp_popup_width(frame.area(), 104, 72),
         popup_height,
     );
     frame.render_widget(Clear, popup);
-    let outer = popup_block("Source capability editor");
+    let outer = panel_block("Source capability editor");
     let inner = outer.inner(popup);
     frame.render_widget(outer, popup);
 
@@ -2050,7 +2035,7 @@ fn draw_source_capability_editor(
 
     frame.render_widget(
         Paragraph::new(diagnostics)
-            .style(Style::default().fg(Color::Gray))
+            .style(Style::default().fg(Color::DarkGray))
             .wrap(Wrap { trim: false }),
         sections[0],
     );
@@ -2072,7 +2057,7 @@ fn draw_source_capability_editor(
         ),
     ]);
     frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(Color::Gray)),
+        Paragraph::new(footer).style(Style::default().fg(Color::DarkGray)),
         sections[2],
     );
 }
