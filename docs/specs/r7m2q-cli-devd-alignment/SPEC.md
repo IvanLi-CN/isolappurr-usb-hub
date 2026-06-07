@@ -43,6 +43,9 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST allow first-time full flash from the user CLI only after explicit port selection, target/artifact evidence, typed confirmation or explicit non-interactive confirmation, and post-flash identity capture.
 - MUST require an explicit confirmation path before destructive operations that may affect download-mode or non-project firmware. CLI clients use an interactive typed confirmation or a confirmation flag for non-interactive runs; GUI clients must use a confirmation dialog.
 - MUST instruct users to upgrade firmware when `firmware.version` is below the devd-compatible minimum instead of attempting normal port/Wi-Fi/diagnostic operations.
+- MUST expose owner-facing power-config inspection and semantic USB-C source
+  capability commands through `isolapurr` over IPC without falling back to raw
+  register editing UX.
 - MUST redact PSKs, passwords, passphrases, secrets, and tokens in traces, diagnostics, and CLI output.
 - SHOULD expose bounded session logs/traces for Local USB operations.
 - SHOULD keep product docs and release workflows aligned with the shipped host-tools assets.
@@ -59,6 +62,9 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr ports power --port <port_id> --enabled <true|false>`
 - `isolapurr ports replug --port <port_id>`
 - `isolapurr ports route --route <mcu|usb_c>`
+- `isolapurr power show`
+- `isolapurr power defaults`
+- `isolapurr power source-capability set [--power-watts <1..100>] [--pd <true|false>] [--pps <true|false>] [--qc20 <true|false>] [--qc30 <true|false>] [--fcp <true|false>] [--afc <true|false>] [--scp <true|false>] [--pe20 <true|false>] [--bc12 <true|false>] [--sfcp <true|false>] [--fixed-pd-voltages <9000,12000,15000,20000|none>] [--pps3-limit-ma <3000|5000>] [--pd-pps-5a <true|false>] [--type-c-broadcast-ma <500|1500>] [--scp-limit-ma <2000|4000|5000>] [--fcp-afc-sfcp-limit-ma <2250|3250>]`
 - `isolapurr flash [--confirm-non-project-firmware]`, `isolapurr reset`, `isolapurr monitor`
 - `isolapurr diagnostics export`
 - `install-isolapurr-host.sh [--version <tag>] [--install-dir <dir>] [--force] [--dry-run]`
@@ -69,6 +75,7 @@ The IPC daemon protocol is newline-delimited JSON request/response. Requests inc
 - `devices.list`, `devices.scan`
 - `device.status`, `device.session`, `device.wifi.get|set|clear`
 - `device.ports.get`, `device.port.power`, `device.port.replug`, `device.hub.route_set`
+- `device.power.config.get|set|defaults|lock|release`
 - `serial.lease.create`, `serial.lease.release`
 - `device.flash`, `device.reset`, `device.diagnostics`
 - `firmware.catalog.validate`
@@ -120,6 +127,22 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given a Local USB target does not answer IsolaPurr `info`, when the user requests status, Wi-Fi, ports, diagnostics, route, replug, or power operations, then devd refuses the operation and reports that the target may be in download mode or running non-IsolaPurr firmware.
 - Given a Local USB target answers `info` with a different `firmware.name`, when any ordinary operation is requested, then devd refuses the operation and reports the expected firmware name.
 - Given a Local USB target answers `info` with an incompatible `firmware.version`, when any ordinary operation is requested, then devd refuses the operation and asks the user to upgrade firmware.
+- Given the user runs `isolapurr power source-capability set`, when one or more
+  protocol, PD option, power-cap, or semantic current-tier flags are supplied,
+  then the CLI reads the current whole power config, updates only the requested
+  source-capability fields, writes the full config back over IPC, and reports
+  the resulting config without exposing raw controller registers.
+- Given the user runs `isolapurr power source-capability set` without any
+  update flags in a terminal, when the CLI starts, then it first reads the
+  current hardware config plus live USB-C status and opens an interactive
+  line-by-line editor where each row represents one source-capability field,
+  shows that field's inline chips/options on the same line, and supports
+  arrow-key field/choice navigation before save; if no selector was supplied,
+  the CLI must first prompt for a scanned device choice with the same friendly
+  terminal selector instead of failing immediately.
+- Given the user runs `isolapurr power show` without `--json`, when the CLI
+  renders the result, then it summarizes saved power settings and live USB-C
+  source state without requiring chip-specific field names.
 - Given devd owns a Local USB session, when another devd client requests the same port during an exclusive flash/reset, then devd returns a busy error instead of opening the port concurrently.
 - Given a firmware catalog references an app image, when CLI/devd flashes a normal update, then the image hash, target, address, and identity are verified before writing.
 - Given first-time hardware lacks identity or is in download mode, when a user runs a full flash, then the CLI shows target/artifact evidence, requires a typed confirmation or explicit non-interactive confirmation flag, flashes the full artifact, and writes confirmed identity after reboot.
