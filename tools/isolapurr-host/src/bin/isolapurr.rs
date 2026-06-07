@@ -1,17 +1,20 @@
 use anyhow::{Context as _, anyhow};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEventKind},
+    terminal,
+};
 use isolapurr_host::{
     DeviceIdentity, DeviceProfile, DeviceRecord, FirmwareCatalog, HardwareTransport,
     SavedHardwareInput, api_url, default_ipc_endpoint, ipc_call, read_hardware_registry,
     redact_sensitive, registry_path, save_hardware,
 };
 use ratatui::{
-    DefaultTerminal, Frame,
-    layout::{Constraint, Direction, Layout},
+    DefaultTerminal, Frame, TerminalOptions, Viewport,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
@@ -1540,12 +1543,120 @@ fn cycle_index(current: usize, len: usize, direction: i8) -> usize {
 }
 
 fn with_tui_terminal<T>(
+    viewport_height: u16,
     run: impl FnOnce(&mut DefaultTerminal) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
-    let mut terminal = ratatui::init();
+    let viewport_height = viewport_height.max(3);
+    let mut terminal = match ratatui::try_init_with_options(TerminalOptions {
+        viewport: Viewport::Inline(viewport_height),
+    }) {
+        Ok(terminal) => terminal,
+        Err(inline_error) => {
+            let (width, height) =
+                terminal::size().context("failed to read terminal size for fallback viewport")?;
+            let fallback_height = viewport_height.min(height.max(1));
+            ratatui::try_init_with_options(TerminalOptions {
+                viewport: Viewport::Fixed(Rect::new(
+                    0,
+                    height.saturating_sub(fallback_height),
+                    width,
+                    fallback_height,
+                )),
+            })
+            .map_err(|fixed_error| {
+                anyhow!(
+                    "failed to initialize compact TUI viewport; inline failed: {inline_error}; fixed fallback failed: {fixed_error}"
+                )
+            })?
+        }
+    };
     let result = run(&mut terminal);
     ratatui::restore();
     result
+}
+
+fn popup_area(area: Rect, desired_width: u16, desired_height: u16) -> Rect {
+    let width = desired_width.min(area.width).max(1);
+    let height = desired_height.min(area.height).max(1);
+    let horizontal_margin = area.width.saturating_sub(width) / 2;
+    let vertical_margin = area.height.saturating_sub(height) / 2;
+    Rect::new(
+        area.x + horizontal_margin,
+        area.y + vertical_margin,
+        width,
+        height,
+    )
+}
+
+fn popup_block(title: &str) -> Block<'static> {
+    Block::bordered()
+        .title(Span::styled(
+            title.to_string(),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().fg(Color::White).bg(Color::Rgb(17, 24, 39)))
+}
+
+fn text_width(text: &str) -> u16 {
+    text.lines()
+        .map(|line| line.chars().count() as u16)
+        .max()
+        .unwrap_or(0)
+}
+
+fn truncate_to_width(text: &str, max_width: u16) -> String {
+    let max_width = max_width as usize;
+    let char_count = text.chars().count();
+    if char_count <= max_width {
+        return text.to_string();
+    }
+    if max_width <= 1 {
+        return "…".to_string();
+    }
+    let kept = max_width.saturating_sub(1);
+    let mut truncated = text.chars().take(kept).collect::<String>();
+    truncated.push('…');
+    truncated
+}
+
+fn clamp_popup_width(area: Rect, desired_width: u16, minimum_width: u16) -> u16 {
+    let available = area.width.max(1);
+    desired_width
+        .min(available)
+        .max(minimum_width.min(available))
+}
+
+fn list_menu_viewport_height(subtitle: Option<&str>, items: &[String], footer: &[&str]) -> u16 {
+    let subtitle_lines = subtitle
+        .map(|text| text.lines().count() as u16)
+        .unwrap_or(0);
+    let footer_lines = footer.len() as u16;
+    let item_lines = items.len().max(1) as u16;
+    subtitle_lines + footer_lines + item_lines + 6
+}
+
+fn source_capability_viewport_height(diagnostics: &str) -> u16 {
+    let status_lines = diagnostics.lines().count().min(6) as u16;
+    let editor_lines = SOURCE_CAPABILITY_EDITOR_ROWS.len() as u16;
+    status_lines + editor_lines + 7
+}
+
+fn truncate_lines(text: &str, max_lines: usize) -> String {
+    let mut lines = text.lines();
+    let mut kept = Vec::new();
+    for _ in 0..max_lines {
+        let Some(line) = lines.next() else {
+            break;
+        };
+        kept.push(line.to_string());
+    }
+    if lines.next().is_some() {
+        kept.push("...".to_string());
+    }
+    kept.join("\n")
 }
 
 fn draw_tui_list_menu(
@@ -1556,17 +1667,36 @@ fn draw_tui_list_menu(
     footer: &[&str],
     selected: usize,
 ) {
-    let outer = Block::bordered().title(title);
-    let inner = outer.inner(frame.area());
-    frame.render_widget(outer, frame.area());
-
     let subtitle_height = subtitle
-        .map(|text| text.lines().count().max(1) as u16 + 1)
+        .map(|text| text.lines().count().max(1) as u16)
         .unwrap_or(0);
+    let footer_height = footer.len() as u16;
+    let popup_height = subtitle_height + items.len().max(1) as u16 + footer_height + 4;
+    let desired_width = text_width(title)
+        .max(subtitle.map(text_width).unwrap_or(0))
+        .max(items.iter().map(|item| text_width(item)).max().unwrap_or(0))
+        .max(
+            footer
+                .iter()
+                .map(|line| text_width(line))
+                .max()
+                .unwrap_or(0),
+        )
+        + 8;
+    let popup = popup_area(
+        frame.area(),
+        clamp_popup_width(frame.area(), desired_width, 48),
+        popup_height,
+    );
+    frame.render_widget(Clear, popup);
+    let outer = popup_block(title);
+    let inner = outer.inner(popup);
+    frame.render_widget(outer, popup);
+
     let footer_height = if footer.is_empty() {
         0
     } else {
-        footer.len() as u16 + 1
+        footer.len() as u16
     };
     let sections = Layout::default()
         .direction(Direction::Vertical)
@@ -1579,16 +1709,32 @@ fn draw_tui_list_menu(
 
     if let Some(subtitle) = subtitle {
         frame.render_widget(
-            Paragraph::new(subtitle).wrap(Wrap { trim: false }),
+            Paragraph::new(subtitle)
+                .style(Style::default().fg(Color::Gray))
+                .wrap(Wrap { trim: false }),
             sections[0],
         );
     }
 
     let list_items = items
         .iter()
-        .map(|item| ListItem::new(item.as_str()))
+        .map(|item| {
+            let fitted = truncate_to_width(item, sections[1].width.saturating_sub(4));
+            ListItem::new(Line::from(Span::styled(
+                fitted,
+                Style::default().fg(Color::White),
+            )))
+        })
         .collect::<Vec<_>>();
-    let list = List::new(list_items).highlight_symbol("› ");
+    let list = List::new(list_items)
+        .highlight_symbol("› ")
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+        .repeat_highlight_symbol(true);
     let mut state = ListState::default();
     state.select(Some(selected.min(items.len().saturating_sub(1))));
     frame.render_stateful_widget(list, sections[1], &mut state);
@@ -1600,7 +1746,7 @@ fn draw_tui_list_menu(
                 .map(|line| {
                     Line::from(Span::styled(
                         (*line).to_string(),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(Color::Gray),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -1615,28 +1761,31 @@ fn run_tui_list_menu(
     items: &[String],
     footer: &[&str],
 ) -> anyhow::Result<Option<usize>> {
-    with_tui_terminal(|terminal| {
-        let mut selected = 0usize;
-        loop {
-            terminal.draw(|frame| {
-                draw_tui_list_menu(frame, title, subtitle, items, footer, selected)
-            })?;
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    KeyCode::Up => {
-                        selected = cycle_index(selected, items.len(), -1);
-                    }
-                    KeyCode::Down => {
-                        selected = cycle_index(selected, items.len(), 1);
-                    }
-                    KeyCode::Enter => return Ok(Some(selected)),
-                    KeyCode::Esc => return Ok(None),
+    with_tui_terminal(
+        list_menu_viewport_height(subtitle, items, footer),
+        |terminal| {
+            let mut selected = 0usize;
+            loop {
+                terminal.draw(|frame| {
+                    draw_tui_list_menu(frame, title, subtitle, items, footer, selected)
+                })?;
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                        KeyCode::Up => {
+                            selected = cycle_index(selected, items.len(), -1);
+                        }
+                        KeyCode::Down => {
+                            selected = cycle_index(selected, items.len(), 1);
+                        }
+                        KeyCode::Enter => return Ok(Some(selected)),
+                        KeyCode::Esc => return Ok(None),
+                        _ => {}
+                    },
                     _ => {}
-                },
-                _ => {}
+                }
             }
-        }
-    })
+        },
+    )
 }
 
 fn field_label(label: &str, selected: bool) -> Span<'static> {
@@ -1644,10 +1793,12 @@ fn field_label(label: &str, selected: bool) -> Span<'static> {
         format!("{label}: "),
         if selected {
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         },
     )
 }
@@ -1662,16 +1813,16 @@ fn choice_chip(label: impl Into<String>, active: bool, focused: bool) -> Span<'s
     let style = match (active, focused) {
         (true, true) => Style::default()
             .fg(Color::Black)
-            .bg(Color::Cyan)
+            .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
         (false, true) => Style::default()
-            .fg(Color::Black)
-            .bg(Color::DarkGray)
+            .fg(Color::White)
+            .bg(Color::Blue)
             .add_modifier(Modifier::BOLD),
         (true, false) => Style::default()
             .fg(Color::Green)
             .add_modifier(Modifier::BOLD),
-        (false, false) => Style::default().fg(Color::DarkGray),
+        (false, false) => Style::default().fg(Color::Gray),
     };
     Span::styled(text, style)
 }
@@ -1874,23 +2025,33 @@ fn draw_source_capability_editor(
     config: &CliPowerConfig,
     state: &SourceCapabilityEditorState,
 ) {
-    let outer = Block::bordered().title("Source capability editor");
-    let inner = outer.inner(frame.area());
-    frame.render_widget(outer, frame.area());
-
+    let diagnostics = truncate_lines(diagnostics, 6);
     let status_lines = diagnostics.lines().count().max(1) as u16;
     let footer_lines = 2_u16;
+    let popup_height = status_lines + SOURCE_CAPABILITY_EDITOR_ROWS.len() as u16 + footer_lines + 4;
+    let popup = popup_area(
+        frame.area(),
+        clamp_popup_width(frame.area(), 104, 72),
+        popup_height,
+    );
+    frame.render_widget(Clear, popup);
+    let outer = popup_block("Source capability editor");
+    let inner = outer.inner(popup);
+    frame.render_widget(outer, popup);
+
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(status_lines + 1),
+            Constraint::Length(status_lines),
             Constraint::Min(10),
             Constraint::Length(footer_lines),
         ])
         .split(inner);
 
     frame.render_widget(
-        Paragraph::new(diagnostics.to_string()).wrap(Wrap { trim: false }),
+        Paragraph::new(diagnostics)
+            .style(Style::default().fg(Color::Gray))
+            .wrap(Wrap { trim: false }),
         sections[0],
     );
 
@@ -1911,7 +2072,7 @@ fn draw_source_capability_editor(
         ),
     ]);
     frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(Color::DarkGray)),
+        Paragraph::new(footer).style(Style::default().fg(Color::Gray)),
         sections[2],
     );
 }
@@ -2082,7 +2243,7 @@ fn run_source_capability_editor_tui(
     diagnostics: &str,
 ) -> anyhow::Result<EditorSubmit> {
     let mut state = SourceCapabilityEditorState::default();
-    with_tui_terminal(|terminal| {
+    with_tui_terminal(source_capability_viewport_height(diagnostics), |terminal| {
         loop {
             terminal
                 .draw(|frame| draw_source_capability_editor(frame, diagnostics, config, &state))?;
