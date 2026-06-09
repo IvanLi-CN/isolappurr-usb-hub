@@ -289,6 +289,20 @@ where
     eeprom_write(i2c, DEVICE_SETTINGS_RECORD_OFFSET, &record).await
 }
 
+pub async fn clear_usb_c_downstream_route<I2C>(
+    i2c: &mut I2C,
+) -> Result<(), ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    eeprom_write(
+        i2c,
+        DEVICE_SETTINGS_RECORD_OFFSET,
+        &[0u8; DEVICE_SETTINGS_RECORD_LEN],
+    )
+    .await
+}
+
 pub async fn load_power_config<I2C>(
     i2c: &mut I2C,
 ) -> Result<Option<PowerConfig>, ProvisioningError<I2C::Error>>
@@ -343,6 +357,18 @@ where
     let crc = checksum(&record);
     record[POWER_SETTINGS_RECORD_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
     eeprom_write(i2c, POWER_SETTINGS_RECORD_OFFSET, &record).await
+}
+
+pub async fn clear_power_config<I2C>(i2c: &mut I2C) -> Result<(), ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    eeprom_write(
+        i2c,
+        POWER_SETTINGS_RECORD_OFFSET,
+        &[0u8; POWER_SETTINGS_RECORD_LEN],
+    )
+    .await
 }
 
 fn encode_power_config(record: &mut [u8; POWER_SETTINGS_RECORD_LEN], config: PowerConfig) {

@@ -64,6 +64,15 @@ mod power_output_tests {
                 .expect("route endpoint should map");
         assert_eq!(path, "/api/v1/hub/usb-c-downstream-route?route=mcu");
         assert!(body.is_none());
+
+        let (_, path, body) = map_http_endpoint(
+            Method::POST,
+            "/settings/reset",
+            Some(json!({"scope": "other"})),
+        )
+        .expect("settings reset endpoint should map");
+        assert_eq!(path, "/api/v1/settings/reset?scope=other");
+        assert!(body.is_none());
     }
 
     #[test]
@@ -99,6 +108,17 @@ mod power_output_tests {
         assert_eq!(params["owner"], 7);
         assert_eq!(params["config"]["hardware"], "legacy-hardware");
         assert_eq!(params["config"]["capability"]["power_watts"], 100);
+
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::POST,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/settings/reset",
+            Some(json!({"scope": "wifi", "owner": 9})),
+        )
+        .expect("settings reset endpoint should map");
+        assert_eq!(method, "device.settings.reset");
+        assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
+        assert_eq!(params["scope"], "wifi");
+        assert_eq!(params["owner"], 9);
     }
 
     #[test]
@@ -117,6 +137,36 @@ mod power_output_tests {
         let err = Cli::try_parse_from(["isolapurr", "--devd", "http://127.0.0.1:51200", "devices"])
             .expect_err("legacy devd HTTP flag must not parse");
         assert!(err.to_string().contains("unexpected argument"));
+    }
+
+    #[test]
+    fn settings_reset_cli_parses_scope_and_confirmation_flag() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "--json",
+            "settings",
+            "reset",
+            "--hardware",
+            "bench-hub",
+            "other",
+            "--yes",
+        ])
+        .expect("settings reset should parse");
+        let Command::Settings {
+            command:
+                SettingsCommand::Reset {
+                    selector,
+                    scope,
+                    yes,
+                },
+        } = cli.command
+        else {
+            panic!("expected settings reset command");
+        };
+        assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
+        assert!(matches!(scope, SettingsResetScopeArg::Other));
+        assert!(yes);
+        assert!(cli.json);
     }
 
     #[test]

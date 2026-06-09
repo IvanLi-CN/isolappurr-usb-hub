@@ -26,7 +26,10 @@ import {
   type Result,
   rebootDevice,
   replugPort,
+  resetSettings as resetDeviceSettings,
   restorePowerDefaults,
+  type SettingsResetResponse,
+  type SettingsResetScope,
   setPortPower,
   setPowerConfig,
   setPowerLock,
@@ -351,6 +354,13 @@ export function DeviceRuntimeProvider({
         }
         if (method === "wifi.clear") {
           return clearWifiConfig(baseUrl) as Promise<Result<T>>;
+        }
+        if (method === "settings.reset") {
+          return resetDeviceSettings(
+            baseUrl,
+            params?.scope as SettingsResetScope,
+            params?.owner === undefined ? undefined : Number(params.owner),
+          ) as Promise<Result<T>>;
         }
         if (method === "reboot") {
           return rebootDevice(baseUrl) as Promise<Result<T>>;
@@ -760,6 +770,27 @@ export function DeviceRuntimeProvider({
     [refreshDevice, runDeviceCommand],
   );
 
+  const resetSettings = useCallback(
+    async (
+      deviceId: string,
+      scope: SettingsResetScope,
+    ): Promise<Result<SettingsResetResponse>> => {
+      const preferred: DeviceTransport[] | undefined =
+        scope === "wifi" ? ["web_serial", "local_usb"] : undefined;
+      const res = await runDeviceCommand<SettingsResetResponse>(
+        deviceId,
+        "settings.reset",
+        { scope },
+        preferred,
+      );
+      if (res.ok) {
+        await refreshDevice(deviceId);
+      }
+      return res;
+    },
+    [refreshDevice, runDeviceCommand],
+  );
+
   const reboot = useCallback(
     async (deviceId: string): Promise<Result<RebootResponse>> => {
       return runDeviceCommand<RebootResponse>(deviceId, "reboot", undefined, [
@@ -1118,6 +1149,7 @@ export function DeviceRuntimeProvider({
       wifiConfig,
       saveWifiConfig,
       clearWifiConfig: clearWifi,
+      resetSettings,
       rebootDevice: reboot,
       powerConfig,
       savePowerConfig,
@@ -1136,6 +1168,7 @@ export function DeviceRuntimeProvider({
     reboot,
     refreshDevice,
     replug,
+    resetSettings,
     restoreDefaults,
     runtimeById,
     savePowerConfig,

@@ -46,6 +46,148 @@
         }
         #[cfg(feature = "net_http")]
         {
+            let pending_settings_reset = {
+                let mut guard = api_state.lock().await;
+                guard.pending.settings_reset.take()
+            };
+
+            if let Some(net::ApiSettingsResetScope::Other) = pending_settings_reset {
+                let reset_now = Instant::now();
+                let default_route = provisioning::DEFAULT_USB_C_DOWNSTREAM_ROUTE;
+                let default_power_config = PowerConfig::defaults();
+                let capability_changed = power_config.capability != default_power_config.capability;
+
+                port_usb_c.busy_until =
+                    Some(reset_now + Duration::from_millis(USB_C_ROUTE_SETTLE_MS));
+                let _ = p2_ced.set_high();
+                match default_route {
+                    provisioning::UsbCDownstreamRoute::Mcu => {
+                        let _ = p1_esp.set_low();
+                    }
+                    provisioning::UsbCDownstreamRoute::UsbC => {
+                        let _ = p1_esp.set_high();
+                    }
+                }
+                Timer::after_millis(USB_C_ROUTE_SETTLE_MS).await;
+
+                let route_cleared =
+                    match provisioning::clear_usb_c_downstream_route(telemetry_sampler.i2c_mut())
+                        .await
+                    {
+                        Ok(()) => true,
+                        Err(err) => {
+                            defmt::warn!(
+                                "provisioning: failed to clear USB-C downstream route from EEPROM U21: {:?}",
+                                defmt::Debug2Format(&err)
+                            );
+                            false
+                        }
+                    };
+                let power_cleared =
+                    match provisioning::clear_power_config(telemetry_sampler.i2c_mut()).await {
+                        Ok(()) => true,
+                        Err(err) => {
+                            defmt::warn!(
+                                "provisioning: failed to clear power config from EEPROM U21: {:?}",
+                                defmt::Debug2Format(&err)
+                            );
+                            false
+                        }
+                    };
+
+                if route_cleared {
+                    usb_c_downstream_route = default_route;
+                    usb_c_downstream_persisted = false;
+                } else {
+                    match usb_c_downstream_route {
+                        provisioning::UsbCDownstreamRoute::Mcu => {
+                            let _ = p1_esp.set_low();
+                        }
+                        provisioning::UsbCDownstreamRoute::UsbC => {
+                            let _ = p1_esp.set_high();
+                        }
+                    }
+                }
+
+                if power_cleared {
+                    power_config = default_power_config;
+                    power_config_persisted = false;
+                    sw2303_profile_applied = false;
+                    sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
+                    sw2303_recontract_pending =
+                        capability_changed && matches!(port_usb_c.power, PowerState::On);
+                    last_sw2303_profile_attempt = None;
+                    last_sw2303_path_control = None;
+                    sw2303_stable_reads = 0;
+                    last_valid_sw2303_request = None;
+                    last_request = None;
+                    last_fast_protocol = None;
+                }
+
+                if matches!(port_usb_c.power, PowerState::On)
+                    && matches!(port_usb_c.data, DataState::Connected)
+                {
+                    let _ = p2_ced.set_low();
+                }
+
+                if route_cleared || power_cleared {
+                    {
+                        let mut guard = api_state.lock().await;
+                        guard.hub.usb_c_downstream_route = usb_c_downstream_route;
+                        guard.hub.usb_c_downstream_persisted = usb_c_downstream_persisted;
+                        guard.power.config = power_config;
+                        guard.power.persisted = power_config_persisted;
+                        guard.power.last_path_control = last_sw2303_path_control;
+                    }
+                }
+
+                if route_cleared && power_cleared {
+                    let _ = ui
+                        .show_message_card(
+                            reset_now,
+                            "SETTINGS RESET",
+                            "OTHER CLEARED",
+                            "WIFI KEPT",
+                            TOAST_OK_RAW,
+                            Duration::from_millis(TOAST_MS),
+                        )
+                        .await;
+                    prompt_tone.notify(SoundEvent::ActionOk);
+                    SETTINGS_RESET_RESULT.signal(SettingsResetResult::Complete);
+                    info!("provisioning: non-Wi-Fi settings cleared from EEPROM U21");
+                } else if route_cleared || power_cleared {
+                    let _ = ui
+                        .show_message_card(
+                            reset_now,
+                            "SETTINGS RESET",
+                            "PARTIAL CLEAR",
+                            "CHECK SETTINGS",
+                            TOAST_ERR_RAW,
+                            Duration::from_millis(TOAST_MS),
+                        )
+                        .await;
+                    prompt_tone.notify(SoundEvent::ActionFail);
+                    SETTINGS_RESET_RESULT.signal(SettingsResetResult::Partial);
+                } else {
+                    let _ = ui
+                        .show_message_card(
+                            reset_now,
+                            "SETTINGS RESET",
+                            "EEPROM FAIL",
+                            "NOT CLEARED",
+                            TOAST_ERR_RAW,
+                            Duration::from_millis(TOAST_MS),
+                        )
+                        .await;
+                    prompt_tone.notify(SoundEvent::ActionFail);
+                    SETTINGS_RESET_RESULT.signal(SettingsResetResult::Failed);
+                }
+                button_fast_loop_until =
+                    Some(Instant::now() + Duration::from_millis(POWER_SWITCH_GUARD_MS));
+            }
+        }
+        #[cfg(feature = "net_http")]
+        {
             let route_now = Instant::now();
             let mut pending_route = None;
             {

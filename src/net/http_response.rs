@@ -300,11 +300,37 @@ pub async fn try_set_power_config(
             return Err(ApiActionError::Busy);
         }
     }
-    if guard.pending.power_config.is_some() {
+    if guard.pending.power_config.is_some() || guard.pending.settings_reset.is_some() {
         return Err(ApiActionError::Busy);
     }
     crate::reset_power_config_result();
     guard.pending.power_config = Some(command);
+    Ok(())
+}
+
+pub async fn try_reset_settings(
+    api_state: &'static ApiSharedMutex,
+    scope: ApiSettingsResetScope,
+    owner: Option<u32>,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    let now = uptime_ms();
+    if let Some(lock) = guard.power.lock {
+        if lock.expires_at_ms <= now {
+            guard.power.lock = None;
+        } else if owner != Some(lock.owner) {
+            return Err(ApiActionError::Busy);
+        }
+    }
+    if guard.ports.port_c.state.busy
+        || guard.pending.usb_c_downstream_route.is_some()
+        || guard.pending.power_config.is_some()
+        || guard.pending.settings_reset.is_some()
+    {
+        return Err(ApiActionError::Busy);
+    }
+    crate::reset_settings_reset_result();
+    guard.pending.settings_reset = Some(scope);
     Ok(())
 }
 
@@ -320,7 +346,9 @@ pub async fn try_set_action(
     };
 
     if port.state.busy
-        || (port_id == ApiPortId::PortC && guard.pending.usb_c_downstream_route.is_some())
+        || (port_id == ApiPortId::PortC
+            && (guard.pending.usb_c_downstream_route.is_some()
+                || guard.pending.settings_reset.is_some()))
     {
         return Err(ApiActionError::Busy);
     }
@@ -342,7 +370,10 @@ pub async fn try_set_usb_c_downstream_route(
     route: UsbCDownstreamRoute,
 ) -> Result<(), ApiActionError> {
     let mut guard = api_state.lock().await;
-    if guard.ports.port_c.state.busy || guard.pending.usb_c_downstream_route.is_some() {
+    if guard.ports.port_c.state.busy
+        || guard.pending.usb_c_downstream_route.is_some()
+        || guard.pending.settings_reset.is_some()
+    {
         return Err(ApiActionError::Busy);
     }
     crate::reset_usb_c_route_result();

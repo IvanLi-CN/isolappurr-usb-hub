@@ -60,6 +60,13 @@ const meta: Meta<typeof DeviceInfoPanel> = {
       ok: true,
       value: { accepted: true, reboot_required: false },
     }),
+    resetSettings: async (scope) => ({
+      ok: true,
+      value:
+        scope === "wifi"
+          ? { accepted: true, scope, reboot_required: false }
+          : { accepted: true, scope, wifi_preserved: true },
+    }),
     rebootDevice: async () => ({ ok: true, value: { accepted: true } }),
     usbCDownstreamRoute: "usb_c",
     usbCDownstreamPersisted: true,
@@ -214,6 +221,39 @@ export const NarrowWifiConfig: Story = {
     transport: "web_serial",
     wifiManagementTransport: "web_serial",
     loadWifiConfig: async () => ({ ok: true, value: mockWifiConfigured }),
+  },
+};
+
+export const ResetSettingsHttpOnly: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const resetButtons = await canvas.findAllByRole("button", {
+      name: "Reset",
+    });
+    await expect(resetButtons[0]).toBeDisabled();
+    await expect(resetButtons[1]).toBeEnabled();
+    await expect(
+      canvas.getByText(/Wi-Fi reset is disabled on Wi-Fi\/LAN/),
+    ).toBeVisible();
+  },
+};
+
+export const ResetSettingsUsbFlow: Story = {
+  args: {
+    transport: "local_usb",
+    wifiManagementTransport: "local_usb",
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const resetButtons = await canvas.findAllByRole("button", {
+      name: "Reset",
+    });
+    await userEvent.click(resetButtons[1]);
+    await expect(
+      canvas.getByText(/Confirm this reset for other/),
+    ).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Confirm" }));
+    await expect(await canvas.findByText(/Other settings reset/)).toBeVisible();
   },
 };
 

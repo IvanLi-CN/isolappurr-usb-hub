@@ -5,6 +5,8 @@ import type {
   PowerConfigResponse,
   RebootResponse,
   Result,
+  SettingsResetResponse,
+  SettingsResetScope,
   WifiConfigInput,
   WifiConfigResponse,
   WifiMutationResponse,
@@ -62,6 +64,10 @@ export type DeviceRuntimeContextValue = {
     input: WifiConfigInput,
   ) => Promise<Result<WifiMutationResponse>>;
   clearWifiConfig: (deviceId: string) => Promise<Result<WifiMutationResponse>>;
+  resetSettings: (
+    deviceId: string,
+    scope: SettingsResetScope,
+  ) => Promise<Result<SettingsResetResponse>>;
   rebootDevice: (deviceId: string) => Promise<Result<RebootResponse>>;
   powerConfig: (deviceId: string) => Promise<Result<PowerConfigResponse>>;
   savePowerConfig: (

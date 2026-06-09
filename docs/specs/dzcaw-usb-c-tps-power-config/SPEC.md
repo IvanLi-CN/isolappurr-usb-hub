@@ -43,6 +43,9 @@ temporary firmware edits.
   - `force`: force-open unconditionally.
 - HTTP, Web Serial, and Local USB MUST expose config get, config set, defaults,
   and lock commands.
+- Device-level `settings.reset scope=other` MUST erase the persisted power
+  config EEPROM record, restore the runtime config to the full SW2303 defaults,
+  report `persisted=false`, and preserve the Wi-Fi EEPROM record.
 - Host lock MUST use a TTL heartbeat. A host holding the lock MAY refresh it;
   other hosts MUST be rejected until the lock expires or is released.
 - Local advanced controls MUST be blocked while a host lock is active, except
@@ -73,6 +76,10 @@ temporary firmware edits.
 - Given the GC9307 settings menu, when the owner opens Power Advanced, then the
   screen shows mode, manual voltage/current, and path policy; a second confirm
   toggles auto-follow/manual TPS through the same pending EEPROM transaction.
+- Given a saved power config exists, when Web, Local USB, or CLI runs
+  `settings.reset scope=other`, then the power config record is erased, runtime
+  power config returns to defaults, the API reports `persisted=false`, and Wi-Fi
+  credentials remain configured.
 
 ## Milestones
 

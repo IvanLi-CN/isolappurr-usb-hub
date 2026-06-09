@@ -659,6 +659,82 @@ async fn handle_api_request(
         return Ok(());
     }
 
+    if method == "POST" && path == "/api/v1/settings/reset" {
+        let Some(scope) = parse_settings_reset_scope(query) else {
+            write_api_error(
+                socket,
+                "400 Bad Request",
+                allow_origin,
+                "bad_request",
+                "missing or invalid scope",
+                false,
+            )
+            .await?;
+            return Ok(());
+        };
+        if scope == "wifi" {
+            write_api_error(
+                socket,
+                "403 Forbidden",
+                allow_origin,
+                "unsafe_transport",
+                "Wi-Fi settings reset requires Web Serial or Local USB",
+                false,
+            )
+            .await?;
+            return Ok(());
+        }
+
+        let owner = parse_owner_query(query);
+        match try_reset_settings(api_state, ApiSettingsResetScope::Other, owner).await {
+            Ok(()) => match crate::wait_settings_reset_result().await {
+                crate::SettingsResetResult::Complete => {
+                    write_json_response(
+                        socket,
+                        "200 OK",
+                        allow_origin,
+                        "{\"accepted\":true,\"scope\":\"other\",\"wifi_preserved\":true}",
+                    )
+                    .await?;
+                }
+                crate::SettingsResetResult::Partial => {
+                    write_api_error(
+                            socket,
+                            "500 Internal Server Error",
+                            allow_origin,
+                            "eeprom_failed",
+                            "Non-Wi-Fi settings were partially cleared; refresh settings before retrying",
+                            true,
+                        )
+                        .await?;
+                }
+                crate::SettingsResetResult::Failed => {
+                    write_api_error(
+                        socket,
+                        "500 Internal Server Error",
+                        allow_origin,
+                        "eeprom_failed",
+                        "Non-Wi-Fi settings could not be cleared from EEPROM U21",
+                        true,
+                    )
+                    .await?;
+                }
+            },
+            Err(ApiActionError::Busy) => {
+                write_api_error(
+                    socket,
+                    "409 Conflict",
+                    allow_origin,
+                    "busy",
+                    "settings reset is busy or locked",
+                    true,
+                )
+                .await?;
+            }
+        }
+        return Ok(());
+    }
+
     if method == "POST" && path == "/api/v1/reboot" {
         write_api_error(
             socket,
@@ -726,6 +802,20 @@ fn parse_usb_c_downstream_route(query: &str) -> Option<UsbCDownstreamRoute> {
         return match value {
             "mcu" => Some(UsbCDownstreamRoute::Mcu),
             "usb_c" => Some(UsbCDownstreamRoute::UsbC),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn parse_settings_reset_scope(query: &str) -> Option<&str> {
+    for part in query.split('&') {
+        let (key, value) = part.split_once('=')?;
+        if key != "scope" {
+            continue;
+        }
+        return match value {
+            "wifi" | "other" => Some(value),
             _ => None,
         };
     }

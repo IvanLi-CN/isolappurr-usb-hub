@@ -119,6 +119,17 @@ static USB_C_ROUTE_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new()
 static POWER_CONFIG_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
 #[cfg(feature = "net_http")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingsResetResult {
+    Complete,
+    Partial,
+    Failed,
+}
+
+#[cfg(feature = "net_http")]
+static SETTINGS_RESET_RESULT: Signal<CriticalSectionRawMutex, SettingsResetResult> = Signal::new();
+
+#[cfg(feature = "net_http")]
 static WIFI_CREDENTIALS_CACHE: Mutex<RefCell<Option<provisioning::WifiCredentials>>> =
     Mutex::new(RefCell::new(None));
 

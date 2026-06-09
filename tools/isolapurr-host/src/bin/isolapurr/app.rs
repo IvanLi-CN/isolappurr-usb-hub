@@ -44,6 +44,26 @@ async fn main() -> anyhow::Result<()> {
                         .await?
                 }
             },
+            Command::Settings { command } => match command {
+                SettingsCommand::Reset {
+                    selector,
+                    scope,
+                    yes,
+                } => {
+                    if !cli.json && !yes {
+                        confirm_settings_reset(scope.as_str())?;
+                    }
+                    request_selected(
+                        &client,
+                        &devd,
+                        selector,
+                        Method::POST,
+                        "/settings/reset",
+                        Some(json!({"scope": scope.as_str()})),
+                    )
+                    .await?
+                }
+            },
             Command::Ports { selector, command } => {
                 handle_ports(&client, &devd, selector, command).await?
             }

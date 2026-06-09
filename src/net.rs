@@ -307,11 +307,25 @@ pub enum ApiPowerConfigCommand {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiSettingsResetScope {
+    Other,
+}
+
+impl ApiSettingsResetScope {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Other => "other",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ApiPendingActions {
     pub port_a: Option<ApiPortAction>,
     pub port_c: Option<ApiPortAction>,
     pub usb_c_downstream_route: Option<UsbCDownstreamRoute>,
     pub power_config: Option<ApiPowerConfigCommand>,
+    pub settings_reset: Option<ApiSettingsResetScope>,
 }
 
 impl ApiPendingActions {
@@ -321,6 +335,7 @@ impl ApiPendingActions {
             port_c: None,
             usb_c_downstream_route: None,
             power_config: None,
+            settings_reset: None,
         }
     }
 }
