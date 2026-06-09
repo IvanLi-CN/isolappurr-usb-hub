@@ -14,7 +14,9 @@ import type {
 import type { StoredDevice } from "../domain/devices";
 import {
   devdLocalUsbDeviceIdFromBaseUrl,
+  type JsonlRequest,
   LocalUsbAgentHttpError,
+  nextJsonlRequestId,
 } from "../domain/hardwareConsole";
 import type {
   HubState,
@@ -221,6 +223,118 @@ export function orderedDeviceTransports({
         webSerialLinked ? "web_serial" : null,
         localUsbLinked ? "local_usb" : null,
       ]);
+}
+
+export function resolveOrderedDeviceTransports({
+  deviceId,
+  devices,
+  runtime,
+  preferred,
+  localUsbPortPath,
+  hasLocalUsbLink,
+  hasWebSerialLink,
+}: {
+  deviceId: string;
+  devices: StoredDevice[];
+  runtime: DeviceRuntime | null | undefined;
+  preferred: DeviceTransport | null | undefined;
+  localUsbPortPath: string | null | undefined;
+  hasLocalUsbLink: boolean;
+  hasWebSerialLink: boolean;
+}): DeviceTransport[] {
+  const stored = devices.find((device) => device.id === deviceId);
+  const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
+  const httpLinked =
+    !!stored?.transports?.httpBaseUrl ||
+    (stored ? !localUsbDeviceIdForDevice(stored) : false);
+  const localUsbLinked =
+    Boolean(localUsbPortPath) || hasLocalUsbLink || Boolean(devdDeviceId);
+  return orderedDeviceTransports({
+    preferred,
+    runtimeTransport: runtime?.transport ?? null,
+    channelLastOkAt: runtime
+      ? {
+          http: runtime.channels.http.lastOkAt,
+          web_serial: runtime.channels.web_serial.lastOkAt,
+          local_usb: runtime.channels.local_usb.lastOkAt,
+        }
+      : null,
+    httpLinked,
+    localUsbLinked,
+    webSerialLinked: hasWebSerialLink,
+    preferLocalUsbFirst: Boolean(devdDeviceId),
+  });
+}
+
+const WIFI_CLEAR_VERIFY_DELAY_MS = 500;
+const WIFI_CLEAR_VERIFY_RETRIES = 10;
+
+export type JsonlEnvelope<T> = {
+  ok: boolean;
+  result?: T;
+  error?: { code: string; message: string; retryable: boolean };
+};
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isWifiClearLikeRequest(
+  method: string,
+  params?: Record<string, unknown>,
+): boolean {
+  return (
+    method === "wifi.clear" ||
+    (method === "settings.reset" && params?.scope === "wifi")
+  );
+}
+
+function wifiConfigIsCleared(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const wifi = value as Record<string, unknown>;
+  return wifi.configured === false && wifi.psk_configured === false;
+}
+
+function wifiClearLikeSuccessValue(
+  method: string,
+): WifiMutationResponse | SettingsResetResponse {
+  if (method === "settings.reset") {
+    return { accepted: true, scope: "wifi", reboot_required: false };
+  }
+  return { accepted: true, reboot_required: false };
+}
+
+export async function recoverWifiClearLikeTimeout<T>(
+  send: (request: JsonlRequest) => Promise<unknown>,
+  method: string,
+  params?: Record<string, unknown>,
+): Promise<Result<T> | null> {
+  if (!isWifiClearLikeRequest(method, params)) {
+    return null;
+  }
+  for (let attempt = 0; attempt < WIFI_CLEAR_VERIFY_RETRIES; attempt += 1) {
+    await delayMs(WIFI_CLEAR_VERIFY_DELAY_MS);
+    try {
+      const response = await send({
+        id: nextJsonlRequestId(),
+        method: "wifi.get",
+        timeoutMs: 1_000,
+      });
+      const envelope = response as JsonlEnvelope<WifiConfigResponse>;
+      const value = envelope?.result ?? response;
+      if (wifiConfigIsCleared(value)) {
+        return {
+          ok: true,
+          value: wifiClearLikeSuccessValue(method) as T,
+        };
+      }
+    } catch {
+      // Keep polling until the transport reports the cleared state or retries expire.
+    }
+  }
+  return null;
 }
 
 export function isDeviceInfoResponse(
