@@ -73,6 +73,15 @@ mod power_output_tests {
         .expect("settings reset endpoint should map");
         assert_eq!(path, "/api/v1/settings/reset?scope=other");
         assert!(body.is_none());
+
+        let (_, path, body) = map_http_endpoint(
+            Method::POST,
+            "/settings/reset",
+            Some(json!({"scope": "other", "owner": 42})),
+        )
+        .expect("settings reset endpoint with owner should map");
+        assert_eq!(path, "/api/v1/settings/reset?scope=other&owner=42");
+        assert!(body.is_none());
     }
 
     #[test]

@@ -365,11 +365,16 @@ fn map_http_endpoint(
                 .and_then(|body| body.get("scope"))
                 .and_then(Value::as_str)
                 .ok_or_else(|| anyhow!("scope is required"))?;
-            (
-                Method::POST,
-                format!("/api/v1/settings/reset?scope={scope}"),
-                None,
-            )
+            let owner = body
+                .as_ref()
+                .and_then(|body| body.get("owner"))
+                .and_then(Value::as_u64)
+                .filter(|owner| *owner != 0);
+            let path = match owner {
+                Some(owner) => format!("/api/v1/settings/reset?scope={scope}&owner={owner}"),
+                None => format!("/api/v1/settings/reset?scope={scope}"),
+            };
+            (Method::POST, path, None)
         }
         ("GET", "/ports") => (method, "/api/v1/ports".to_string(), body),
         ("GET", "/diagnostics") => (method, "/api/v1/pd-diagnostics".to_string(), body),
