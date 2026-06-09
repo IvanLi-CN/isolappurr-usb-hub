@@ -317,7 +317,10 @@ async fn settings_reset(
         &state,
         &id,
         "settings.reset",
-        Some(json!({"scope": req.scope, "owner": req.owner})),
+        Some(json!({
+            "scope": req.scope,
+            "owner": req.owner,
+        })),
     )
     .await
     {
