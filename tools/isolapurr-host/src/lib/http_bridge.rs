@@ -1,3 +1,6 @@
+#[path = "settings_reset_bridge.rs"]
+mod settings_reset_bridge;
+
 pub async fn serve_http_bridge(config: DevdConfig) -> anyhow::Result<()> {
     if !config.bind.ip().is_loopback() {
         return Err(anyhow!(
@@ -28,7 +31,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             "/api/v1/devices/{id}/wifi",
             get(wifi_get).post(wifi_set).delete(wifi_clear),
         )
-        .route("/api/v1/devices/{id}/settings/reset", post(settings_reset))
+        .route(
+            "/api/v1/devices/{id}/settings/reset",
+            post(settings_reset_bridge::settings_reset),
+        )
         .route("/api/v1/devices/{id}/ports", get(device_ports))
         .route(
             "/api/v1/devices/{id}/ports/{port_id}/power",
@@ -290,40 +296,6 @@ async fn wifi_clear(
         return error_from_anyhow(err);
     }
     match usb_jsonl_request(&state, &id, "wifi.clear", None).await {
-        Ok(value) => Json(redact_sensitive(&value)).into_response(),
-        Err(err) => error_from_anyhow(err),
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct SettingsResetRequest {
-    scope: String,
-    owner: Option<u32>,
-}
-
-async fn settings_reset(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    Json(req): Json<SettingsResetRequest>,
-) -> Response {
-    if let Err(response) = require_auth(&headers, &state) {
-        return *response;
-    }
-    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
-        return error_from_anyhow(err);
-    }
-    match usb_jsonl_request(
-        &state,
-        &id,
-        "settings.reset",
-        Some(json!({
-            "scope": req.scope,
-            "owner": req.owner,
-        })),
-    )
-    .await
-    {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }

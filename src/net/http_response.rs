@@ -323,6 +323,7 @@ pub async fn try_reset_settings(
         }
     }
     if guard.ports.port_c.state.busy
+        || guard.pending.port_c.is_some()
         || guard.pending.usb_c_downstream_route.is_some()
         || guard.pending.power_config.is_some()
         || guard.pending.settings_reset.is_some()
