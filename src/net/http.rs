@@ -810,7 +810,9 @@ fn parse_usb_c_downstream_route(query: &str) -> Option<UsbCDownstreamRoute> {
 
 fn parse_settings_reset_scope(query: &str) -> Option<&str> {
     for part in query.split('&') {
-        let (key, value) = part.split_once('=')?;
+        let Some((key, value)) = part.split_once('=') else {
+            continue;
+        };
         if key != "scope" {
             continue;
         }
