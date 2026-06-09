@@ -60,7 +60,9 @@ const DATA_DISCONNECT_MS: u64 = 250;
 const TOAST_MS: u64 = 1500;
 const POWER_SWITCH_GUARD_MS: u64 = 350;
 #[cfg(feature = "net_http")]
-const USB_C_ROUTE_SETTLE_MS: u64 = 30;
+// Keep CH442E disconnected long enough for host USB stacks to observe a real
+// detach/attach cycle when the USB-C route returns to the MCU console path.
+const USB_C_ROUTE_SETTLE_MS: u64 = 250;
 #[cfg(feature = "net_http")]
 const LEDD_SAMPLE_MS: u64 = 1_000;
 #[cfg(feature = "net_http")]

@@ -232,20 +232,14 @@ async fn dispatch_ipc_request(
             let req: DeviceIdRequest = serde_json::from_value(params)?;
             require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
-                &usb_jsonl_request(state, &req.device_id, "wifi.clear", None).await?,
+                &usb_wifi_clear_request(state, &req.device_id).await?,
             ))
         }
         "device.settings.reset" => {
             let req: DeviceSettingsResetRequest = serde_json::from_value(params)?;
             require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
-                &usb_jsonl_request(
-                    state,
-                    &req.device_id,
-                    "settings.reset",
-                    Some(json!({"scope": req.scope, "owner": req.owner})),
-                )
-                .await?,
+                &usb_settings_reset_request(state, &req.device_id, &req.scope, req.owner).await?,
             ))
         }
         "device.ports.get" => {

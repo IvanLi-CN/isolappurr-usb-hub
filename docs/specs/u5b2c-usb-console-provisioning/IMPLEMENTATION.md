@@ -11,7 +11,7 @@
 
 ## Coverage
 
-- Firmware USB JSONL: implemented for `info`, `ports.get`, `port.power_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, and `reboot`.
+- Firmware USB JSONL: implemented for `info`, `ports.get`, `port.power_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `settings.reset`, and `reboot`.
 - Firmware USB JSONL rejects malformed port actions instead of defaulting to a port or power state.
 - Local USB ESP32 port filtering accepts ESP32-S3 USB Serial/JTAG by VID/PID across macOS, Windows, and Linux path naming, while still excluding Bluetooth/debug-console noise.
 - Firmware Wi-Fi HTTP channel: implemented for `info`, `ports.get`, port power/replug actions, and `wifi.get`. HTTP rejects `wifi.set`, `wifi.clear`, and Wi-Fi apply `reboot` with `unsafe_transport` because Wi-Fi configuration changes require Web Serial or Local USB.
@@ -41,8 +41,11 @@
 - `cd web && bun run build-storybook`
 - `cd desktop/src-tauri && cargo test`
 - `just --list`
+- `just host-tools-build`
+- `just host-tools-test`
 - GitHub Actions pass for Firmware, Web quality gates, Deploy web build, Dependency Review, and Desktop macOS/Windows/Linux/Linux ARM/Windows ARM packaging.
 - Local USB hardware flash: generated an ESP32-S3 app `.bin` with `espflash save-image`, flashed it through `/api/v1/firmware/flash` at `0x10000`, and read back `info` from `/api/v1/serial/request`.
 - Web Serial hardware flash: selected the saved device's current Web Serial channel from the Hardware page, wrote the ESP32-S3 app `.bin` at `0x10000`, did not open the Add device/browser serial chooser during update, restored the Web Serial channel after reboot, and re-read `info` for `device_id=f293cc`.
 - Web runtime hardware validation: an existing Wi-Fi device with the same `device_id` connected over Web Serial, promoted Web Serial as primary, updated telemetry without adding a duplicate list entry, and displayed connection-channel badges in the device list.
+- Web reset hardware validation: served `web/dist` from `isolapurr-devd bridge-http`, opened the Device Hardware page against a Local USB-backed saved device, seeded saved Wi-Fi credentials plus non-default USB-C route and manual TPS state, then verified `Reset other settings` restored runtime defaults while preserving Wi-Fi and `Reset Wi-Fi` cleared credentials without re-persisting power or route settings.
 - Storybook visual evidence refreshed from `Dialogs/AddDeviceDialog / WebSerialSetup`, `Dialogs/AddDeviceDialog / LocalUsbSetup`, `Panels/DeviceInfoPanel / WebSerialFlashing`, and `Cards/DeviceCard / ConnectedAndHistory`.

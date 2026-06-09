@@ -40,6 +40,7 @@ import {
   type WifiMutationResponse,
 } from "../domain/deviceApi";
 import {
+  type JsonlRequest,
   nextJsonlRequestId,
   sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
@@ -72,9 +73,9 @@ import {
   isDeviceInfoResponse,
   localUsbDeviceIdForDevice,
   localUsbErrorToDeviceApiError,
+  orderedDeviceTransports,
   shortApiError,
   shouldResetLocalUsbConnectionCache,
-  uniqueTransports,
 } from "./device-runtime-support";
 import { useDevices } from "./devices-store";
 
@@ -84,6 +85,7 @@ export type {
 } from "./device-runtime-support";
 export {
   localUsbErrorToDeviceApiError,
+  orderedDeviceTransports,
   shouldResetLocalUsbConnectionCache,
 } from "./device-runtime-support";
 
@@ -92,6 +94,8 @@ const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
 );
 
 const OFFLINE_THRESHOLD_MS = 10_000;
+const WIFI_CLEAR_VERIFY_DELAY_MS = 500;
+const WIFI_CLEAR_VERIFY_RETRIES = 10;
 
 type JsonlEnvelope<T> = {
   id?: number | string | null;
@@ -99,6 +103,68 @@ type JsonlEnvelope<T> = {
   result?: T;
   error?: { code: string; message: string; retryable: boolean };
 };
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isWifiClearLikeRequest(
+  method: string,
+  params?: Record<string, unknown>,
+): boolean {
+  return (
+    method === "wifi.clear" ||
+    (method === "settings.reset" && params?.scope === "wifi")
+  );
+}
+
+function wifiConfigIsCleared(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const wifi = value as Record<string, unknown>;
+  return wifi.configured === false && wifi.psk_configured === false;
+}
+
+function wifiClearLikeSuccessValue(
+  method: string,
+): WifiMutationResponse | SettingsResetResponse {
+  if (method === "settings.reset") {
+    return { accepted: true, scope: "wifi", reboot_required: false };
+  }
+  return { accepted: true, reboot_required: false };
+}
+
+async function recoverWifiClearLikeTimeout<T>(
+  send: (request: JsonlRequest) => Promise<unknown>,
+  method: string,
+  params?: Record<string, unknown>,
+): Promise<Result<T> | null> {
+  if (!isWifiClearLikeRequest(method, params)) {
+    return null;
+  }
+  for (let attempt = 0; attempt < WIFI_CLEAR_VERIFY_RETRIES; attempt += 1) {
+    await delayMs(WIFI_CLEAR_VERIFY_DELAY_MS);
+    try {
+      const response = await send({
+        id: nextJsonlRequestId(),
+        method: "wifi.get",
+        timeoutMs: 1_000,
+      });
+      const envelope = response as JsonlEnvelope<WifiConfigResponse>;
+      const value = envelope?.result ?? response;
+      if (wifiConfigIsCleared(value)) {
+        return {
+          ok: true,
+          value: wifiClearLikeSuccessValue(method) as T,
+        };
+      }
+    } catch {
+      // Keep polling until the transport reports the cleared state or retries expire.
+    }
+  }
+  return null;
+}
 
 export function DeviceRuntimeProvider({
   children,
@@ -214,6 +280,7 @@ export function DeviceRuntimeProvider({
       const queued = previous.catch(() => undefined).then(() => current);
       localUsbRequestQueues.current[deviceId] = queued;
       await previous.catch(() => undefined);
+      let caughtError: unknown = null;
       try {
         const request = { id: nextJsonlRequestId(), method, params };
         const response =
@@ -239,20 +306,36 @@ export function DeviceRuntimeProvider({
           },
         };
       } catch (err) {
-        if (shouldResetLocalUsbConnectionCache(err)) {
-          localUsbAgent.current = null;
-          delete localUsbPortByDevice.current[deviceId];
-        }
-        return {
-          ok: false,
-          error: localUsbErrorToDeviceApiError(err),
-        };
+        caughtError = err;
       } finally {
         releaseQueue();
         if (localUsbRequestQueues.current[deviceId] === queued) {
           delete localUsbRequestQueues.current[deviceId];
         }
       }
+      const recovered = await recoverWifiClearLikeTimeout<T>(
+        async (request) =>
+          target.kind === "devd_device"
+            ? await sendDevdLocalUsbJsonlRequest(
+                agent,
+                target.deviceId,
+                request,
+              )
+            : await sendLocalUsbJsonlRequest(agent, target.portPath, request),
+        method,
+        params,
+      );
+      if (recovered) {
+        return recovered;
+      }
+      if (shouldResetLocalUsbConnectionCache(caughtError)) {
+        localUsbAgent.current = null;
+        delete localUsbPortByDevice.current[deviceId];
+      }
+      return {
+        ok: false,
+        error: localUsbErrorToDeviceApiError(caughtError),
+      };
     },
     [findLocalUsbTarget, getLocalUsbAgent],
   );
@@ -275,6 +358,7 @@ export function DeviceRuntimeProvider({
           id: nextJsonlRequestId(),
           method,
           params,
+          timeoutMs: isWifiClearLikeRequest(method, params) ? 8_000 : undefined,
         });
         const envelope = response as JsonlEnvelope<T>;
         if (envelope?.ok && envelope.result !== undefined) {
@@ -291,6 +375,14 @@ export function DeviceRuntimeProvider({
           },
         };
       } catch (err) {
+        const recovered = await recoverWifiClearLikeTimeout<T>(
+          async (request) => transport.request(request),
+          method,
+          params,
+        );
+        if (recovered) {
+          return recovered;
+        }
         forgetWebSerialDeviceTransport(deviceId);
         return {
           ok: false,
@@ -423,12 +515,6 @@ export function DeviceRuntimeProvider({
     (deviceId: string): DeviceTransport[] => {
       const preferred = preferredTransportByDevice.current[deviceId];
       const currentRuntime = runtimeById[deviceId];
-      const currentActive = preferred ?? currentRuntime?.transport;
-      const active =
-        currentActive &&
-        (preferred || currentRuntime?.channels[currentActive]?.lastOkAt)
-          ? currentActive
-          : null;
       const stored = devices.find((device) => device.id === deviceId);
       const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
       const httpLinked =
@@ -438,19 +524,22 @@ export function DeviceRuntimeProvider({
         !!localUsbPortByDevice.current[deviceId] ||
         !!getLocalUsbDeviceLink(deviceId) ||
         !!devdDeviceId;
-      return devdDeviceId
-        ? uniqueTransports([
-            active,
-            "local_usb",
-            httpLinked ? "http" : null,
-            "web_serial",
-          ])
-        : uniqueTransports([
-            active,
-            httpLinked ? "http" : null,
-            "web_serial",
-            localUsbLinked ? "local_usb" : null,
-          ]);
+      const webSerialLinked = !!getWebSerialDeviceTransport(deviceId);
+      return orderedDeviceTransports({
+        preferred,
+        runtimeTransport: currentRuntime?.transport ?? null,
+        channelLastOkAt: currentRuntime
+          ? {
+              http: currentRuntime.channels.http.lastOkAt,
+              web_serial: currentRuntime.channels.web_serial.lastOkAt,
+              local_usb: currentRuntime.channels.local_usb.lastOkAt,
+            }
+          : null,
+        httpLinked,
+        localUsbLinked,
+        webSerialLinked,
+        preferLocalUsbFirst: Boolean(devdDeviceId),
+      });
     },
     [devices, runtimeById],
   );

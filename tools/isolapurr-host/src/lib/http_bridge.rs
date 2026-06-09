@@ -295,7 +295,7 @@ async fn wifi_clear(
     if let Err(err) = require_compatible_project_firmware(&state, &id).await {
         return error_from_anyhow(err);
     }
-    match usb_jsonl_request(&state, &id, "wifi.clear", None).await {
+    match usb_wifi_clear_request(&state, &id).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }

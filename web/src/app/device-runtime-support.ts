@@ -178,6 +178,51 @@ export function uniqueTransports(
   return ordered;
 }
 
+export function orderedDeviceTransports({
+  preferred,
+  runtimeTransport,
+  channelLastOkAt,
+  httpLinked,
+  localUsbLinked,
+  webSerialLinked,
+  preferLocalUsbFirst,
+}: {
+  preferred: DeviceTransport | null | undefined;
+  runtimeTransport: DeviceTransport | null | undefined;
+  channelLastOkAt:
+    | Partial<Record<DeviceTransport, number | null>>
+    | null
+    | undefined;
+  httpLinked: boolean;
+  localUsbLinked: boolean;
+  webSerialLinked: boolean;
+  preferLocalUsbFirst: boolean;
+}): DeviceTransport[] {
+  const current = preferred ?? runtimeTransport;
+  const active =
+    current &&
+    channelLastOkAt?.[current] &&
+    ((current === "http" && httpLinked) ||
+      (current === "local_usb" && localUsbLinked) ||
+      (current === "web_serial" && webSerialLinked))
+      ? current
+      : null;
+
+  return preferLocalUsbFirst
+    ? uniqueTransports([
+        active,
+        localUsbLinked ? "local_usb" : null,
+        httpLinked ? "http" : null,
+        webSerialLinked ? "web_serial" : null,
+      ])
+    : uniqueTransports([
+        active,
+        httpLinked ? "http" : null,
+        webSerialLinked ? "web_serial" : null,
+        localUsbLinked ? "local_usb" : null,
+      ]);
+}
+
 export function isDeviceInfoResponse(
   value: unknown,
 ): value is DeviceInfoResponse {

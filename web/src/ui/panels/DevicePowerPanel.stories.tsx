@@ -91,6 +91,7 @@ type Story = StoryObj<typeof DevicePowerPanel>;
 
 export const Default: Story = {
   args: {
+    deviceKey: "bench-hub",
     deviceName: "Bench Hub",
     transportLabel: "local_usb",
     localAdvancedLocked: false,

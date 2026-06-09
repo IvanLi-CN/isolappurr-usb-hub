@@ -44,6 +44,7 @@ export function DevicePowerPage() {
 
       <DevicePowerPanel
         key={deviceId}
+        deviceKey={deviceId}
         deviceName={device.name}
         loadPowerConfig={() => runtime.powerConfig(deviceId)}
         localAdvancedLocked={false}

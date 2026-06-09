@@ -9,6 +9,7 @@ import type {
 const HEARTBEAT_MS = 8_000;
 
 type DevicePowerPanelProps = {
+  deviceKey: string;
   deviceName: string;
   transportLabel: string;
   localAdvancedLocked: boolean;
@@ -43,6 +44,18 @@ function badgeTone(enabled: boolean): string {
 
 function createLockOwner(): number {
   return Math.floor(Math.random() * 0x7fffffff) + 1;
+}
+
+const powerLockOwners = new Map<string, number>();
+
+function getStablePowerLockOwner(deviceKey: string): number {
+  const existing = powerLockOwners.get(deviceKey);
+  if (existing) {
+    return existing;
+  }
+  const owner = createLockOwner();
+  powerLockOwners.set(deviceKey, owner);
+  return owner;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -196,6 +209,7 @@ function UnitSliderField({
 }
 
 export function DevicePowerPanel({
+  deviceKey,
   deviceName,
   transportLabel,
   localAdvancedLocked,
@@ -213,7 +227,7 @@ export function DevicePowerPanel({
   const lockedRef = useRef(false);
   const loadPowerConfigRef = useRef(loadPowerConfig);
   const setPowerLockRef = useRef(setPowerLock);
-  const ownerRef = useRef(createLockOwner());
+  const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
 
   useEffect(() => {
     loadPowerConfigRef.current = loadPowerConfig;
