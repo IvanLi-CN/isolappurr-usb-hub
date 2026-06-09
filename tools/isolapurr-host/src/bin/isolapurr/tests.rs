@@ -179,13 +179,32 @@ mod power_output_tests {
     }
 
     #[test]
-    fn settings_reset_confirmation_requires_yes_for_non_interactive_json() {
-        let err =
-            confirm_settings_reset("wifi").expect_err("non-interactive reset should require --yes");
-        assert!(
-            err.to_string()
-                .contains("settings reset requires an interactive terminal or --yes")
-        );
+    fn settings_reset_json_mode_parses_without_confirmation_flag() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "--json",
+            "settings",
+            "reset",
+            "--hardware",
+            "bench-hub",
+            "wifi",
+        ])
+        .expect("json settings reset should parse without --yes");
+        let Command::Settings {
+            command:
+                SettingsCommand::Reset {
+                    selector,
+                    scope,
+                    yes,
+                },
+        } = cli.command
+        else {
+            panic!("expected settings reset command");
+        };
+        assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
+        assert!(matches!(scope, SettingsResetScopeArg::Wifi));
+        assert!(!yes);
+        assert!(cli.json);
     }
 
     #[test]

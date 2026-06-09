@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
                     scope,
                     yes,
                 } => {
-                    if !yes {
+                    if !cli.json && !yes {
                         confirm_settings_reset(scope.as_str())?;
                     }
                     request_selected(
