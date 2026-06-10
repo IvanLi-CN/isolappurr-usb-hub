@@ -382,6 +382,8 @@
     let mut power_config = PowerConfig::defaults();
     let mut last_sw2303_path_control: Option<Sw2303PathControl> = None;
     #[cfg(feature = "net_http")]
+    let mut settings_reset_inflight: Option<net::ApiSettingsResetScope> = None;
+    #[cfg(feature = "net_http")]
     let net_handles =
         net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state, wifi_credentials);
     #[cfg(feature = "net_http")]

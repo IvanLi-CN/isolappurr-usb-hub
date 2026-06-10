@@ -967,6 +967,7 @@ export function DeviceInfoPanel({
       ) : null}
 
       <DeviceSettingsResetPanel
+        key={device.id}
         transport={transport}
         transportLabel={transportLabel(transport)}
         wifiCanManage={wifiCanManage}

@@ -46,12 +46,12 @@
         }
         #[cfg(feature = "net_http")]
         {
-            let pending_settings_reset = {
-                let mut guard = api_state.lock().await;
-                guard.pending.settings_reset.take()
-            };
+            if settings_reset_inflight.is_none() {
+                let guard = api_state.lock().await;
+                settings_reset_inflight = guard.pending.settings_reset;
+            }
 
-            if let Some(net::ApiSettingsResetScope::Other) = pending_settings_reset {
+            if let Some(net::ApiSettingsResetScope::Other) = settings_reset_inflight {
                 let reset_now = Instant::now();
                 let default_route = provisioning::DEFAULT_USB_C_DOWNSTREAM_ROUTE;
                 let default_power_config = PowerConfig::defaults();
@@ -130,9 +130,10 @@
                     let _ = p2_ced.set_low();
                 }
 
-                if route_cleared || power_cleared {
-                    {
-                        let mut guard = api_state.lock().await;
+                {
+                    let mut guard = api_state.lock().await;
+                    guard.pending.settings_reset = None;
+                    if route_cleared || power_cleared {
                         guard.hub.usb_c_downstream_route = usb_c_downstream_route;
                         guard.hub.usb_c_downstream_persisted = usb_c_downstream_persisted;
                         guard.power.config = power_config;
@@ -182,6 +183,7 @@
                     prompt_tone.notify(SoundEvent::ActionFail);
                     SETTINGS_RESET_RESULT.signal(SettingsResetResult::Failed);
                 }
+                settings_reset_inflight = None;
                 button_fast_loop_until =
                     Some(Instant::now() + Duration::from_millis(POWER_SWITCH_GUARD_MS));
             }
