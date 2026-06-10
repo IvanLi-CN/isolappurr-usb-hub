@@ -53,6 +53,14 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST expose owner-facing power-config inspection, semantic USB-C source
   capability commands, and manual output mode controls through `isolapurr`
   over IPC without falling back to raw register editing UX.
+- MUST expose owner-facing device settings reset through `isolapurr settings
+  reset wifi|other`. Human mode must require explicit confirmation unless a
+  confirmation bypass flag is supplied; `--json` must return structured
+  success/error output.
+- MUST keep the reset safety boundary consistent across transports:
+  `settings reset wifi` is allowed only through Web Serial or Local USB,
+  while `settings reset other` may use any currently available device
+  transport and must preserve Wi-Fi credentials.
 - MUST treat saved hardware IDs and temporary devd targets as different
   selector classes with different usage scope.
 - MUST treat `--hardware <saved-id>` as the owner-facing selector for ordinary
@@ -87,6 +95,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr power output auto`
 - `isolapurr power source-capability set [--power-watts <1..100>] [--pd <true|false>] [--pps <true|false>] [--qc20 <true|false>] [--qc30 <true|false>] [--fcp <true|false>] [--afc <true|false>] [--scp <true|false>] [--pe20 <true|false>] [--bc12 <true|false>] [--sfcp <true|false>] [--fixed-pd-voltages <9000,12000,15000,20000|none>] [--pps3-limit-ma <3000|5000>] [--pd-pps-5a <true|false>] [--type-c-broadcast-ma <500|1500>] [--scp-limit-ma <2000|4000|5000>] [--fcp-afc-sfcp-limit-ma <2250|3250>]`
 - `isolapurr flash [--confirm-non-project-firmware]`, `isolapurr reset`, `isolapurr monitor`
+- `isolapurr settings reset wifi|other [--yes]`
 - `isolapurr diagnostics export`
 - `install-isolapurr-host.sh [--version <tag>] [--install-dir <dir>] [--force] [--dry-run]`
 - `install-isolapurr-host.ps1 [-Version <tag>] [-InstallDir <dir>] [-Force] [-DryRun]`
@@ -107,6 +116,7 @@ The IPC daemon protocol is newline-delimited JSON request/response. Requests inc
 - `device.status`, `device.session`, `device.wifi.get|set|clear`
 - `device.ports.get`, `device.port.power`, `device.port.replug`, `device.hub.route_set`
 - `device.power.config.get|set|defaults|lock|release`
+- `device.settings.reset`
 - `serial.lease.create`, `serial.lease.release`
 - `device.flash`, `device.reset`, `device.diagnostics`
 - `firmware.catalog.validate`
@@ -126,6 +136,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `POST /api/v1/devices/{id}/ports/{port_id}/power`
 - `POST /api/v1/devices/{id}/ports/{port_id}/replug`
 - `POST /api/v1/devices/{id}/hub/route`
+- `POST /api/v1/devices/{id}/settings/reset`
 - `GET|PUT /api/v1/devices/{id}/power/config`
 - `POST /api/v1/devices/{id}/power/config/defaults`
 - `POST /api/v1/devices/{id}/power/config/lock`
@@ -196,6 +207,15 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   request, when the CLI re-reads the saved config and finds the expected
   default profile, then it must treat the operation as success instead of
   surfacing a false failure.
+- Given the user runs `isolapurr settings reset other --json`, when the selected
+  device accepts the reset, then the CLI returns structured success with
+  `scope=other` and `wifi_preserved=true`.
+- Given the user runs `isolapurr settings reset wifi` from human mode without
+  `--yes`, when stdin is interactive, then the CLI requires a typed
+  confirmation before clearing Wi-Fi credentials.
+- Given the selected transport is Wi-Fi / LAN, when the user runs
+  `isolapurr settings reset wifi`, then the device-facing API rejects the
+  request as `unsafe_transport` and no Wi-Fi credentials are erased.
 - Given devd owns a Local USB session, when another devd client requests the same port during an exclusive flash/reset, then devd returns a busy error instead of opening the port concurrently.
 - Given a firmware catalog references an app image, when CLI/devd flashes a normal update, then the image hash, target, address, and identity are verified before writing.
 - Given first-time hardware lacks identity or is in download mode, when a user runs a full flash, then the CLI shows target/artifact evidence, requires a typed confirmation or explicit non-interactive confirmation flag, flashes the full artifact, and writes confirmed identity after reboot.

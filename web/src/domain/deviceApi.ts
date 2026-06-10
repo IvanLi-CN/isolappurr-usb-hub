@@ -55,6 +55,15 @@ export type WifiMutationResponse = {
   reboot_required: boolean;
 };
 
+export type SettingsResetScope = "wifi" | "other";
+
+export type SettingsResetResponse = {
+  accepted: true;
+  scope: SettingsResetScope;
+  reboot_required?: boolean;
+  wifi_preserved?: boolean;
+};
+
 export type RebootResponse = {
   accepted: true;
 };
@@ -377,6 +386,19 @@ export async function clearWifiConfig(
   return fetchJson<WifiMutationResponse>(baseUrl, "/api/v1/wifi/clear", {
     method: "POST",
   });
+}
+
+export async function resetSettings(
+  baseUrl: string,
+  scope: SettingsResetScope,
+  owner?: number,
+): Promise<Result<SettingsResetResponse>> {
+  const ownerQuery = owner === undefined ? "" : `&owner=${owner}`;
+  return fetchJson<SettingsResetResponse>(
+    baseUrl,
+    `/api/v1/settings/reset?scope=${scope}${ownerQuery}`,
+    { method: "POST" },
+  );
 }
 
 export async function rebootDevice(

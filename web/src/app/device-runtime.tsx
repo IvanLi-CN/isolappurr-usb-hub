@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-
 import {
   type DesktopAgent,
   tryBootstrapDesktopAgent,
@@ -26,7 +25,10 @@ import {
   type Result,
   rebootDevice,
   replugPort,
+  resetSettings as resetDeviceSettings,
   restorePowerDefaults,
+  type SettingsResetResponse,
+  type SettingsResetScope,
   setPortPower,
   setPowerConfig,
   setPowerLock,
@@ -65,13 +67,16 @@ import {
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
   type DeviceTransport,
+  getStablePowerLockOwner,
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
+  type JsonlEnvelope,
   localUsbDeviceIdForDevice,
   localUsbErrorToDeviceApiError,
+  recoverWifiClearLikeTimeout,
+  resolveOrderedDeviceTransports,
   shortApiError,
   shouldResetLocalUsbConnectionCache,
-  uniqueTransports,
 } from "./device-runtime-support";
 import { useDevices } from "./devices-store";
 
@@ -79,24 +84,12 @@ export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
-export {
-  localUsbErrorToDeviceApiError,
-  shouldResetLocalUsbConnectionCache,
-} from "./device-runtime-support";
 
 const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
   null,
 );
 
 const OFFLINE_THRESHOLD_MS = 10_000;
-
-type JsonlEnvelope<T> = {
-  id?: number | string | null;
-  ok: boolean;
-  result?: T;
-  error?: { code: string; message: string; retryable: boolean };
-};
-
 export function DeviceRuntimeProvider({
   children,
 }: {
@@ -212,37 +205,56 @@ export function DeviceRuntimeProvider({
       localUsbRequestQueues.current[deviceId] = queued;
       await previous.catch(() => undefined);
       try {
-        const request = { id: nextJsonlRequestId(), method, params };
-        const response =
-          target.kind === "devd_device"
-            ? await sendDevdLocalUsbJsonlRequest(
-                agent,
-                target.deviceId,
-                request,
-              )
-            : await sendLocalUsbJsonlRequest(agent, target.portPath, request);
-        const envelope = response as JsonlEnvelope<T>;
-        if (envelope?.ok && envelope.result !== undefined) {
-          return { ok: true, value: envelope.result };
+        let caughtError: unknown = null;
+        try {
+          const request = { id: nextJsonlRequestId(), method, params };
+          const response =
+            target.kind === "devd_device"
+              ? await sendDevdLocalUsbJsonlRequest(
+                  agent,
+                  target.deviceId,
+                  request,
+                )
+              : await sendLocalUsbJsonlRequest(agent, target.portPath, request);
+          const envelope = response as JsonlEnvelope<T>;
+          if (envelope?.ok && envelope.result !== undefined) {
+            return { ok: true, value: envelope.result };
+          }
+          return {
+            ok: false,
+            error: {
+              kind: "api_error",
+              status: 500,
+              code: envelope?.error?.code ?? "local_usb_error",
+              message: envelope?.error?.message ?? "Local USB request failed",
+              retryable: envelope?.error?.retryable ?? false,
+            },
+          };
+        } catch (err) {
+          caughtError = err;
         }
-        return {
-          ok: false,
-          error: {
-            kind: "api_error",
-            status: 500,
-            code: envelope?.error?.code ?? "local_usb_error",
-            message: envelope?.error?.message ?? "Local USB request failed",
-            retryable: envelope?.error?.retryable ?? false,
-          },
-        };
-      } catch (err) {
-        if (shouldResetLocalUsbConnectionCache(err)) {
+        const recovered = await recoverWifiClearLikeTimeout<T>(
+          async (request) =>
+            target.kind === "devd_device"
+              ? await sendDevdLocalUsbJsonlRequest(
+                  agent,
+                  target.deviceId,
+                  request,
+                )
+              : await sendLocalUsbJsonlRequest(agent, target.portPath, request),
+          method,
+          params,
+        );
+        if (recovered) {
+          return recovered;
+        }
+        if (shouldResetLocalUsbConnectionCache(caughtError)) {
           localUsbAgent.current = null;
           delete localUsbPortByDevice.current[deviceId];
         }
         return {
           ok: false,
-          error: localUsbErrorToDeviceApiError(err),
+          error: localUsbErrorToDeviceApiError(caughtError),
         };
       } finally {
         releaseQueue();
@@ -272,6 +284,11 @@ export function DeviceRuntimeProvider({
           id: nextJsonlRequestId(),
           method,
           params,
+          timeoutMs:
+            method === "wifi.clear" ||
+            (method === "settings.reset" && params?.scope === "wifi")
+              ? 8_000
+              : undefined,
         });
         const envelope = response as JsonlEnvelope<T>;
         if (envelope?.ok && envelope.result !== undefined) {
@@ -288,6 +305,14 @@ export function DeviceRuntimeProvider({
           },
         };
       } catch (err) {
+        const recovered = await recoverWifiClearLikeTimeout<T>(
+          async (request) => transport.request(request),
+          method,
+          params,
+        );
+        if (recovered) {
+          return recovered;
+        }
         forgetWebSerialDeviceTransport(deviceId);
         return {
           ok: false,
@@ -352,6 +377,13 @@ export function DeviceRuntimeProvider({
         if (method === "wifi.clear") {
           return clearWifiConfig(baseUrl) as Promise<Result<T>>;
         }
+        if (method === "settings.reset") {
+          return resetDeviceSettings(
+            baseUrl,
+            params?.scope as SettingsResetScope,
+            params?.owner === undefined ? undefined : Number(params.owner),
+          ) as Promise<Result<T>>;
+        }
         if (method === "reboot") {
           return rebootDevice(baseUrl) as Promise<Result<T>>;
         }
@@ -411,36 +443,15 @@ export function DeviceRuntimeProvider({
 
   const orderedTransports = useCallback(
     (deviceId: string): DeviceTransport[] => {
-      const preferred = preferredTransportByDevice.current[deviceId];
-      const currentRuntime = runtimeById[deviceId];
-      const currentActive = preferred ?? currentRuntime?.transport;
-      const active =
-        currentActive &&
-        (preferred || currentRuntime?.channels[currentActive]?.lastOkAt)
-          ? currentActive
-          : null;
-      const stored = devices.find((device) => device.id === deviceId);
-      const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
-      const httpLinked =
-        !!stored?.transports?.httpBaseUrl ||
-        (stored ? !localUsbDeviceIdForDevice(stored) : false);
-      const localUsbLinked =
-        !!localUsbPortByDevice.current[deviceId] ||
-        !!getLocalUsbDeviceLink(deviceId) ||
-        !!devdDeviceId;
-      return devdDeviceId
-        ? uniqueTransports([
-            active,
-            "local_usb",
-            httpLinked ? "http" : null,
-            "web_serial",
-          ])
-        : uniqueTransports([
-            active,
-            httpLinked ? "http" : null,
-            "web_serial",
-            localUsbLinked ? "local_usb" : null,
-          ]);
+      return resolveOrderedDeviceTransports({
+        deviceId,
+        devices,
+        runtime: runtimeById[deviceId],
+        preferred: preferredTransportByDevice.current[deviceId],
+        localUsbPortPath: localUsbPortByDevice.current[deviceId],
+        hasLocalUsbLink: Boolean(getLocalUsbDeviceLink(deviceId)),
+        hasWebSerialLink: Boolean(getWebSerialDeviceTransport(deviceId)),
+      });
     },
     [devices, runtimeById],
   );
@@ -751,6 +762,29 @@ export function DeviceRuntimeProvider({
         "wifi.clear",
         undefined,
         ["web_serial", "local_usb"],
+      );
+      if (res.ok) {
+        await refreshDevice(deviceId);
+      }
+      return res;
+    },
+    [refreshDevice, runDeviceCommand],
+  );
+
+  const resetSettings = useCallback(
+    async (
+      deviceId: string,
+      scope: SettingsResetScope,
+    ): Promise<Result<SettingsResetResponse>> => {
+      const preferred: DeviceTransport[] | undefined =
+        scope === "wifi" ? ["web_serial", "local_usb"] : undefined;
+      const res = await runDeviceCommand<SettingsResetResponse>(
+        deviceId,
+        "settings.reset",
+        scope === "other"
+          ? { scope, owner: getStablePowerLockOwner(deviceId) }
+          : { scope },
+        preferred,
       );
       if (res.ok) {
         await refreshDevice(deviceId);
@@ -1118,6 +1152,7 @@ export function DeviceRuntimeProvider({
       wifiConfig,
       saveWifiConfig,
       clearWifiConfig: clearWifi,
+      resetSettings,
       rebootDevice: reboot,
       powerConfig,
       savePowerConfig,
@@ -1136,6 +1171,7 @@ export function DeviceRuntimeProvider({
     reboot,
     refreshDevice,
     replug,
+    resetSettings,
     restoreDefaults,
     runtimeById,
     savePowerConfig,

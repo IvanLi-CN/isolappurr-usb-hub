@@ -206,6 +206,10 @@ fn map_devd_ipc_endpoint(
             "device.wifi.set"
         }
         ("DELETE", "wifi") => "device.wifi.clear",
+        ("POST", "settings/reset") => {
+            merge_body(params_map, body);
+            "device.settings.reset"
+        }
         ("GET", "ports") => "device.ports.get",
         ("GET", "power/config") => "device.power.config_get",
         ("PUT", "power/config") => {
@@ -355,6 +359,23 @@ fn map_http_endpoint(
         ("GET", "/wifi") => (method, "/api/v1/wifi".to_string(), body),
         ("POST", "/wifi") => (Method::POST, "/api/v1/wifi/set".to_string(), body),
         ("DELETE", "/wifi") => (Method::POST, "/api/v1/wifi/clear".to_string(), body),
+        ("POST", "/settings/reset") => {
+            let scope = body
+                .as_ref()
+                .and_then(|body| body.get("scope"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("scope is required"))?;
+            let owner = body
+                .as_ref()
+                .and_then(|body| body.get("owner"))
+                .and_then(Value::as_u64)
+                .filter(|owner| *owner != 0);
+            let path = match owner {
+                Some(owner) => format!("/api/v1/settings/reset?scope={scope}&owner={owner}"),
+                None => format!("/api/v1/settings/reset?scope={scope}"),
+            };
+            (Method::POST, path, None)
+        }
         ("GET", "/ports") => (method, "/api/v1/ports".to_string(), body),
         ("GET", "/diagnostics") => (method, "/api/v1/pd-diagnostics".to_string(), body),
         ("GET", "/power/config") => (method, "/api/v1/power/config".to_string(), body),

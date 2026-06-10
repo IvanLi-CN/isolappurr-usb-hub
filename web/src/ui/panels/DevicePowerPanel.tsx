@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { getStablePowerLockOwner } from "../../app/device-runtime-support";
 import type {
   PowerConfigInput,
   PowerConfigResponse,
@@ -9,6 +10,7 @@ import type {
 const HEARTBEAT_MS = 8_000;
 
 type DevicePowerPanelProps = {
+  deviceKey: string;
   deviceName: string;
   transportLabel: string;
   localAdvancedLocked: boolean;
@@ -39,10 +41,6 @@ function badgeTone(enabled: boolean): string {
   return enabled
     ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
     : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]";
-}
-
-function createLockOwner(): number {
-  return Math.floor(Math.random() * 0x7fffffff) + 1;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -196,6 +194,7 @@ function UnitSliderField({
 }
 
 export function DevicePowerPanel({
+  deviceKey,
   deviceName,
   transportLabel,
   localAdvancedLocked,
@@ -213,7 +212,7 @@ export function DevicePowerPanel({
   const lockedRef = useRef(false);
   const loadPowerConfigRef = useRef(loadPowerConfig);
   const setPowerLockRef = useRef(setPowerLock);
-  const ownerRef = useRef(createLockOwner());
+  const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
 
   useEffect(() => {
     loadPowerConfigRef.current = loadPowerConfig;

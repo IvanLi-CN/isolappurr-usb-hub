@@ -282,6 +282,98 @@ async fn handle_usb_jsonl_request(
         return body;
     }
 
+    if request.contains("\"method\":\"settings.reset\"")
+        || request.contains("\"method\": \"settings.reset\"")
+    {
+        let Some(scope) = extract_json_string(request, "scope") else {
+            write_jsonl_error(&mut body, id.as_str(), "bad_request", "missing scope", false);
+            return body;
+        };
+
+        match scope.as_str() {
+            "wifi" => {
+                if enqueue_wifi_provisioning(WifiProvisioningCommand::Clear).is_ok() {
+                    if wait_wifi_provisioning_result().await {
+                        let _ = write!(
+                            body,
+                            "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"scope\":\"wifi\",\"reboot_required\":false}}}}",
+                            id.as_str()
+                        );
+                    } else {
+                        write_jsonl_error(
+                            &mut body,
+                            id.as_str(),
+                            "provisioning_failed",
+                            "wifi credentials could not be cleared from EEPROM U21",
+                            true,
+                        );
+                    }
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "busy",
+                        "wifi provisioning command is already pending",
+                        true,
+                    );
+                }
+            }
+            "other" => {
+                let owner = extract_json_u32(request, "owner");
+                match net::try_reset_settings(api_state, net::ApiSettingsResetScope::Other, owner)
+                    .await
+                {
+                    Ok(()) => {
+                        match wait_settings_reset_result().await {
+                            SettingsResetResult::Complete => {
+                                let _ = write!(
+                                    body,
+                                    "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"scope\":\"other\",\"wifi_preserved\":true}}}}",
+                                    id.as_str()
+                                );
+                            }
+                            SettingsResetResult::Partial => {
+                                write_jsonl_error(
+                                    &mut body,
+                                    id.as_str(),
+                                    "eeprom_failed",
+                                    "non-Wi-Fi settings were partially cleared; refresh settings before retrying",
+                                    true,
+                                );
+                            }
+                            SettingsResetResult::Failed => {
+                                write_jsonl_error(
+                                    &mut body,
+                                    id.as_str(),
+                                    "eeprom_failed",
+                                    "non-Wi-Fi settings could not be cleared from EEPROM U21",
+                                    true,
+                                );
+                            }
+                        }
+                    }
+                    Err(net::ApiActionError::Busy) => {
+                        write_jsonl_error(
+                            &mut body,
+                            id.as_str(),
+                            "busy",
+                            "settings reset is busy or locked",
+                            true,
+                        );
+                    }
+                }
+            }
+            _ => write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "bad_request",
+                "scope must be wifi or other",
+                false,
+            ),
+        }
+        return body;
+    }
+
     if request.contains("\"method\":\"port.replug\"")
         || request.contains("\"method\": \"port.replug\"")
         || request.contains("\"method\":\"port.power_set\"")
@@ -513,6 +605,16 @@ pub(crate) async fn wait_power_config_result() -> bool {
 #[cfg(feature = "net_http")]
 pub(crate) fn reset_power_config_result() {
     POWER_CONFIG_RESULT.reset();
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) async fn wait_settings_reset_result() -> SettingsResetResult {
+    SETTINGS_RESET_RESULT.wait().await
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) fn reset_settings_reset_result() {
+    SETTINGS_RESET_RESULT.reset();
 }
 
 #[cfg(feature = "net_http")]

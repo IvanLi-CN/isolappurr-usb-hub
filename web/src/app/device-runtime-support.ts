@@ -5,6 +5,8 @@ import type {
   PowerConfigResponse,
   RebootResponse,
   Result,
+  SettingsResetResponse,
+  SettingsResetScope,
   WifiConfigInput,
   WifiConfigResponse,
   WifiMutationResponse,
@@ -12,12 +14,15 @@ import type {
 import type { StoredDevice } from "../domain/devices";
 import {
   devdLocalUsbDeviceIdFromBaseUrl,
+  type JsonlRequest,
   LocalUsbAgentHttpError,
+  nextJsonlRequestId,
 } from "../domain/hardwareConsole";
 import type {
   HubState,
   Port,
   PortId,
+  PortsResponse,
   UsbCDownstreamRoute,
 } from "../domain/ports";
 
@@ -62,6 +67,10 @@ export type DeviceRuntimeContextValue = {
     input: WifiConfigInput,
   ) => Promise<Result<WifiMutationResponse>>;
   clearWifiConfig: (deviceId: string) => Promise<Result<WifiMutationResponse>>;
+  resetSettings: (
+    deviceId: string,
+    scope: SettingsResetScope,
+  ) => Promise<Result<SettingsResetResponse>>;
   rebootDevice: (deviceId: string) => Promise<Result<RebootResponse>>;
   powerConfig: (deviceId: string) => Promise<Result<PowerConfigResponse>>;
   savePowerConfig: (
@@ -119,6 +128,22 @@ export function shortApiError(err: DeviceApiError): string {
   return `API error: ${err.code}`;
 }
 
+function createPowerLockOwner(): number {
+  return Math.floor(Math.random() * 0x7fffffff) + 1;
+}
+
+const powerLockOwners = new Map<string, number>();
+
+export function getStablePowerLockOwner(deviceKey: string): number {
+  const existing = powerLockOwners.get(deviceKey);
+  if (existing) {
+    return existing;
+  }
+  const owner = createPowerLockOwner();
+  powerLockOwners.set(deviceKey, owner);
+  return owner;
+}
+
 export function createEmptyChannels(): Record<DeviceTransport, ChannelRuntime> {
   return {
     http: { lastOkAt: null, lastError: null },
@@ -170,6 +195,270 @@ export function uniqueTransports(
     ordered.push(candidate);
   }
   return ordered;
+}
+
+export function orderedDeviceTransports({
+  preferred,
+  runtimeTransport,
+  channelLastOkAt,
+  httpLinked,
+  localUsbLinked,
+  webSerialLinked,
+  preferLocalUsbFirst,
+}: {
+  preferred: DeviceTransport | null | undefined;
+  runtimeTransport: DeviceTransport | null | undefined;
+  channelLastOkAt:
+    | Partial<Record<DeviceTransport, number | null>>
+    | null
+    | undefined;
+  httpLinked: boolean;
+  localUsbLinked: boolean;
+  webSerialLinked: boolean;
+  preferLocalUsbFirst: boolean;
+}): DeviceTransport[] {
+  const current = preferred ?? runtimeTransport;
+  const active =
+    current &&
+    channelLastOkAt?.[current] &&
+    ((current === "http" && httpLinked) ||
+      (current === "local_usb" && localUsbLinked) ||
+      (current === "web_serial" && webSerialLinked))
+      ? current
+      : null;
+
+  return preferLocalUsbFirst
+    ? uniqueTransports([
+        active,
+        localUsbLinked ? "local_usb" : null,
+        httpLinked ? "http" : null,
+        webSerialLinked ? "web_serial" : null,
+      ])
+    : uniqueTransports([
+        active,
+        httpLinked ? "http" : null,
+        webSerialLinked ? "web_serial" : null,
+        localUsbLinked ? "local_usb" : null,
+      ]);
+}
+
+export function resolveOrderedDeviceTransports({
+  deviceId,
+  devices,
+  runtime,
+  preferred,
+  localUsbPortPath,
+  hasLocalUsbLink,
+  hasWebSerialLink,
+}: {
+  deviceId: string;
+  devices: StoredDevice[];
+  runtime: DeviceRuntime | null | undefined;
+  preferred: DeviceTransport | null | undefined;
+  localUsbPortPath: string | null | undefined;
+  hasLocalUsbLink: boolean;
+  hasWebSerialLink: boolean;
+}): DeviceTransport[] {
+  const stored = devices.find((device) => device.id === deviceId);
+  const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
+  const httpLinked =
+    !!stored?.transports?.httpBaseUrl ||
+    (stored ? !localUsbDeviceIdForDevice(stored) : false);
+  const localUsbLinked =
+    Boolean(localUsbPortPath) || hasLocalUsbLink || Boolean(devdDeviceId);
+  return orderedDeviceTransports({
+    preferred,
+    runtimeTransport: runtime?.transport ?? null,
+    channelLastOkAt: runtime
+      ? {
+          http: runtime.channels.http.lastOkAt,
+          web_serial: runtime.channels.web_serial.lastOkAt,
+          local_usb: runtime.channels.local_usb.lastOkAt,
+        }
+      : null,
+    httpLinked,
+    localUsbLinked,
+    webSerialLinked: hasWebSerialLink,
+    preferLocalUsbFirst: Boolean(devdDeviceId),
+  });
+}
+
+const WIFI_CLEAR_VERIFY_DELAY_MS = 500;
+const WIFI_CLEAR_VERIFY_RETRIES = 10;
+const DEFAULT_USB_C_DOWNSTREAM_ROUTE: UsbCDownstreamRoute = "mcu";
+const DEFAULT_FIXED_VOLTAGES_MV = [9000, 12000, 15000, 20000] as const;
+
+export type JsonlEnvelope<T> = {
+  ok: boolean;
+  result?: T;
+  error?: { code: string; message: string; retryable: boolean };
+};
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isWifiClearLikeRequest(
+  method: string,
+  params?: Record<string, unknown>,
+): boolean {
+  return (
+    method === "wifi.clear" ||
+    (method === "settings.reset" && params?.scope === "wifi")
+  );
+}
+
+function isOtherSettingsResetRequest(
+  method: string,
+  params?: Record<string, unknown>,
+): boolean {
+  return method === "settings.reset" && params?.scope === "other";
+}
+
+function wifiConfigIsCleared(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const wifi = value as Record<string, unknown>;
+  return wifi.configured === false && wifi.psk_configured === false;
+}
+
+function wifiClearLikeSuccessValue(
+  method: string,
+): WifiMutationResponse | SettingsResetResponse {
+  if (method === "settings.reset") {
+    return { accepted: true, scope: "wifi", reboot_required: false };
+  }
+  return { accepted: true, reboot_required: false };
+}
+
+function otherSettingsResetSuccessValue(): SettingsResetResponse {
+  return { accepted: true, scope: "other", wifi_preserved: true };
+}
+
+function defaultRouteIsRestored(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const ports = value as Partial<PortsResponse>;
+  return (
+    ports.hub?.usb_c_downstream_route === DEFAULT_USB_C_DOWNSTREAM_ROUTE &&
+    ports.hub.usb_c_downstream_persisted === false
+  );
+}
+
+function defaultFixedVoltagesAreRestored(value: unknown): boolean {
+  if (
+    !Array.isArray(value) ||
+    value.length !== DEFAULT_FIXED_VOLTAGES_MV.length
+  ) {
+    return false;
+  }
+  return DEFAULT_FIXED_VOLTAGES_MV.every(
+    (expected, index) => value[index] === expected,
+  );
+}
+
+function defaultPowerConfigIsRestored(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const config = value as Partial<PowerConfigResponse>;
+  const capability = config.capability;
+  const protocols = capability?.protocols;
+  const pd = capability?.pd;
+  const manual = config.manual;
+  if (!capability || !protocols || !pd || !manual) {
+    return false;
+  }
+  return (
+    config.hardware === "sw2303" &&
+    config.persisted === false &&
+    config.tps_mode === "auto_follow" &&
+    capability.profile === "full" &&
+    capability.power_watts === 100 &&
+    protocols.pd === true &&
+    protocols.qc20 === true &&
+    protocols.qc30 === true &&
+    protocols.fcp === true &&
+    protocols.afc === true &&
+    protocols.scp === true &&
+    protocols.pe20 === true &&
+    protocols.bc12 === true &&
+    protocols.sfcp === true &&
+    pd.pps === true &&
+    defaultFixedVoltagesAreRestored(pd.fixed_voltages_mv) &&
+    manual.voltage_mv === 5000 &&
+    manual.current_limit_ma === 1000 &&
+    manual.usb_c_path_mode === "default"
+  );
+}
+
+export async function recoverWifiClearLikeTimeout<T>(
+  send: (request: JsonlRequest) => Promise<unknown>,
+  method: string,
+  params?: Record<string, unknown>,
+): Promise<Result<T> | null> {
+  if (
+    !isWifiClearLikeRequest(method, params) &&
+    !isOtherSettingsResetRequest(method, params)
+  ) {
+    return null;
+  }
+  for (let attempt = 0; attempt < WIFI_CLEAR_VERIFY_RETRIES; attempt += 1) {
+    await delayMs(WIFI_CLEAR_VERIFY_DELAY_MS);
+    if (isOtherSettingsResetRequest(method, params)) {
+      try {
+        const portsResponse = await send({
+          id: nextJsonlRequestId(),
+          method: "ports.get",
+          timeoutMs: 1_000,
+        });
+        const portsEnvelope = portsResponse as JsonlEnvelope<PortsResponse>;
+        const portsValue = portsEnvelope?.result ?? portsResponse;
+
+        const powerResponse = await send({
+          id: nextJsonlRequestId(),
+          method: "power.config_get",
+          timeoutMs: 1_000,
+        });
+        const powerEnvelope =
+          powerResponse as JsonlEnvelope<PowerConfigResponse>;
+        const powerValue = powerEnvelope?.result ?? powerResponse;
+
+        if (
+          defaultRouteIsRestored(portsValue) &&
+          defaultPowerConfigIsRestored(powerValue)
+        ) {
+          return {
+            ok: true,
+            value: otherSettingsResetSuccessValue() as T,
+          };
+        }
+      } catch {
+        // Keep polling until the transport reports the restored default state.
+      }
+      continue;
+    }
+    try {
+      const response = await send({
+        id: nextJsonlRequestId(),
+        method: "wifi.get",
+        timeoutMs: 1_000,
+      });
+      const envelope = response as JsonlEnvelope<WifiConfigResponse>;
+      const value = envelope?.result ?? response;
+      if (wifiConfigIsCleared(value)) {
+        return {
+          ok: true,
+          value: wifiClearLikeSuccessValue(method) as T,
+        };
+      }
+    } catch {
+      // Keep polling until the transport reports the cleared state or retries expire.
+    }
+  }
+  return null;
 }
 
 export function isDeviceInfoResponse(

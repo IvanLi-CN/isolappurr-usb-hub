@@ -57,6 +57,170 @@ async fn usb_jsonl_request_with_exclusive(
     Ok(response)
 }
 
+async fn usb_wifi_clear_request(state: &AppState, device_id: &str) -> anyhow::Result<Value> {
+    let success = json!({
+        "ok": true,
+        "result": {
+            "accepted": true,
+            "reboot_required": false,
+            "verified_after_serial_timeout": true,
+        }
+    });
+    usb_wifi_credentials_clear_like_request(state, device_id, "wifi.clear", None, success).await
+}
+
+async fn usb_settings_reset_request(
+    state: &AppState,
+    device_id: &str,
+    scope: &str,
+    owner: Option<u32>,
+) -> anyhow::Result<Value> {
+    let params = Some(json!({"scope": scope, "owner": owner}));
+    if scope == "wifi" {
+        let success = json!({
+            "ok": true,
+            "result": {
+                "accepted": true,
+                "scope": "wifi",
+                "reboot_required": false,
+                "verified_after_serial_timeout": true,
+            }
+        });
+        return usb_wifi_credentials_clear_like_request(
+            state,
+            device_id,
+            "settings.reset",
+            params,
+            success,
+        )
+        .await;
+    }
+    let success = json!({
+        "ok": true,
+        "result": {
+            "accepted": true,
+            "scope": "other",
+            "wifi_preserved": true,
+            "verified_after_serial_reconnect": true,
+        }
+    });
+    match usb_jsonl_request(state, device_id, "settings.reset", params).await {
+        Ok(value) => Ok(value),
+        Err(err) if should_verify_other_settings_reset_after_serial_error(&err) => {
+            match verify_other_settings_reset_after_serial_reconnect(state, device_id).await {
+                Ok(()) => Ok(success),
+                Err(_) => Err(err),
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn usb_wifi_credentials_clear_like_request(
+    state: &AppState,
+    device_id: &str,
+    method: &str,
+    params: Option<Value>,
+    success: Value,
+) -> anyhow::Result<Value> {
+    match usb_jsonl_request(state, device_id, method, params).await {
+        Ok(value) => Ok(value),
+        Err(err) if err.to_string().contains("serial response timed out") => {
+            match verify_wifi_cleared_after_serial_timeout(state, device_id).await {
+                Ok(()) => Ok(success),
+                Err(_) => Err(err),
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn verify_wifi_cleared_after_serial_timeout(
+    state: &AppState,
+    device_id: &str,
+) -> anyhow::Result<()> {
+    let mut last_error = None;
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        match usb_jsonl_request(state, device_id, "wifi.get", None).await {
+            Ok(value) => {
+                if wifi_config_is_cleared(&value) {
+                    return Ok(());
+                }
+                last_error = Some(anyhow!(
+                    "Wi-Fi settings did not report cleared credentials yet"
+                ));
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("Wi-Fi clear did not verify after serial timeout")))
+}
+
+fn wifi_config_is_cleared(value: &Value) -> bool {
+    let wifi = value.get("result").unwrap_or(value);
+    wifi.get("configured").and_then(Value::as_bool) == Some(false)
+        && wifi.get("psk_configured").and_then(Value::as_bool) == Some(false)
+}
+
+fn should_verify_other_settings_reset_after_serial_error(err: &anyhow::Error) -> bool {
+    let message = err.to_string();
+    message.contains("serial response timed out") || message.contains("serial read")
+}
+
+async fn verify_other_settings_reset_after_serial_reconnect(
+    state: &AppState,
+    device_id: &str,
+) -> anyhow::Result<()> {
+    let mut last_error = None;
+    for _ in 0..12 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let ports = match usb_jsonl_request(state, device_id, "ports.get", None).await {
+            Ok(value) => value,
+            Err(err) => {
+                last_error = Some(err);
+                continue;
+            }
+        };
+        let power = match usb_jsonl_request(state, device_id, "power.config_get", None).await {
+            Ok(value) => value,
+            Err(err) => {
+                last_error = Some(err);
+                continue;
+            }
+        };
+        if other_settings_reset_is_verified(&ports, &power) {
+            return Ok(());
+        }
+        last_error = Some(anyhow!(
+            "other settings reset did not report default route and power config yet"
+        ));
+    }
+    Err(last_error
+        .unwrap_or_else(|| anyhow!("other settings reset did not verify after serial reconnect")))
+}
+
+fn other_settings_reset_is_verified(ports: &Value, power: &Value) -> bool {
+    let hub = ports
+        .get("result")
+        .and_then(|result| result.get("hub"))
+        .or_else(|| ports.get("hub"));
+    let power = power.get("result").unwrap_or(power);
+    hub.and_then(Value::as_object).is_some_and(|hub| {
+        hub.get("usb_c_downstream_route").and_then(Value::as_str) == Some("mcu")
+            && hub
+                .get("usb_c_downstream_persisted")
+                .and_then(Value::as_bool)
+                == Some(false)
+    }) && power.get("persisted").and_then(Value::as_bool) == Some(false)
+        && power.get("tps_mode").and_then(Value::as_str) == Some("auto_follow")
+        && power
+            .get("manual")
+            .and_then(|manual| manual.get("voltage_mv"))
+            .and_then(Value::as_u64)
+            == Some(5_000)
+}
+
 async fn device_usb_port_path(state: &AppState, device_id: &str) -> anyhow::Result<String> {
     let inner = state.inner.lock().await;
     Ok(inner
@@ -73,7 +237,89 @@ async fn device_usb_port_path(state: &AppState, device_id: &str) -> anyhow::Resu
 fn serial_timeout_ms_for_method(method: &str) -> u64 {
     match method {
         "power.config_set" | "power.config_defaults" => SERIAL_POWER_CONFIG_TIMEOUT_MS,
+        "settings.reset" => SERIAL_SETTINGS_RESET_TIMEOUT_MS,
         _ => SERIAL_TIMEOUT_MS,
+    }
+}
+
+#[cfg(test)]
+mod device_io_tests {
+    use super::*;
+
+    #[test]
+    fn settings_reset_uses_extended_serial_timeout() {
+        assert_eq!(
+            serial_timeout_ms_for_method("settings.reset"),
+            SERIAL_SETTINGS_RESET_TIMEOUT_MS
+        );
+    }
+
+    #[test]
+    fn wifi_clear_verification_detects_cleared_credentials() {
+        assert!(wifi_config_is_cleared(&json!({
+            "ok": true,
+            "result": {
+                "configured": false,
+                "psk_configured": false,
+                "state": "idle",
+                "ipv4": null
+            }
+        })));
+        assert!(!wifi_config_is_cleared(&json!({
+            "ok": true,
+            "result": {
+                "configured": true,
+                "psk_configured": true,
+                "state": "connected",
+                "ipv4": "192.168.31.122"
+            }
+        })));
+    }
+
+    #[test]
+    fn other_settings_reset_verification_detects_default_runtime() {
+        assert!(other_settings_reset_is_verified(
+            &json!({
+                "ok": true,
+                "result": {
+                    "hub": {
+                        "usb_c_downstream_route": "mcu",
+                        "usb_c_downstream_persisted": false
+                    }
+                }
+            }),
+            &json!({
+                "ok": true,
+                "result": {
+                    "persisted": false,
+                    "tps_mode": "auto_follow",
+                    "manual": {
+                        "voltage_mv": 5000
+                    }
+                }
+            })
+        ));
+        assert!(!other_settings_reset_is_verified(
+            &json!({
+                "ok": true,
+                "result": {
+                    "hub": {
+                        "usb_c_downstream_route": "mcu",
+                        "usb_c_downstream_persisted": true
+                    }
+                }
+            }),
+            &json!({
+                "ok": true,
+                "result": {
+                    "persisted": true,
+                    "tps_mode": "manual",
+                    "manual": {
+                        "voltage_mv": 9000
+                    }
+                }
+            })
+        ));
     }
 }
 

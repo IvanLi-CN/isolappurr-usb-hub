@@ -66,7 +66,7 @@ Default selection is only defined after more than one path is immediately usable
 ## Requirements
 
 - Firmware MUST expose a JSONL protocol over ESP32-S3 USB Serial/JTAG CDC-ACM.
-- Firmware MUST accept at least these commands: `info`, `ports.get`, `port.power_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `reboot`.
+- Firmware MUST accept at least these commands: `info`, `ports.get`, `port.power_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `settings.reset`, `reboot`.
 - Firmware MUST load Wi-Fi credentials from EEPROM at boot. If no credentials exist, networking remains unconfigured while USB provisioning remains available.
 - Firmware MUST remove `USB_HUB_WIFI_SSID` and `USB_HUB_WIFI_PSK` as build-time required inputs.
 - EEPROM storage MUST include a magic/version marker and checksum or equivalent corruption guard.
@@ -133,6 +133,13 @@ The stored record contains:
 
 The product UI should label writes as Wi-Fi configuration. After a successful `wifi.set`, firmware writes EEPROM and immediately reconnects Wi-Fi with the new credentials. After a successful `wifi.clear`, firmware clears EEPROM and immediately stops the Wi-Fi station. When the current device channel is Wi-Fi / LAN, Wi-Fi configuration is read-only; writes and clears require Web Serial or Local USB so the user cannot accidentally strand the hub from the same network path being edited.
 
+`settings.reset` is the device-level reset command for persisted settings. It
+accepts `{"scope":"wifi"|"other","owner"?:number}`. Scope `wifi` reuses the
+same EEPROM erase and runtime disconnect path as `wifi.clear`, reports no reboot
+requirement, and is only valid over Web Serial or Local USB. Firmware HTTP MUST
+reject `scope=wifi` with `unsafe_transport` so a Wi-Fi / LAN client cannot erase
+the credentials carrying its own connection.
+
 ## UI Design Brief
 
 This is a product control console for people using IsolaPurr USB Hub in bench or desk workflows.
@@ -158,6 +165,8 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given a device is currently managed through Wi-Fi / LAN, when the Hardware page renders Wi-Fi configuration, then stored settings are readable but save and clear controls are disabled until Web Serial or Local USB is active.
 - Given Wi-Fi credentials are saved through Web Serial or Local USB, when EEPROM write succeeds, then firmware immediately reconnects Wi-Fi with the new credentials and reports no reboot requirement.
 - Given Wi-Fi credentials are cleared through Web Serial or Local USB, when EEPROM clear succeeds, then firmware immediately stops the Wi-Fi station and reports no reboot requirement.
+- Given `settings.reset` is called with `scope=wifi` through Web Serial or Local USB, when EEPROM clear succeeds, then `wifi.get` reports no stored credentials and Wi-Fi station runtime is stopped.
+- Given `settings.reset` is called with `scope=wifi` through Wi-Fi / LAN HTTP, when the request is handled, then firmware returns `unsafe_transport` and leaves the Wi-Fi EEPROM record unchanged.
 - Given Web Serial is unsupported, when the user opens Add device, then the UI offers Local USB or Wi-Fi/HTTP alternatives.
 - Given the Desktop agent is running, when the user lists serial ports or proxies a command, then requests require the existing bearer token and origin policy.
 - Given `mcu-agentd` is not installed, when a developer runs `just desktop-agent-build` once and then the Local USB Justfile flow, then they can list ports, identify a hub, generate an app `.bin`, flash `0x10000`, reset, and monitor using `isolapurr-desktop`.
@@ -216,3 +225,15 @@ Device Hardware Wi-Fi configuration mobile:
 PR: include
 
 ![Device Hardware Wi-Fi configuration mobile](assets/wifi-config-narrow.png)
+
+Device Hardware reset settings over Wi-Fi/LAN:
+
+PR: include
+
+![Device Hardware reset settings Wi-Fi/LAN](assets/settings-reset-http-only.png)
+
+Device Hardware reset settings over Local USB:
+
+PR: include
+
+![Device Hardware reset settings Local USB](assets/settings-reset-usb-flow.png)

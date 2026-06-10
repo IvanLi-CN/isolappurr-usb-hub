@@ -31,6 +31,10 @@ enum Command {
         #[command(subcommand)]
         command: WifiCommand,
     },
+    Settings {
+        #[command(subcommand)]
+        command: SettingsCommand,
+    },
     Ports {
         #[command(flatten)]
         selector: ApiSelectorArgs,
@@ -140,6 +144,33 @@ enum WifiCommand {
         psk: String,
     },
     Clear(ApiSelectorArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum SettingsCommand {
+    Reset {
+        #[command(flatten)]
+        selector: ApiSelectorArgs,
+        #[arg(value_enum)]
+        scope: SettingsResetScopeArg,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SettingsResetScopeArg {
+    Wifi,
+    Other,
+}
+
+impl SettingsResetScopeArg {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Wifi => "wifi",
+            Self::Other => "other",
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -437,6 +468,29 @@ impl std::fmt::Display for UserCancelled {
 }
 
 impl std::error::Error for UserCancelled {}
+
+fn confirm_settings_reset(scope: &str) -> anyhow::Result<()> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        return Err(anyhow!(
+            "settings reset requires an interactive terminal or --yes"
+        ));
+    }
+    eprintln!("Reset {scope} settings on the selected IsolaPurr hub.");
+    if scope == "wifi" {
+        eprintln!("This clears stored Wi-Fi credentials and can disconnect the hub from LAN.");
+    } else {
+        eprintln!("This clears non-Wi-Fi device settings; stored Wi-Fi credentials are preserved.");
+    }
+    eprintln!("Type 'reset {scope}' to continue:");
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    if line.trim() != format!("reset {scope}") {
+        return Err(UserCancelled.into());
+    }
+    Ok(())
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct CliPowerRequest {

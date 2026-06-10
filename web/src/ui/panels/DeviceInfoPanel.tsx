@@ -8,6 +8,8 @@ import type {
   DeviceInfoResponse,
   RebootResponse,
   Result,
+  SettingsResetResponse,
+  SettingsResetScope,
   WifiConfigInput,
   WifiConfigResponse,
   WifiMutationResponse,
@@ -27,6 +29,7 @@ import {
   getWebSerialDeviceTransport,
   setWebSerialDeviceTransport,
 } from "../../domain/webSerialLinks";
+import { DeviceSettingsResetPanel } from "./DeviceSettingsResetPanel";
 
 function unknown(value: string | null | undefined): string {
   if (value === null || value === undefined || value.trim().length === 0) {
@@ -56,6 +59,7 @@ export function DeviceInfoPanel({
   loadWifiConfig,
   saveWifiConfig,
   clearWifiConfig,
+  resetSettings,
   rebootDevice,
   usbCDownstreamRoute,
   usbCDownstreamPersisted,
@@ -72,6 +76,9 @@ export function DeviceInfoPanel({
     input: WifiConfigInput,
   ) => Promise<Result<WifiMutationResponse>>;
   clearWifiConfig: () => Promise<Result<WifiMutationResponse>>;
+  resetSettings: (
+    scope: SettingsResetScope,
+  ) => Promise<Result<SettingsResetResponse>>;
   rebootDevice: () => Promise<Result<RebootResponse>>;
   usbCDownstreamRoute: UsbCDownstreamRoute;
   usbCDownstreamPersisted: boolean | null;
@@ -391,6 +398,23 @@ export function DeviceInfoPanel({
     } finally {
       setWifiBusy(false);
     }
+  };
+
+  const handleWifiSettingsReset = (rebootRequired: boolean) => {
+    setWifiConfigState((prev) => ({
+      storage: prev?.storage ?? "eeprom",
+      address: prev?.address ?? "0x50",
+      configured: false,
+      psk_configured: false,
+      state: rebootRequired ? prev?.state : "idle",
+      ipv4: rebootRequired ? prev?.ipv4 : null,
+      is_static: rebootRequired ? prev?.is_static : false,
+    }));
+    setWifiSsid("");
+    setWifiPsk("");
+    setWifiOpenNetwork(false);
+    setWifiRebootRequired(rebootRequired);
+    wifiFormDirtyRef.current = false;
   };
 
   const rebootForWifi = async () => {
@@ -941,6 +965,15 @@ export function DeviceInfoPanel({
           </div>
         </div>
       ) : null}
+
+      <DeviceSettingsResetPanel
+        key={device.id}
+        transport={transport}
+        transportLabel={transportLabel(transport)}
+        wifiCanManage={wifiCanManage}
+        resetSettings={resetSettings}
+        onWifiResetSuccess={handleWifiSettingsReset}
+      />
 
       <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

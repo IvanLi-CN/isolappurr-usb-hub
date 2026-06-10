@@ -232,7 +232,14 @@ async fn dispatch_ipc_request(
             let req: DeviceIdRequest = serde_json::from_value(params)?;
             require_compatible_project_firmware(state, &req.device_id).await?;
             Ok(redact_sensitive(
-                &usb_jsonl_request(state, &req.device_id, "wifi.clear", None).await?,
+                &usb_wifi_clear_request(state, &req.device_id).await?,
+            ))
+        }
+        "device.settings.reset" => {
+            let req: DeviceSettingsResetRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_settings_reset_request(state, &req.device_id, &req.scope, req.owner).await?,
             ))
         }
         "device.ports.get" => {
@@ -289,6 +296,52 @@ async fn dispatch_ipc_request(
                 }
             }
         }
+        "device.power.config_get" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(state, &req.device_id, "power.config_get", None).await?,
+            ))
+        }
+        "device.power.config_set" => {
+            let req: DevicePowerConfigSetRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "power.config_set",
+                    Some(json!({"config": req.config, "owner": req.owner})),
+                )
+                .await?,
+            ))
+        }
+        "device.power.config_defaults" => {
+            let req: DevicePowerOwnerRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "power.config_defaults",
+                    Some(json!({"owner": req.owner})),
+                )
+                .await?,
+            ))
+        }
+        "device.power.lock" => {
+            let req: DevicePowerLockRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "power.lock",
+                    Some(json!({"owner": req.owner, "acquire": req.acquire})),
+                )
+                .await?,
+            ))
+        }
         "serial.lease.create" => {
             let req: LeaseRequest = serde_json::from_value(params)?;
             ipc_create_lease(state, req).await
@@ -344,6 +397,13 @@ struct DeviceWifiSetRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct DeviceSettingsResetRequest {
+    device_id: String,
+    scope: String,
+    owner: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
 struct DevicePortRequest {
     device_id: String,
     port: String,
@@ -360,6 +420,26 @@ struct DevicePortPowerRequest {
 struct DeviceHubRouteRequest {
     device_id: String,
     route: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevicePowerConfigSetRequest {
+    device_id: String,
+    config: Value,
+    owner: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevicePowerOwnerRequest {
+    device_id: String,
+    owner: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevicePowerLockRequest {
+    device_id: String,
+    owner: u32,
+    acquire: bool,
 }
 
 #[derive(Debug, Deserialize)]

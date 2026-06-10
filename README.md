@@ -135,7 +135,7 @@ Plan `#0003` 引入了默认启用的网络与 USB JSONL 能力（feature：`net
 - Wi‑Fi STA 联网（默认 DHCP；可选静态 IPv4）
 - mDNS：`<hostname>.local` 解析 + `_http._tcp.local` 服务发现
 - HTTP：`GET /` 返回 `Hello World`
-- HTTP APIs：`/api/v1/...`（JSON，供 Web UI 调用：端口遥测、Replug/Power、USB-C/TPS power config）
+- HTTP APIs：`/api/v1/...`（JSON，供 Web UI 调用：端口遥测、Replug/Power、USB-C/TPS power config、settings reset）
 - Web 对接：支持 CORS + Chrome/Chromium 的 Private Network Access（PNA）预检（用于 HTTPS Pages → HTTP 设备）
 - UI 兜底：左右键同时按住 1–5 秒后松手，显示 ID / IPv4（>5 秒作废；未联网显示 `NO WIFI`/`NO IP`）
 
@@ -149,7 +149,7 @@ Plan `#0003` 引入了默认启用的网络与 USB JSONL 能力（feature：`net
 - 发现/添加设备：
   - 推荐：使用 Desktop App（Plan `#0008`）做 mDNS/DNS‑SD 自动发现；
   - GitHub Pages / 浏览器：无法使用 mDNS；请使用 “+ Add → IP scan (advanced)” 手动输入 CIDR 扫描，或直接手动填写 Base URL 添加。
-- 设备页：Overview / Settings / Power；Power 页用于 SW2303 USB-C capability、manual TPS 输出和 host-lock 保护的高级设置。
+- 设备页：Overview / Settings / Power；Settings 页用于 Wi-Fi、USB-C mode、firmware update 和分范围 settings reset，Power 页用于 SW2303 USB-C capability、manual TPS 输出和 host-lock 保护的高级设置。
 - 质量门槛：`cd web && bun run check`
 - 构建：`cd web && bun run build`
 - Unit tests：`cd web && bun run test:unit`
