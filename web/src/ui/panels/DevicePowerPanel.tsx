@@ -27,6 +27,14 @@ type DevicePowerPanelProps = {
 };
 
 type FormState = PowerConfigInput;
+type NegotiationChannel = "cc" | "dpdm";
+
+type ProtocolToggle = {
+  label: string;
+  negotiation: NegotiationChannel;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+};
 
 function cloneConfig(config: PowerConfigResponse): FormState {
   return {
@@ -41,6 +49,10 @@ function badgeTone(enabled: boolean): string {
   return enabled
     ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
     : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]";
+}
+
+function negotiationBadgeLabel(channel: NegotiationChannel): string {
+  return channel === "cc" ? "CC" : "DPDM";
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -399,54 +411,64 @@ export function DevicePowerPanel({
     setDirty(true);
   };
 
-  const protocolToggles = [
+  const protocolToggles: ProtocolToggle[] = [
     {
       label: "PD",
+      negotiation: "cc",
       checked: form.capability.protocols.pd,
       onChange: (value: boolean) => setProtocol("pd", value),
     },
     {
       label: "PPS",
+      negotiation: "cc",
       checked: form.capability.pd.pps,
       onChange: setPps,
     },
     {
       label: "QC2",
+      negotiation: "dpdm",
       checked: form.capability.protocols.qc20,
       onChange: (value: boolean) => setProtocol("qc20", value),
     },
     {
       label: "QC3",
+      negotiation: "dpdm",
       checked: form.capability.protocols.qc30,
       onChange: (value: boolean) => setProtocol("qc30", value),
     },
     {
       label: "FCP",
+      negotiation: "dpdm",
       checked: form.capability.protocols.fcp,
       onChange: (value: boolean) => setProtocol("fcp", value),
     },
     {
       label: "AFC",
+      negotiation: "dpdm",
       checked: form.capability.protocols.afc,
       onChange: (value: boolean) => setProtocol("afc", value),
     },
     {
       label: "SCP",
+      negotiation: "dpdm",
       checked: form.capability.protocols.scp,
       onChange: (value: boolean) => setProtocol("scp", value),
     },
     {
       label: "PE2",
+      negotiation: "dpdm",
       checked: form.capability.protocols.pe20,
       onChange: (value: boolean) => setProtocol("pe20", value),
     },
     {
       label: "BC1.2",
+      negotiation: "dpdm",
       checked: form.capability.protocols.bc12,
       onChange: (value: boolean) => setProtocol("bc12", value),
     },
     {
       label: "SFCP",
+      negotiation: "dpdm",
       checked: form.capability.protocols.sfcp,
       onChange: (value: boolean) => setProtocol("sfcp", value),
     },
@@ -533,14 +555,24 @@ export function DevicePowerPanel({
             step={1}
             value={form.capability.power_watts}
           />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="protocol-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {protocolToggles.map((protocol) => (
               <label
-                className={`flex min-h-[58px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"}`}
+                className={`protocol-card flex min-h-[64px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"}`}
                 key={protocol.label}
               >
-                <span className="grid gap-0.5">
-                  <span className="font-semibold">{protocol.label}</span>
+                <span className="grid min-w-0 gap-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-semibold">
+                      {protocol.label}
+                    </span>
+                    <span
+                      className="protocol-negotiation-badge h-5 shrink-0 items-center rounded-full border border-current/15 bg-[var(--panel)] px-2 text-[10px] font-bold uppercase tracking-[0.02em]"
+                      data-testid={`${protocol.label}-negotiation-badge`}
+                    >
+                      {negotiationBadgeLabel(protocol.negotiation)}
+                    </span>
+                  </span>
                   <span className="text-[11px] font-semibold uppercase">
                     {protocol.checked ? "On" : "Off"}
                   </span>
