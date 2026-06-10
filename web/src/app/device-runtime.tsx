@@ -67,6 +67,7 @@ import {
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
   type DeviceTransport,
+  getStablePowerLockOwner,
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
   type JsonlEnvelope,
@@ -82,11 +83,6 @@ import { useDevices } from "./devices-store";
 export type {
   ConnectionState,
   DeviceTransport,
-} from "./device-runtime-support";
-export {
-  localUsbErrorToDeviceApiError,
-  orderedDeviceTransports,
-  shouldResetLocalUsbConnectionCache,
 } from "./device-runtime-support";
 
 const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
@@ -783,7 +779,9 @@ export function DeviceRuntimeProvider({
       const res = await runDeviceCommand<SettingsResetResponse>(
         deviceId,
         "settings.reset",
-        { scope },
+        scope === "other"
+          ? { scope, owner: getStablePowerLockOwner(deviceId) }
+          : { scope },
         preferred,
       );
       if (res.ok) {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { getStablePowerLockOwner } from "../../app/device-runtime-support";
 import type {
   PowerConfigInput,
   PowerConfigResponse,
@@ -40,22 +41,6 @@ function badgeTone(enabled: boolean): string {
   return enabled
     ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
     : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]";
-}
-
-function createLockOwner(): number {
-  return Math.floor(Math.random() * 0x7fffffff) + 1;
-}
-
-const powerLockOwners = new Map<string, number>();
-
-function getStablePowerLockOwner(deviceKey: string): number {
-  const existing = powerLockOwners.get(deviceKey);
-  if (existing) {
-    return existing;
-  }
-  const owner = createLockOwner();
-  powerLockOwners.set(deviceKey, owner);
-  return owner;
 }
 
 function clamp(value: number, min: number, max: number): number {

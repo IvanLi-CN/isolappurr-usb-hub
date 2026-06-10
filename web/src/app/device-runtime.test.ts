@@ -5,7 +5,7 @@ import {
   localUsbErrorToDeviceApiError,
   orderedDeviceTransports,
   shouldResetLocalUsbConnectionCache,
-} from "./device-runtime";
+} from "./device-runtime-support";
 
 describe("localUsbErrorToDeviceApiError", () => {
   test("preserves structured devd busy errors", () => {

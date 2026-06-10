@@ -128,6 +128,22 @@ export function shortApiError(err: DeviceApiError): string {
   return `API error: ${err.code}`;
 }
 
+function createPowerLockOwner(): number {
+  return Math.floor(Math.random() * 0x7fffffff) + 1;
+}
+
+const powerLockOwners = new Map<string, number>();
+
+export function getStablePowerLockOwner(deviceKey: string): number {
+  const existing = powerLockOwners.get(deviceKey);
+  if (existing) {
+    return existing;
+  }
+  const owner = createPowerLockOwner();
+  powerLockOwners.set(deviceKey, owner);
+  return owner;
+}
+
 export function createEmptyChannels(): Record<DeviceTransport, ChannelRuntime> {
   return {
     http: { lastOkAt: null, lastError: null },
