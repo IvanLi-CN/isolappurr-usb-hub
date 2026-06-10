@@ -14,5 +14,5 @@
 - Added `CC` and `DPDM` negotiation badges to the Web power protocol cards.
 - Hid negotiation badges on narrow cards with card-level container queries to
   preserve responsive readability.
-- Extended Storybook/spec evidence to cover badge visibility on wide and narrow
-  protocol cards.
+- Extended Storybook/spec evidence to cover badge visibility on wide, narrow,
+  and constrained medium-width protocol cards.

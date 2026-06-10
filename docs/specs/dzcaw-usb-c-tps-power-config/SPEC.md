@@ -134,6 +134,19 @@ PR: include
 PR: include
 ![Device power panel narrow](./assets/device-power-panel-narrow.png)
 
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/MediumWideCards`
+  state: medium constrained two-column layout
+  viewport_strategy: `decorator-constrained`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the card-level badge rule still shows `CC`/`DPDM`
+  when the protocol grid is constrained into a medium two-column layout with
+  enough per-card width.
+
+PR: include
+![Device power panel medium wide cards](./assets/device-power-panel-medium-wide-cards.png)
+
 ## Risks
 
 - SW2303 path forcing is intentionally limited to explicit manual mode policy.

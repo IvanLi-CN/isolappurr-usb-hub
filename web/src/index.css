@@ -152,11 +152,9 @@ body {
   display: none;
 }
 
-@container protocol-grid (min-width: 48rem) {
-  @container protocol-card (min-width: 11rem) {
-    .protocol-negotiation-badge {
-      display: inline-flex;
-    }
+@container protocol-card (min-width: 11rem) {
+  .protocol-negotiation-badge {
+    display: inline-flex;
   }
 }
 

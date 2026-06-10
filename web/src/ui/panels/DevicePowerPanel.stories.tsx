@@ -213,3 +213,28 @@ export const Narrow: Story = {
     ).not.toBeVisible();
   },
 };
+
+export const MediumWideCards: Story = {
+  decorators: [
+    (Story) => (
+      <div className="mx-auto max-w-[720px]" data-medium-wide-cards>
+        <style>{`
+          [data-medium-wide-cards] .protocol-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        `}</style>
+        <Story />
+      </div>
+    ),
+  ],
+  args: {
+    ...Default.args,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByTestId("PD-negotiation-badge"),
+    ).toBeVisible();
+    await expect(canvas.getByTestId("QC2-negotiation-badge")).toBeVisible();
+  },
+};
