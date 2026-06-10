@@ -45,13 +45,16 @@ async fn http_settings_reset_request(
     base_url: &str,
     scope: &str,
     owner: Option<u32>,
-) -> anyhow::Result<Value> {
+) -> Result<Value, Response> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(2))
         .timeout(Duration::from_secs(5))
         .build()
-        .context("build host HTTP client")?;
-    let mut url = Url::parse(base_url).with_context(|| format!("parse base url {base_url}"))?;
+        .context("build host HTTP client")
+        .map_err(error_from_anyhow)?;
+    let mut url = Url::parse(base_url)
+        .with_context(|| format!("parse base url {base_url}"))
+        .map_err(error_from_anyhow)?;
     url.set_path("/api/v1/settings/reset");
     {
         let mut query = url.query_pairs_mut();
@@ -64,22 +67,23 @@ async fn http_settings_reset_request(
         .post(url.clone())
         .send()
         .await
-        .with_context(|| format!("post {url}"))?;
+        .with_context(|| format!("post {url}"))
+        .map_err(error_from_anyhow)?;
     let status = response.status();
     let text = response
         .text()
         .await
-        .context("read settings reset response")?;
-    let value: Value = serde_json::from_str(&text).context("parse settings reset response")?;
+        .context("read settings reset response")
+        .map_err(error_from_anyhow)?;
+    let value: Value = serde_json::from_str(&text)
+        .context("parse settings reset response")
+        .map_err(error_from_anyhow)?;
     if status.is_success() {
         return Ok(value);
     }
-    let message = value
-        .get("error")
-        .and_then(|error| error.get("message"))
-        .and_then(Value::as_str)
-        .unwrap_or("settings reset request failed");
-    Err(anyhow!("{message}"))
+    let mut response = Json(redact_sensitive(&value)).into_response();
+    *response.status_mut() = status;
+    Err(response)
 }
 
 pub(super) async fn settings_reset(
@@ -100,16 +104,18 @@ pub(super) async fn settings_reset(
     {
         return error_from_anyhow(err);
     }
-    let response = match target {
+    match target {
         SettingsResetTarget::Usb => {
-            usb_settings_reset_request(&state, &id, &req.scope, req.owner).await
+            match usb_settings_reset_request(&state, &id, &req.scope, req.owner).await {
+                Ok(value) => Json(redact_sensitive(&value)).into_response(),
+                Err(err) => error_from_anyhow(err),
+            }
         }
         SettingsResetTarget::Http(base_url) => {
-            http_settings_reset_request(&base_url, &req.scope, req.owner).await
+            match http_settings_reset_request(&base_url, &req.scope, req.owner).await {
+                Ok(value) => Json(redact_sensitive(&value)).into_response(),
+                Err(response) => response,
+            }
         }
-    };
-    match response {
-        Ok(value) => Json(redact_sensitive(&value)).into_response(),
-        Err(err) => error_from_anyhow(err),
     }
 }

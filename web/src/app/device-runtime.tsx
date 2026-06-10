@@ -204,62 +204,64 @@ export function DeviceRuntimeProvider({
       const queued = previous.catch(() => undefined).then(() => current);
       localUsbRequestQueues.current[deviceId] = queued;
       await previous.catch(() => undefined);
-      let caughtError: unknown = null;
       try {
-        const request = { id: nextJsonlRequestId(), method, params };
-        const response =
-          target.kind === "devd_device"
-            ? await sendDevdLocalUsbJsonlRequest(
-                agent,
-                target.deviceId,
-                request,
-              )
-            : await sendLocalUsbJsonlRequest(agent, target.portPath, request);
-        const envelope = response as JsonlEnvelope<T>;
-        if (envelope?.ok && envelope.result !== undefined) {
-          return { ok: true, value: envelope.result };
+        let caughtError: unknown = null;
+        try {
+          const request = { id: nextJsonlRequestId(), method, params };
+          const response =
+            target.kind === "devd_device"
+              ? await sendDevdLocalUsbJsonlRequest(
+                  agent,
+                  target.deviceId,
+                  request,
+                )
+              : await sendLocalUsbJsonlRequest(agent, target.portPath, request);
+          const envelope = response as JsonlEnvelope<T>;
+          if (envelope?.ok && envelope.result !== undefined) {
+            return { ok: true, value: envelope.result };
+          }
+          return {
+            ok: false,
+            error: {
+              kind: "api_error",
+              status: 500,
+              code: envelope?.error?.code ?? "local_usb_error",
+              message: envelope?.error?.message ?? "Local USB request failed",
+              retryable: envelope?.error?.retryable ?? false,
+            },
+          };
+        } catch (err) {
+          caughtError = err;
+        }
+        const recovered = await recoverWifiClearLikeTimeout<T>(
+          async (request) =>
+            target.kind === "devd_device"
+              ? await sendDevdLocalUsbJsonlRequest(
+                  agent,
+                  target.deviceId,
+                  request,
+                )
+              : await sendLocalUsbJsonlRequest(agent, target.portPath, request),
+          method,
+          params,
+        );
+        if (recovered) {
+          return recovered;
+        }
+        if (shouldResetLocalUsbConnectionCache(caughtError)) {
+          localUsbAgent.current = null;
+          delete localUsbPortByDevice.current[deviceId];
         }
         return {
           ok: false,
-          error: {
-            kind: "api_error",
-            status: 500,
-            code: envelope?.error?.code ?? "local_usb_error",
-            message: envelope?.error?.message ?? "Local USB request failed",
-            retryable: envelope?.error?.retryable ?? false,
-          },
+          error: localUsbErrorToDeviceApiError(caughtError),
         };
-      } catch (err) {
-        caughtError = err;
       } finally {
         releaseQueue();
         if (localUsbRequestQueues.current[deviceId] === queued) {
           delete localUsbRequestQueues.current[deviceId];
         }
       }
-      const recovered = await recoverWifiClearLikeTimeout<T>(
-        async (request) =>
-          target.kind === "devd_device"
-            ? await sendDevdLocalUsbJsonlRequest(
-                agent,
-                target.deviceId,
-                request,
-              )
-            : await sendLocalUsbJsonlRequest(agent, target.portPath, request),
-        method,
-        params,
-      );
-      if (recovered) {
-        return recovered;
-      }
-      if (shouldResetLocalUsbConnectionCache(caughtError)) {
-        localUsbAgent.current = null;
-        delete localUsbPortByDevice.current[deviceId];
-      }
-      return {
-        ok: false,
-        error: localUsbErrorToDeviceApiError(caughtError),
-      };
     },
     [findLocalUsbTarget, getLocalUsbAgent],
   );
