@@ -140,6 +140,26 @@ body {
   filter: var(--modal-filter);
 }
 
+.protocol-grid {
+  container: protocol-grid / inline-size;
+}
+
+.protocol-card {
+  container: protocol-card / inline-size;
+}
+
+.protocol-negotiation-badge {
+  display: none;
+}
+
+@container protocol-grid (min-width: 48rem) {
+  @container protocol-card (min-width: 11rem) {
+    .protocol-negotiation-badge {
+      display: inline-flex;
+    }
+  }
+}
+
 .modal::backdrop {
   background: var(--overlay);
 }

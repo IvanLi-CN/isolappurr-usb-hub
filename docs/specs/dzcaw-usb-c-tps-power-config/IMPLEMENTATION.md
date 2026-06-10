@@ -25,6 +25,10 @@
 - Extended `device-runtime` and `deviceApi` for HTTP, Web Serial, and Local USB
   power config calls.
 - Added host-lock heartbeat handling with per-panel owner IDs.
+- Added protocol-card negotiation metadata so `PD`/`PPS` render `CC` and the
+  current non-PD protocol set renders `DPDM`.
+- Added card-level container-query behavior so negotiation badges show only on
+  protocol cards that have enough local width to keep the layout readable.
 - Added Storybook coverage for default, auto-follow, host-locked, failure,
   save, restore, and narrow states.
 - Fixed narrow responsive layout so the power cap and output mode controls do

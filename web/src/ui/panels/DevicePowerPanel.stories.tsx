@@ -100,6 +100,24 @@ export const Default: Story = {
     restorePowerDefaults: () => ok(autoConfig),
     setPowerLock: () => ok(manualConfig),
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByTestId("PD-negotiation-badge"),
+    ).toBeVisible();
+    await expect(canvas.getByTestId("PPS-negotiation-badge")).toHaveTextContent(
+      "CC",
+    );
+    await expect(canvas.getByTestId("PD-negotiation-badge")).toHaveTextContent(
+      "CC",
+    );
+    await expect(canvas.getByTestId("QC2-negotiation-badge")).toHaveTextContent(
+      "DPDM",
+    );
+    await expect(
+      canvas.getByTestId("SFCP-negotiation-badge"),
+    ).toHaveTextContent("DPDM");
+  },
 };
 
 export const HostLocked: Story = {
@@ -174,7 +192,24 @@ export const Narrow: Story = {
   parameters: {
     viewport: { defaultViewport: "isolapurrNarrow" },
   },
+  decorators: [
+    (Story) => (
+      <div className="mx-auto max-w-[390px]">
+        <Story />
+      </div>
+    ),
+  ],
   args: {
     ...Default.args,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("PD");
+    await expect(
+      canvas.queryByTestId("PD-negotiation-badge"),
+    ).not.toBeVisible();
+    await expect(
+      canvas.queryByTestId("QC2-negotiation-badge"),
+    ).not.toBeVisible();
   },
 };

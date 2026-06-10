@@ -51,6 +51,12 @@ temporary firmware edits.
 - Local advanced controls MUST be blocked while a host lock is active, except
   existing USB-C power on/off behavior.
 - Web UI MUST show write/read errors instead of staying in a loading state.
+- Web UI protocol cards MUST label `PD` and `PPS` with a `CC` negotiation
+  badge, and label the current non-PD protocol cards with a `DPDM` negotiation
+  badge.
+- Web UI protocol cards MUST hide the negotiation badge when an individual card
+  is too narrow to fit the protocol name, badge, state, and toggle without a
+  cramped layout.
 - Storybook coverage MUST include normal, host-locked, failure, save, restore,
   and narrow states for the power panel.
 
@@ -71,6 +77,12 @@ temporary firmware edits.
   force-close bits.
 - Given a remote host lock, when another host attempts a config write, then the
   write is rejected as busy and the UI presents the locked state.
+- Given the default desktop power panel story, when the safe-profile protocol
+  cards are wide enough, then `PD` and `PPS` show `CC`, and the current non-PD
+  protocol cards show `DPDM`.
+- Given the narrow power panel story, when a protocol card becomes too narrow,
+  then its negotiation badge is hidden without clipping the protocol card
+  content or toggle.
 - Given the GC9307 settings menu, when the owner opens Power Preset, then the
   screen shows the current preset and a second confirm restores defaults.
 - Given the GC9307 settings menu, when the owner opens Power Advanced, then the
@@ -101,8 +113,9 @@ temporary firmware edits.
   viewport_strategy: `devtools-emulate`
   capture_scope: `element`
   target_program: `mock-only`
-  evidence_note: verifies the normal SW2303 manual TPS settings layout, protocol
-  badges, path mode choices, guardrails, and actions.
+  evidence_note: verifies the normal SW2303 manual TPS settings layout,
+  `CC`/`DPDM` negotiation badges on wide protocol cards, path mode choices,
+  guardrails, and actions.
 
 ![Device power panel desktop](./assets/device-power-panel-default-desktop.png)
 
@@ -114,7 +127,8 @@ temporary firmware edits.
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the power settings panel stacks without clipping
-  labels, power cap, segmented controls, or action buttons.
+  labels, power cap, segmented controls, action buttons, or narrow protocol
+  cards after the negotiation badge hides.
 
 ![Device power panel narrow](./assets/device-power-panel-narrow.png)
 
