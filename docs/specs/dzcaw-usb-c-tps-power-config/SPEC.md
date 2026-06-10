@@ -117,6 +117,7 @@ temporary firmware edits.
   `CC`/`DPDM` negotiation badges on wide protocol cards, path mode choices,
   guardrails, and actions.
 
+PR: include
 ![Device power panel desktop](./assets/device-power-panel-default-desktop.png)
 
 - source_type: storybook_canvas
@@ -130,6 +131,7 @@ temporary firmware edits.
   labels, power cap, segmented controls, action buttons, or narrow protocol
   cards after the negotiation badge hides.
 
+PR: include
 ![Device power panel narrow](./assets/device-power-panel-narrow.png)
 
 ## Risks
