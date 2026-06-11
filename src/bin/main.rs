@@ -56,7 +56,7 @@ use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{
     ActiveLowBacklight, DASHBOARD_BG_RGB8, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort,
     NormalUiPortBadge, NormalUiPortMode, NormalUiSnapshot, UsbCDisplayInput, WORKBUF_SIZE,
-    normal_ui_usb_c_present, resolve_usb_c_display,
+    resolve_usb_c_display,
 };
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;

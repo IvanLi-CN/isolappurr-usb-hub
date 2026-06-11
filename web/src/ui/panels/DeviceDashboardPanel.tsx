@@ -429,7 +429,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
           telemetry={items.port_c.telemetry}
           state={items.port_c.state}
           headerBadges={usbCHeaderBadges}
-          showStatusBadge={false}
+          showStatusBadge={usbCHeaderBadges.length === 0}
           disabled={writeDisabled}
           onTogglePower={() =>
             void runtime.setPower(

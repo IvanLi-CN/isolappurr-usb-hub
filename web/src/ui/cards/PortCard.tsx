@@ -161,7 +161,7 @@ export function PortCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 text-[16px] font-bold">{label}</div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {headerBadges.map((headerBadge) => (
+          {headerBadges.map((headerBadge, index) => (
             <div
               className={[
                 "flex h-6 items-center justify-center rounded-full border px-3",
@@ -169,7 +169,7 @@ export function PortCard({
                 headerBadge.toneClassName,
               ].join(" ")}
               data-testid={headerBadge.testId}
-              key={`${portId}-${headerBadge.label}`}
+              key={`${portId}-${index}-${headerBadge.label}`}
             >
               {headerBadge.label}
             </div>

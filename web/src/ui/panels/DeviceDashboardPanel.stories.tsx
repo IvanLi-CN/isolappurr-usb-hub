@@ -284,6 +284,21 @@ const mockDeviceApi = async (
   }
 
   if (url.pathname === "/api/v1/pd-diagnostics") {
+    if (url.hostname === "hub-legacy.local") {
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "not_found",
+            message: "legacy firmware has no pd diagnostics endpoint",
+            retryable: false,
+          },
+        }),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
     return jsonResponse(mockUsbCDiagnostics(url.hostname));
   }
 
@@ -356,6 +371,18 @@ export const Default: Story = {
 export const LegacyFirmwareUnknownIsolation: Story = {
   args: {
     device: legacyDevice,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByTestId("port-card-status-port_c"),
+    ).toHaveTextContent(/ok/i);
+    await expect(
+      canvas.queryByTestId("dashboard-usb-c-live-mode"),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("dashboard-usb-c-live-badge"),
+    ).not.toBeInTheDocument();
   },
 };
 

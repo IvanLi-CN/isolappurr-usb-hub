@@ -74,11 +74,6 @@
                     Field::Ok(v_mv) if v_mv < 1_000 => false,
                     _ => true,
                 };
-                let usb_c_api_present = normal_ui_usb_c_present(
-                    request,
-                    telemetry.usb_c.voltage_mv,
-                    telemetry.usb_c.current_ma,
-                );
                 let usb_c_display = resolve_usb_c_display(UsbCDisplayInput {
                     tps_mode: power_config.tps_mode,
                     manual_path_mode: power_config.manual.usb_c_path_mode,
@@ -91,6 +86,9 @@
                     voltage_mv: telemetry.usb_c.voltage_mv,
                     current_ma: telemetry.usb_c.current_ma,
                 });
+                // Keep the v1 ports API aligned with the shared USB-C display contract so
+                // manual TPS output still exposes live U17 V/A/W to Dashboard and Web.
+                let usb_c_api_present = usb_c_display.measurements_visible;
 
                 #[cfg(feature = "net_http")]
                 {
