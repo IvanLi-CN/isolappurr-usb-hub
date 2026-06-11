@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { expect, within } from "@storybook/test";
+import { expect, waitFor, within } from "@storybook/test";
 
 import { DeviceRuntimeProvider } from "../../app/device-runtime";
 import { DevicesProvider } from "../../app/devices-store";
@@ -390,9 +390,11 @@ export const LegacyFirmwareUnknownIsolation: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(
-      await canvas.findByTestId("port-card-status-port_c"),
-    ).toHaveTextContent(/ok/i);
+    await waitFor(() =>
+      expect(canvas.getByTestId("port-card-status-port_c")).toHaveTextContent(
+        /ok/i,
+      ),
+    );
     await expect(
       canvas.queryByTestId("dashboard-usb-c-live-mode"),
     ).not.toBeInTheDocument();
@@ -431,9 +433,11 @@ export const ManualForceLive: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const usbCCard = await canvas.findByTestId("port-card-port_c");
-    await expect(
-      within(usbCCard).queryByTestId("port-card-status-port_c"),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(usbCCard).queryByTestId("port-card-status-port_c"),
+      ).not.toBeInTheDocument(),
+    );
     await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
     ).toHaveTextContent("3.30V");
@@ -453,9 +457,11 @@ export const ManualPathOnLive: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const usbCCard = await canvas.findByTestId("port-card-port_c");
-    await expect(
-      within(usbCCard).queryByTestId("port-card-status-port_c"),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(usbCCard).queryByTestId("port-card-status-port_c"),
+      ).not.toBeInTheDocument(),
+    );
     await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
     ).toHaveTextContent("9.00V");
@@ -475,9 +481,11 @@ export const ManualPathOffLive: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const usbCCard = await canvas.findByTestId("port-card-port_c");
-    await expect(
-      within(usbCCard).queryByTestId("port-card-status-port_c"),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(usbCCard).queryByTestId("port-card-status-port_c"),
+      ).not.toBeInTheDocument(),
+    );
     await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
     ).toHaveTextContent("9.00V");

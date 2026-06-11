@@ -310,6 +310,10 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   }, [connectionState, device.id, runtime]);
 
   const liveDisplay = pdDiagnostics?.display ?? null;
+  const hasResolvedUsbCPort =
+    connectionState === "online"
+      ? runtime.port(device.id, "port_c") !== null
+      : false;
   const usbCHeaderBadges = liveDisplay
     ? [
         {
@@ -431,7 +435,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
           headerBadges={usbCHeaderBadges}
           showStatusBadge={
             usbCHeaderBadges.length === 0 ||
-            items.port_c.telemetry.status !== "ok"
+            (hasResolvedUsbCPort && items.port_c.telemetry.status !== "ok")
           }
           disabled={writeDisabled}
           onTogglePower={() =>
