@@ -75,10 +75,20 @@ pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
     write_json_u32_or_null(body, pd.sw2303_request_mv);
     let _ = body.push_str(",\"ma\":");
     write_json_u32_or_null(body, pd.sw2303_request_ma);
-    let _ = body.push_str("},\"sw2303_last_valid_request\":{\"mv\":");
+    let _ = body.push_str("},\"sw2303_vbus_mv\":");
+    write_json_u32_or_null(body, pd.sw2303_vbus_mv);
+    let _ = body.push_str(",\"sw2303_last_valid_request\":{\"mv\":");
     write_json_u32_or_null(body, pd.sw2303_last_valid_mv);
     let _ = body.push_str(",\"ma\":");
     write_json_u32_or_null(body, pd.sw2303_last_valid_ma);
+    let _ = body.push_str("},\"display\":{");
+    write_usb_c_display_json(body, pd);
+    let _ = body.push_str("},\"usb_c_actual\":{\"voltage_mv\":");
+    write_json_u32_or_null(body, pd.usb_c_actual_voltage_mv);
+    let _ = body.push_str(",\"current_ma\":");
+    write_json_u32_or_null(body, pd.usb_c_actual_current_ma);
+    let _ = body.push_str(",\"power_mw\":");
+    write_json_u32_or_null(body, pd.usb_c_actual_power_mw);
     let _ = body.push_str("},\"tps_setpoint\":{\"output_enabled\":");
     write_json_bool_or_null(body, pd.tps_setpoint_output_enabled);
     let _ = body.push_str(",\"mv\":");
@@ -91,6 +101,70 @@ pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
         pd.runtime_recovery_count,
         pd.sample_uptime_ms
     );
+}
+
+fn write_usb_c_display_json(body: &mut String, pd: &ApiPdSnapshot) {
+    let _ = body.push_str("\"mode\":{");
+    write_usb_c_display_mode_json(body, pd.usb_c_display_mode);
+    let _ = body.push('}');
+    let _ = body.push_str(",\"measurements_visible\":");
+    let _ = body.push_str(if pd.usb_c_display_measurements_visible {
+        "true"
+    } else {
+        "false"
+    });
+    let _ = body.push_str(",\"badge\":{");
+    write_usb_c_display_badge_json(body, pd.usb_c_display_badge);
+    let _ = body.push('}');
+}
+
+fn write_usb_c_display_mode_json(
+    body: &mut String,
+    mode: isolapurr_usb_hub::display_ui::NormalUiPortMode,
+) {
+    let _ = body.push_str("\"kind\":");
+    write_json_string(body, usb_c_display_mode_kind(mode));
+    let _ = body.push_str(",\"label\":");
+    let mut mode_buf = [0u8; isolapurr_usb_hub::display_ui::USB_C_DISPLAY_TEXT_CAPACITY];
+    let len = isolapurr_usb_hub::display_ui::format_port_mode_text(mode, &mut mode_buf);
+    let label = core::str::from_utf8(&mode_buf[..len]).unwrap_or("OFF");
+    write_json_string(body, label);
+}
+
+fn write_usb_c_display_badge_json(
+    body: &mut String,
+    badge: isolapurr_usb_hub::display_ui::NormalUiPortBadge,
+) {
+    let _ = body.push_str("\"kind\":");
+    write_json_string(body, usb_c_display_badge_kind(badge));
+    let _ = body.push_str(",\"label\":");
+    let mut badge_buf = [0u8; isolapurr_usb_hub::display_ui::USB_C_DISPLAY_TEXT_CAPACITY];
+    let len = isolapurr_usb_hub::display_ui::format_port_badge_text(badge, &mut badge_buf);
+    let label = core::str::from_utf8(&badge_buf[..len]).unwrap_or("---");
+    write_json_string(body, label);
+}
+
+fn usb_c_display_mode_kind(mode: isolapurr_usb_hub::display_ui::NormalUiPortMode) -> &'static str {
+    match mode {
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::UsbA => "off",
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::Pd => "pd",
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::Pps => "pps",
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::Dc => "dc",
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::ManualVoltageMv(_) => "dc",
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::Off => "off",
+    }
+}
+
+fn usb_c_display_badge_kind(
+    badge: isolapurr_usb_hub::display_ui::NormalUiPortBadge,
+) -> &'static str {
+    match badge {
+        isolapurr_usb_hub::display_ui::NormalUiPortBadge::VoltageMv(_) => "voltage",
+        isolapurr_usb_hub::display_ui::NormalUiPortBadge::Focus => "focus",
+        isolapurr_usb_hub::display_ui::NormalUiPortBadge::On => "on",
+        isolapurr_usb_hub::display_ui::NormalUiPortBadge::Off => "off",
+        isolapurr_usb_hub::display_ui::NormalUiPortBadge::Unknown => "unknown",
+    }
 }
 
 fn write_sw2303_readback_json(

@@ -68,6 +68,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
         )
         .route("/api/v1/devices/{id}/reset", post(device_reset))
         .route("/api/v1/devices/{id}/diagnostics", get(device_diagnostics))
+        .route(
+            "/api/v1/devices/{id}/pd-diagnostics",
+            get(device_diagnostics),
+        )
         .route("/api/v1/serial/lease", post(create_lease))
         .route(
             "/api/v1/serial/lease/{lease_id}",
@@ -458,6 +462,149 @@ fn wifi_matches_expected_ssid(value: &Value, expected_ssid: &str) -> bool {
         && wifi.get("ssid").and_then(Value::as_str) == Some(expected_ssid)
 }
 
+fn should_verify_power_config_after_serial_error(err: &anyhow::Error) -> bool {
+    let message = err.to_string();
+    message.contains("serial response timed out") || message.contains("serial read")
+}
+
+async fn verify_power_config_after_set_timeout(
+    state: &AppState,
+    id: &str,
+    expected: &Value,
+) -> anyhow::Result<Value> {
+    let mut last_error = None;
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        match usb_jsonl_request(state, id, "power.config_get", None).await {
+            Ok(mut value) => {
+                if power_config_matches_expected(&value, expected) {
+                    if let Some(result) = value.get_mut("result").and_then(Value::as_object_mut) {
+                        result.insert("verified_after_serial_timeout".to_string(), json!(true));
+                    }
+                    return Ok(value);
+                }
+                last_error = Some(anyhow!(
+                    "power config did not report the requested values yet"
+                ));
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("power config did not verify after serial timeout")))
+}
+
+async fn verify_power_defaults_after_timeout(state: &AppState, id: &str) -> anyhow::Result<Value> {
+    let mut last_error = None;
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        match usb_jsonl_request(state, id, "power.config_get", None).await {
+            Ok(mut value) => {
+                if power_config_matches_defaults(&value) {
+                    if let Some(result) = value.get_mut("result").and_then(Value::as_object_mut) {
+                        result.insert("verified_after_serial_timeout".to_string(), json!(true));
+                    }
+                    return Ok(value);
+                }
+                last_error = Some(anyhow!(
+                    "power defaults did not report the expected values yet"
+                ));
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("power defaults did not verify after serial timeout")))
+}
+
+fn power_config_matches_expected(value: &Value, expected: &Value) -> bool {
+    let observed = value.get("result").unwrap_or(value);
+    observed.get("persisted").and_then(Value::as_bool) == Some(true)
+        && observed.get("hardware") == expected.get("hardware")
+        && observed.get("tps_mode") == expected.get("tps_mode")
+        && observed.get("capability") == expected.get("capability")
+        && observed.pointer("/manual/voltage_mv") == expected.pointer("/manual/voltage_mv")
+        && observed.pointer("/manual/current_limit_ma")
+            == expected.pointer("/manual/current_limit_ma")
+        && observed.pointer("/manual/usb_c_path_mode")
+            == expected.pointer("/manual/usb_c_path_mode")
+}
+
+fn power_config_matches_defaults(value: &Value) -> bool {
+    let observed = value.get("result").unwrap_or(value);
+    observed.get("persisted").and_then(Value::as_bool) == Some(true)
+        && observed.get("hardware").and_then(Value::as_str) == Some("sw2303")
+        && observed.get("tps_mode").and_then(Value::as_str) == Some("auto_follow")
+        && observed
+            .pointer("/capability/profile")
+            .and_then(Value::as_str)
+            == Some("full")
+        && observed
+            .pointer("/capability/power_watts")
+            .and_then(Value::as_u64)
+            == Some(100)
+        && observed
+            .pointer("/capability/protocols/pd")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/protocols/qc20")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/protocols/qc30")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/protocols/fcp")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/protocols/afc")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/protocols/scp")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/protocols/pe20")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/protocols/bc12")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/protocols/sfcp")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/pd/pps")
+            .and_then(Value::as_bool)
+            == Some(true)
+        && observed
+            .pointer("/capability/pd/fixed_voltages_mv")
+            .and_then(Value::as_array)
+            .is_some_and(|voltages| {
+                voltages.len() == 4
+                    && voltages[0].as_u64() == Some(9_000)
+                    && voltages[1].as_u64() == Some(12_000)
+                    && voltages[2].as_u64() == Some(15_000)
+                    && voltages[3].as_u64() == Some(20_000)
+            })
+        && observed
+            .pointer("/manual/voltage_mv")
+            .and_then(Value::as_u64)
+            == Some(5_000)
+        && observed
+            .pointer("/manual/current_limit_ma")
+            .and_then(Value::as_u64)
+            == Some(1_000)
+        && observed
+            .pointer("/manual/usb_c_path_mode")
+            .and_then(Value::as_str)
+            == Some("default")
+}
+
 async fn device_flash(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -587,6 +734,12 @@ async fn device_power_config_set(
     let params = json!({"config": config, "owner": query.owner});
     match usb_jsonl_request(&state, &id, "power.config_set", Some(params)).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) if should_verify_power_config_after_serial_error(&err) => {
+            match verify_power_config_after_set_timeout(&state, &id, &config).await {
+                Ok(value) => Json(redact_sensitive(&value)).into_response(),
+                Err(_) => error_from_anyhow(err),
+            }
+        }
         Err(err) => error_from_anyhow(err),
     }
 }
@@ -612,7 +765,194 @@ async fn device_power_config_defaults(
     .await
     {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) if should_verify_power_config_after_serial_error(&err) => {
+            match verify_power_defaults_after_timeout(&state, &id).await {
+                Ok(value) => Json(redact_sensitive(&value)).into_response(),
+                Err(_) => error_from_anyhow(err),
+            }
+        }
         Err(err) => error_from_anyhow(err),
+    }
+}
+
+#[cfg(test)]
+mod http_bridge_tests {
+    use super::*;
+
+    #[test]
+    fn power_config_verify_matches_requested_payload_without_runtime_only_fields() {
+        let observed = json!({
+            "ok": true,
+            "result": {
+                "hardware": "sw2303",
+                "persisted": true,
+                "tps_mode": "manual",
+                "capability": {
+                    "profile": "full",
+                    "power_watts": 100,
+                    "protocols": {
+                        "pd": true,
+                        "qc20": true,
+                        "qc30": true,
+                        "fcp": true,
+                        "afc": true,
+                        "scp": true,
+                        "pe20": true,
+                        "bc12": true,
+                        "sfcp": true
+                    },
+                    "pd": {
+                        "pps": true,
+                        "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                    }
+                },
+                "manual": {
+                    "voltage_mv": 4800,
+                    "current_limit_ma": 1000,
+                    "usb_c_path_mode": "default",
+                    "path_policy": "force_close"
+                },
+                "lock": {
+                    "owner": 42,
+                    "expires_at_ms": 1234
+                }
+            }
+        });
+        let expected = json!({
+            "hardware": "sw2303",
+            "tps_mode": "manual",
+            "capability": {
+                "profile": "full",
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": true,
+                    "qc30": true,
+                    "fcp": true,
+                    "afc": true,
+                    "scp": true,
+                    "pe20": true,
+                    "bc12": true,
+                    "sfcp": true
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                }
+            },
+            "manual": {
+                "voltage_mv": 4800,
+                "current_limit_ma": 1000,
+                "usb_c_path_mode": "default"
+            }
+        });
+
+        assert!(power_config_matches_expected(&observed, &expected));
+    }
+
+    #[test]
+    fn power_config_verify_rejects_mismatched_requested_payload() {
+        let observed = json!({
+            "ok": true,
+            "result": {
+                "hardware": "sw2303",
+                "persisted": true,
+                "tps_mode": "manual",
+                "capability": {
+                    "profile": "full",
+                    "power_watts": 100,
+                    "protocols": {
+                        "pd": true,
+                        "qc20": true,
+                        "qc30": true,
+                        "fcp": true,
+                        "afc": true,
+                        "scp": true,
+                        "pe20": true,
+                        "bc12": true,
+                        "sfcp": true
+                    },
+                    "pd": {
+                        "pps": true,
+                        "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                    }
+                },
+                "manual": {
+                    "voltage_mv": 5000,
+                    "current_limit_ma": 1000,
+                    "usb_c_path_mode": "default"
+                }
+            }
+        });
+        let expected = json!({
+            "hardware": "sw2303",
+            "tps_mode": "manual",
+            "capability": {
+                "profile": "full",
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": true,
+                    "qc30": true,
+                    "fcp": true,
+                    "afc": true,
+                    "scp": true,
+                    "pe20": true,
+                    "bc12": true,
+                    "sfcp": true
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                }
+            },
+            "manual": {
+                "voltage_mv": 4800,
+                "current_limit_ma": 1000,
+                "usb_c_path_mode": "default"
+            }
+        });
+
+        assert!(!power_config_matches_expected(&observed, &expected));
+    }
+
+    #[test]
+    fn power_config_defaults_match_full_profile() {
+        let observed = json!({
+            "ok": true,
+            "result": {
+                "hardware": "sw2303",
+                "persisted": true,
+                "tps_mode": "auto_follow",
+                "capability": {
+                    "profile": "full",
+                    "power_watts": 100,
+                    "protocols": {
+                        "pd": true,
+                        "qc20": true,
+                        "qc30": true,
+                        "fcp": true,
+                        "afc": true,
+                        "scp": true,
+                        "pe20": true,
+                        "bc12": true,
+                        "sfcp": true
+                    },
+                    "pd": {
+                        "pps": true,
+                        "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                    }
+                },
+                "manual": {
+                    "voltage_mv": 5000,
+                    "current_limit_ma": 1000,
+                    "usb_c_path_mode": "default",
+                    "path_policy": "auto"
+                }
+            }
+        });
+
+        assert!(power_config_matches_defaults(&observed));
     }
 }
 

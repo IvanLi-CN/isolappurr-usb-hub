@@ -517,6 +517,11 @@ function localUsbMethodEndpoint(
         path: `/api/v1/devices/${deviceId}/hub/route`,
         body: params,
       };
+    case "pd.diagnostics_get":
+      return {
+        method: "GET",
+        path: `/api/v1/devices/${deviceId}/pd-diagnostics`,
+      };
     case "power.config_get":
       return {
         method: "GET",

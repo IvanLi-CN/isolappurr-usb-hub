@@ -16,9 +16,11 @@ import {
   type DeviceApiError,
   type DeviceInfoResponse,
   getDeviceInfo,
+  getPdDiagnostics,
   getPorts,
   getPowerConfig,
   getWifiConfig,
+  type PdDiagnosticsResponse,
   type PowerConfigInput,
   type PowerConfigResponse,
   type RebootResponse,
@@ -344,6 +346,9 @@ export function DeviceRuntimeProvider({
         }
         if (method === "wifi.get") {
           return getWifiConfig(baseUrl) as Promise<Result<T>>;
+        }
+        if (method === "pd.diagnostics_get") {
+          return getPdDiagnostics(baseUrl) as Promise<Result<T>>;
         }
         if (method === "power.config_get") {
           return getPowerConfig(baseUrl) as Promise<Result<T>>;
@@ -814,6 +819,16 @@ export function DeviceRuntimeProvider({
     [runDeviceCommand],
   );
 
+  const pdDiagnostics = useCallback(
+    async (deviceId: string): Promise<Result<PdDiagnosticsResponse>> => {
+      return runDeviceCommand<PdDiagnosticsResponse>(
+        deviceId,
+        "pd.diagnostics_get",
+      );
+    },
+    [runDeviceCommand],
+  );
+
   const savePowerConfig = useCallback(
     async (
       deviceId: string,
@@ -1154,6 +1169,7 @@ export function DeviceRuntimeProvider({
       clearWifiConfig: clearWifi,
       resetSettings,
       rebootDevice: reboot,
+      pdDiagnostics,
       powerConfig,
       savePowerConfig,
       restorePowerDefaults: restoreDefaults,
@@ -1167,6 +1183,7 @@ export function DeviceRuntimeProvider({
     deviceInfo,
     devices,
     now,
+    pdDiagnostics,
     powerConfig,
     reboot,
     refreshDevice,

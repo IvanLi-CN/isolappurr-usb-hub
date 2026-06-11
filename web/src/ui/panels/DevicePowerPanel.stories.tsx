@@ -52,6 +52,14 @@ const hostLockedConfig: PowerConfigResponse = {
   lock: { owner: 42, expires_at_ms: Date.now() + 15_000 },
 };
 
+const manualForceConfig: PowerConfigResponse = {
+  ...manualConfig,
+  manual: {
+    ...manualConfig.manual,
+    usb_c_path_mode: "force",
+  },
+};
+
 const ok = (value: PowerConfigResponse): Promise<Result<PowerConfigResponse>> =>
   Promise.resolve({ ok: true, value });
 
@@ -236,5 +244,24 @@ export const MediumWideCards: Story = {
       await canvas.findByTestId("PD-negotiation-badge"),
     ).toBeVisible();
     await expect(canvas.getByTestId("QC2-negotiation-badge")).toBeVisible();
+  },
+};
+
+export const ManualForceConfigOnly: Story = {
+  args: {
+    ...Default.args,
+    loadPowerConfig: () => ok(manualForceConfig),
+    savePowerConfig: () => ok(manualForceConfig),
+    setPowerLock: () => ok(manualForceConfig),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole("button", { name: "Manual TPS" }),
+    ).toBeVisible();
+    await expect(canvas.getByText("Force")).toBeVisible();
+    await expect(
+      canvas.queryByText("USB-C source state"),
+    ).not.toBeInTheDocument();
   },
 };

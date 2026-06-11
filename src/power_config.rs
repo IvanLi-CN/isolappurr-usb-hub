@@ -252,13 +252,16 @@ pub fn quantize_manual_current_ma(ma: u16) -> u16 {
 pub fn resolve_manual_path_control(
     mode: ManualUsbCPathMode,
     manual_vout_mv: u16,
-    sw2303_request_mv: Option<u16>,
+    explicit_request_mv: Option<u16>,
 ) -> Sw2303PathControl {
+    const TYPEC_DEFAULT_VBUS_MV: u16 = 5_000;
+
     match mode {
         ManualUsbCPathMode::Force => Sw2303PathControl::ForceOpen,
         ManualUsbCPathMode::Disconnect => Sw2303PathControl::ForceClose,
-        ManualUsbCPathMode::Default => match sw2303_request_mv {
+        ManualUsbCPathMode::Default => match explicit_request_mv {
             Some(request_mv) if manual_vout_mv <= request_mv => Sw2303PathControl::Auto,
+            None if manual_vout_mv <= TYPEC_DEFAULT_VBUS_MV => Sw2303PathControl::Auto,
             _ => Sw2303PathControl::ForceClose,
         },
     }
@@ -295,15 +298,19 @@ mod tests {
     #[test]
     fn resolves_default_manual_path_policy() {
         assert_eq!(
-            resolve_manual_path_control(ManualUsbCPathMode::Default, 9_000, Some(5_000)),
+            resolve_manual_path_control(ManualUsbCPathMode::Default, 9_000, Some(5_000),),
             Sw2303PathControl::ForceClose
         );
         assert_eq!(
-            resolve_manual_path_control(ManualUsbCPathMode::Default, 5_000, Some(5_000)),
+            resolve_manual_path_control(ManualUsbCPathMode::Default, 5_000, Some(5_000),),
             Sw2303PathControl::Auto
         );
         assert_eq!(
             resolve_manual_path_control(ManualUsbCPathMode::Default, 5_000, None),
+            Sw2303PathControl::Auto
+        );
+        assert_eq!(
+            resolve_manual_path_control(ManualUsbCPathMode::Default, 5_200, None),
             Sw2303PathControl::ForceClose
         );
     }
@@ -311,7 +318,7 @@ mod tests {
     #[test]
     fn resolves_explicit_path_modes() {
         assert_eq!(
-            resolve_manual_path_control(ManualUsbCPathMode::Disconnect, 5_000, Some(21_000)),
+            resolve_manual_path_control(ManualUsbCPathMode::Disconnect, 5_000, Some(21_000),),
             Sw2303PathControl::ForceClose
         );
         assert_eq!(

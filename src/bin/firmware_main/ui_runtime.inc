@@ -412,24 +412,6 @@ fn telemetry_field_to_ui(field: Field<u32>) -> NormalUiField {
     }
 }
 
-fn normal_ui_badge_mv(
-    request: Option<PowerRequest>,
-    fallback_voltage_mv: Field<u32>,
-) -> Option<u16> {
-    if let Some(request) = request {
-        if request.v_req_mv >= 1_000 {
-            return Some(request.v_req_mv);
-        }
-    }
-
-    match fallback_voltage_mv {
-        Field::Ok(voltage_mv) if voltage_mv >= 1_000 => {
-            Some(voltage_mv.min(u16::MAX as u32) as u16)
-        }
-        _ => None,
-    }
-}
-
 fn log_sw2303_profile_status(context: &'static str, status: &EnableProfileStatus) {
     let pps_max_mv = status
         .pd_capabilities
@@ -478,6 +460,29 @@ fn uptime_ms_from_instant(now: Instant) -> u64 {
 
 fn elapsed_ms_since(start: Instant) -> u64 {
     (start.elapsed().as_micros() / 1_000) as u64
+}
+
+fn power_request_changed_for_logging(last: Option<PowerRequest>, next: PowerRequest) -> bool {
+    match last {
+        Some(last) => {
+            last.fast_protocol != next.fast_protocol
+                || last.fast_voltage != next.fast_voltage
+                || last.negotiated_protocol != next.negotiated_protocol
+                || last.cc_attached != next.cc_attached
+                || last.status_valid != next.status_valid
+                || last.v_req_mv != next.v_req_mv
+                || last.i_req_ma != next.i_req_ma
+        }
+        None => true,
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn telemetry_field_value(field: Field<u32>) -> Option<u32> {
+    match field {
+        Field::Ok(value) => Some(value),
+        Field::Err => None,
+    }
 }
 
 #[cfg(feature = "net_http")]

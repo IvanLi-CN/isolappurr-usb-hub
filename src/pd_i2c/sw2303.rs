@@ -258,6 +258,7 @@ where
     };
     let negotiated_protocol = dev.get_negotiated_protocol().await;
     let cc_attached = dev.is_sink_device_connected().await;
+    let vbus_mv = dev.read_vbus_mv_12bit().await.ok();
     let status_valid = status.is_ok() && negotiated_protocol.is_ok() && cc_attached.is_ok();
 
     Ok(PowerRequest {
@@ -268,6 +269,7 @@ where
         status_valid,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
+        vbus_mv,
     })
 }
 
@@ -290,5 +292,6 @@ where
         status_valid: false,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
+        vbus_mv: None,
     })
 }

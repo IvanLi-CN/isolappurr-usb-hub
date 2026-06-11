@@ -737,6 +737,18 @@
         #[cfg(feature = "net_http")]
         {
             let now = Instant::now();
+            let usb_c_display = resolve_usb_c_display(UsbCDisplayInput {
+                tps_mode: power_config.tps_mode,
+                manual_path_mode: power_config.manual.usb_c_path_mode,
+                manual_setpoint_mv: power_config.manual.voltage_mv,
+                tps_output_enabled: tps_state
+                    .last
+                    .map(|active_setpoint| active_setpoint.output_enabled)
+                    .unwrap_or(setpoint.output_enabled),
+                request,
+                voltage_mv: api_usb_c_metrics.voltage_mv,
+                current_ma: api_usb_c_metrics.current_ma,
+            });
 
             let ports = net::ApiPortsSnapshot {
                 port_a: net::ApiPortSnapshot {
@@ -788,10 +800,17 @@
                 sw2303_readback_matches_config: sw2303_readback_config.matches_config(&power_config),
                 sw2303_request_mv: request.map(|request| request.v_req_mv as u32),
                 sw2303_request_ma: request.map(|request| request.i_req_ma as u32),
+                sw2303_vbus_mv: request.and_then(|request| request.vbus_mv),
                 sw2303_last_valid_mv: last_valid_sw2303_request
                     .map(|request| request.v_req_mv as u32),
                 sw2303_last_valid_ma: last_valid_sw2303_request
                     .map(|request| request.i_req_ma as u32),
+                usb_c_display_mode: usb_c_display.mode,
+                usb_c_display_badge: usb_c_display.badge,
+                usb_c_display_measurements_visible: usb_c_display.measurements_visible,
+                usb_c_actual_voltage_mv: telemetry_field_value(api_usb_c_metrics.voltage_mv),
+                usb_c_actual_current_ma: telemetry_field_value(api_usb_c_metrics.current_ma),
+                usb_c_actual_power_mw: telemetry_field_value(api_usb_c_metrics.power_mw),
                 tps_setpoint_output_enabled: tps_state.last.map(|setpoint| setpoint.output_enabled),
                 tps_setpoint_mv: tps_state.last.map(|setpoint| setpoint.v_out_mv as u32),
                 tps_setpoint_ilim_ma: tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32),

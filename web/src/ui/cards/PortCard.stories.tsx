@@ -73,3 +73,36 @@ export const Busy: Story = {
     },
   },
 };
+
+export const UsbCLiveBadges: Story = {
+  args: {
+    portId: "port_c",
+    label: "USB-C",
+    showStatusBadge: false,
+    headerBadges: [
+      {
+        label: "3.30V",
+        toneClassName:
+          "border-[var(--badge-warning-bg)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]",
+      },
+      {
+        label: "FOCUS",
+        toneClassName:
+          "border-[var(--badge-warning-bg)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]",
+      },
+    ],
+    telemetry: {
+      status: "ok",
+      voltage_mv: 5011,
+      current_ma: 0,
+      power_mw: 3,
+      sample_uptime_ms: 123_999,
+    },
+    state: {
+      power_enabled: true,
+      data_connected: false,
+      replugging: false,
+      busy: false,
+    },
+  },
+};

@@ -107,6 +107,61 @@ export type PowerConfigInput = {
   manual: PowerConfigResponse["manual"];
 };
 
+export type PdDiagnosticsResponse = {
+  usb_c_power_enabled: boolean;
+  sw2303_i2c_allowed: boolean;
+  sw2303_profile_applied: boolean;
+  sw2303_stable_reads: number;
+  sw2303_error_latched: boolean;
+  tps_error_latched: boolean;
+  sw2303_readback_config: {
+    available: boolean;
+    matches_config: boolean;
+    power_watts: number | null;
+    protocols: {
+      pd: boolean | null;
+      qc20: boolean | null;
+      qc30: boolean | null;
+      fcp: boolean | null;
+      afc: boolean | null;
+      scp: boolean | null;
+      pe20: boolean | null;
+      bc12: boolean | null;
+      sfcp: boolean | null;
+    };
+    pd: {
+      pps: boolean | null;
+      fixed_voltages_mv: number[];
+    };
+  };
+  sw2303_request: { mv: number | null; ma: number | null };
+  sw2303_vbus_mv: number | null;
+  sw2303_last_valid_request: { mv: number | null; ma: number | null };
+  display: {
+    mode: {
+      kind: "pd" | "pps" | "dc" | "off";
+      label: string;
+    };
+    measurements_visible: boolean;
+    badge: {
+      kind: "voltage" | "focus" | "on" | "off" | "unknown";
+      label: string;
+    };
+  };
+  usb_c_actual: {
+    voltage_mv: number | null;
+    current_ma: number | null;
+    power_mw: number | null;
+  };
+  tps_setpoint: {
+    output_enabled: boolean | null;
+    mv: number | null;
+    ilim_ma: number | null;
+  };
+  runtime_recovery_count: number;
+  sample_uptime_ms: number;
+};
+
 type ErrorEnvelope = {
   error: {
     code: string;
@@ -310,6 +365,14 @@ export async function getPowerConfig(
   baseUrl: string,
 ): Promise<Result<PowerConfigResponse>> {
   return fetchJson<PowerConfigResponse>(baseUrl, "/api/v1/power/config", {
+    method: "GET",
+  });
+}
+
+export async function getPdDiagnostics(
+  baseUrl: string,
+): Promise<Result<PdDiagnosticsResponse>> {
+  return fetchJson<PdDiagnosticsResponse>(baseUrl, "/api/v1/pd-diagnostics", {
     method: "GET",
   });
 }

@@ -119,9 +119,11 @@ fn draw_dashboard_port_dynamic(
     port: NormalUiPort,
     theme: PortTheme,
 ) {
-    let title = port_mode_text(port.mode);
-    let mut badge_buf = [b' '; 5];
-    let badge_len = format_badge_text(port, &mut badge_buf);
+    let mut title_buf = [b' '; USB_C_DISPLAY_TEXT_CAPACITY];
+    let title_len = format_port_mode_text(port.mode, &mut title_buf);
+    let title = core::str::from_utf8(&title_buf[..title_len]).unwrap_or("OFF");
+    let mut badge_buf = [b' '; USB_C_DISPLAY_TEXT_CAPACITY];
+    let badge_len = format_port_badge_text(port.badge, &mut badge_buf);
     let badge = core::str::from_utf8(&badge_buf[..badge_len]).unwrap_or("OFF");
 
     let chip_font = &dashboard_font::SMALL;
@@ -199,46 +201,6 @@ fn draw_dashboard_port_dynamic(
         power_text,
         power_color,
     );
-}
-
-fn port_mode_text(mode: NormalUiPortMode) -> &'static str {
-    match mode {
-        NormalUiPortMode::UsbA => "USB-A",
-        NormalUiPortMode::Pd => "PD",
-        NormalUiPortMode::Pps => "PPS",
-        NormalUiPortMode::Dc => "DC",
-        NormalUiPortMode::Off => "OFF",
-    }
-}
-
-fn format_badge_text(port: NormalUiPort, out: &mut [u8; 5]) -> usize {
-    if let Some(mv) = port.badge_mv {
-        return format_badge_mv(mv, out);
-    }
-
-    let fallback = match port.mode {
-        NormalUiPortMode::Off => *b"OFF",
-        _ => *b"---",
-    };
-    out[..fallback.len()].copy_from_slice(&fallback);
-    fallback.len()
-}
-
-fn format_badge_mv(mv: u16, out: &mut [u8; 5]) -> usize {
-    let rounded = ((mv as u32) + 500) / 1_000;
-    if rounded >= 100 {
-        out[..4].copy_from_slice(b"99V+");
-        return 4;
-    }
-    if rounded >= 10 {
-        out[0] = b'0' + (rounded / 10) as u8;
-        out[1] = b'0' + (rounded % 10) as u8;
-        out[2] = b'V';
-        return 3;
-    }
-    out[0] = b'0' + rounded as u8;
-    out[1] = b'V';
-    2
 }
 
 fn format_dashboard_value(

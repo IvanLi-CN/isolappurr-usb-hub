@@ -541,7 +541,7 @@
         }
 
         if let Some(request) = request {
-            if last_request != Some(request) {
+            if power_request_changed_for_logging(last_request, request) {
                 info!(
                     "pd request: fast_proto={} fast_v={} proto={:?} v_req_mv={} i_req_ma={}",
                     request.fast_protocol,
@@ -574,13 +574,18 @@
                 i_lim_ma: power_config.manual.current_limit_ma,
             };
 
-            let sw_request_mv = request
-                .filter(|request| request.status_valid)
+            let explicit_request_mv = request
+                .filter(|request| {
+                    request.status_valid
+                        && (request.negotiated_protocol.is_some()
+                            || request.fast_protocol
+                            || request.fast_voltage)
+                })
                 .map(|request| request.v_req_mv);
             let path_control = resolve_manual_path_control(
                 power_config.manual.usb_c_path_mode,
                 manual_vout_mv,
-                sw_request_mv,
+                explicit_request_mv,
             );
 
             if sw2303_i2c_allowed && last_sw2303_path_control != Some(path_control) {
@@ -623,7 +628,9 @@
             && setpoint == boot_sp
             && tps_5v_setpoint_since.is_none()
             && tps_apply_needed;
-        if (usb_c_pd_power_on
+        let manual_tps_active = usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual;
+        if (!manual_tps_active
+            && usb_c_pd_power_on
             && sw2303_stable_reads < SW2303_STABLE_READS_BEFORE_TPS
             && !tps_boot_restore_needed)
             || (!tps_voltage_update_needed && !tps_apply_needed)

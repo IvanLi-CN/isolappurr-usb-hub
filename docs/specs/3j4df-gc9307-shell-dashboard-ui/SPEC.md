@@ -59,12 +59,15 @@
 - 界面骨架必须以双口卡片为主体，不得预留单独的全局标题栏或汇总栏来重复端口内已经可见的信息。
 - 常驻可见文本不得依赖 1x 字号；凡是给主人直接阅读的信息，至少应使用可正常辨认的放大级别。
 - 本规格的字体目标是“清晰、现代、工具化”，不是刻意追求复古像素风；Dashboard 预览与后续实现都不得把“位图放大感”当成视觉风格本身。
-- 中部双口卡片必须一左一右固定映射：左卡=`USB-A` 常规口；右卡=高压 / 复用输出通道。右卡标题必须显示当前输出模式 token（如 `PD`、`PPS`、`DC`），不得直接写连接器名称 `USB-C`。
+- 中部双口卡片必须一左一右固定映射：左卡=`USB-A` 常规口；右卡=高压 / 复用输出通道。右卡左上 badge 必须显示当前输出语义（如 `PD`、`PPS`、`DC` 或手动设定电压 `x.xxV`），不得直接写连接器名称 `USB-C`。
+- 当右卡处于手动 TPS 输出模式时，左上 badge 必须显示手动设定 TPS 电压；右上 badge 在 `force` 模式下固定显示 `FOCUS`，其它手动路径模式只允许显示按真实 SW2303 VBUS 导通状态计算出的 `ON` / `OFF`。
 - 每张卡片必须包含 4 个层级元素：
   - 端口名（可读字号）
   - 极简但有实际意义的状态 / 电压档位标签（例如 `5V`、`20V`）
   - 主数据（Voltage，超大字号）
   - 次数据（Current / Power，必须达到正常阅读所需字号）
+- 右卡在手动 TPS 输出模式下的 `V / A / W` 仍必须显示 U17 实测值，不得把
+  手动目标值或 SW2303 请求值伪装成实时读数。
 - Dashboard 示例必须继续承载当前正常界面的同一类核心数据：`V / A / W`；不得依赖本项目当前不存在的新硬件输入。
 - 配色 token 至少包含以下角色：
   - `Canvas / Pure White`: `#FFFFFF`
@@ -80,7 +83,7 @@
   - 暖米金仅用于柔化背景、分区高光、非关键装饰
   - `Berry` 仅用于警示、故障、强调点缀；禁止把整屏做成粉红/玫红底
 - 实屏硬件适配必须优先于桌面预览：GC9307 的 RGB565 量化、偏冷白点与高亮面板会吞掉过淡 pastel 层次，任何“看起来像没画”的浅色 token 都视为不合格。
-- 标题胶囊（如 `USB-A`、`PD`、`PPS`、`DC`、`OFF`）必须满足以下实屏约束：
+- 标题胶囊（如 `USB-A`、`PD`、`PPS`、`DC`、`3.30V`、`OFF`）必须满足以下实屏约束：
   - 不能只依赖非常淡的底色区分，必须保留清晰的胶囊轮廓
   - 推荐使用“较强浅色底 + 更明确描边 + 深色文字”的组合
   - 当前实屏校正口径：卡片底色≈`accent@10`，标题胶囊底色≈`accent@74`，标题胶囊描边≈`accent@132`，标题字形高度按上一版再增加约 `2px`，胶囊总高再增加约 `4px`
@@ -182,7 +185,7 @@
 每张卡片内部按固定垂直栈布局：
 
 - **Header band**：`y=10..29`
-  - 左卡左侧：`USB-A` 身份 token；右卡左侧：模式 token（`PD` / `PPS` / `DC`），左内边距 `12px`
+  - 左卡左侧：`USB-A` 身份 token；右卡左侧：输出语义 badge（`PD` / `PPS` / `DC` / `x.xxV`），左内边距 `12px`
   - 右侧：电压档位 / 合约标签（如 `5V`、`20V`），右内边距 `12px`
 - **Voltage band**：`y=34..69`
   - 放置主电压读数，左内边距 `12px`
@@ -350,6 +353,18 @@
 Dashboard 示例图（由 `tools/render_dashboard_preview.rs` 生成 `framebuffer.bin`，再经 `$firmware-display-preview/scripts/fb_to_png.py` 转出）：
 
 ![](./assets/gc9307-shell-dashboard-example.png)
+
+PR: include
+手动 TPS 强制输出时，右卡显示手动设定电压 + `FOCUS`，同时保持实测 `V / A / W`。
+![](./assets/gc9307-shell-dashboard-usb-c-manual-focus.png)
+
+PR: include
+手动 TPS 非强制且 VBUS MOS 实际导通时，右卡显示手动设定电压 + `ON`。
+![](./assets/gc9307-shell-dashboard-usb-c-manual-path-on.png)
+
+PR: include
+手动 TPS 非强制且 VBUS MOS 未导通时，右卡显示手动设定电压 + `OFF`，并保留实测 `0.00V / 0.00A / 0.00W`。
+![](./assets/gc9307-shell-dashboard-usb-c-manual-path-off.png)
 
 ## 参考（References）
 

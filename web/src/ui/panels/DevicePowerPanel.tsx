@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getStablePowerLockOwner } from "../../app/device-runtime-support";
 import type {
@@ -226,6 +226,13 @@ export function DevicePowerPanel({
   const setPowerLockRef = useRef(setPowerLock);
   const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
 
+  const applyLoadedConfig = useCallback((nextConfig: PowerConfigResponse) => {
+    setConfig(nextConfig);
+    setForm(cloneConfig(nextConfig));
+    setError(null);
+    setDirty(false);
+  }, []);
+
   useEffect(() => {
     loadPowerConfigRef.current = loadPowerConfig;
   }, [loadPowerConfig]);
@@ -237,24 +244,39 @@ export function DevicePowerPanel({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const res = await loadPowerConfigRef.current();
+      const configRes = await loadPowerConfigRef.current();
       if (cancelled) {
         return;
       }
-      if (res.ok) {
-        setConfig(res.value);
-        setForm(cloneConfig(res.value));
-        setError(null);
-        setDirty(false);
+      if (configRes.ok) {
+        applyLoadedConfig(configRes.value);
       } else {
-        setError(res.error.message);
+        setError(configRes.error.message);
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyLoadedConfig]);
+
+  useEffect(() => {
+    if (form || transportLabel === "unknown") {
+      return;
+    }
+    let cancelled = false;
+    const retry = async () => {
+      const configRes = await loadPowerConfigRef.current();
+      if (cancelled || !configRes.ok) {
+        return;
+      }
+      applyLoadedConfig(configRes.value);
+    };
+    void retry();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoadedConfig, form, transportLabel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -290,6 +312,8 @@ export function DevicePowerPanel({
       if (res.ok) {
         lockedRef.current = true;
         setConfig(res.value);
+        setForm((current) => current ?? cloneConfig(res.value));
+        setError(null);
       } else {
         setError(res.error.message);
       }
@@ -658,7 +682,7 @@ export function DevicePowerPanel({
                   [
                     "default",
                     "Default",
-                    "Disconnect only while manual voltage exceeds negotiated SW2303 request.",
+                    "Auto while manual voltage stays within the default 5V Type-C fallback or the negotiated SW2303 request.",
                   ],
                   [
                     "disconnect",

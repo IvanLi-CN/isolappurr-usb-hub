@@ -318,6 +318,33 @@ fn draw_usb_c_5v_idle_not_present_example(canvas: &mut Canvas) {
     );
 }
 
+fn draw_usb_c_manual_focus_example(canvas: &mut Canvas) {
+    draw_port(
+        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
+    );
+    draw_port(
+        canvas, 164, 6, 150, 160, BERRY, "3.30V", "FOCUS", "5.01V", "0.00A", "0.00W",
+    );
+}
+
+fn draw_usb_c_manual_path_on_example(canvas: &mut Canvas) {
+    draw_port(
+        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
+    );
+    draw_port(
+        canvas, 164, 6, 150, 160, BERRY, "9.00V", "ON", "9.01V", "0.81A", "7.3W",
+    );
+}
+
+fn draw_usb_c_manual_path_off_example(canvas: &mut Canvas) {
+    draw_port(
+        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
+    );
+    draw_port(
+        canvas, 164, 6, 150, 160, BERRY, "9.00V", "OFF", "0.00V", "0.00A", "0.00W",
+    );
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::current_dir()?;
     let assets = root.join("docs/specs/3j4df-gc9307-shell-dashboard-ui/assets");
@@ -334,6 +361,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match std::env::var("GC9307_DASHBOARD_SCENE").as_deref() {
         Ok("usb-c-pps-present") => draw_usb_c_pps_present_example(&mut canvas),
         Ok("usb-c-5v-idle-not-present") => draw_usb_c_5v_idle_not_present_example(&mut canvas),
+        Ok("usb-c-manual-focus") => draw_usb_c_manual_focus_example(&mut canvas),
+        Ok("usb-c-manual-path-on") => draw_usb_c_manual_path_on_example(&mut canvas),
+        Ok("usb-c-manual-path-off") => draw_usb_c_manual_path_off_example(&mut canvas),
         _ => draw_dashboard_example(&mut canvas),
     }
 
