@@ -63,12 +63,18 @@ temporary firmware edits.
   TPS setpoint formatted as `x.xxV`; `force` fixes the right badge to `FOCUS`;
   other manual path modes show `ON/OFF` from the actual SW2303 VBUS path
   state.
-- The Web Dashboard USB-C card header MUST render exactly two badges and no
-  third status chip: left badge = shared display mode/setpoint label, right
-  badge = shared live state badge.
+- When live USB-C display badges are present and USB-C telemetry resolves
+  cleanly, the Web Dashboard USB-C card header MUST render exactly two badges
+  and no third status chip: left badge = shared display mode/setpoint label,
+  right badge = shared live state badge.
+- When live USB-C display badges are absent, or USB-C telemetry is not `ok`,
+  the Dashboard MUST preserve the existing USB-C status chip instead of hiding
+  fault/legacy state behind the live badges.
 - Storybook coverage MUST include normal, host-locked, failure, save, restore,
   and narrow states for the power panel, plus Dashboard USB-C card inline
-  live-badge states for auto-follow, `FOCUS`, `ON`, and `OFF`.
+  live-badge states for auto-follow, `FOCUS`, `ON`, and `OFF`, the legacy
+  no-diagnostics fallback, and the telemetry-error regression where a real
+  error status chip must remain visible.
 
 ## Acceptance
 
@@ -105,6 +111,12 @@ temporary firmware edits.
   real VBUS path state, there is no third status badge on that card header,
   and the USB-C V/A/W on that card continue to come from the live U17
   telemetry.
+- Given legacy firmware without PD diagnostics, when the Dashboard USB-C card
+  refreshes, then inline live badges stay absent and the existing USB-C status
+  chip remains visible.
+- Given live USB-C display badges and a USB-C telemetry error, when the
+  Dashboard USB-C card refreshes, then the live mode/setpoint badges remain
+  visible and the existing USB-C error status chip also remains visible.
 - Given the narrow power panel story, when a protocol card becomes too narrow,
   then its negotiation badge is hidden without clipping the protocol card
   content or toggle.
@@ -227,6 +239,32 @@ PR: include
 
 PR: include
 ![Device dashboard panel manual path off live](./assets/device-dashboard-panel-manual-path-off-live.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/LegacyFirmwareUnknownIsolation`
+  state: Dashboard legacy no-diagnostics fallback
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies legacy firmware without PD diagnostics keeps the
+  existing USB-C status chip instead of rendering incomplete live badges.
+
+PR: include
+![Device dashboard panel legacy firmware unknown isolation](./assets/device-dashboard-panel-legacy-firmware-unknown-isolation.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/LiveBadgesKeepErrorStatus`
+  state: Dashboard live badges with USB-C telemetry error
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies live USB-C mode/setpoint badges do not suppress a
+  real USB-C error status chip.
+
+PR: include
+![Device dashboard panel live badges keep error status](./assets/device-dashboard-panel-live-badges-keep-error-status.png)
 
 - source_type: live_hardware_browser
   story_id_or_title: `Local USB HIL overview`

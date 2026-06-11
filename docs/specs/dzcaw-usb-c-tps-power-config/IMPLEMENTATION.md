@@ -34,6 +34,10 @@
   manual setpoint `x.xxV` on the left badge and `FOCUS` / `ON` / `OFF` on the
   right badge, with the USB-C card header capped at exactly two badges while
   reusing the existing USB-C card V/A/W live telemetry.
+- Refined the Dashboard USB-C status-chip gate so inline live badges suppress
+  the legacy status chip only after the USB-C port telemetry resolves cleanly;
+  legacy no-diagnostics states and real USB-C telemetry errors keep the
+  existing status chip visible.
 - Added protocol-card negotiation metadata so `PD`/`PPS` render `CC` and the
   current non-PD protocol set renders `DPDM`.
 - Added card-level container-query behavior so negotiation badges show only on
@@ -47,6 +51,9 @@
 - Added a config-only manual `Force` Storybook proof so visual evidence can
   directly show the settings page no longer renders the live USB-C state after
   that state moved into inline badges on Dashboard.
+- Added Dashboard regression coverage for the legacy no-diagnostics fallback
+  and for the case where live badges remain visible alongside a real USB-C
+  telemetry error status chip.
 - Fixed narrow responsive layout so the power cap and output mode controls do
   not clip.
 

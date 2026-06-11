@@ -16,3 +16,12 @@
   preserve responsive readability.
 - Extended Storybook/spec evidence to cover badge visibility on wide, narrow,
   and constrained medium-width protocol cards.
+
+## 2026-06-12
+
+- Refined the Dashboard USB-C badge contract so live badges hide the legacy
+  status chip only when USB-C telemetry resolves cleanly.
+- Kept the legacy USB-C status chip visible for firmware without PD
+  diagnostics and for real USB-C telemetry errors.
+- Refreshed Dashboard visual evidence and added dedicated regression captures
+  for the legacy no-diagnostics and telemetry-error states.
