@@ -745,6 +745,7 @@
                     .last
                     .map(|active_setpoint| active_setpoint.output_enabled)
                     .unwrap_or(setpoint.output_enabled),
+                port_power_enabled: port_usb_c.power == PowerState::On,
                 request,
                 voltage_mv: api_usb_c_metrics.voltage_mv,
                 current_ma: api_usb_c_metrics.current_ma,

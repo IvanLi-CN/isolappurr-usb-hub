@@ -48,6 +48,12 @@ const manualOffDevice: StoredDevice = {
   baseUrl: "http://hub-manual-off.local",
 };
 
+const telemetryErrorDevice: StoredDevice = {
+  id: "hub-telemetry-error",
+  name: "Telemetry Error Hub",
+  baseUrl: "http://hub-telemetry-error.local",
+};
+
 const autoPdDiagnostics: PdDiagnosticsResponse = {
   usb_c_power_enabled: true,
   sw2303_i2c_allowed: true,
@@ -197,6 +203,15 @@ function mockUsbCTelemetry(hostname: string) {
       sample_uptime_ms: 2345,
     };
   }
+  if (hostname === "hub-telemetry-error.local") {
+    return {
+      status: "error",
+      voltage_mv: null,
+      current_ma: null,
+      power_mw: null,
+      sample_uptime_ms: 2345,
+    };
+  }
   return {
     status: "ok",
     voltage_mv: 9000,
@@ -239,6 +254,7 @@ const mockDeviceApi = async (
     "hub-manual-focus.local",
     "hub-manual-on.local",
     "hub-manual-off.local",
+    "hub-telemetry-error.local",
   ]);
 
   if (!knownHosts.has(url.hostname)) {
@@ -472,5 +488,23 @@ export const ManualPathOffLive: Story = {
     await expect(
       canvas.queryByText("USB-C source state"),
     ).not.toBeInTheDocument();
+  },
+};
+
+export const LiveBadgesKeepErrorStatus: Story = {
+  args: {
+    device: telemetryErrorDevice,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByTestId("dashboard-usb-c-live-mode"),
+    ).toHaveTextContent(/pd/i);
+    await expect(
+      canvas.getByTestId("dashboard-usb-c-live-badge"),
+    ).toHaveTextContent("9V");
+    await expect(
+      canvas.getByTestId("port-card-status-port_c"),
+    ).toHaveTextContent(/error/i);
   },
 };

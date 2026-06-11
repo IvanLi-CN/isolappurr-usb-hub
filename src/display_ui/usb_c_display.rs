@@ -14,6 +14,7 @@ pub struct UsbCDisplayInput {
     pub manual_path_mode: ManualUsbCPathMode,
     pub manual_setpoint_mv: u16,
     pub tps_output_enabled: bool,
+    pub port_power_enabled: bool,
     pub request: Option<PowerRequest>,
     pub voltage_mv: Field<u32>,
     pub current_ma: Field<u32>,
@@ -27,7 +28,10 @@ pub struct UsbCDisplayState {
 }
 
 pub fn resolve_usb_c_display(input: UsbCDisplayInput) -> UsbCDisplayState {
-    if matches!(input.tps_mode, TpsMode::Manual) && input.tps_output_enabled {
+    if matches!(input.tps_mode, TpsMode::Manual)
+        && input.tps_output_enabled
+        && input.port_power_enabled
+    {
         return UsbCDisplayState {
             mode: NormalUiPortMode::ManualVoltageMv(input.manual_setpoint_mv),
             badge: manual_badge(input.manual_path_mode, input.request),
@@ -219,6 +223,7 @@ mod tests {
             manual_path_mode: ManualUsbCPathMode::Force,
             manual_setpoint_mv: 3_300,
             tps_output_enabled: true,
+            port_power_enabled: true,
             request: None,
             voltage_mv: Field::Ok(0),
             current_ma: Field::Ok(0),
@@ -241,6 +246,7 @@ mod tests {
             manual_path_mode: ManualUsbCPathMode::Default,
             manual_setpoint_mv: 9_000,
             tps_output_enabled: true,
+            port_power_enabled: true,
             request: Some(request(9_000, Some(999))),
             voltage_mv: Field::Ok(0),
             current_ma: Field::Ok(0),
@@ -250,6 +256,7 @@ mod tests {
             manual_path_mode: ManualUsbCPathMode::Disconnect,
             manual_setpoint_mv: 9_000,
             tps_output_enabled: true,
+            port_power_enabled: true,
             request: Some(request(9_000, Some(1_000))),
             voltage_mv: Field::Ok(0),
             current_ma: Field::Ok(0),
@@ -267,6 +274,7 @@ mod tests {
             manual_path_mode: ManualUsbCPathMode::Default,
             manual_setpoint_mv: 5_000,
             tps_output_enabled: false,
+            port_power_enabled: true,
             request: Some(request(9_000, Some(9_000))),
             voltage_mv: Field::Ok(9_000),
             current_ma: Field::Ok(500),
@@ -276,6 +284,7 @@ mod tests {
             manual_path_mode: ManualUsbCPathMode::Default,
             manual_setpoint_mv: 5_000,
             tps_output_enabled: false,
+            port_power_enabled: true,
             request: Some(request(7_000, Some(7_000))),
             voltage_mv: Field::Ok(7_000),
             current_ma: Field::Ok(500),
@@ -294,6 +303,25 @@ mod tests {
             manual_path_mode: ManualUsbCPathMode::Default,
             manual_setpoint_mv: 5_000,
             tps_output_enabled: false,
+            port_power_enabled: false,
+            request: None,
+            voltage_mv: Field::Ok(0),
+            current_ma: Field::Ok(0),
+        });
+
+        assert_eq!(state.mode, NormalUiPortMode::Off);
+        assert_eq!(state.badge, NormalUiPortBadge::Off);
+        assert!(!state.measurements_visible);
+    }
+
+    #[test]
+    fn manual_mode_falls_back_to_off_when_port_power_is_disabled() {
+        let state = resolve_usb_c_display(UsbCDisplayInput {
+            tps_mode: TpsMode::Manual,
+            manual_path_mode: ManualUsbCPathMode::Force,
+            manual_setpoint_mv: 3_300,
+            tps_output_enabled: true,
+            port_power_enabled: false,
             request: None,
             voltage_mv: Field::Ok(0),
             current_ma: Field::Ok(0),
