@@ -1,21 +1,39 @@
+fn write_port_telemetry_json(body: &mut String, telemetry: &ApiPortTelemetry) {
+    let _ = core::write!(
+        body,
+        "{{\"status\":\"{}\",\"voltage_mv\":",
+        telemetry.status.as_str(),
+    );
+    write_json_u32_or_null(body, telemetry.voltage_mv);
+    let _ = body.push_str(",\"current_ma\":");
+    write_json_u32_or_null(body, telemetry.current_ma);
+    let _ = body.push_str(",\"power_mw\":");
+    write_json_u32_or_null(body, telemetry.power_mw);
+    let _ = core::write!(
+        body,
+        ",\"sample_uptime_ms\":{}}}",
+        telemetry.sample_uptime_ms
+    );
+}
+
 fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &ApiPortSnapshot) {
     let _ = core::write!(
         body,
-        "{{\"portId\":\"{}\",\"label\":\"{}\",\"telemetry\":{{\"status\":\"{}\",\"voltage_mv\":",
+        "{{\"portId\":\"{}\",\"label\":\"{}\",\"telemetry\":",
         port_id.as_str(),
         label,
-        port.telemetry.status.as_str(),
     );
-
-    write_json_u32_or_null(body, port.telemetry.voltage_mv);
-    let _ = body.push_str(",\"current_ma\":");
-    write_json_u32_or_null(body, port.telemetry.current_ma);
-    let _ = body.push_str(",\"power_mw\":");
-    write_json_u32_or_null(body, port.telemetry.power_mw);
+    write_port_telemetry_json(body, &port.telemetry);
+    let _ = body.push_str(",\"telemetry_raw\":");
+    match port.telemetry_raw {
+        Some(telemetry_raw) => write_port_telemetry_json(body, &telemetry_raw),
+        None => {
+            let _ = body.push_str("null");
+        }
+    }
     let _ = core::write!(
         body,
-        ",\"sample_uptime_ms\":{}}},\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"power_set\":true}}}}",
-        port.telemetry.sample_uptime_ms,
+        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"power_set\":true}}}}",
         if port.state.power_enabled {
             "true"
         } else {
@@ -35,7 +53,11 @@ fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &Ap
     );
 }
 
-pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
+pub fn write_pd_diagnostics_json(
+    body: &mut String,
+    pd: &ApiPdSnapshot,
+    idle_bias: &ApiIdleBiasSnapshot,
+) {
     let _ = core::write!(
         body,
         "{{\"usb_c_power_enabled\":{},\"sw2303_i2c_allowed\":{},\"sw2303_profile_applied\":{},\"sw2303_stable_reads\":{},\"sw2303_error_latched\":{},\"tps_error_latched\":{},\"sw2303_readback_config\":",
@@ -83,21 +105,19 @@ pub fn write_pd_diagnostics_json(body: &mut String, pd: &ApiPdSnapshot) {
     write_json_u32_or_null(body, pd.sw2303_last_valid_ma);
     let _ = body.push_str("},\"display\":{");
     write_usb_c_display_json(body, pd);
-    let _ = body.push_str("},\"usb_c_actual\":{\"voltage_mv\":");
-    write_json_u32_or_null(body, pd.usb_c_actual_voltage_mv);
-    let _ = body.push_str(",\"current_ma\":");
-    write_json_u32_or_null(body, pd.usb_c_actual_current_ma);
-    let _ = body.push_str(",\"power_mw\":");
-    write_json_u32_or_null(body, pd.usb_c_actual_power_mw);
-    let _ = body.push_str("},\"tps_setpoint\":{\"output_enabled\":");
+    let _ = body.push_str("},\"usb_c_actual\":");
+    write_port_telemetry_json(body, &pd.usb_c_actual);
+    let _ = body.push_str(",\"tps_setpoint\":{\"output_enabled\":");
     write_json_bool_or_null(body, pd.tps_setpoint_output_enabled);
     let _ = body.push_str(",\"mv\":");
     write_json_u32_or_null(body, pd.tps_setpoint_mv);
     let _ = body.push_str(",\"ilim_ma\":");
     write_json_u32_or_null(body, pd.tps_setpoint_ilim_ma);
+    let _ = body.push_str("},\"idle_bias\":");
+    write_idle_bias_json(body, idle_bias);
     let _ = core::write!(
         body,
-        "}},\"runtime_recovery_count\":{},\"sample_uptime_ms\":{}}}",
+        ",\"runtime_recovery_count\":{},\"sample_uptime_ms\":{}}}",
         pd.runtime_recovery_count,
         pd.sample_uptime_ms
     );
@@ -165,6 +185,62 @@ fn usb_c_display_badge_kind(
         isolapurr_usb_hub::display_ui::NormalUiPortBadge::Off => "off",
         isolapurr_usb_hub::display_ui::NormalUiPortBadge::Unknown => "unknown",
     }
+}
+
+pub fn write_idle_bias_json(body: &mut String, idle_bias: &ApiIdleBiasSnapshot) {
+    let _ = core::write!(
+        body,
+        "{{\"correction_enabled\":{},\"dataset\":{{\"status\":\"{}\",\"min_voltage_mv\":{},\"max_voltage_mv\":{},\"step_mv\":{},\"point_count\":{},\"offsets_ma\":",
+        if idle_bias.correction_enabled {
+            "true"
+        } else {
+            "false"
+        },
+        if idle_bias.dataset_valid {
+            "valid"
+        } else {
+            "missing"
+        },
+        idle_bias.metadata.min_voltage_mv,
+        idle_bias.metadata.max_voltage_mv,
+        idle_bias.metadata.step_mv,
+        idle_bias.metadata.point_count,
+    );
+    if idle_bias.dataset_valid {
+        let _ = body.push('[');
+        for (index, offset_ma) in idle_bias.current_offsets_ma.iter().enumerate() {
+            if index > 0 {
+                let _ = body.push(',');
+            }
+            let _ = core::write!(body, "{}", offset_ma);
+        }
+        let _ = body.push(']');
+    } else {
+        let _ = body.push_str("null");
+    }
+    let _ = body.push_str("},\"current_applied_offset_ma\":");
+    write_json_u32_or_null(body, idle_bias.current_applied_offset_ma);
+    let _ = core::write!(
+        body,
+        ",\"run\":{{\"state\":\"{}\",\"completed_points\":{},\"point_count\":{},\"target_voltage_mv\":",
+        idle_bias.run.state.as_str(),
+        idle_bias.run.completed_points,
+        idle_bias.run.point_count,
+    );
+    write_json_u32_or_null(body, idle_bias.run.target_voltage_mv.map(u32::from));
+    let _ = body.push_str(",\"error\":");
+    match idle_bias.run.error {
+        Some(error) => {
+            let _ = core::write!(body, "{{\"code\":\"{}\",\"message\":", error.as_str());
+            write_json_string(body, error.message());
+            let _ = body.push('}');
+        }
+        None => {
+            let _ = body.push_str("null");
+        }
+    }
+    let _ = body.push('}');
+    let _ = body.push('}');
 }
 
 fn write_sw2303_readback_json(
@@ -328,6 +404,12 @@ pub enum ApiActionError {
     Busy,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiIdleBiasActionError {
+    Busy,
+    DatasetMissing,
+}
+
 const POWER_LOCK_TTL_MS: u64 = 15_000;
 
 pub async fn try_set_power_lock(
@@ -374,7 +456,11 @@ pub async fn try_set_power_config(
             return Err(ApiActionError::Busy);
         }
     }
-    if guard.pending.power_config.is_some() || guard.pending.settings_reset.is_some() {
+    if guard.pending.power_config.is_some()
+        || guard.pending.idle_bias.is_some()
+        || guard.pending.settings_reset.is_some()
+        || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
+    {
         return Err(ApiActionError::Busy);
     }
     crate::reset_power_config_result();
@@ -400,7 +486,9 @@ pub async fn try_reset_settings(
         || guard.pending.port_c.is_some()
         || guard.pending.usb_c_downstream_route.is_some()
         || guard.pending.power_config.is_some()
+        || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
+        || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
     {
         return Err(ApiActionError::Busy);
     }
@@ -423,7 +511,9 @@ pub async fn try_set_action(
     if port.state.busy
         || (port_id == ApiPortId::PortC
             && (guard.pending.usb_c_downstream_route.is_some()
-                || guard.pending.settings_reset.is_some()))
+                || guard.pending.settings_reset.is_some()
+                || guard.pending.idle_bias.is_some()
+                || guard.idle_bias.run.state == ApiIdleBiasRunState::Running))
     {
         return Err(ApiActionError::Busy);
     }
@@ -447,12 +537,84 @@ pub async fn try_set_usb_c_downstream_route(
     let mut guard = api_state.lock().await;
     if guard.ports.port_c.state.busy
         || guard.pending.usb_c_downstream_route.is_some()
+        || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
+        || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
     {
         return Err(ApiActionError::Busy);
     }
     crate::reset_usb_c_route_result();
     guard.pending.usb_c_downstream_route = Some(route);
+    Ok(())
+}
+
+pub async fn try_set_idle_bias(
+    api_state: &'static ApiSharedMutex,
+    command: ApiIdleBiasCommand,
+    owner: Option<u32>,
+) -> Result<(), ApiIdleBiasActionError> {
+    let mut guard = api_state.lock().await;
+    let now = uptime_ms();
+    if let Some(lock) = guard.power.lock {
+        if lock.expires_at_ms <= now {
+            guard.power.lock = None;
+        } else if owner != Some(lock.owner) {
+            return Err(ApiIdleBiasActionError::Busy);
+        }
+    }
+    if matches!(command, ApiIdleBiasCommand::SetCorrection { enabled: true })
+        && !guard.idle_bias.dataset_valid
+    {
+        return Err(ApiIdleBiasActionError::DatasetMissing);
+    }
+    if guard.ports.port_c.state.busy
+        || guard.pending.port_c.is_some()
+        || guard.pending.usb_c_downstream_route.is_some()
+        || guard.pending.power_config.is_some()
+        || guard.pending.idle_bias.is_some()
+        || guard.pending.settings_reset.is_some()
+        || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
+    {
+        return Err(ApiIdleBiasActionError::Busy);
+    }
+    crate::reset_idle_bias_result();
+    guard.pending.idle_bias = Some(command);
+    Ok(())
+}
+
+pub async fn try_run_idle_bias(
+    api_state: &'static ApiSharedMutex,
+    owner: Option<u32>,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    let now = uptime_ms();
+    if let Some(lock) = guard.power.lock {
+        if lock.expires_at_ms <= now {
+            guard.power.lock = None;
+        } else if owner != Some(lock.owner) {
+            return Err(ApiActionError::Busy);
+        }
+    }
+    if guard.ports.port_c.state.busy
+        || guard.pending.port_c.is_some()
+        || guard.pending.usb_c_downstream_route.is_some()
+        || guard.pending.power_config.is_some()
+        || guard.pending.idle_bias.is_some()
+        || guard.pending.settings_reset.is_some()
+        || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
+    {
+        return Err(ApiActionError::Busy);
+    }
+
+    crate::reset_idle_bias_result();
+    guard.pending.idle_bias = Some(ApiIdleBiasCommand::Run);
+    guard.idle_bias.run = ApiIdleBiasRunSnapshot {
+        state: ApiIdleBiasRunState::Running,
+        completed_points: 0,
+        point_count: guard.idle_bias.metadata.point_count,
+        target_voltage_mv: Some(guard.idle_bias.metadata.min_voltage_mv),
+        error: None,
+    };
     Ok(())
 }
 

@@ -21,6 +21,33 @@
   the SW2303 path in `auto` when no explicit protocol request exists, matching
   the Type-C 5 V fallback behavior for passive CC sinks.
 - Added GC9307 settings entries for Power Preset and Power Advanced.
+- Added `src/idle_bias.rs` with fixed metadata, 37-point offset storage,
+  voltage-based interpolation, corrected current clamp, and corrected power
+  recomputation helpers.
+- Added a dedicated idle-bias EEPROM record with metadata/version/CRC guards so
+  missing or corrupt data boots as `dataset missing` with correction disabled.
+- Split USB-C runtime telemetry into `raw` and `corrected` views so the main
+  API/UI path stays corrected while diagnostics keep the original INA226 values.
+- Added MCU-side idle-bias async job handling for `run`, `set correction`, and
+  `clear`, including attach checks, temporary sweep-mode TPS control, all-or-
+  nothing EEPROM save behavior, reset-path cleanup, restoration of the
+  pre-calibration runtime power state, and a `500 ms` settle plus `500 ms`
+  averaging window at every sweep point.
+- Extended `settings.reset scope=other` so it also clears the idle-bias EEPROM
+  record and forces correction off.
+
+## Host / CLI
+
+- Added bridge and Local USB/JSONL contracts for:
+  - `power.idle_bias_get`
+  - `power.idle_bias_set`
+  - `power.idle_bias_run`
+  - `power.idle_bias_clear`
+- Added device bridge HTTP routes for `/power/idle-bias`, `/run`, and `/clear`.
+- Added `isolapurr power idle-bias show|run|clear|set --enabled <bool>` with
+  interactive confirmation and `--yes` bypass handling.
+- Updated human CLI output so the main USB-C reading stays corrected while
+  `--json` preserves both corrected telemetry and the raw USB-C debug fields.
 
 ## Web
 
@@ -56,10 +83,16 @@
   telemetry error status chip.
 - Fixed narrow responsive layout so the power cap and output mode controls do
   not clip.
+- Added a `USB-C Idle Bias Calibration` section with dataset, correction, and
+  run-state summaries, action gating, confirmation modals, and running-status
+  messaging.
+- Extended Storybook coverage with idle-bias uncalibrated, correction-on,
+  running, confirmation, and failure states.
 
 ## Verification
 
-- `cargo check`
+- `cargo check --features net_http`
+- `cd tools/isolapurr-host && cargo +stable-aarch64-apple-darwin test --no-run --target aarch64-apple-darwin --config 'build.target="aarch64-apple-darwin"'`
 - `cd web && bun run check`
 - `cd web && bun run build`
 - `cd web && bun run build-storybook`
@@ -67,10 +100,13 @@
 - `cd web && bun run test:storybook`
 - `PORT=/dev/cu.usbmodem21221401 just flash`
 - Local USB browser verification against `HIL-f293cc-USB`
+- `cd web && bun test ./src`
 
 `cargo test power_config` is not a valid gate for this repository target as
 currently configured because the ESP `xtensa-esp32s3-none-elf` target lacks the
 standard `test` crate.
+
+`cd web && bun run test:storybook` was not run in this pass.
 
 ## HIL Verification
 
@@ -203,3 +239,7 @@ Runtime remediation:
   when there is no explicit negotiated protocol request, so passive 5.1 kΩ Rd
   sinks keep the SW2303 path `auto` and show live `ON` instead of regressing to
   `force_close`.
+
+Idle-bias HIL still needs the empty-load bench sweep described in the feature
+acceptance notes: USB-C disconnected, calibration run completed, and spot
+checks at `3/5/9/12/15/20/21 V` comparing raw versus corrected current.

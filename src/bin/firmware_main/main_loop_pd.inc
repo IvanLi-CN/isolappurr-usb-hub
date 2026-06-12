@@ -94,6 +94,19 @@
                             false
                         }
                     };
+                let idle_bias_cleared =
+                    match provisioning::clear_idle_bias_calibration(telemetry_sampler.i2c_mut())
+                        .await
+                    {
+                        Ok(()) => true,
+                        Err(err) => {
+                            defmt::warn!(
+                                "provisioning: failed to clear idle-bias calibration from EEPROM U21: {:?}",
+                                defmt::Debug2Format(&err)
+                            );
+                            false
+                        }
+                    };
 
                 if route_cleared {
                     usb_c_downstream_route = default_route;
@@ -123,6 +136,9 @@
                     last_request = None;
                     last_fast_protocol = None;
                 }
+                if idle_bias_cleared {
+                    idle_bias_calibration = None;
+                }
 
                 if matches!(port_usb_c.power, PowerState::On)
                     && matches!(port_usb_c.data, DataState::Connected)
@@ -133,16 +149,23 @@
                 {
                     let mut guard = api_state.lock().await;
                     guard.pending.settings_reset = None;
-                    if route_cleared || power_cleared {
+                    if route_cleared || power_cleared || idle_bias_cleared {
                         guard.hub.usb_c_downstream_route = usb_c_downstream_route;
                         guard.hub.usb_c_downstream_persisted = usb_c_downstream_persisted;
                         guard.power.config = power_config;
                         guard.power.persisted = power_config_persisted;
                         guard.power.last_path_control = last_sw2303_path_control;
+                        if idle_bias_cleared {
+                            guard.idle_bias = idle_bias_api_snapshot(
+                                idle_bias_calibration,
+                                net::ApiIdleBiasRunSnapshot::idle(),
+                                None,
+                            );
+                        }
                     }
                 }
 
-                if route_cleared && power_cleared {
+                if route_cleared && power_cleared && idle_bias_cleared {
                     let _ = ui
                         .show_message_card(
                             reset_now,
@@ -156,7 +179,7 @@
                     prompt_tone.notify(SoundEvent::ActionOk);
                     SETTINGS_RESET_RESULT.signal(SettingsResetResult::Complete);
                     info!("provisioning: non-Wi-Fi settings cleared from EEPROM U21");
-                } else if route_cleared || power_cleared {
+                } else if route_cleared || power_cleared || idle_bias_cleared {
                     let _ = ui
                         .show_message_card(
                             reset_now,
@@ -313,6 +336,8 @@
                 }
             }
         }
+        #[cfg(feature = "net_http")]
+        include!("main_loop_pd_idle_bias.inc");
         #[cfg(feature = "net_http")]
         if REBOOT_PENDING.load(Ordering::Acquire) && !has_wifi_provisioning_pending() {
             REBOOT_PENDING.store(false, Ordering::Release);

@@ -37,6 +37,7 @@ export type Port = {
   portId: PortId;
   label: string;
   telemetry: PortTelemetry;
+  telemetry_raw?: PortTelemetry | null;
   state: PortState;
   capabilities: PortCapabilities;
 };

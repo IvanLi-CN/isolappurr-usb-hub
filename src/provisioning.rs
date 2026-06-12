@@ -4,10 +4,16 @@ use embassy_time::{Duration, Timer};
 use embedded_hal::i2c::{Error, ErrorKind, SevenBitAddress};
 use embedded_hal_async::i2c::{I2c, Operation};
 
+use crate::idle_bias::{
+    IDLE_BIAS_MAX_VOLTAGE_MV, IDLE_BIAS_MIN_VOLTAGE_MV, IDLE_BIAS_POINT_COUNT, IDLE_BIAS_STEP_MV,
+    IdleBiasCalibration, IdleBiasMetadata,
+};
 use crate::power_config::{
     ManualTpsConfig, ManualUsbCPathMode, PowerConfig, PowerHardwareKind, TpsMode,
     UsbCCapabilityConfig,
 };
+
+const IDLE_BIAS_FIXED_METADATA: IdleBiasMetadata = IdleBiasMetadata::fixed();
 
 pub const WIFI_EEPROM_ADDR_7BIT: SevenBitAddress = 0x50;
 
@@ -30,6 +36,10 @@ const POWER_SETTINGS_RECORD_LEN: usize = 96;
 const POWER_SETTINGS_MAGIC: &[u8; 8] = b"IPPWR01\0";
 const POWER_SETTINGS_VERSION: u8 = 1;
 const POWER_SETTINGS_RECORD_OFFSET: u16 = 320;
+const IDLE_BIAS_RECORD_LEN: usize = 96;
+const IDLE_BIAS_MAGIC: &[u8; 8] = b"IPIBIAS\0";
+const IDLE_BIAS_VERSION: u8 = 1;
+const IDLE_BIAS_RECORD_OFFSET: u16 = 416;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UsbCDownstreamRoute {
@@ -371,6 +381,67 @@ where
     .await
 }
 
+pub async fn load_idle_bias_calibration<I2C>(
+    i2c: &mut I2C,
+) -> Result<Option<IdleBiasCalibration>, ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let mut record = [0u8; IDLE_BIAS_RECORD_LEN];
+    eeprom_read(i2c, IDLE_BIAS_RECORD_OFFSET, &mut record).await?;
+
+    if record.iter().all(|b| *b == 0x00 || *b == 0xff) {
+        return Ok(None);
+    }
+    if &record[..IDLE_BIAS_MAGIC.len()] != IDLE_BIAS_MAGIC
+        || record[IDLE_BIAS_MAGIC.len()] != IDLE_BIAS_VERSION
+    {
+        return Err(ProvisioningError::InvalidRecord);
+    }
+
+    let checksum_offset = IDLE_BIAS_RECORD_LEN - 4;
+    let expected = u32::from_le_bytes([
+        record[checksum_offset],
+        record[checksum_offset + 1],
+        record[checksum_offset + 2],
+        record[checksum_offset + 3],
+    ]);
+    record[checksum_offset..].fill(0);
+    if checksum(&record) != expected {
+        return Err(ProvisioningError::InvalidRecord);
+    }
+
+    decode_idle_bias_calibration(&record)
+        .map(Some)
+        .ok_or(ProvisioningError::InvalidRecord)
+}
+
+pub async fn store_idle_bias_calibration<I2C>(
+    i2c: &mut I2C,
+    calibration: IdleBiasCalibration,
+) -> Result<(), ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let mut record = [0u8; IDLE_BIAS_RECORD_LEN];
+    record[..IDLE_BIAS_MAGIC.len()].copy_from_slice(IDLE_BIAS_MAGIC);
+    record[IDLE_BIAS_MAGIC.len()] = IDLE_BIAS_VERSION;
+    encode_idle_bias_calibration(&mut record, calibration);
+
+    let crc = checksum(&record);
+    record[IDLE_BIAS_RECORD_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
+    eeprom_write(i2c, IDLE_BIAS_RECORD_OFFSET, &record).await
+}
+
+pub async fn clear_idle_bias_calibration<I2C>(
+    i2c: &mut I2C,
+) -> Result<(), ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    eeprom_write(i2c, IDLE_BIAS_RECORD_OFFSET, &[0u8; IDLE_BIAS_RECORD_LEN]).await
+}
+
 fn encode_power_config(record: &mut [u8; POWER_SETTINGS_RECORD_LEN], config: PowerConfig) {
     record[9] = match config.hardware {
         PowerHardwareKind::Sw2303 => 0,
@@ -461,6 +532,48 @@ fn unpack_capability(power_watts: u8, flags: u8, pd_flags: u8) -> UsbCCapability
     }
 }
 
+fn encode_idle_bias_calibration(
+    record: &mut [u8; IDLE_BIAS_RECORD_LEN],
+    calibration: IdleBiasCalibration,
+) {
+    record[9] = calibration.correction_enabled as u8;
+    record[10..12].copy_from_slice(&IDLE_BIAS_MIN_VOLTAGE_MV.to_le_bytes());
+    record[12..14].copy_from_slice(&IDLE_BIAS_MAX_VOLTAGE_MV.to_le_bytes());
+    record[14..16].copy_from_slice(&IDLE_BIAS_STEP_MV.to_le_bytes());
+    record[16] = IDLE_BIAS_POINT_COUNT as u8;
+    for (index, offset_ma) in calibration.current_offsets_ma.iter().enumerate() {
+        let start = 17 + (index * 2);
+        record[start..start + 2].copy_from_slice(&offset_ma.to_le_bytes());
+    }
+}
+
+fn decode_idle_bias_calibration(
+    record: &[u8; IDLE_BIAS_RECORD_LEN],
+) -> Option<IdleBiasCalibration> {
+    let min_voltage_mv = u16::from_le_bytes([record[10], record[11]]);
+    let max_voltage_mv = u16::from_le_bytes([record[12], record[13]]);
+    let step_mv = u16::from_le_bytes([record[14], record[15]]);
+    let point_count = record[16];
+    if min_voltage_mv != IDLE_BIAS_FIXED_METADATA.min_voltage_mv
+        || max_voltage_mv != IDLE_BIAS_FIXED_METADATA.max_voltage_mv
+        || step_mv != IDLE_BIAS_FIXED_METADATA.step_mv
+        || point_count != IDLE_BIAS_FIXED_METADATA.point_count
+    {
+        return None;
+    }
+
+    let mut current_offsets_ma = [0u16; IDLE_BIAS_POINT_COUNT];
+    for (index, offset_ma) in current_offsets_ma.iter_mut().enumerate() {
+        let start = 17 + (index * 2);
+        *offset_ma = u16::from_le_bytes([record[start], record[start + 1]]);
+    }
+
+    Some(IdleBiasCalibration::new(
+        record[9] & 1 != 0,
+        current_offsets_ma,
+    ))
+}
+
 async fn eeprom_read<I2C>(
     i2c: &mut I2C,
     offset: u16,
@@ -509,4 +622,78 @@ fn checksum(bytes: &[u8]) -> u32 {
         h = h.wrapping_mul(0x0100_0193);
     }
     h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_idle_bias(enabled: bool) -> IdleBiasCalibration {
+        let mut offsets = [0u16; IDLE_BIAS_POINT_COUNT];
+        for (index, offset) in offsets.iter_mut().enumerate() {
+            *offset = (index as u16) * 3;
+        }
+        IdleBiasCalibration::new(enabled, offsets)
+    }
+
+    #[test]
+    fn idle_bias_record_round_trips() {
+        let calibration = sample_idle_bias(true);
+        let mut record = [0u8; IDLE_BIAS_RECORD_LEN];
+        record[..IDLE_BIAS_MAGIC.len()].copy_from_slice(IDLE_BIAS_MAGIC);
+        record[IDLE_BIAS_MAGIC.len()] = IDLE_BIAS_VERSION;
+        encode_idle_bias_calibration(&mut record, calibration);
+        let crc = checksum(&record);
+        record[IDLE_BIAS_RECORD_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
+
+        let decoded = decode_idle_bias_calibration(&record).expect("decode calibration");
+        assert_eq!(decoded, calibration);
+    }
+
+    #[test]
+    fn idle_bias_record_rejects_mismatched_metadata() {
+        let calibration = sample_idle_bias(false);
+        let mut record = [0u8; IDLE_BIAS_RECORD_LEN];
+        record[..IDLE_BIAS_MAGIC.len()].copy_from_slice(IDLE_BIAS_MAGIC);
+        record[IDLE_BIAS_MAGIC.len()] = IDLE_BIAS_VERSION;
+        encode_idle_bias_calibration(&mut record, calibration);
+        record[14..16].copy_from_slice(&600u16.to_le_bytes());
+
+        assert!(decode_idle_bias_calibration(&record).is_none());
+    }
+
+    #[test]
+    fn idle_bias_record_detects_crc_corruption() {
+        let calibration = sample_idle_bias(true);
+        let mut record = [0u8; IDLE_BIAS_RECORD_LEN];
+        record[..IDLE_BIAS_MAGIC.len()].copy_from_slice(IDLE_BIAS_MAGIC);
+        record[IDLE_BIAS_MAGIC.len()] = IDLE_BIAS_VERSION;
+        encode_idle_bias_calibration(&mut record, calibration);
+        let crc = checksum(&record);
+        record[IDLE_BIAS_RECORD_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
+        record[24] ^= 0x5a;
+
+        let mut validated = record;
+        let checksum_offset = IDLE_BIAS_RECORD_LEN - 4;
+        let expected = u32::from_le_bytes([
+            validated[checksum_offset],
+            validated[checksum_offset + 1],
+            validated[checksum_offset + 2],
+            validated[checksum_offset + 3],
+        ]);
+        validated[checksum_offset..].fill(0);
+
+        assert_ne!(checksum(&validated), expected);
+    }
+
+    #[test]
+    fn idle_bias_record_version_mismatch_is_rejected() {
+        let calibration = sample_idle_bias(true);
+        let mut record = [0u8; IDLE_BIAS_RECORD_LEN];
+        record[..IDLE_BIAS_MAGIC.len()].copy_from_slice(IDLE_BIAS_MAGIC);
+        record[IDLE_BIAS_MAGIC.len()] = IDLE_BIAS_VERSION + 1;
+        encode_idle_bias_calibration(&mut record, calibration);
+
+        assert_ne!(record[IDLE_BIAS_MAGIC.len()], IDLE_BIAS_VERSION);
+    }
 }

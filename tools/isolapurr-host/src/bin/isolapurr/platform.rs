@@ -212,6 +212,7 @@ fn map_devd_ipc_endpoint(
         }
         ("GET", "ports") => "device.ports.get",
         ("GET", "power/config") => "device.power.config_get",
+        ("GET", "power/idle-bias") => "device.power.idle_bias_get",
         ("PUT", "power/config") => {
             let config = body.ok_or_else(|| anyhow!("power config body is required"))?;
             params_map.insert("config".to_string(), config);
@@ -224,6 +225,22 @@ fn map_devd_ipc_endpoint(
             }
             "device.power.config_set"
         }
+        ("PUT", "power/idle-bias") => {
+            let body = body.ok_or_else(|| anyhow!("idle-bias body is required"))?;
+            let correction_enabled = body
+                .get("correction_enabled")
+                .cloned()
+                .ok_or_else(|| anyhow!("correction_enabled is required"))?;
+            params_map.insert("correction_enabled".to_string(), correction_enabled);
+            if let Some(owner) = query
+                .split('&')
+                .find_map(|part| part.strip_prefix("owner="))
+                .and_then(|owner| owner.parse::<u32>().ok())
+            {
+                params_map.insert("owner".to_string(), json!(owner));
+            }
+            "device.power.idle_bias_set"
+        }
         ("POST", "power/config/defaults") => {
             if let Some(owner) = query
                 .split('&')
@@ -233,6 +250,26 @@ fn map_devd_ipc_endpoint(
                 params_map.insert("owner".to_string(), json!(owner));
             }
             "device.power.config_defaults"
+        }
+        ("POST", "power/idle-bias/run") => {
+            if let Some(owner) = query
+                .split('&')
+                .find_map(|part| part.strip_prefix("owner="))
+                .and_then(|owner| owner.parse::<u32>().ok())
+            {
+                params_map.insert("owner".to_string(), json!(owner));
+            }
+            "device.power.idle_bias_run"
+        }
+        ("POST", "power/idle-bias/clear") => {
+            if let Some(owner) = query
+                .split('&')
+                .find_map(|part| part.strip_prefix("owner="))
+                .and_then(|owner| owner.parse::<u32>().ok())
+            {
+                params_map.insert("owner".to_string(), json!(owner));
+            }
+            "device.power.idle_bias_clear"
         }
         ("POST", "power/config/lock") => {
             let owner = query
@@ -379,10 +416,20 @@ fn map_http_endpoint(
         ("GET", "/ports") => (method, "/api/v1/ports".to_string(), body),
         ("GET", "/diagnostics") => (method, "/api/v1/pd-diagnostics".to_string(), body),
         ("GET", "/power/config") => (method, "/api/v1/power/config".to_string(), body),
+        ("GET", "/power/idle-bias") => (method, "/api/v1/power/idle-bias".to_string(), body),
         ("PUT", _) if suffix.starts_with("/power/config?owner=") => {
             (Method::PUT, format!("/api/v1{suffix}"), body)
         }
+        ("PUT", _) if suffix.starts_with("/power/idle-bias?owner=") => {
+            (Method::PUT, format!("/api/v1{suffix}"), body)
+        }
         ("POST", _) if suffix.starts_with("/power/config/defaults?owner=") => {
+            (Method::POST, format!("/api/v1{suffix}"), body)
+        }
+        ("POST", _) if suffix.starts_with("/power/idle-bias/run?owner=") => {
+            (Method::POST, format!("/api/v1{suffix}"), body)
+        }
+        ("POST", _) if suffix.starts_with("/power/idle-bias/clear?owner=") => {
             (Method::POST, format!("/api/v1{suffix}"), body)
         }
         ("POST", _) if suffix.starts_with("/power/config/lock?owner=") => {

@@ -34,6 +34,7 @@ SOURCE_EXTENSIONS = {
 EXCLUDED_DIRS = {
     ".git",
     ".storybook-cache",
+    ".venv",
     "dist",
     "hardware",
     "node_modules",

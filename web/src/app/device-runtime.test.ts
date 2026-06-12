@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { LocalUsbAgentHttpError } from "../domain/hardwareConsole";
 import {
+  jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   orderedDeviceTransports,
   shouldResetLocalUsbConnectionCache,
@@ -91,5 +92,22 @@ describe("orderedDeviceTransports", () => {
         preferLocalUsbFirst: false,
       }),
     ).toEqual(["web_serial", "http", "local_usb"]);
+  });
+});
+
+describe("jsonlTimeoutMsForMethod", () => {
+  test("uses the long idle-bias timeout for calibration runs", () => {
+    expect(jsonlTimeoutMsForMethod("power.idle_bias_run")).toBe(178_000);
+  });
+
+  test("keeps wifi-clear-like requests on the shorter recovery timeout", () => {
+    expect(jsonlTimeoutMsForMethod("wifi.clear")).toBe(8_000);
+    expect(jsonlTimeoutMsForMethod("settings.reset", { scope: "wifi" })).toBe(
+      8_000,
+    );
+  });
+
+  test("leaves ordinary requests on the default transport timeout", () => {
+    expect(jsonlTimeoutMsForMethod("power.config_get")).toBeUndefined();
   });
 });

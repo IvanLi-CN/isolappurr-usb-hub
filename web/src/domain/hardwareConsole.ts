@@ -543,6 +543,27 @@ function localUsbMethodEndpoint(
         method: "POST",
         path: `/api/v1/devices/${deviceId}/power/config/${params.acquire === false ? "release" : "lock"}?owner=${Number(params.owner ?? 0)}`,
       };
+    case "power.idle_bias_get":
+      return {
+        method: "GET",
+        path: `/api/v1/devices/${deviceId}/power/idle-bias`,
+      };
+    case "power.idle_bias_set":
+      return {
+        method: "PUT",
+        path: `/api/v1/devices/${deviceId}/power/idle-bias?owner=${Number(params.owner ?? 0)}`,
+        body: { correction_enabled: Boolean(params.correction_enabled) },
+      };
+    case "power.idle_bias_run":
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/power/idle-bias/run?owner=${Number(params.owner ?? 0)}`,
+      };
+    case "power.idle_bias_clear":
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/power/idle-bias/clear?owner=${Number(params.owner ?? 0)}`,
+      };
     default:
       throw new Error(`Unsupported Local USB method: ${request.method}`);
   }
