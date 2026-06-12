@@ -264,29 +264,8 @@
             last_sw2303_read_attempt = None;
 
             let mut final_run_error = run_error;
-
-            if final_run_error.is_none() {
-                let next_calibration =
-                    IdleBiasCalibration::new(preserved_correction_enabled, sampled_offsets);
-                match provisioning::store_idle_bias_calibration(
-                    telemetry_sampler.i2c_mut(),
-                    next_calibration,
-                )
-                .await
-                {
-                    Ok(()) => {
-                        idle_bias_calibration = Some(next_calibration);
-                        info!("idle-bias: calibration completed and saved to EEPROM U21");
-                    }
-                    Err(err) => {
-                        final_run_error = Some(net::ApiIdleBiasErrorCode::EepromFailed);
-                        defmt::warn!(
-                            "idle-bias: failed to save dataset to EEPROM U21: {:?}",
-                            defmt::Debug2Format(&err)
-                        );
-                    }
-                }
-            }
+            let next_calibration =
+                IdleBiasCalibration::new(preserved_correction_enabled, sampled_offsets);
 
             let mut restore_error = false;
             let previous_usb_c_pd_power_on = matches!(port_usb_c.power, PowerState::On);
@@ -370,6 +349,27 @@
 
             if restore_error && final_run_error.is_none() {
                 final_run_error = Some(net::ApiIdleBiasErrorCode::ControllerNotReady);
+            }
+
+            if final_run_error.is_none() {
+                match provisioning::store_idle_bias_calibration(
+                    telemetry_sampler.i2c_mut(),
+                    next_calibration,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        idle_bias_calibration = Some(next_calibration);
+                        info!("idle-bias: calibration completed and saved to EEPROM U21");
+                    }
+                    Err(err) => {
+                        final_run_error = Some(net::ApiIdleBiasErrorCode::EepromFailed);
+                        defmt::warn!(
+                            "idle-bias: failed to save dataset to EEPROM U21: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                    }
+                }
             }
 
             let reported_last_sw2303_path_control = last_sw2303_path_control.or({
