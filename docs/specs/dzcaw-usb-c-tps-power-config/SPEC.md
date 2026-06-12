@@ -106,6 +106,10 @@ for diagnostics.
   correction, and run-state summaries, confirmation flows for destructive or
   calibration actions, and explicit copy telling the operator to disconnect
   USB-C before calibration.
+- When a saved idle-bias dataset exists, the Web UI MUST keep the dataset
+  detail surface collapsed by default, open into a chart-first review mode,
+  and allow switching between a single-series voltage-to-offset chart and a
+  wide-screen optimized table view for exact point inspection.
 - Web UI and human CLI MUST show corrected USB-C telemetry by default and keep
   the raw INA226 reading on debug or JSON surfaces only.
 - Storybook coverage MUST include normal, host-locked, failure, save, restore,
@@ -263,16 +267,29 @@ PR: include
 
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/CalibrationDatasetExpanded`
-  state: idle-bias dataset table expanded
+  state: idle-bias dataset chart expanded
   requested_viewport: `1440x1400`
   viewport_strategy: `storybook-viewport`
   capture_scope: `browser-viewport`
   target_program: `mock-only`
-  evidence_note: verifies the saved `37`-point calibration dataset can be
-  expanded inline as a readable voltage-to-offset table without crowding the
-  default panel state.
+  evidence_note: verifies the saved `37`-point calibration dataset opens into
+  a chart-first review surface with a single-series voltage-to-offset line and
+  light area fill, without crowding the default panel state.
 
-![Device power panel idle-bias dataset expanded](./assets/device-power-panel-idle-bias-dataset-expanded.png)
+![Device power panel idle-bias dataset chart](./assets/device-power-panel-idle-bias-dataset-chart.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CalibrationDatasetTableView`
+  state: idle-bias dataset table view
+  requested_viewport: `1440x1400`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the table view reorganizes the saved `37` points into
+  multiple side-by-side column groups on wide screens, reducing vertical scan
+  length while preserving exact voltage and offset values.
+
+![Device power panel idle-bias dataset table](./assets/device-power-panel-idle-bias-dataset-table.png)
 
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/CalibrationRunning`

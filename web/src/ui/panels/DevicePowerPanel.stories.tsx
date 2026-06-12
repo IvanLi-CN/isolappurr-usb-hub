@@ -310,9 +310,34 @@ export const CalibrationDatasetExpanded: Story = {
         name: /Calibration dataset table/i,
       }),
     );
-    await expect(await canvas.findByText("Point")).toBeVisible();
-    await expect(await canvas.findByText("3 V")).toBeVisible();
-    await expect(await canvas.findByText("12 mA")).toBeVisible();
+    await expect(
+      await canvas.findByRole("tab", { name: "Chart", selected: true }),
+    ).toBeVisible();
+    await expect(
+      await canvas.findByText(/voltage to idle-current drift/i),
+    ).toBeVisible();
+  },
+};
+
+export const CalibrationDatasetTableView: Story = {
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: /Calibration dataset table/i,
+      }),
+    );
+    await userEvent.click(await canvas.findByRole("tab", { name: "Table" }));
+    await expect(
+      await canvas.findByRole("tab", { name: "Table", selected: true }),
+    ).toBeVisible();
+    await expect(await canvas.findAllByText("Point")).toHaveLength(3);
+    await expect(await canvas.findByText("21 V")).toBeVisible();
+    await expect(await canvas.findByText("57")).toBeVisible();
   },
 };
 

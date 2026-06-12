@@ -1,4 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { getStablePowerLockOwner } from "../../app/device-runtime-support";
 import type {
@@ -59,6 +75,13 @@ type IdleBiasTableRow = {
   index: number;
   offsetMa: number;
   voltageMv: number;
+};
+
+type IdleBiasViewMode = "chart" | "table";
+
+type IdleBiasTableColumn = {
+  index: number;
+  rows: IdleBiasTableRow[];
 };
 
 type SummaryCardProps = {
@@ -332,6 +355,55 @@ function buildIdleBiasTableRows(
   }));
 }
 
+function chunkIdleBiasTableRows(
+  rows: IdleBiasTableRow[],
+  columns: number,
+): IdleBiasTableColumn[] {
+  if (rows.length === 0) {
+    return [];
+  }
+  const safeColumns = Math.max(1, columns);
+  const rowsPerColumn = Math.ceil(rows.length / safeColumns);
+  return Array.from({ length: safeColumns }, (_value, index) => {
+    const start = index * rowsPerColumn;
+    return {
+      index,
+      rows: rows.slice(start, start + rowsPerColumn),
+    };
+  }).filter((column) => column.rows.length > 0);
+}
+
+function offsetTickFormatter(value: number): string {
+  return `${value} mA`;
+}
+
+function IdleBiasTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  label?: string | number;
+  payload?: Array<{ value?: number }>;
+}) {
+  if (
+    !active ||
+    !payload ||
+    payload.length === 0 ||
+    payload[0]?.value == null
+  ) {
+    return null;
+  }
+  return (
+    <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[12px] shadow-sm">
+      <div className="font-semibold text-[var(--text)]">{label}</div>
+      <div className="mt-1 text-[var(--muted)]">
+        Offset {payload[0].value} mA
+      </div>
+    </div>
+  );
+}
+
 function SummaryCard({
   title,
   value,
@@ -454,6 +526,7 @@ export function DevicePowerPanel({
   runIdleBiasCalibration,
   clearIdleBiasCalibration,
 }: DevicePowerPanelProps) {
+  const idleBiasViewLabelId = useId();
   const [config, setConfig] = useState<PowerConfigResponse | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -467,6 +540,8 @@ export function DevicePowerPanel({
   const [idleBiasConfirm, setIdleBiasConfirm] =
     useState<IdleBiasConfirmState | null>(null);
   const [idleBiasTableExpanded, setIdleBiasTableExpanded] = useState(false);
+  const [idleBiasViewMode, setIdleBiasViewMode] =
+    useState<IdleBiasViewMode>("chart");
   const lockedRef = useRef(false);
   const loadPowerConfigRef = useRef(loadPowerConfig);
   const loadIdleBiasRef = useRef(loadIdleBias);
@@ -909,6 +984,7 @@ export function DevicePowerPanel({
     idleBias?.dataset.status === "valid" || idleBias?.correction_enabled;
   const idleBiasTableRows = buildIdleBiasTableRows(idleBias);
   const canShowIdleBiasTable = idleBiasTableRows.length > 0;
+  const idleBiasTableColumns = chunkIdleBiasTableRows(idleBiasTableRows, 3);
 
   return (
     <>
@@ -1213,40 +1289,198 @@ export function DevicePowerPanel({
                 </button>
                 {idleBiasTableExpanded ? (
                   <div className="border-t border-[var(--border)] px-4 py-4">
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full border-separate border-spacing-0 text-[12px]">
-                        <thead>
-                          <tr className="text-left text-[11px] uppercase tracking-[0.04em] text-[var(--muted)]">
-                            <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
-                              Point
-                            </th>
-                            <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
-                              Voltage
-                            </th>
-                            <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
-                              Offset
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {idleBiasTableRows.map((row) => (
-                            <tr
-                              className="text-[var(--text)]"
-                              key={`${row.index}-${row.voltageMv}`}
-                            >
-                              <td className="border-b border-[var(--border)]/70 px-3 py-2 font-semibold">
-                                {row.index + 1}
-                              </td>
-                              <td className="border-b border-[var(--border)]/70 px-3 py-2">
-                                {formatCompactVoltage(row.voltageMv)}
-                              </td>
-                              <td className="border-b border-[var(--border)]/70 px-3 py-2">
-                                {row.offsetMa} mA
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="max-w-[65ch] text-[12px] leading-6 text-[var(--muted)]">
+                          Chart is the default review surface for voltage to
+                          idle-current drift. Switch to the table when you need
+                          exact point values.
+                        </div>
+                        <div
+                          aria-labelledby={idleBiasViewLabelId}
+                          className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] p-1 md:w-auto"
+                          role="tablist"
+                        >
+                          <span className="sr-only" id={idleBiasViewLabelId}>
+                            Idle-bias dataset view
+                          </span>
+                          <button
+                            aria-selected={idleBiasViewMode === "chart"}
+                            className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold md:min-w-[96px] ${idleBiasViewMode === "chart" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"}`}
+                            onClick={() => setIdleBiasViewMode("chart")}
+                            role="tab"
+                            type="button"
+                          >
+                            Chart
+                          </button>
+                          <button
+                            aria-selected={idleBiasViewMode === "table"}
+                            className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold md:min-w-[96px] ${idleBiasViewMode === "table" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"}`}
+                            onClick={() => setIdleBiasViewMode("table")}
+                            role="tab"
+                            type="button"
+                          >
+                            Table
+                          </button>
+                        </div>
+                      </div>
+
+                      {idleBiasViewMode === "chart" ? (
+                        <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-3 py-3">
+                          <div className="h-[280px] w-full md:h-[320px]">
+                            <ResponsiveContainer height="100%" width="100%">
+                              <AreaChart
+                                data={idleBiasTableRows.map((row) => ({
+                                  label: formatCompactVoltage(row.voltageMv),
+                                  offsetMa: row.offsetMa,
+                                }))}
+                                margin={{
+                                  top: 12,
+                                  right: 12,
+                                  bottom: 0,
+                                  left: 0,
+                                }}
+                              >
+                                <defs>
+                                  <linearGradient
+                                    id="idle-bias-area"
+                                    x1="0"
+                                    x2="0"
+                                    y1="0"
+                                    y2="1"
+                                  >
+                                    <stop
+                                      offset="0%"
+                                      stopColor="var(--primary)"
+                                      stopOpacity={0.24}
+                                    />
+                                    <stop
+                                      offset="100%"
+                                      stopColor="var(--primary)"
+                                      stopOpacity={0.04}
+                                    />
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid
+                                  stroke="var(--border)"
+                                  strokeDasharray="2 6"
+                                  vertical={false}
+                                />
+                                <XAxis
+                                  axisLine={false}
+                                  dataKey="label"
+                                  interval={3}
+                                  tick={{
+                                    fill: "var(--muted)",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                  }}
+                                  tickLine={false}
+                                />
+                                <YAxis
+                                  axisLine={false}
+                                  tick={{
+                                    fill: "var(--muted)",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                  }}
+                                  tickFormatter={offsetTickFormatter}
+                                  tickLine={false}
+                                  width={52}
+                                />
+                                <Tooltip
+                                  content={<IdleBiasTooltip />}
+                                  cursor={{
+                                    stroke: "var(--primary)",
+                                    strokeDasharray: "3 5",
+                                    strokeOpacity: 0.35,
+                                  }}
+                                />
+                                <Area
+                                  dataKey="offsetMa"
+                                  fill="url(#idle-bias-area)"
+                                  fillOpacity={1}
+                                  isAnimationActive={false}
+                                  stroke="var(--primary)"
+                                  strokeWidth={2}
+                                  type="monotone"
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full border-separate border-spacing-0 text-[12px]">
+                            <thead>
+                              <tr className="text-left text-[11px] uppercase tracking-[0.04em] text-[var(--muted)]">
+                                {idleBiasTableColumns.map((column) => (
+                                  <Fragment key={`heading-${column.index}`}>
+                                    <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
+                                      Point
+                                    </th>
+                                    <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
+                                      Voltage
+                                    </th>
+                                    <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
+                                      Offset
+                                    </th>
+                                  </Fragment>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Array.from({
+                                length: Math.max(
+                                  ...idleBiasTableColumns.map(
+                                    (column) => column.rows.length,
+                                  ),
+                                ),
+                              }).map((_value, rowIndex) => (
+                                <tr
+                                  className="text-[var(--text)]"
+                                  key={`table-row-${idleBiasTableColumns
+                                    .map(
+                                      (column) =>
+                                        column.rows[rowIndex]?.index ?? "empty",
+                                    )
+                                    .join("-")}`}
+                                >
+                                  {idleBiasTableColumns.map((column) => {
+                                    const row = column.rows[rowIndex];
+                                    if (!row) {
+                                      return (
+                                        <Fragment
+                                          key={`empty-${column.index}-${rowIndex}`}
+                                        >
+                                          <td className="border-b border-[var(--border)]/40 px-3 py-2" />
+                                          <td className="border-b border-[var(--border)]/40 px-3 py-2" />
+                                          <td className="border-b border-[var(--border)]/40 px-3 py-2" />
+                                        </Fragment>
+                                      );
+                                    }
+                                    return (
+                                      <Fragment
+                                        key={`${column.index}-${row.index}-${row.voltageMv}`}
+                                      >
+                                        <td className="border-b border-[var(--border)]/70 px-3 py-2 font-semibold">
+                                          {row.index + 1}
+                                        </td>
+                                        <td className="border-b border-[var(--border)]/70 px-3 py-2">
+                                          {formatCompactVoltage(row.voltageMv)}
+                                        </td>
+                                        <td className="border-b border-[var(--border)]/70 px-3 py-2">
+                                          {row.offsetMa} mA
+                                        </td>
+                                      </Fragment>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : null}
