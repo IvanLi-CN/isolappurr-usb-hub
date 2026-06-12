@@ -367,12 +367,20 @@
                 final_run_error = Some(net::ApiIdleBiasErrorCode::ControllerNotReady);
             }
 
+            let reported_last_sw2303_path_control = last_sw2303_path_control.or({
+                if final_run_error.is_some() {
+                    previous_last_sw2303_path_control
+                } else {
+                    None
+                }
+            });
+
             #[cfg(feature = "net_http")]
             {
                 let mut guard = api_state.lock().await;
                 guard.power.config = power_config;
                 guard.power.persisted = power_config_persisted;
-                guard.power.last_path_control = last_sw2303_path_control;
+                guard.power.last_path_control = reported_last_sw2303_path_control;
                 guard.idle_bias = if let Some(error) = final_run_error {
                     idle_bias_api_snapshot(
                         idle_bias_calibration,

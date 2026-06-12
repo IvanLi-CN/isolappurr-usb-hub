@@ -788,6 +788,7 @@
 
             let mut guard = api_state.lock().await;
             let idle_bias_run = guard.idle_bias.run;
+            let previous_reported_path_control = guard.power.last_path_control;
             guard.hub = net::ApiHubSnapshot {
                 upstream_connected: api_isolated_usb_ready,
                 isolated_usb_fault: api_isolated_usb_fault,
@@ -837,7 +838,13 @@
             }
             guard.power.config = power_config;
             guard.power.persisted = power_config_persisted;
-            guard.power.last_path_control = last_sw2303_path_control;
+            guard.power.last_path_control = last_sw2303_path_control.or({
+                if idle_bias_run.state == net::ApiIdleBiasRunState::Failed {
+                    previous_reported_path_control
+                } else {
+                    None
+                }
+            });
         }
 
         let now_us = esp_hal::time::Instant::now()

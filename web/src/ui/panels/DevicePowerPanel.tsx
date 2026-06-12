@@ -75,7 +75,12 @@ function quantize(value: number, step: number): number {
 }
 
 function normalizeUnit(raw: string): string {
-  return raw.trim().toLowerCase().replaceAll("mu", "u").replaceAll("µ", "u");
+  return raw
+    .trim()
+    .toLowerCase()
+    .replaceAll("μ", "u")
+    .replaceAll("µ", "u")
+    .replaceAll("mu", "u");
 }
 
 function parseUnitNumber(raw: string): { value: number; unit: string } | null {
