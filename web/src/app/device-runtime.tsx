@@ -56,6 +56,7 @@ import {
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
   type JsonlEnvelope,
+  jsonlTimeoutMsForMethod,
   localUsbDeviceIdForDevice,
   localUsbErrorToDeviceApiError,
   recoverWifiClearLikeTimeout,
@@ -179,6 +180,7 @@ export function DeviceRuntimeProvider({
           error: { kind: "offline", message: "Local USB device not found" },
         };
       }
+      const timeoutMs = jsonlTimeoutMsForMethod(method, params);
       const previous =
         localUsbRequestQueues.current[deviceId] ?? Promise.resolve();
       let releaseQueue: () => void = () => undefined;
@@ -191,7 +193,12 @@ export function DeviceRuntimeProvider({
       try {
         let caughtError: unknown = null;
         try {
-          const request = { id: nextJsonlRequestId(), method, params };
+          const request = {
+            id: nextJsonlRequestId(),
+            method,
+            params,
+            timeoutMs,
+          };
           const response =
             target.kind === "devd_device"
               ? await sendDevdLocalUsbJsonlRequest(
@@ -264,15 +271,12 @@ export function DeviceRuntimeProvider({
         };
       }
       try {
+        const timeoutMs = jsonlTimeoutMsForMethod(method, params);
         const response = await transport.request({
           id: nextJsonlRequestId(),
           method,
           params,
-          timeoutMs:
-            method === "wifi.clear" ||
-            (method === "settings.reset" && params?.scope === "wifi")
-              ? 8_000
-              : undefined,
+          timeoutMs,
         });
         const envelope = response as JsonlEnvelope<T>;
         if (envelope?.ok && envelope.result !== undefined) {

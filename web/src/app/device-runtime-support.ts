@@ -117,6 +117,7 @@ export type DeviceRuntimeContextValue = {
 };
 
 const TRANSPORTS: DeviceTransport[] = ["http", "web_serial", "local_usb"];
+const JSONL_POWER_IDLE_BIAS_RUN_TIMEOUT_MS = 178_000;
 
 export function httpBaseUrlForDevice(device: StoredDevice): string {
   return device.transports?.httpBaseUrl ?? device.baseUrl;
@@ -194,6 +195,22 @@ export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {
     kind: "offline",
     message: err instanceof Error ? err.message : "Local USB request failed",
   };
+}
+
+export function jsonlTimeoutMsForMethod(
+  method: string,
+  params?: Record<string, unknown>,
+): number | undefined {
+  if (method === "power.idle_bias_run") {
+    return JSONL_POWER_IDLE_BIAS_RUN_TIMEOUT_MS;
+  }
+  if (
+    method === "wifi.clear" ||
+    (method === "settings.reset" && params?.scope === "wifi")
+  ) {
+    return 8_000;
+  }
+  return undefined;
 }
 
 export function uniqueTransports(
