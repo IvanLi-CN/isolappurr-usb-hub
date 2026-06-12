@@ -357,10 +357,15 @@
             {
                 restore_error = true;
                 tps_state.last = None;
+                tps_5v_setpoint_since = None;
                 defmt::warn!(
                     "idle-bias: failed to restore TPS output after calibration: {:?}",
                     defmt::Debug2Format(&err)
                 );
+            } else if restored_setpoint.output_enabled {
+                tps_5v_setpoint_since = Some(Instant::now());
+            } else {
+                tps_5v_setpoint_since = None;
             }
 
             if restore_error && final_run_error.is_none() {

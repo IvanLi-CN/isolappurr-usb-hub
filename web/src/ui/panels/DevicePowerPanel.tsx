@@ -243,7 +243,6 @@ export function DevicePowerPanel({
   const [dirty, setDirty] = useState(false);
   const [idleBiasSnapshot, setIdleBiasSnapshot] =
     useState<IdleBiasResponse | null>(null);
-  const [idleBiasLoaded, setIdleBiasLoaded] = useState(false);
   const [idleBiasBusy, setIdleBiasBusy] = useState(false);
   const [idleBiasRunning, setIdleBiasRunning] = useState(false);
   const lockedRef = useRef(false);
@@ -273,11 +272,8 @@ export function DevicePowerPanel({
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      const [configRes, idleBiasRes] = await Promise.all([
-        loadPowerConfigRef.current(),
-        loadIdleBiasRef.current(),
-      ]);
+    const loadConfig = async () => {
+      const configRes = await loadPowerConfigRef.current();
       if (cancelled) {
         return;
       }
@@ -286,6 +282,12 @@ export function DevicePowerPanel({
       } else {
         setError(configRes.error.message);
       }
+    };
+    const loadIdleBiasSnapshot = async () => {
+      const idleBiasRes = await loadIdleBiasRef.current();
+      if (cancelled) {
+        return;
+      }
       if (idleBiasRes.ok) {
         setIdleBiasSnapshot(idleBiasRes.value);
         setIdleBiasRunning(idleBiasRes.value.run.state === "running");
@@ -293,9 +295,9 @@ export function DevicePowerPanel({
         setIdleBiasSnapshot(null);
         setIdleBiasRunning(false);
       }
-      setIdleBiasLoaded(true);
     };
-    void load();
+    void loadConfig();
+    void loadIdleBiasSnapshot();
     return () => {
       cancelled = true;
     };
@@ -389,7 +391,7 @@ export function DevicePowerPanel({
     );
   }
 
-  if (!form || !idleBiasLoaded) {
+  if (!form) {
     return (
       <section className="flex min-h-[240px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-6 py-8">
         <div className="text-sm text-[var(--muted)]">
