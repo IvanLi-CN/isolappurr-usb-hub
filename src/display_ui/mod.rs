@@ -6,9 +6,14 @@ mod font6x8;
 mod menu;
 mod normal_ui_policy;
 mod surface;
+mod usb_c_display;
 
 pub use dashboard::DASHBOARD_BG_RGB8;
 pub(super) use surface::{FrameSurface, blend565, measure_text_aa, rgb565_raw};
+pub use usb_c_display::{
+    USB_C_DISPLAY_TEXT_CAPACITY, UsbCDisplayInput, UsbCDisplayState, format_port_badge_text,
+    format_port_mode_text, resolve_usb_c_display,
+};
 
 use allocator_api2::vec::Vec;
 use core::convert::Infallible;
@@ -83,14 +88,24 @@ pub enum NormalUiPortMode {
     Pd,
     Pps,
     Dc,
+    ManualVoltageMv(u16),
     Off,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NormalUiPortBadge {
+    VoltageMv(u16),
+    Focus,
+    On,
+    Off,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NormalUiPort {
     pub present: bool,
     pub mode: NormalUiPortMode,
-    pub badge_mv: Option<u16>,
+    pub badge: NormalUiPortBadge,
     /// Voltage in µV.
     pub voltage_uv: NormalUiField,
     /// Current in µA.

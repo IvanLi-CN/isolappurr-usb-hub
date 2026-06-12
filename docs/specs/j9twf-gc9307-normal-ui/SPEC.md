@@ -23,7 +23,8 @@
 ### Non-goals
 
 - 菜单、交互、历史曲线、数据记录/上报。
-- 显示 PDO、协议类型、请求值等 PD 协议细节。
+- 显示 PDO、完整协议栈状态、请求值等深度 PD 协议细节；只保留当前
+  mode token 与最小 badge 语义。
 - 修改 PD 协商策略、主循环控制策略或运行时网络接口。
 
 ## 范围（Scope）
@@ -62,6 +63,12 @@
   - SW2303 结构化状态显示真实协议已协商（`negotiated_protocol` / `fast_protocol` / `fast_voltage` 任一有效）
 - USB-C 协议状态只用于 present/mode/badge 辅助，不得替代 U17 的实际电压、电流、功率读数。
 - USB-C mode 判定：真实 PD fixed 目标显示 `PD`；真实 PD 非固定目标显示 `PPS`；其它快充协议显示 `DC`；若仅由 U17 量测阈值触发 present 且协议状态不可用，则显示 `DC`。
+- USB-C 手动 TPS 输出判定：当 `tps_mode=manual` 且 `tps_setpoint.output_enabled=true`
+  时，左 badge 必须显示手动设定 TPS 电压，格式为 `x.xxV`；若
+  `manual.usb_c_path_mode=force`，右 badge 必须显示 `FOCUS`；其它手动路径模式
+  只允许按 SW2303 的 `vbus_mv >= 1000mV` 显示 `ON` / `OFF`。
+- USB-C 手动 TPS 输出下的 `V / A / W` 必须继续显示 U17 实测值，不得回退为目标值、
+  请求值或 `OFF` 占位。
 - 硬件映射（tps-sw）：
   - U13：INA226，I2C 7-bit 地址 `0x40`，分流 `R22=10mΩ`（`P1_SNP ↔ P1_VBUS`）
   - U17：INA226，I2C 7-bit 地址 `0x41`，分流 `R29=10mΩ`（`ISP_TPS ↔ VOUT_TPS`）
@@ -128,6 +135,15 @@ None。
 - Given：USB-C 真实协商 7V PPS
   When：界面刷新
   Then：右列显示 `PPS`、`7V` badge 与 U17 实测 V/A/W，不得显示 `OFF` 或未插入占位。
+- Given：`tps_mode=manual` 且 `tps_setpoint.output_enabled=true` 且 `manual.usb_c_path_mode=force`
+  When：界面刷新
+  Then：右列显示手动设定电压（如 `3.30V`）、`FOCUS` 与 U17 实测 V/A/W。
+- Given：`tps_mode=manual` 且 `tps_setpoint.output_enabled=true` 且 `manual.usb_c_path_mode!=force`
+  When：SW2303 `vbus_mv < 1000mV`
+  Then：右列显示手动设定电压（如 `9.00V`）、`OFF` 与 U17 实测 `0.00V / 0.00A / 0.00W`。
+- Given：`tps_mode=manual` 且 `tps_setpoint.output_enabled=true` 且 `manual.usb_c_path_mode!=force`
+  When：SW2303 `vbus_mv >= 1000mV`
+  Then：右列显示手动设定电压（如 `9.00V`）、`ON` 与 U17 实测 V/A/W。
 - Given：任一项读取失败或超量程
   When：界面刷新
   Then：对应项分别显示 `ERROR ` 或 `OVER  `。

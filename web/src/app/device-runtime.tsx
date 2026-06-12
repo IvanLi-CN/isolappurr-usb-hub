@@ -16,9 +16,11 @@ import {
   type DeviceApiError,
   type DeviceInfoResponse,
   getDeviceInfo,
+  getPdDiagnostics,
   getPorts,
   getPowerConfig,
   getWifiConfig,
+  type PdDiagnosticsResponse,
   type PowerConfigInput,
   type PowerConfigResponse,
   type RebootResponse,
@@ -49,8 +51,6 @@ import {
 } from "../domain/localUsbLinks";
 import { subscribeNetworkDeviceLinks } from "../domain/networkLinks";
 import type {
-  HubState,
-  Port,
   PortId,
   PortsResponse,
   UsbCDownstreamRoute,
@@ -62,7 +62,6 @@ import {
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
 import {
-  type ConnectionState,
   createEmptyChannels,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
@@ -75,9 +74,9 @@ import {
   localUsbErrorToDeviceApiError,
   recoverWifiClearLikeTimeout,
   resolveOrderedDeviceTransports,
-  shortApiError,
   shouldResetLocalUsbConnectionCache,
 } from "./device-runtime-support";
+import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
 import { useDevices } from "./devices-store";
 
 export type {
@@ -88,8 +87,6 @@ export type {
 const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
   null,
 );
-
-const OFFLINE_THRESHOLD_MS = 10_000;
 export function DeviceRuntimeProvider({
   children,
 }: {
@@ -344,6 +341,9 @@ export function DeviceRuntimeProvider({
         }
         if (method === "wifi.get") {
           return getWifiConfig(baseUrl) as Promise<Result<T>>;
+        }
+        if (method === "pd.diagnostics_get") {
+          return getPdDiagnostics(baseUrl) as Promise<Result<T>>;
         }
         if (method === "power.config_get") {
           return getPowerConfig(baseUrl) as Promise<Result<T>>;
@@ -814,6 +814,16 @@ export function DeviceRuntimeProvider({
     [runDeviceCommand],
   );
 
+  const pdDiagnostics = useCallback(
+    async (deviceId: string): Promise<Result<PdDiagnosticsResponse>> => {
+      return runDeviceCommand<PdDiagnosticsResponse>(
+        deviceId,
+        "pd.diagnostics_get",
+      );
+    },
+    [runDeviceCommand],
+  );
+
   const savePowerConfig = useCallback(
     async (
       deviceId: string,
@@ -1070,83 +1080,11 @@ export function DeviceRuntimeProvider({
   );
 
   const value = useMemo<DeviceRuntimeContextValue>(() => {
-    const connectionState = (deviceId: string): ConnectionState => {
-      const rt = runtimeById[deviceId];
-      if (!rt || rt.lastOkAt === null) {
-        return "unknown";
-      }
-      return now - rt.lastOkAt >= OFFLINE_THRESHOLD_MS ? "offline" : "online";
-    };
-
-    const lastOkAt = (deviceId: string): number | null =>
-      runtimeById[deviceId]?.lastOkAt ?? null;
-
-    const lastErrorLabel = (deviceId: string): string | null => {
-      const rt = runtimeById[deviceId];
-      if (!rt?.lastError) {
-        return null;
-      }
-      return shortApiError(rt.lastError);
-    };
-
-    const transport = (deviceId: string): DeviceTransport | null =>
-      runtimeById[deviceId]?.transport ?? null;
-
-    const wifiManagementTransport = (
-      deviceId: string,
-    ): DeviceTransport | null => {
-      const active = runtimeById[deviceId]?.transport ?? null;
-      const stored = devices.find((device) => device.id === deviceId);
-      if (active === "web_serial" || active === "local_usb") {
-        return active;
-      }
-      if (getWebSerialDeviceTransport(deviceId)) {
-        return "web_serial";
-      }
-      if (
-        localUsbPortByDevice.current[deviceId] ||
-        getLocalUsbDeviceLink(deviceId) ||
-        (stored ? localUsbDeviceIdForDevice(stored) : null)
-      ) {
-        return "local_usb";
-      }
-      return null;
-    };
-
-    const channelState = (
-      deviceId: string,
-      transport: DeviceTransport,
-    ): ConnectionState => {
-      const channel = runtimeById[deviceId]?.channels[transport];
-      if (!channel?.lastOkAt) {
-        return "unknown";
-      }
-      return now - channel.lastOkAt >= OFFLINE_THRESHOLD_MS
-        ? "offline"
-        : "online";
-    };
-
-    const hub = (deviceId: string): HubState | null =>
-      runtimeById[deviceId]?.hub ?? null;
-
-    const port = (deviceId: string, portId: PortId): Port | null =>
-      runtimeById[deviceId]?.ports?.[portId] ?? null;
-
-    const pending = (deviceId: string, portId: PortId): boolean =>
-      runtimeById[deviceId]?.pending?.[portId] ?? false;
-
-    return {
+    return buildDeviceRuntimeContextValue({
       now,
       runtimeById,
-      connectionState,
-      lastOkAt,
-      lastErrorLabel,
-      transport,
-      wifiManagementTransport,
-      channelState,
-      hub,
-      port,
-      pending,
+      devices,
+      localUsbPortByDevice: localUsbPortByDevice.current,
       refreshDevice,
       deviceInfo,
       wifiConfig,
@@ -1154,6 +1092,7 @@ export function DeviceRuntimeProvider({
       clearWifiConfig: clearWifi,
       resetSettings,
       rebootDevice: reboot,
+      pdDiagnostics,
       powerConfig,
       savePowerConfig,
       restorePowerDefaults: restoreDefaults,
@@ -1161,12 +1100,13 @@ export function DeviceRuntimeProvider({
       setPower,
       replug,
       setUsbCDownstreamRoute: setRoute,
-    };
+    });
   }, [
     clearWifi,
     deviceInfo,
     devices,
     now,
+    pdDiagnostics,
     powerConfig,
     reboot,
     refreshDevice,

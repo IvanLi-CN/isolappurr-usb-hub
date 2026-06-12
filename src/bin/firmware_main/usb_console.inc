@@ -98,6 +98,8 @@ async fn handle_usb_jsonl_request(
 
     if request.contains("\"method\":\"pd.diagnostics\"")
         || request.contains("\"method\": \"pd.diagnostics\"")
+        || request.contains("\"method\":\"pd.diagnostics_get\"")
+        || request.contains("\"method\": \"pd.diagnostics_get\"")
     {
         let state = { *api_state.lock().await };
         let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());

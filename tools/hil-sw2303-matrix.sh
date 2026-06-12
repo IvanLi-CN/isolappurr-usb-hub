@@ -11,6 +11,10 @@ sinks and are printed as manual coverage.
 
 Environment:
   ISOLAPURR_URL        default: http://192.168.31.122
+  ISOLAPURR_DEVICE_ID  optional: when set, talk to isolapurr-devd bridge
+                      through /api/v1/devices/<id>/... instead of board HTTP
+  ISOLAPURR_AUTH_TOKEN optional: bearer token for isolapurr-devd bridge;
+                      auto-fetched from /api/v1/bootstrap when possible
   LOADLYNX_HARDWARE   default: loadlynx-d68638
   LOADLYNX_WORKDIR    default: $HOME
   HIL_OWNER           default: 991230
@@ -38,6 +42,8 @@ WITH_LOAD=0
 LOAD_PERCENT=20
 SETTLE_SEC=3
 ISOLAPURR_URL="${ISOLAPURR_URL:-http://192.168.31.122}"
+ISOLAPURR_DEVICE_ID="${ISOLAPURR_DEVICE_ID:-}"
+ISOLAPURR_AUTH_TOKEN="${ISOLAPURR_AUTH_TOKEN:-}"
 LOADLYNX_HARDWARE="${LOADLYNX_HARDWARE:-loadlynx-d68638}"
 LOADLYNX_WORKDIR="${LOADLYNX_WORKDIR:-$HOME}"
 HIL_OWNER="${HIL_OWNER:-991230}"
@@ -153,19 +159,60 @@ skip() {
   printf 'SKIP %s: %s\n' "$1" "$2"
 }
 
+bridge_api_path() {
+  path="$1"
+  if [ -z "$ISOLAPURR_DEVICE_ID" ]; then
+    printf '%s' "$path"
+    return 0
+  fi
+  case "$path" in
+    /api/v1/*)
+      suffix="${path#/api/v1/}"
+      printf '/api/v1/devices/%s/%s' "$ISOLAPURR_DEVICE_ID" "$suffix"
+      ;;
+    *)
+      printf '%s' "$path"
+      ;;
+  esac
+}
+
+bootstrap_isolapurr_bridge() {
+  if [ -n "$ISOLAPURR_AUTH_TOKEN" ] || [ -z "$ISOLAPURR_DEVICE_ID" ]; then
+    return 0
+  fi
+  boot="$(curl -sS --max-time 20 "${ISOLAPURR_URL}/api/v1/bootstrap" 2>&1)" || {
+    printf 'WARN bootstrap_isolapurr_bridge rc=%s output=%s\n' "$?" "$boot" >&2
+    return 1
+  }
+  token="$(printf '%s' "$boot" | jq -r '.token // empty' 2>/dev/null || true)"
+  if [ -z "$token" ]; then
+    printf 'WARN bootstrap_isolapurr_bridge missing token output=%s\n' "$boot" >&2
+    return 1
+  fi
+  agent_base_url="$(printf '%s' "$boot" | jq -r '.agent_base_url // empty' 2>/dev/null || true)"
+  if [ -n "$agent_base_url" ]; then
+    ISOLAPURR_URL="$agent_base_url"
+  fi
+  ISOLAPURR_AUTH_TOKEN="$token"
+}
+
 http_json() {
   method="$1"
   path="$2"
   body="${3:-}"
+  request_path="$(bridge_api_path "$path")"
   attempt=1
   while [ "$attempt" -le 3 ]; do
+    bootstrap_isolapurr_bridge || true
+    curl_args=(-sS --max-time 20 -X "$method")
+    if [ -n "$ISOLAPURR_AUTH_TOKEN" ]; then
+      curl_args+=(-H "Authorization: Bearer ${ISOLAPURR_AUTH_TOKEN}")
+    fi
     if [ -n "$body" ]; then
-      out="$(curl -sS --max-time 20 -X "$method" \
-        -H 'Content-Type: application/json' \
-        --data "$body" \
-        "${ISOLAPURR_URL}${path}" 2>&1)"
+      curl_args+=(-H 'Content-Type: application/json' --data "$body")
+      out="$(curl "${curl_args[@]}" "${ISOLAPURR_URL}${request_path}" 2>&1)"
     else
-      out="$(curl -sS --max-time 20 -X "$method" "${ISOLAPURR_URL}${path}" 2>&1)"
+      out="$(curl "${curl_args[@]}" "${ISOLAPURR_URL}${request_path}" 2>&1)"
     fi
     rc=$?
     if [ "$rc" -eq 0 ] && printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
@@ -173,7 +220,7 @@ http_json() {
       return 0
     fi
     printf 'WARN http_json attempt=%s method=%s path=%s rc=%s output=%s\n' \
-      "$attempt" "$method" "$path" "$rc" "$out" >&2
+      "$attempt" "$method" "$request_path" "$rc" "$out" >&2
     sleep "$attempt"
     attempt=$((attempt + 1))
   done

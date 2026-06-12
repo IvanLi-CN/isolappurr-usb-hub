@@ -12,6 +12,7 @@ pub struct PowerRequest {
     pub status_valid: bool,
     pub v_req_mv: u16,
     pub i_req_ma: u16,
+    pub vbus_mv: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

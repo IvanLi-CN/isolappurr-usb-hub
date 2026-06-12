@@ -1,9 +1,12 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDeviceRuntime } from "../../app/device-runtime";
+import type { PdDiagnosticsResponse } from "../../domain/deviceApi";
 import type { StoredDevice } from "../../domain/devices";
 import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
 import { PortCard } from "../cards/PortCard";
 import { formatTimeHms } from "../format/time";
+
+const LIVE_REFRESH_MS = 1_000;
 
 const fallbackTelemetry: PortTelemetry = {
   status: "error",
@@ -174,8 +177,35 @@ function shortChannelState(state: "online" | "offline" | "unknown"): string {
   return "—";
 }
 
+function liveModeTone(
+  kind: PdDiagnosticsResponse["display"]["mode"]["kind"],
+): string {
+  if (kind === "off") {
+    return "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]";
+  }
+  return "border-[var(--badge-warning-bg)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]";
+}
+
+function liveBadgeTone(
+  kind: PdDiagnosticsResponse["display"]["badge"]["kind"],
+): string {
+  if (kind === "focus") {
+    return "border-[var(--badge-warning-bg)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]";
+  }
+  if (kind === "on" || kind === "voltage") {
+    return "border-[var(--badge-success-bg)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]";
+  }
+  if (kind === "off") {
+    return "border-[var(--btn-disabled-fill-soft)] bg-[var(--panel)] text-[var(--muted)]";
+  }
+  return "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]";
+}
+
 export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const runtime = useDeviceRuntime();
+  const [pdDiagnostics, setPdDiagnostics] =
+    useState<PdDiagnosticsResponse | null>(null);
+  const loadPdDiagnosticsRef = useRef(runtime.pdDiagnostics);
 
   const connectionState = runtime.connectionState(device.id);
   const badge = statusBadge(connectionState);
@@ -211,6 +241,42 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
     runtime.lastErrorLabel(device.id) ??
     `Primary: ${transportLabel(transport)} · Wi-Fi ${shortChannelState(wifiState)} · Web Serial ${shortChannelState(webSerialState)} · Local USB ${shortChannelState(localUsbState)}`;
 
+  useEffect(() => {
+    loadPdDiagnosticsRef.current = runtime.pdDiagnostics;
+  }, [runtime.pdDiagnostics]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (connectionState !== "online") {
+      setPdDiagnostics(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const refreshLiveState = async () => {
+      const res = await loadPdDiagnosticsRef.current(device.id);
+      if (cancelled) {
+        return;
+      }
+      if (res.ok) {
+        setPdDiagnostics(res.value);
+      } else {
+        setPdDiagnostics(null);
+      }
+    };
+
+    void refreshLiveState();
+    const id = window.setInterval(
+      () => void refreshLiveState(),
+      LIVE_REFRESH_MS,
+    );
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [connectionState, device.id]);
+
   const writeDisabled = connectionState !== "online";
 
   const items = useMemo(() => {
@@ -242,6 +308,26 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
       },
     };
   }, [connectionState, device.id, runtime]);
+
+  const liveDisplay = pdDiagnostics?.display ?? null;
+  const hasResolvedUsbCPort =
+    connectionState === "online"
+      ? runtime.port(device.id, "port_c") !== null
+      : false;
+  const usbCHeaderBadges = liveDisplay
+    ? [
+        {
+          label: liveDisplay.mode.label,
+          toneClassName: liveModeTone(liveDisplay.mode.kind),
+          testId: "dashboard-usb-c-live-mode",
+        },
+        {
+          label: liveDisplay.badge.label,
+          toneClassName: liveBadgeTone(liveDisplay.badge.kind),
+          testId: "dashboard-usb-c-live-badge",
+        },
+      ]
+    : [];
 
   return (
     <div className="flex flex-col gap-6" data-testid="device-dashboard">
@@ -346,6 +432,11 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
           label={items.port_c.label}
           telemetry={items.port_c.telemetry}
           state={items.port_c.state}
+          headerBadges={usbCHeaderBadges}
+          showStatusBadge={
+            usbCHeaderBadges.length === 0 ||
+            (hasResolvedUsbCPort && items.port_c.telemetry.status !== "ok")
+          }
           disabled={writeDisabled}
           onTogglePower={() =>
             void runtime.setPower(

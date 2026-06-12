@@ -17,6 +17,9 @@
 - Updated the PD/TPS runtime loop so pending config writes are saved, applied,
   reflected in diagnostics, and used for SW2303 profile application.
 - Added SW2303 path helpers for automatic control, force-close, and force-open.
+- Refined manual `default` path control so sub-5 V manual output still keeps
+  the SW2303 path in `auto` when no explicit protocol request exists, matching
+  the Type-C 5 V fallback behavior for passive CC sinks.
 - Added GC9307 settings entries for Power Preset and Power Advanced.
 
 ## Web
@@ -25,6 +28,16 @@
 - Extended `device-runtime` and `deviceApi` for HTTP, Web Serial, and Local USB
   power config calls.
 - Added host-lock heartbeat handling with per-panel owner IDs.
+- Added a typed `/api/v1/pd-diagnostics` read path plus inline Dashboard
+  USB-C card badges that render the shared firmware display contract directly:
+  auto-follow keeps `PD` / `PPS` / `DC`, while manual output renders the
+  manual setpoint `x.xxV` on the left badge and `FOCUS` / `ON` / `OFF` on the
+  right badge, with the USB-C card header capped at exactly two badges while
+  reusing the existing USB-C card V/A/W live telemetry.
+- Refined the Dashboard USB-C status-chip gate so inline live badges suppress
+  the legacy status chip only after the USB-C port telemetry resolves cleanly;
+  legacy no-diagnostics states and real USB-C telemetry errors keep the
+  existing status chip visible.
 - Added protocol-card negotiation metadata so `PD`/`PPS` render `CC` and the
   current non-PD protocol set renders `DPDM`.
 - Added card-level container-query behavior so negotiation badges show only on
@@ -33,7 +46,14 @@
   negotiation badges stay covered when the protocol grid becomes two columns
   without reverting to narrow-card hiding.
 - Added Storybook coverage for default, auto-follow, host-locked, failure,
-  save, restore, and narrow states.
+  save, restore, and narrow power-panel states, plus Dashboard USB-C inline
+  live-badge states for `PD`, `FOCUS`, `ON`, and `OFF`.
+- Added a config-only manual `Force` Storybook proof so visual evidence can
+  directly show the settings page no longer renders the live USB-C state after
+  that state moved into inline badges on Dashboard.
+- Added Dashboard regression coverage for the legacy no-diagnostics fallback
+  and for the case where live badges remain visible alongside a real USB-C
+  telemetry error status chip.
 - Fixed narrow responsive layout so the power cap and output mode controls do
   not clip.
 
@@ -45,6 +65,8 @@
 - `cd web && bun run build-storybook`
 - `cd web && bun run test:unit`
 - `cd web && bun run test:storybook`
+- `PORT=/dev/cu.usbmodem21221401 just flash`
+- Local USB browser verification against `HIL-f293cc-USB`
 
 `cargo test power_config` is not a valid gate for this repository target as
 currently configured because the ESP `xtensa-esp32s3-none-elf` target lacks the
@@ -177,3 +199,7 @@ Runtime remediation:
 - `pd-diagnostics.sw2303_readback_config.matches_config` is the HIL gate for
   proving chip-register state; LoadLynx source caps remain the gate for proving
   sink-visible advertisement.
+- Manual `default` path fallback now treats the Type-C 5 V source path as safe
+  when there is no explicit negotiated protocol request, so passive 5.1 kΩ Rd
+  sinks keep the SW2303 path `auto` and show live `ON` instead of regressing to
+  `force_close`.

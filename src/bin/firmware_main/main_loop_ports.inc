@@ -74,21 +74,27 @@
                     Field::Ok(v_mv) if v_mv < 1_000 => false,
                     _ => true,
                 };
-                let usb_c_present = normal_ui_usb_c_present(
+                let usb_c_display = resolve_usb_c_display(UsbCDisplayInput {
+                    tps_mode: power_config.tps_mode,
+                    manual_path_mode: power_config.manual.usb_c_path_mode,
+                    manual_setpoint_mv: power_config.manual.voltage_mv,
+                    tps_output_enabled: tps_state
+                        .last
+                        .map(|active_setpoint| active_setpoint.output_enabled)
+                        .unwrap_or(setpoint.output_enabled),
+                    port_power_enabled: port_usb_c.power == PowerState::On,
                     request,
-                    telemetry.usb_c.voltage_mv,
-                    telemetry.usb_c.current_ma,
-                );
-                let usb_c_mode = normal_ui_usb_c_mode(
-                    request,
-                    telemetry.usb_c.voltage_mv,
-                    telemetry.usb_c.current_ma,
-                );
+                    voltage_mv: telemetry.usb_c.voltage_mv,
+                    current_ma: telemetry.usb_c.current_ma,
+                });
+                // Keep the v1 ports API aligned with the shared USB-C display contract so
+                // manual TPS output still exposes live U17 V/A/W to Dashboard and Web.
+                let usb_c_api_present = usb_c_display.measurements_visible;
 
                 #[cfg(feature = "net_http")]
                 {
                     api_usb_a_present = usb_a_present;
-                    api_usb_c_present = usb_c_present;
+                    api_usb_c_present = usb_c_api_present;
                     api_usb_a_metrics = telemetry.usb_a;
                     api_usb_c_metrics = telemetry.usb_c;
                     api_sample_uptime_ms = uptime_ms_from_instant(ui_tick_now);
@@ -98,19 +104,19 @@
                     usb_a: NormalUiPort {
                         present: usb_a_present,
                         mode: NormalUiPortMode::UsbA,
-                        badge_mv: if usb_a_present { Some(5_000) } else { None },
+                        badge: if usb_a_present {
+                            NormalUiPortBadge::VoltageMv(5_000)
+                        } else {
+                            NormalUiPortBadge::Unknown
+                        },
                         voltage_uv: telemetry_field_to_ui(telemetry.usb_a.voltage_mv),
                         current_ua: telemetry_field_to_ui(telemetry.usb_a.current_ma),
                         power_uw: telemetry_field_to_ui(telemetry.usb_a.power_mw),
                     },
                     usb_c: NormalUiPort {
-                        present: usb_c_present,
-                        mode: usb_c_mode,
-                        badge_mv: if usb_c_present {
-                            normal_ui_badge_mv(request, telemetry.usb_c.voltage_mv)
-                        } else {
-                            None
-                        },
+                        present: usb_c_display.measurements_visible,
+                        mode: usb_c_display.mode,
+                        badge: usb_c_display.badge,
                         voltage_uv: telemetry_field_to_ui(telemetry.usb_c.voltage_mv),
                         current_ua: telemetry_field_to_ui(telemetry.usb_c.current_ma),
                         power_uw: telemetry_field_to_ui(telemetry.usb_c.power_mw),

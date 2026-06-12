@@ -1,6 +1,7 @@
 import type {
   DeviceApiError,
   DeviceInfoResponse,
+  PdDiagnosticsResponse,
   PowerConfigInput,
   PowerConfigResponse,
   RebootResponse,
@@ -72,6 +73,7 @@ export type DeviceRuntimeContextValue = {
     scope: SettingsResetScope,
   ) => Promise<Result<SettingsResetResponse>>;
   rebootDevice: (deviceId: string) => Promise<Result<RebootResponse>>;
+  pdDiagnostics: (deviceId: string) => Promise<Result<PdDiagnosticsResponse>>;
   powerConfig: (deviceId: string) => Promise<Result<PowerConfigResponse>>;
   savePowerConfig: (
     deviceId: string,

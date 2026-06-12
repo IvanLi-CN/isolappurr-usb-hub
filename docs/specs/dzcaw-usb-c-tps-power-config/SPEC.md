@@ -16,6 +16,7 @@ temporary firmware edits.
 - Keep the API write model as a whole-config transaction.
 - Preserve the current full SW2303 profile as the restore-defaults behavior.
 - Provide a Web USB-C / Power settings page with host lock protection.
+- Show the live USB-C source semantics on the Web Dashboard.
 - Provide on-device preset and advanced power pages for the GC9307 settings
   menu.
 
@@ -57,8 +58,23 @@ temporary firmware edits.
 - Web UI protocol cards MUST hide the negotiation badge when an individual card
   is too narrow to fit the protocol name, badge, state, and toggle without a
   cramped layout.
+- Manual TPS output live semantics MUST come from the shared USB-C display
+  contract: `manual + output_enabled` sets the left USB-C badge to the manual
+  TPS setpoint formatted as `x.xxV`; `force` fixes the right badge to `FOCUS`;
+  other manual path modes show `ON/OFF` from the actual SW2303 VBUS path
+  state.
+- When live USB-C display badges are present and USB-C telemetry resolves
+  cleanly, the Web Dashboard USB-C card header MUST render exactly two badges
+  and no third status chip: left badge = shared display mode/setpoint label,
+  right badge = shared live state badge.
+- When live USB-C display badges are absent, or USB-C telemetry is not `ok`,
+  the Dashboard MUST preserve the existing USB-C status chip instead of hiding
+  fault/legacy state behind the live badges.
 - Storybook coverage MUST include normal, host-locked, failure, save, restore,
-  and narrow states for the power panel.
+  and narrow states for the power panel, plus Dashboard USB-C card inline
+  live-badge states for auto-follow, `FOCUS`, `ON`, and `OFF`, the legacy
+  no-diagnostics fallback, and the telemetry-error regression where a real
+  error status chip must remain visible.
 
 ## Acceptance
 
@@ -69,17 +85,38 @@ temporary firmware edits.
 - Given a whole power config write over HTTP, Web Serial, or Local USB, when the
   request validates and the lock allows it, then firmware stores the config to
   EEPROM, updates the API snapshot, and reapplies the SW2303 profile.
+- Given `manual.usb_c_path_mode=default`, when no explicit SW2303 protocol
+  request exists and manual VOUT is less than or equal to 5 V, then firmware
+  clears SW2303 force-open and force-close bits as the Type-C fallback path.
 - Given `manual.usb_c_path_mode=default`, when manual VOUT is higher than the
-  latest valid SW2303 request or no valid request exists, then firmware
-  force-closes the SW2303 path.
+  latest explicit SW2303 protocol request, or higher than the 5 V Type-C
+  fallback when no explicit request exists, then firmware force-closes the
+  SW2303 path.
 - Given `manual.usb_c_path_mode=default`, when manual VOUT is less than or
-  equal to the SW2303 request, then firmware clears SW2303 force-open and
-  force-close bits.
+  equal to the explicit SW2303 protocol request, then firmware clears SW2303
+  force-open and force-close bits.
 - Given a remote host lock, when another host attempts a config write, then the
   write is rejected as busy and the UI presents the locked state.
 - Given the default desktop power panel story, when the safe-profile protocol
   cards are wide enough, then `PD` and `PPS` show `CC`, and the current non-PD
   protocol cards show `DPDM`.
+- Given manual TPS output with `usb_c_path_mode=force`, when the Dashboard
+  USB-C card refreshes, then the left inline badge shows the manual setpoint
+  (for example `3.30V`), the right inline badge shows `FOCUS`, there is no
+  third status badge on that card header, and the USB-C V/A/W on that card
+  continue to come from the live U17 telemetry.
+- Given manual TPS output with `usb_c_path_mode!=force`, when the Dashboard
+  USB-C card refreshes, then the left inline badge shows the manual setpoint
+  (for example `9.00V`), the right inline badge shows `ON` or `OFF` from the
+  real VBUS path state, there is no third status badge on that card header,
+  and the USB-C V/A/W on that card continue to come from the live U17
+  telemetry.
+- Given legacy firmware without PD diagnostics, when the Dashboard USB-C card
+  refreshes, then inline live badges stay absent and the existing USB-C status
+  chip remains visible.
+- Given live USB-C display badges and a USB-C telemetry error, when the
+  Dashboard USB-C card refreshes, then the live mode/setpoint badges remain
+  visible and the existing USB-C error status chip also remains visible.
 - Given the narrow power panel story, when a protocol card becomes too narrow,
   then its negotiation badge is hidden without clipping the protocol card
   content or toggle.
@@ -105,6 +142,20 @@ temporary firmware edits.
 - [x] Visual evidence.
 
 ## Visual Evidence
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ManualForceConfigOnly`
+  state: power panel configuration-only manual force
+  requested_viewport: `1440x1400`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: proves the Web power settings page stays configuration-only
+  during manual `Force`, without trying to duplicate the live USB-C state
+  badges that now belong on the Dashboard card.
+
+PR: include
+![Device power panel manual force config only](./assets/device-power-panel-manual-force-config-only.png)
 
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/Default`
@@ -146,6 +197,89 @@ PR: include
 
 PR: include
 ![Device power panel medium wide cards](./assets/device-power-panel-medium-wide-cards.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/ManualForceLive`
+  state: Dashboard live manual `FOCUS`
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the Dashboard USB-C card shows inline manual
+  setpoint + `FOCUS` badges while keeping the card V/A/W tied to the measured
+  U17 telemetry.
+
+PR: include
+![Device dashboard panel manual force live](./assets/device-dashboard-panel-manual-force-live.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/ManualPathOnLive`
+  state: Dashboard live manual `ON`
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the Dashboard USB-C card shows inline manual
+  setpoint + `ON` badges while keeping the card V/A/W tied to the measured
+  U17 telemetry.
+
+PR: include
+![Device dashboard panel manual path on live](./assets/device-dashboard-panel-manual-path-on-live.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/ManualPathOffLive`
+  state: Dashboard live manual `OFF`
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the Dashboard USB-C card shows inline manual
+  setpoint + `OFF` badges while keeping the card V/A/W tied to the measured
+  U17 telemetry.
+
+PR: include
+![Device dashboard panel manual path off live](./assets/device-dashboard-panel-manual-path-off-live.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/LegacyFirmwareUnknownIsolation`
+  state: Dashboard legacy no-diagnostics fallback
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies legacy firmware without PD diagnostics keeps the
+  existing USB-C status chip instead of rendering incomplete live badges.
+
+PR: include
+![Device dashboard panel legacy firmware unknown isolation](./assets/device-dashboard-panel-legacy-firmware-unknown-isolation.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/LiveBadgesKeepErrorStatus`
+  state: Dashboard live badges with USB-C telemetry error
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies live USB-C mode/setpoint badges do not suppress a
+  real USB-C error status chip.
+
+PR: include
+![Device dashboard panel live badges keep error status](./assets/device-dashboard-panel-live-badges-keep-error-status.png)
+
+- source_type: live_hardware_browser
+  story_id_or_title: `Local USB HIL overview`
+  state: `HIL-f293cc-USB` default path fallback restored
+  requested_viewport: `full page`
+  viewport_strategy: `chrome-devtools full page screenshot`
+  capture_scope: `page`
+  target_program: `isolapurr-devd://usb--dev-cu-usbmodem21221401`
+  evidence_note: verifies the real Local USB-backed HIL device
+  `f293cc / 9C:13:9E:F2:93:CC` reports a manual sub-5V setpoint with live
+  badge `ON` on the Overview page after restoring the Type-C default-path
+  fallback behavior for non-negotiated sinks.
+
+PR: include
+![HIL f293cc USB overview default path on](./assets/hil-f293cc-usb-overview-default-path-on.png)
 
 ## Risks
 
