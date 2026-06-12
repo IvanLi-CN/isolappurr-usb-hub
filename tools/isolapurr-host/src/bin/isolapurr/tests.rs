@@ -335,6 +335,53 @@ mod power_output_tests {
     }
 
     #[test]
+    fn idle_bias_finalize_snapshot_rejects_failed_runs() {
+        let snapshot = CliIdleBias {
+            run: CliIdleBiasRun {
+                state: "failed".to_string(),
+                completed_points: 12,
+                point_count: 37,
+                target_voltage_mv: Some(9000),
+                error: Some(CliIdleBiasError {
+                    code: "attach_detected".to_string(),
+                    message: "disconnect USB-C load before calibration".to_string(),
+                }),
+            },
+            ..CliIdleBias::default()
+        };
+
+        let err = finalize_idle_bias_snapshot(&snapshot)
+            .expect_err("failed calibration should surface as an error");
+        assert!(err.to_string().contains("idle-bias calibration failed"));
+        assert!(err.to_string().contains("attach_detected"));
+        assert!(
+            err.to_string()
+                .contains("disconnect USB-C load before calibration")
+        );
+    }
+
+    #[test]
+    fn idle_bias_finalize_snapshot_keeps_completed_runs() {
+        let snapshot = CliIdleBias {
+            correction_enabled: true,
+            run: CliIdleBiasRun {
+                state: "completed".to_string(),
+                completed_points: 37,
+                point_count: 37,
+                target_voltage_mv: None,
+                error: None,
+            },
+            ..CliIdleBias::default()
+        };
+
+        let done =
+            finalize_idle_bias_snapshot(&snapshot).expect("completed calibration should succeed");
+        assert!(done);
+        assert_eq!(snapshot.run.state, "completed");
+        assert!(snapshot.correction_enabled);
+    }
+
+    #[test]
     fn ports_power_accepts_explicit_boolean_value() {
         let cli = Cli::try_parse_from([
             "isolapurr",
