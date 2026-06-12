@@ -11,39 +11,20 @@ import {
   type DesktopAgent,
   tryBootstrapDesktopAgent,
 } from "../domain/desktopAgent";
-import {
-  clearIdleBiasCalibration,
-  clearWifiConfig,
-  type DeviceApiError,
-  type DeviceInfoResponse,
-  getDeviceInfo,
-  getIdleBias,
-  getPdDiagnostics,
-  getPorts,
-  getPowerConfig,
-  getWifiConfig,
-  type IdleBiasResponse,
-  type PdDiagnosticsResponse,
-  type PowerConfigInput,
-  type PowerConfigResponse,
-  type RebootResponse,
-  type Result,
-  rebootDevice,
-  replugPort,
-  resetSettings as resetDeviceSettings,
-  restorePowerDefaults,
-  runIdleBiasCalibration,
-  type SettingsResetResponse,
-  type SettingsResetScope,
-  setIdleBiasCorrection,
-  setPortPower,
-  setPowerConfig,
-  setPowerLock,
-  setUsbCDownstreamRoute,
-  setWifiConfig,
-  type WifiConfigInput,
-  type WifiConfigResponse,
-  type WifiMutationResponse,
+import type {
+  DeviceApiError,
+  DeviceInfoResponse,
+  IdleBiasResponse,
+  PdDiagnosticsResponse,
+  PowerConfigInput,
+  PowerConfigResponse,
+  RebootResponse,
+  Result,
+  SettingsResetResponse,
+  SettingsResetScope,
+  WifiConfigInput,
+  WifiConfigResponse,
+  WifiMutationResponse,
 } from "../domain/deviceApi";
 import {
   nextJsonlRequestId,
@@ -81,6 +62,7 @@ import {
   resolveOrderedDeviceTransports,
   shouldResetLocalUsbConnectionCache,
 } from "./device-runtime-support";
+import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
 import { useDevices } from "./devices-store";
 
@@ -338,100 +320,7 @@ export function DeviceRuntimeProvider({
       params?: Record<string, unknown>,
     ): Promise<Result<T>> => {
       if (transport === "http") {
-        if (method === "ports.get") {
-          return getPorts(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "info") {
-          return getDeviceInfo(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "wifi.get") {
-          return getWifiConfig(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "pd.diagnostics_get") {
-          return getPdDiagnostics(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "power.config_get") {
-          return getPowerConfig(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "power.idle_bias_get") {
-          return getIdleBias(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "power.config_set") {
-          return setPowerConfig(
-            baseUrl,
-            params?.config as PowerConfigInput,
-            Number(params?.owner ?? 0),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "power.idle_bias_set") {
-          return setIdleBiasCorrection(
-            baseUrl,
-            Boolean(params?.correction_enabled),
-            Number(params?.owner ?? 0),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "power.config_defaults") {
-          return restorePowerDefaults(
-            baseUrl,
-            Number(params?.owner ?? 0),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "power.idle_bias_run") {
-          return runIdleBiasCalibration(
-            baseUrl,
-            Number(params?.owner ?? 0),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "power.idle_bias_clear") {
-          return clearIdleBiasCalibration(
-            baseUrl,
-            Number(params?.owner ?? 0),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "power.lock") {
-          return setPowerLock(
-            baseUrl,
-            Number(params?.owner ?? 0),
-            Boolean(params?.acquire ?? true),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "wifi.set") {
-          return setWifiConfig(baseUrl, {
-            ssid: String(params?.ssid ?? ""),
-            psk: String(params?.psk ?? ""),
-          }) as Promise<Result<T>>;
-        }
-        if (method === "wifi.clear") {
-          return clearWifiConfig(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "settings.reset") {
-          return resetDeviceSettings(
-            baseUrl,
-            params?.scope as SettingsResetScope,
-            params?.owner === undefined ? undefined : Number(params.owner),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "reboot") {
-          return rebootDevice(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "port.power_set") {
-          return setPortPower(
-            baseUrl,
-            params?.port as PortId,
-            Boolean(params?.enabled),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "port.replug") {
-          return replugPort(baseUrl, params?.port as PortId) as Promise<
-            Result<T>
-          >;
-        }
-        if (method === "hub.route_set") {
-          return setUsbCDownstreamRoute(
-            baseUrl,
-            params?.route as UsbCDownstreamRoute,
-          ) as Promise<Result<T>>;
-        }
+        return requestHttpTransport<T>(baseUrl, method, params);
       }
       if (transport === "web_serial") {
         return requestWebSerial<T>(deviceId, method, params);

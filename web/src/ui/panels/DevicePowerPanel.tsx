@@ -1,20 +1,4 @@
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getStablePowerLockOwner } from "../../app/device-runtime-support";
 import type {
@@ -23,9 +7,9 @@ import type {
   PowerConfigResponse,
   Result,
 } from "../../domain/deviceApi";
+import { DevicePowerPanelIdleBiasSection } from "./DevicePowerPanelIdleBiasSection";
 
 const HEARTBEAT_MS = 8_000;
-const IDLE_BIAS_POLL_MS = 900;
 
 type DevicePowerPanelProps = {
   deviceKey: string;
@@ -55,40 +39,12 @@ type DevicePowerPanelProps = {
 
 type FormState = PowerConfigInput;
 type NegotiationChannel = "cc" | "dpdm";
-type IdleBiasAction = "run" | "clear" | "enable" | "disable";
 
 type ProtocolToggle = {
   label: string;
   negotiation: NegotiationChannel;
   checked: boolean;
   onChange: (value: boolean) => void;
-};
-
-type IdleBiasConfirmState = {
-  action: IdleBiasAction;
-  title: string;
-  description: string;
-  confirmLabel: string;
-};
-
-type IdleBiasTableRow = {
-  index: number;
-  offsetMa: number;
-  voltageMv: number;
-};
-
-type IdleBiasViewMode = "chart" | "table";
-
-type IdleBiasTableColumn = {
-  index: number;
-  rows: IdleBiasTableRow[];
-};
-
-type SummaryCardProps = {
-  title: string;
-  value: string;
-  detail: string;
-  tone?: "default" | "success" | "warning" | "error";
 };
 
 function cloneConfig(config: PowerConfigResponse): FormState {
@@ -180,258 +136,6 @@ function formatCurrentInput(ma: number): string {
 
 function formatPowerInput(watts: number): string {
   return `${watts} W`;
-}
-
-function formatCompactVoltage(mv: number | null | undefined): string {
-  if (mv === null || mv === undefined) {
-    return "--";
-  }
-  const volts = mv / 1000;
-  return `${Number.isInteger(volts) ? volts.toFixed(0) : volts.toFixed(1)} V`;
-}
-
-function summarizeIdleBiasDataset(idleBias: IdleBiasResponse | null): {
-  value: string;
-  detail: string;
-  tone: SummaryCardProps["tone"];
-} {
-  if (!idleBias) {
-    return {
-      value: "Loading",
-      detail: "Reading the saved idle-bias dataset from the hub.",
-      tone: "default",
-    };
-  }
-  const dataset = idleBias.dataset;
-  const range = `${formatCompactVoltage(dataset.min_voltage_mv)} to ${formatCompactVoltage(dataset.max_voltage_mv)}`;
-  const detail = `${range} sweep in ${formatCompactVoltage(dataset.step_mv)} steps across ${dataset.point_count} points.`;
-  if (dataset.status === "valid") {
-    return {
-      value: "Ready",
-      detail,
-      tone: "success",
-    };
-  }
-  return {
-    value: "Missing",
-    detail,
-    tone: "warning",
-  };
-}
-
-function summarizeIdleBiasCorrection(idleBias: IdleBiasResponse | null): {
-  value: string;
-  detail: string;
-  tone: SummaryCardProps["tone"];
-} {
-  if (!idleBias) {
-    return {
-      value: "Loading",
-      detail: "Waiting for the current correction state.",
-      tone: "default",
-    };
-  }
-  if (idleBias.dataset.status !== "valid") {
-    return {
-      value: "Unavailable",
-      detail:
-        "Run USB-C empty-load calibration before corrected telemetry can be applied.",
-      tone: "warning",
-    };
-  }
-  if (idleBias.correction_enabled) {
-    const applied =
-      idleBias.current_applied_offset_ma === null
-        ? "Corrected USB-C telemetry is active."
-        : `Subtracting ${idleBias.current_applied_offset_ma} mA from the live USB-C current reading.`;
-    return {
-      value: "Applied",
-      detail: applied,
-      tone: "success",
-    };
-  }
-  return {
-    value: "Off",
-    detail:
-      "Dataset is saved, but the main USB-C telemetry is currently using the raw INA226 reading.",
-    tone: "default",
-  };
-}
-
-function summarizeIdleBiasRun(idleBias: IdleBiasResponse | null): {
-  value: string;
-  detail: string;
-  tone: SummaryCardProps["tone"];
-} {
-  if (!idleBias) {
-    return {
-      value: "Loading",
-      detail: "Waiting for the calibration job state.",
-      tone: "default",
-    };
-  }
-  const run = idleBias.run;
-  if (run.state === "running") {
-    const target =
-      run.target_voltage_mv === null
-        ? ""
-        : ` at ${formatCompactVoltage(run.target_voltage_mv)}`;
-    return {
-      value: `${run.completed_points}/${run.point_count}`,
-      detail: `Sweeping USB-C empty-load points${target}.`,
-      tone: "warning",
-    };
-  }
-  if (run.state === "failed") {
-    return {
-      value: "Failed",
-      detail:
-        run.error?.message ??
-        "Calibration stopped before the dataset could be saved.",
-      tone: "error",
-    };
-  }
-  return {
-    value: "Idle",
-    detail:
-      idleBias.dataset.status === "valid"
-        ? "No calibration job is running. The saved dataset remains available."
-        : "No calibration job is running. The hub still needs a saved dataset.",
-    tone: "default",
-  };
-}
-
-function confirmCopyForIdleBiasAction(
-  action: IdleBiasAction,
-): IdleBiasConfirmState {
-  switch (action) {
-    case "run":
-      return {
-        action,
-        title: "Run USB-C idle-bias calibration?",
-        description:
-          "Disconnect every USB-C device first. The hub will sweep 3.0 V to 21.0 V across 37 empty-load points, record SW2303 idle current into EEPROM, and then restore the active power configuration.",
-        confirmLabel: "Run calibration",
-      };
-    case "clear":
-      return {
-        action,
-        title: "Clear the saved idle-bias dataset?",
-        description:
-          "This removes the EEPROM calibration table and forces idle-bias correction off until a new empty-load sweep is completed.",
-        confirmLabel: "Clear dataset",
-      };
-    case "enable":
-      return {
-        action,
-        title: "Apply idle-bias correction?",
-        description:
-          "Corrected USB-C current and power will subtract the saved SW2303 empty-load offset. Raw INA226 telemetry remains available only in diagnostics.",
-        confirmLabel: "Apply correction",
-      };
-    case "disable":
-      return {
-        action,
-        title: "Disable idle-bias correction?",
-        description:
-          "The main USB-C telemetry will immediately return to the raw INA226 current and power reading.",
-        confirmLabel: "Disable correction",
-      };
-  }
-}
-
-function buildIdleBiasTableRows(
-  idleBias: IdleBiasResponse | null,
-): IdleBiasTableRow[] {
-  const offsets = idleBias?.dataset.offsets_ma;
-  if (!offsets || idleBias?.dataset.status !== "valid") {
-    return [];
-  }
-  return offsets.map((offsetMa, index) => ({
-    index,
-    offsetMa,
-    voltageMv:
-      idleBias.dataset.min_voltage_mv + idleBias.dataset.step_mv * index,
-  }));
-}
-
-function chunkIdleBiasTableRows(
-  rows: IdleBiasTableRow[],
-  columns: number,
-): IdleBiasTableColumn[] {
-  if (rows.length === 0) {
-    return [];
-  }
-  const safeColumns = Math.max(1, columns);
-  const rowsPerColumn = Math.ceil(rows.length / safeColumns);
-  return Array.from({ length: safeColumns }, (_value, index) => {
-    const start = index * rowsPerColumn;
-    return {
-      index,
-      rows: rows.slice(start, start + rowsPerColumn),
-    };
-  }).filter((column) => column.rows.length > 0);
-}
-
-function offsetTickFormatter(value: number): string {
-  return `${value} mA`;
-}
-
-function IdleBiasTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  label?: string | number;
-  payload?: Array<{ value?: number }>;
-}) {
-  if (
-    !active ||
-    !payload ||
-    payload.length === 0 ||
-    payload[0]?.value == null
-  ) {
-    return null;
-  }
-  return (
-    <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[12px] shadow-sm">
-      <div className="font-semibold text-[var(--text)]">{label}</div>
-      <div className="mt-1 text-[var(--muted)]">
-        Offset {payload[0].value} mA
-      </div>
-    </div>
-  );
-}
-
-function SummaryCard({
-  title,
-  value,
-  detail,
-  tone = "default",
-}: SummaryCardProps) {
-  const toneClass =
-    tone === "success"
-      ? "border-[var(--badge-success-text)]/20 bg-[var(--badge-success-bg)]"
-      : tone === "warning"
-        ? "border-[var(--badge-warning-text)]/20 bg-[var(--badge-warning-bg)]"
-        : tone === "error"
-          ? "border-[var(--badge-error-text)]/20 bg-[var(--panel)]"
-          : "border-[var(--border)] bg-[var(--panel)]";
-
-  return (
-    <div className={`rounded-[10px] border px-4 py-4 ${toneClass}`}>
-      <div className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[var(--muted)]">
-        {title}
-      </div>
-      <div className="mt-2 text-[20px] font-semibold text-[var(--text)]">
-        {value}
-      </div>
-      <div className="mt-2 text-[12px] leading-6 text-[var(--muted)]">
-        {detail}
-      </div>
-    </div>
-  );
 }
 
 type UnitSliderFieldProps = {
@@ -526,25 +230,16 @@ export function DevicePowerPanel({
   runIdleBiasCalibration,
   clearIdleBiasCalibration,
 }: DevicePowerPanelProps) {
-  const idleBiasViewLabelId = useId();
   const [config, setConfig] = useState<PowerConfigResponse | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [idleBias, setIdleBias] = useState<IdleBiasResponse | null>(null);
-  const [idleBiasStatus, setIdleBiasStatus] = useState<string | null>(null);
-  const [idleBiasError, setIdleBiasError] = useState<string | null>(null);
   const [idleBiasBusy, setIdleBiasBusy] = useState(false);
-  const [idleBiasConfirm, setIdleBiasConfirm] =
-    useState<IdleBiasConfirmState | null>(null);
-  const [idleBiasTableExpanded, setIdleBiasTableExpanded] = useState(false);
-  const [idleBiasViewMode, setIdleBiasViewMode] =
-    useState<IdleBiasViewMode>("chart");
+  const [idleBiasRunning, setIdleBiasRunning] = useState(false);
   const lockedRef = useRef(false);
   const loadPowerConfigRef = useRef(loadPowerConfig);
-  const loadIdleBiasRef = useRef(loadIdleBias);
   const setPowerLockRef = useRef(setPowerLock);
   const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
 
@@ -560,20 +255,13 @@ export function DevicePowerPanel({
   }, [loadPowerConfig]);
 
   useEffect(() => {
-    loadIdleBiasRef.current = loadIdleBias;
-  }, [loadIdleBias]);
-
-  useEffect(() => {
     setPowerLockRef.current = setPowerLock;
   }, [setPowerLock]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [configRes, idleBiasRes] = await Promise.all([
-        loadPowerConfigRef.current(),
-        loadIdleBiasRef.current(),
-      ]);
+      const configRes = await loadPowerConfigRef.current();
       if (cancelled) {
         return;
       }
@@ -581,12 +269,6 @@ export function DevicePowerPanel({
         applyLoadedConfig(configRes.value);
       } else {
         setError(configRes.error.message);
-      }
-      if (idleBiasRes.ok) {
-        setIdleBias(idleBiasRes.value);
-        setIdleBiasError(null);
-      } else {
-        setIdleBiasError(idleBiasRes.error.message);
       }
     };
     void load();
@@ -662,51 +344,13 @@ export function DevicePowerPanel({
     };
   }, []);
 
-  useEffect(() => {
-    if (idleBias?.run.state !== "running") {
-      return;
-    }
-    let cancelled = false;
-    const poll = async () => {
-      const res = await loadIdleBiasRef.current();
-      if (cancelled) {
-        return;
-      }
-      if (!res.ok) {
-        setIdleBiasError(res.error.message);
-        return;
-      }
-      setIdleBias(res.value);
-      setIdleBiasError(null);
-      if (res.value.run.state === "idle") {
-        setIdleBiasStatus("Calibration completed and saved to EEPROM.");
-      } else if (res.value.run.state === "failed") {
-        setIdleBiasStatus(null);
-        setIdleBiasError(
-          res.value.run.error?.message ??
-            "Calibration failed before completion.",
-        );
-      }
-    };
-
-    void poll();
-    const id = window.setInterval(() => void poll(), IDLE_BIAS_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [idleBias?.run.state]);
-
   const lockedByOtherHost =
     config?.lock !== null &&
     config?.lock !== undefined &&
     config.lock.owner !== ownerRef.current;
-  const idleBiasRunning = idleBias?.run.state === "running";
   const advancedDisabled =
     localAdvancedLocked || lockedByOtherHost || idleBiasRunning;
   const powerControlsDisabled = advancedDisabled || busy || idleBiasBusy;
-  const idleBiasControlsDisabled =
-    lockedByOtherHost || busy || idleBiasBusy || idleBiasRunning;
 
   if (!form && error) {
     return (
@@ -911,704 +555,250 @@ export function DevicePowerPanel({
     }
   };
 
-  const requestIdleBiasAction = (action: IdleBiasAction) => {
-    setIdleBiasConfirm(confirmCopyForIdleBiasAction(action));
-  };
-
-  const confirmIdleBiasAction = async () => {
-    if (!idleBiasConfirm) {
-      return;
-    }
-    setIdleBiasBusy(true);
-    setIdleBiasError(null);
-    setIdleBiasStatus(null);
-
-    let result: Result<IdleBiasResponse>;
-    switch (idleBiasConfirm.action) {
-      case "run":
-        setIdleBiasStatus("Starting USB-C idle-bias calibration...");
-        result = await runIdleBiasCalibration(ownerRef.current);
-        break;
-      case "clear":
-        setIdleBiasStatus("Clearing saved idle-bias dataset...");
-        result = await clearIdleBiasCalibration(ownerRef.current);
-        break;
-      case "enable":
-        setIdleBiasStatus("Applying idle-bias correction...");
-        result = await setIdleBiasCorrection(true, ownerRef.current);
-        break;
-      case "disable":
-        setIdleBiasStatus("Disabling idle-bias correction...");
-        result = await setIdleBiasCorrection(false, ownerRef.current);
-        break;
-    }
-
-    setIdleBiasBusy(false);
-    setIdleBiasConfirm(null);
-
-    if (!result.ok) {
-      setIdleBiasStatus(null);
-      setIdleBiasError(result.error.message);
-      return;
-    }
-
-    setIdleBias(result.value);
-    setIdleBiasError(null);
-    if (idleBiasConfirm.action === "run") {
-      setIdleBiasStatus(
-        result.value.run.state === "running"
-          ? "Calibration running. Keep USB-C disconnected until the sweep finishes."
-          : "Calibration completed and saved to EEPROM.",
-      );
-      return;
-    }
-    if (idleBiasConfirm.action === "clear") {
-      setIdleBiasStatus("Idle-bias dataset cleared and correction forced off.");
-      return;
-    }
-    setIdleBiasStatus(
-      result.value.correction_enabled
-        ? "Corrected USB-C telemetry is now active."
-        : "USB-C telemetry returned to the raw INA226 reading.",
-    );
-  };
-
-  const datasetSummary = summarizeIdleBiasDataset(idleBias);
-  const correctionSummary = summarizeIdleBiasCorrection(idleBias);
-  const runSummary = summarizeIdleBiasRun(idleBias);
-  const correctionButtonLabel =
-    idleBias?.correction_enabled === true
-      ? "Disable correction"
-      : "Apply correction";
-  const canToggleCorrection =
-    idleBias?.dataset.status === "valid" || idleBias?.correction_enabled;
-  const idleBiasTableRows = buildIdleBiasTableRows(idleBias);
-  const canShowIdleBiasTable = idleBiasTableRows.length > 0;
-  const idleBiasTableColumns = chunkIdleBiasTableRows(idleBiasTableRows, 3);
-
   return (
-    <>
-      <section
-        className="flex flex-col gap-5 rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-5 py-5"
-        data-testid="device-power-panel"
-      >
-        <header className="flex flex-col gap-2 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <div className="text-[18px] font-semibold">USB-C / Power</div>
-            <div className="mt-1 text-[13px] text-[var(--muted)]">
-              {deviceName} · active transport {transportLabel}
-            </div>
+    <section
+      className="flex flex-col gap-5 rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-5 py-5"
+      data-testid="device-power-panel"
+    >
+      <header className="flex flex-col gap-2 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="text-[18px] font-semibold">USB-C / Power</div>
+          <div className="mt-1 text-[13px] text-[var(--muted)]">
+            {deviceName} · active transport {transportLabel}
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-[12px]">
-            <span
-              className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${config?.persisted ? badgeTone(true) : badgeTone(false)}`}
-            >
-              {config?.persisted ? "EEPROM saved" : "Unsaved default"}
-            </span>
-            <span
-              className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${lockedByOtherHost ? "bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
-            >
-              {lockedByOtherHost ? "Host lock active" : "Host lock idle"}
-            </span>
-            <span
-              className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${idleBiasRunning ? "bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
-            >
-              {idleBiasRunning ? "Calibration running" : "Calibration idle"}
-            </span>
-          </div>
-        </header>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <span
+            className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${config?.persisted ? badgeTone(true) : badgeTone(false)}`}
+          >
+            {config?.persisted ? "EEPROM saved" : "Unsaved default"}
+          </span>
+          <span
+            className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${lockedByOtherHost ? "bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
+          >
+            {lockedByOtherHost ? "Host lock active" : "Host lock idle"}
+          </span>
+          <span
+            className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${idleBiasRunning ? "bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
+          >
+            {idleBiasRunning ? "Calibration running" : "Calibration idle"}
+          </span>
+        </div>
+      </header>
 
-        <div className="grid gap-5">
-          <section className="grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="text-[14px] font-semibold">Safe profile</div>
-                <div className="mt-1 text-[12px] text-[var(--muted)]">
-                  Source capability stays on SW2303. Changes save to EEPROM and
-                  apply immediately.
-                </div>
+      <div className="grid gap-5">
+        <section className="grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-[14px] font-semibold">Safe profile</div>
+              <div className="mt-1 text-[12px] text-[var(--muted)]">
+                Source capability stays on SW2303. Changes save to EEPROM and
+                apply immediately.
               </div>
             </div>
-            <UnitSliderField
-              disabled={powerControlsDisabled}
-              formatValue={formatPowerInput}
-              label="Power cap"
-              max={100}
-              min={1}
-              onChange={setPowerWatts}
-              parseValue={parsePowerInput}
-              step={1}
-              value={form.capability.power_watts}
-            />
-            <div className="protocol-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              {protocolToggles.map((protocol) => (
-                <label
-                  className={`protocol-card flex min-h-[64px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
-                  key={protocol.label}
-                >
-                  <span className="grid min-w-0 gap-1">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-semibold">
-                        {protocol.label}
-                      </span>
-                      <span
-                        className="protocol-negotiation-badge h-5 shrink-0 items-center rounded-full border border-current/15 bg-[var(--panel)] px-2 text-[10px] font-bold uppercase tracking-[0.02em]"
-                        data-testid={`${protocol.label}-negotiation-badge`}
-                      >
-                        {negotiationBadgeLabel(protocol.negotiation)}
-                      </span>
+          </div>
+          <UnitSliderField
+            disabled={powerControlsDisabled}
+            formatValue={formatPowerInput}
+            label="Power cap"
+            max={100}
+            min={1}
+            onChange={setPowerWatts}
+            parseValue={parsePowerInput}
+            step={1}
+            value={form.capability.power_watts}
+          />
+          <div className="protocol-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {protocolToggles.map((protocol) => (
+              <label
+                className={`protocol-card flex min-h-[64px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                key={protocol.label}
+              >
+                <span className="grid min-w-0 gap-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-semibold">
+                      {protocol.label}
                     </span>
-                    <span className="text-[11px] font-semibold uppercase">
-                      {protocol.checked ? "On" : "Off"}
-                    </span>
-                  </span>
-                  <input
-                    checked={protocol.checked}
-                    className="peer sr-only"
-                    disabled={powerControlsDisabled}
-                    onChange={(event) =>
-                      protocol.onChange(event.target.checked)
-                    }
-                    type="checkbox"
-                  />
-                  <span
-                    aria-hidden="true"
-                    className={`relative h-6 w-11 shrink-0 rounded-full border transition peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--focus)] ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)]"}`}
-                  >
                     <span
-                      className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-[var(--panel)] shadow-sm transition ${protocol.checked ? "left-[24px]" : "left-[3px]"}`}
-                    />
-                  </span>
-                </label>
-              ))}
-            </div>
-          </section>
-
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-            <section className="grid gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-[14px] font-semibold">Output mode</div>
-                  <div className="mt-1 text-[12px] text-[var(--muted)]">
-                    Manual TPS output is only for advanced bench work. USB-C
-                    path policy stays explicit.
-                  </div>
-                </div>
-                <div className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-1 sm:w-auto">
-                  <button
-                    className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "auto_follow" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
-                    disabled={powerControlsDisabled}
-                    onClick={() => setTpsMode("auto_follow")}
-                    type="button"
-                  >
-                    Auto follow
-                  </button>
-                  <button
-                    className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "manual" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
-                    disabled={powerControlsDisabled}
-                    onClick={() => setTpsMode("manual")}
-                    type="button"
-                  >
-                    Manual TPS
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid gap-4">
-                <UnitSliderField
-                  disabled={powerControlsDisabled || form.tps_mode !== "manual"}
-                  formatValue={formatVoltageInput}
-                  label="Voltage"
-                  max={21000}
-                  min={3000}
-                  onChange={(value) => setManualNumber("voltage_mv", value)}
-                  parseValue={parseVoltageInput}
-                  step={20}
-                  value={form.manual.voltage_mv}
-                />
-                <UnitSliderField
-                  disabled={powerControlsDisabled || form.tps_mode !== "manual"}
-                  formatValue={formatCurrentInput}
-                  label="Current limit"
-                  max={6350}
-                  min={1000}
-                  onChange={(value) =>
-                    setManualNumber("current_limit_ma", value)
-                  }
-                  parseValue={parseCurrentInput}
-                  step={50}
-                  value={form.manual.current_limit_ma}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <div className="text-[13px] font-medium text-[var(--muted)]">
-                  USB-C path
-                </div>
-                <div className="grid gap-2 lg:grid-cols-3">
-                  {[
-                    [
-                      "default",
-                      "Default",
-                      "Disconnect only while manual voltage exceeds negotiated SW2303 request.",
-                    ],
-                    [
-                      "disconnect",
-                      "Disconnect",
-                      "Force SW2303 path off regardless of negotiated voltage.",
-                    ],
-                    [
-                      "force",
-                      "Force",
-                      "Keep USB-C VBUS connected to TPS VOUT unconditionally.",
-                    ],
-                  ].map(([value, label, detail]) => (
-                    <button
-                      key={value}
-                      className={`flex min-h-[88px] flex-col items-start justify-between rounded-[8px] border px-3 py-3 text-left ${form.manual.usb_c_path_mode === value ? "border-[var(--primary)] bg-[var(--panel)]" : "border-[var(--border)] bg-[var(--panel)]"} ${powerControlsDisabled || form.tps_mode !== "manual" ? "opacity-60" : ""}`}
-                      disabled={
-                        powerControlsDisabled || form.tps_mode !== "manual"
-                      }
-                      onClick={() =>
-                        setPathMode(
-                          value as FormState["manual"]["usb_c_path_mode"],
-                        )
-                      }
-                      type="button"
+                      className="protocol-negotiation-badge h-5 shrink-0 items-center rounded-full border border-current/15 bg-[var(--panel)] px-2 text-[10px] font-bold uppercase tracking-[0.02em]"
+                      data-testid={`${protocol.label}-negotiation-badge`}
                     >
-                      <span className="text-[13px] font-semibold">{label}</span>
-                      <span className="text-[12px] leading-5 text-[var(--muted)]">
-                        {detail}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <aside className="grid gap-5">
-              <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-                <div className="text-[14px] font-semibold">Actions</div>
-                <div className="mt-4 flex flex-col gap-3">
-                  <button
-                    className="flex h-11 items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={powerControlsDisabled || !dirty}
-                    onClick={() => void submit()}
-                    type="button"
-                  >
-                    Save and apply
-                  </button>
-                  <button
-                    className="flex h-11 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={powerControlsDisabled}
-                    onClick={() => void restore()}
-                    type="button"
-                  >
-                    Restore defaults
-                  </button>
-                </div>
-                {status ? (
-                  <div className="mt-3 text-[12px] text-[var(--badge-success-text)]">
-                    {status}
-                  </div>
-                ) : null}
-                {error ? (
-                  <div className="mt-3 text-[12px] text-[var(--badge-error-text)]">
-                    {error}
-                  </div>
-                ) : null}
-              </section>
-            </aside>
+                      {negotiationBadgeLabel(protocol.negotiation)}
+                    </span>
+                  </span>
+                  <span className="text-[11px] font-semibold uppercase">
+                    {protocol.checked ? "On" : "Off"}
+                  </span>
+                </span>
+                <input
+                  checked={protocol.checked}
+                  className="peer sr-only"
+                  disabled={powerControlsDisabled}
+                  onChange={(event) => protocol.onChange(event.target.checked)}
+                  type="checkbox"
+                />
+                <span
+                  aria-hidden="true"
+                  className={`relative h-6 w-11 shrink-0 rounded-full border transition peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--focus)] ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)]"}`}
+                >
+                  <span
+                    className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-[var(--panel)] shadow-sm transition ${protocol.checked ? "left-[24px]" : "left-[3px]"}`}
+                  />
+                </span>
+              </label>
+            ))}
           </div>
+        </section>
 
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
           <section className="grid gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="max-w-[760px]">
-                <div className="text-[14px] font-semibold">
-                  USB-C Idle Bias Calibration
-                </div>
-                <div className="mt-1 text-[12px] leading-6 text-[var(--muted)]">
-                  Measure SW2303 empty-load current from 3.0 V to 21.0 V with
-                  nothing attached on USB-C, save the 37-point dataset to
-                  EEPROM, and optionally subtract it from the main USB-C INA226
-                  reading.
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-[14px] font-semibold">Output mode</div>
+                <div className="mt-1 text-[12px] text-[var(--muted)]">
+                  Manual TPS output is only for advanced bench work. USB-C path
+                  policy stays explicit.
                 </div>
               </div>
-              <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3 text-[12px] leading-6 text-[var(--muted)]">
-                <div className="font-semibold text-[var(--text)]">
-                  Safety reminder
-                </div>
-                <div>Disconnect every USB-C device before calibration.</div>
-                <div>Existing power settings are restored after the sweep.</div>
-              </div>
-            </div>
-
-            <div className="grid gap-3 lg:grid-cols-3">
-              <SummaryCard
-                title="Dataset"
-                value={datasetSummary.value}
-                detail={datasetSummary.detail}
-                tone={datasetSummary.tone}
-              />
-              <SummaryCard
-                title="Correction"
-                value={correctionSummary.value}
-                detail={correctionSummary.detail}
-                tone={correctionSummary.tone}
-              />
-              <SummaryCard
-                title="Run state"
-                value={runSummary.value}
-                detail={runSummary.detail}
-                tone={runSummary.tone}
-              />
-            </div>
-
-            {canShowIdleBiasTable ? (
-              <section className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)]">
+              <div className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-1 sm:w-auto">
                 <button
-                  aria-expanded={idleBiasTableExpanded}
-                  className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
-                  onClick={() =>
-                    setIdleBiasTableExpanded((current) => !current)
-                  }
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "auto_follow" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  disabled={powerControlsDisabled}
+                  onClick={() => setTpsMode("auto_follow")}
                   type="button"
                 >
-                  <span className="grid gap-1">
-                    <span className="text-[13px] font-semibold text-[var(--text)]">
-                      Calibration dataset table
-                    </span>
-                    <span className="text-[12px] leading-5 text-[var(--muted)]">
-                      Inspect all {idleBiasTableRows.length} saved voltage
-                      points and their SW2303 idle-current offsets.
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[12px] font-semibold text-[var(--muted)]">
-                    {idleBiasTableExpanded ? "Hide" : "Show"}
-                  </span>
+                  Auto follow
                 </button>
-                {idleBiasTableExpanded ? (
-                  <div className="border-t border-[var(--border)] px-4 py-4">
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="max-w-[65ch] text-[12px] leading-6 text-[var(--muted)]">
-                          Chart is the default review surface for voltage to
-                          idle-current drift. Switch to the table when you need
-                          exact point values.
-                        </div>
-                        <div
-                          aria-labelledby={idleBiasViewLabelId}
-                          className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] p-1 md:w-auto"
-                          role="tablist"
-                        >
-                          <span className="sr-only" id={idleBiasViewLabelId}>
-                            Idle-bias dataset view
-                          </span>
-                          <button
-                            aria-selected={idleBiasViewMode === "chart"}
-                            className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold md:min-w-[96px] ${idleBiasViewMode === "chart" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"}`}
-                            onClick={() => setIdleBiasViewMode("chart")}
-                            role="tab"
-                            type="button"
-                          >
-                            Chart
-                          </button>
-                          <button
-                            aria-selected={idleBiasViewMode === "table"}
-                            className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold md:min-w-[96px] ${idleBiasViewMode === "table" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"}`}
-                            onClick={() => setIdleBiasViewMode("table")}
-                            role="tab"
-                            type="button"
-                          >
-                            Table
-                          </button>
-                        </div>
-                      </div>
-
-                      {idleBiasViewMode === "chart" ? (
-                        <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-3 py-3">
-                          <div className="h-[280px] w-full md:h-[320px]">
-                            <ResponsiveContainer
-                              height="100%"
-                              initialDimension={{ width: 960, height: 320 }}
-                              minHeight={280}
-                              minWidth={0}
-                              width="100%"
-                            >
-                              <AreaChart
-                                data={idleBiasTableRows.map((row) => ({
-                                  label: formatCompactVoltage(row.voltageMv),
-                                  offsetMa: row.offsetMa,
-                                }))}
-                                margin={{
-                                  top: 12,
-                                  right: 12,
-                                  bottom: 0,
-                                  left: 0,
-                                }}
-                              >
-                                <defs>
-                                  <linearGradient
-                                    id="idle-bias-area"
-                                    x1="0"
-                                    x2="0"
-                                    y1="0"
-                                    y2="1"
-                                  >
-                                    <stop
-                                      offset="0%"
-                                      stopColor="var(--primary)"
-                                      stopOpacity={0.24}
-                                    />
-                                    <stop
-                                      offset="100%"
-                                      stopColor="var(--primary)"
-                                      stopOpacity={0.04}
-                                    />
-                                  </linearGradient>
-                                </defs>
-                                <CartesianGrid
-                                  stroke="var(--border)"
-                                  strokeDasharray="2 6"
-                                  vertical={false}
-                                />
-                                <XAxis
-                                  axisLine={false}
-                                  dataKey="label"
-                                  interval={3}
-                                  tick={{
-                                    fill: "var(--muted)",
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                  }}
-                                  tickLine={false}
-                                />
-                                <YAxis
-                                  axisLine={false}
-                                  tick={{
-                                    fill: "var(--muted)",
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                  }}
-                                  tickFormatter={offsetTickFormatter}
-                                  tickLine={false}
-                                  width={52}
-                                />
-                                <Tooltip
-                                  content={<IdleBiasTooltip />}
-                                  cursor={{
-                                    stroke: "var(--primary)",
-                                    strokeDasharray: "3 5",
-                                    strokeOpacity: 0.35,
-                                  }}
-                                />
-                                <Area
-                                  dataKey="offsetMa"
-                                  fill="url(#idle-bias-area)"
-                                  fillOpacity={1}
-                                  isAnimationActive={false}
-                                  stroke="var(--primary)"
-                                  strokeWidth={2}
-                                  type="monotone"
-                                />
-                              </AreaChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full border-separate border-spacing-0 text-[12px]">
-                            <thead>
-                              <tr className="text-left text-[11px] uppercase tracking-[0.04em] text-[var(--muted)]">
-                                {idleBiasTableColumns.map((column) => (
-                                  <Fragment key={`heading-${column.index}`}>
-                                    <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
-                                      Point
-                                    </th>
-                                    <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
-                                      Voltage
-                                    </th>
-                                    <th className="border-b border-[var(--border)] px-3 py-2 font-semibold">
-                                      Offset
-                                    </th>
-                                  </Fragment>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {Array.from({
-                                length: Math.max(
-                                  ...idleBiasTableColumns.map(
-                                    (column) => column.rows.length,
-                                  ),
-                                ),
-                              }).map((_value, rowIndex) => (
-                                <tr
-                                  className="text-[var(--text)]"
-                                  key={`table-row-${idleBiasTableColumns
-                                    .map(
-                                      (column) =>
-                                        column.rows[rowIndex]?.index ?? "empty",
-                                    )
-                                    .join("-")}`}
-                                >
-                                  {idleBiasTableColumns.map((column) => {
-                                    const row = column.rows[rowIndex];
-                                    if (!row) {
-                                      return (
-                                        <Fragment
-                                          key={`empty-${column.index}-${rowIndex}`}
-                                        >
-                                          <td className="border-b border-[var(--border)]/40 px-3 py-2" />
-                                          <td className="border-b border-[var(--border)]/40 px-3 py-2" />
-                                          <td className="border-b border-[var(--border)]/40 px-3 py-2" />
-                                        </Fragment>
-                                      );
-                                    }
-                                    return (
-                                      <Fragment
-                                        key={`${column.index}-${row.index}-${row.voltageMv}`}
-                                      >
-                                        <td className="border-b border-[var(--border)]/70 px-3 py-2 font-semibold">
-                                          {row.index + 1}
-                                        </td>
-                                        <td className="border-b border-[var(--border)]/70 px-3 py-2">
-                                          {formatCompactVoltage(row.voltageMv)}
-                                        </td>
-                                        <td className="border-b border-[var(--border)]/70 px-3 py-2">
-                                          {row.offsetMa} mA
-                                        </td>
-                                      </Fragment>
-                                    );
-                                  })}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-
-            {idleBias?.run.state === "running" ? (
-              <div className="rounded-[10px] border border-[var(--badge-warning-text)]/25 bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-warning-text)]">
-                Calibration progress: {idleBias.run.completed_points}/
-                {idleBias.run.point_count}
-                {idleBias.run.target_voltage_mv === null
-                  ? ""
-                  : ` · target ${formatCompactVoltage(idleBias.run.target_voltage_mv)}`}
-                . Power configuration edits are disabled until the sweep
-                finishes.
+                <button
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "manual" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  disabled={powerControlsDisabled}
+                  onClick={() => setTpsMode("manual")}
+                  type="button"
+                >
+                  Manual TPS
+                </button>
               </div>
-            ) : null}
-
-            <div className="flex flex-col gap-3 lg:flex-row">
-              <button
-                className="flex h-11 min-w-[180px] items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={idleBiasControlsDisabled}
-                onClick={() => requestIdleBiasAction("run")}
-                type="button"
-              >
-                Run calibration
-              </button>
-              <button
-                className="flex h-11 min-w-[180px] items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={idleBiasControlsDisabled || !canToggleCorrection}
-                onClick={() =>
-                  requestIdleBiasAction(
-                    idleBias?.correction_enabled ? "disable" : "enable",
-                  )
-                }
-                type="button"
-              >
-                {correctionButtonLabel}
-              </button>
-              <button
-                className="flex h-11 min-w-[180px] items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={
-                  idleBiasControlsDisabled ||
-                  idleBias?.dataset.status !== "valid"
-                }
-                onClick={() => requestIdleBiasAction("clear")}
-                type="button"
-              >
-                Clear dataset
-              </button>
             </div>
 
-            {lockedByOtherHost ? (
-              <div className="rounded-[10px] border border-[var(--badge-warning-text)]/25 bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-warning-text)]">
-                Another host owns the power lock, so idle-bias actions are
-                blocked until that lock expires.
-              </div>
-            ) : null}
+            <div className="grid gap-4">
+              <UnitSliderField
+                disabled={powerControlsDisabled || form.tps_mode !== "manual"}
+                formatValue={formatVoltageInput}
+                label="Voltage"
+                max={21000}
+                min={3000}
+                onChange={(value) => setManualNumber("voltage_mv", value)}
+                parseValue={parseVoltageInput}
+                step={20}
+                value={form.manual.voltage_mv}
+              />
+              <UnitSliderField
+                disabled={powerControlsDisabled || form.tps_mode !== "manual"}
+                formatValue={formatCurrentInput}
+                label="Current limit"
+                max={6350}
+                min={1000}
+                onChange={(value) => setManualNumber("current_limit_ma", value)}
+                parseValue={parseCurrentInput}
+                step={50}
+                value={form.manual.current_limit_ma}
+              />
+            </div>
 
-            {idleBiasStatus ? (
-              <div className="rounded-[10px] border border-[var(--badge-success-text)]/20 bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-success-text)]">
-                {idleBiasStatus}
+            <div className="grid gap-2">
+              <div className="text-[13px] font-medium text-[var(--muted)]">
+                USB-C path
               </div>
-            ) : null}
-
-            {idleBiasError ? (
-              <div
-                className="rounded-[10px] border border-[var(--badge-error-text)]/20 bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-error-text)]"
-                role="alert"
-              >
-                {idleBiasError}
+              <div className="grid gap-2 lg:grid-cols-3">
+                {[
+                  [
+                    "default",
+                    "Default",
+                    "Disconnect only while manual voltage exceeds negotiated SW2303 request.",
+                  ],
+                  [
+                    "disconnect",
+                    "Disconnect",
+                    "Force SW2303 path off regardless of negotiated voltage.",
+                  ],
+                  [
+                    "force",
+                    "Force",
+                    "Keep USB-C VBUS connected to TPS VOUT unconditionally.",
+                  ],
+                ].map(([value, label, detail]) => (
+                  <button
+                    key={value}
+                    className={`flex min-h-[88px] flex-col items-start justify-between rounded-[8px] border px-3 py-3 text-left ${form.manual.usb_c_path_mode === value ? "border-[var(--primary)] bg-[var(--panel)]" : "border-[var(--border)] bg-[var(--panel)]"} ${powerControlsDisabled || form.tps_mode !== "manual" ? "opacity-60" : ""}`}
+                    disabled={
+                      powerControlsDisabled || form.tps_mode !== "manual"
+                    }
+                    onClick={() =>
+                      setPathMode(
+                        value as FormState["manual"]["usb_c_path_mode"],
+                      )
+                    }
+                    type="button"
+                  >
+                    <span className="text-[13px] font-semibold">{label}</span>
+                    <span className="text-[12px] leading-5 text-[var(--muted)]">
+                      {detail}
+                    </span>
+                  </button>
+                ))}
               </div>
-            ) : null}
+            </div>
           </section>
-        </div>
-      </section>
 
-      {idleBiasConfirm ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6"
-          role="presentation"
-        >
-          <div
-            className="w-full max-w-[480px] rounded-[14px] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-2xl"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="idle-bias-confirm-title"
-            aria-describedby="idle-bias-confirm-description"
-          >
-            <div
-              id="idle-bias-confirm-title"
-              className="text-[15px] font-bold text-[var(--text)]"
-            >
-              {idleBiasConfirm.title}
-            </div>
-            <div
-              id="idle-bias-confirm-description"
-              className="mt-3 text-[13px] font-semibold leading-6 text-[var(--muted)]"
-            >
-              {idleBiasConfirm.description}
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button
-                className="btn btn-outline btn-sm min-h-10 justify-center"
-                type="button"
-                disabled={idleBiasBusy}
-                onClick={() => setIdleBiasConfirm(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary btn-sm min-h-10 justify-center"
-                type="button"
-                disabled={idleBiasBusy}
-                onClick={() => void confirmIdleBiasAction()}
-              >
-                {idleBiasBusy ? "Applying..." : idleBiasConfirm.confirmLabel}
-              </button>
-            </div>
-          </div>
+          <aside className="grid gap-5">
+            <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+              <div className="text-[14px] font-semibold">Actions</div>
+              <div className="mt-4 flex flex-col gap-3">
+                <button
+                  className="flex h-11 items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={powerControlsDisabled || !dirty}
+                  onClick={() => void submit()}
+                  type="button"
+                >
+                  Save and apply
+                </button>
+                <button
+                  className="flex h-11 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={powerControlsDisabled}
+                  onClick={() => void restore()}
+                  type="button"
+                >
+                  Restore defaults
+                </button>
+              </div>
+              {status ? (
+                <div className="mt-3 text-[12px] text-[var(--badge-success-text)]">
+                  {status}
+                </div>
+              ) : null}
+              {error ? (
+                <div className="mt-3 text-[12px] text-[var(--badge-error-text)]">
+                  {error}
+                </div>
+              ) : null}
+            </section>
+          </aside>
         </div>
-      ) : null}
-    </>
+
+        <DevicePowerPanelIdleBiasSection
+          busy={busy}
+          clearIdleBiasCalibration={(owner) => clearIdleBiasCalibration(owner)}
+          loadIdleBias={loadIdleBias}
+          lockedByOtherHost={lockedByOtherHost}
+          onBusyChange={setIdleBiasBusy}
+          onRunningChange={setIdleBiasRunning}
+          owner={ownerRef.current}
+          runIdleBiasCalibration={(owner) => runIdleBiasCalibration(owner)}
+          setIdleBiasCorrection={(enabled, owner) =>
+            setIdleBiasCorrection(enabled, owner)
+          }
+        />
+      </div>
+    </section>
   );
 }
