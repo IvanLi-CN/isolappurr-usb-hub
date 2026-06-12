@@ -72,17 +72,43 @@ async fn wait_for_idle_bias_completion(
     devd: &DevdClient,
     selector: &ApiSelectorArgs,
 ) -> anyhow::Result<CliIdleBias> {
-    let deadline = Instant::now() + Duration::from_secs(90);
+    const IDLE_BIAS_PROGRESS_TIMEOUT: Duration = Duration::from_secs(30);
+
+    let started_at = Instant::now();
+    let mut progress_deadline = started_at + IDLE_BIAS_PROGRESS_TIMEOUT;
+    let mut last_completed_points = None;
+    let mut last_target_voltage_mv = None;
+
     loop {
         let snapshot = fetch_power_idle_bias(client, devd, selector).await?;
         if snapshot.run.state != "running" {
             return Ok(snapshot);
         }
-        if Instant::now() >= deadline {
+        let progress_changed = last_completed_points != Some(snapshot.run.completed_points)
+            || last_target_voltage_mv != snapshot.run.target_voltage_mv;
+        if progress_changed {
+            last_completed_points = Some(snapshot.run.completed_points);
+            last_target_voltage_mv = snapshot.run.target_voltage_mv;
+            progress_deadline = Instant::now() + IDLE_BIAS_PROGRESS_TIMEOUT;
+        }
+
+        let now = Instant::now();
+        if now >= progress_deadline
+            || now.duration_since(started_at) >= idle_bias_total_timeout(snapshot.run.point_count)
+        {
             return Err(anyhow!("idle-bias calibration timed out"));
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+}
+
+fn idle_bias_total_timeout(point_count: u8) -> Duration {
+    const IDLE_BIAS_POINT_BUDGET: Duration = Duration::from_secs(4);
+    const IDLE_BIAS_TOTAL_TIMEOUT_PADDING: Duration = Duration::from_secs(30);
+
+    IDLE_BIAS_POINT_BUDGET
+        .saturating_mul(u32::from(point_count.max(1)))
+        .saturating_add(IDLE_BIAS_TOTAL_TIMEOUT_PADDING)
 }
 
 fn saved_hardware_target_label(device: &DeviceProfile) -> String {
@@ -453,11 +479,6 @@ async fn handle_power(
                 enabled,
                 yes,
             } => {
-                let enabled = enabled.ok_or_else(|| {
-                    anyhow!(
-                        "idle-bias correction changes require --enabled true or --enabled false"
-                    )
-                })?;
                 if !allow_interactive && !yes {
                     return Err(anyhow!(
                         "idle-bias correction changes require --yes when --json is set"

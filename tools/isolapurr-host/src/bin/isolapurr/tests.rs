@@ -277,7 +277,7 @@ mod power_output_tests {
             panic!("expected idle-bias set command");
         };
         assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
-        assert_eq!(enabled, Some(true));
+        assert!(enabled);
         assert!(yes);
     }
 
@@ -295,6 +295,15 @@ mod power_output_tests {
         .expect_err("idle-bias set should require --enabled");
 
         assert!(err.to_string().contains("--enabled"));
+    }
+
+    #[test]
+    fn idle_bias_timeout_budget_scales_with_full_sweep_points() {
+        assert_eq!(
+            idle_bias_total_timeout(37),
+            Duration::from_secs(37 * 4 + 30)
+        );
+        assert_eq!(idle_bias_total_timeout(0), Duration::from_secs(34));
     }
 
     #[test]
