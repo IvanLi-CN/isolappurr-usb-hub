@@ -337,7 +337,7 @@ export const CalibrationDatasetTableView: Story = {
     ).toBeVisible();
     await expect(await canvas.findAllByText("Point")).toHaveLength(3);
     await expect(await canvas.findByText("21 V")).toBeVisible();
-    await expect(await canvas.findByText("57")).toBeVisible();
+    await expect(await canvas.findByText("20.5 V")).toBeVisible();
   },
 };
 

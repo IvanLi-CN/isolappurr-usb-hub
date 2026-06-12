@@ -1328,7 +1328,13 @@ export function DevicePowerPanel({
                       {idleBiasViewMode === "chart" ? (
                         <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-3 py-3">
                           <div className="h-[280px] w-full md:h-[320px]">
-                            <ResponsiveContainer height="100%" width="100%">
+                            <ResponsiveContainer
+                              height="100%"
+                              initialDimension={{ width: 960, height: 320 }}
+                              minHeight={280}
+                              minWidth={0}
+                              width="100%"
+                            >
                               <AreaChart
                                 data={idleBiasTableRows.map((row) => ({
                                   label: formatCompactVoltage(row.voltageMv),
