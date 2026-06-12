@@ -819,7 +819,7 @@
                 usb_c_display_measurements_visible: usb_c_display.measurements_visible,
                 usb_c_actual: port_metrics_to_api_telemetry(
                     api_usb_c_present,
-                    api_usb_c_metrics,
+                    api_usb_c_metrics_raw,
                     api_sample_uptime_ms,
                 ),
                 tps_setpoint_output_enabled: tps_state.last.map(|setpoint| setpoint.output_enabled),
