@@ -274,7 +274,7 @@ enum IdleBiasCommand {
         #[command(flatten)]
         selector: PowerSelectorArgs,
         #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
-        enabled: bool,
+        enabled: Option<bool>,
         #[arg(long)]
         yes: bool,
     },

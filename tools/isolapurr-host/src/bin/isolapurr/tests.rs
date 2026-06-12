@@ -277,8 +277,24 @@ mod power_output_tests {
             panic!("expected idle-bias set command");
         };
         assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
-        assert!(enabled);
+        assert_eq!(enabled, Some(true));
         assert!(yes);
+    }
+
+    #[test]
+    fn idle_bias_cli_requires_explicit_enabled_value() {
+        let err = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "idle-bias",
+            "set",
+            "--hardware",
+            "bench-hub",
+            "--yes",
+        ])
+        .expect_err("idle-bias set should require --enabled");
+
+        assert!(err.to_string().contains("--enabled"));
     }
 
     #[test]

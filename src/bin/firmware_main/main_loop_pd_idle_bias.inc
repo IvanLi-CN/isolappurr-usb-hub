@@ -322,20 +322,25 @@
                 }
             }
 
-            if sw2303_i2c_allowed
-                && previous_last_sw2303_path_control != Some(Sw2303PathControl::Auto)
-            {
-                match set_path_control(&mut sw2303_i2c, Sw2303PathControl::Auto).await {
+            if sw2303_i2c_allowed {
+                if let Some(previous_path_control) = previous_last_sw2303_path_control {
+                    match set_path_control(&mut sw2303_i2c, previous_path_control).await {
                     Ok(()) => {
-                        info!("idle-bias: restored SW2303 path control to auto");
+                            last_sw2303_path_control = Some(previous_path_control);
+                            info!(
+                                "idle-bias: restored SW2303 path control to {}",
+                                previous_path_control.as_str()
+                            );
                     }
                     Err(err) => {
                         defmt::warn!(
-                            "idle-bias: failed to restore SW2303 path control to auto: {:?}",
-                            defmt::Debug2Format(&err)
+                                "idle-bias: failed to restore SW2303 path control to {}: {:?}",
+                                previous_path_control.as_str(),
+                                defmt::Debug2Format(&err)
                         );
                     }
                 }
+            }
             }
             #[cfg(feature = "net_http")]
             {

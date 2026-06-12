@@ -453,6 +453,11 @@ async fn handle_power(
                 enabled,
                 yes,
             } => {
+                let enabled = enabled.ok_or_else(|| {
+                    anyhow!(
+                        "idle-bias correction changes require --enabled true or --enabled false"
+                    )
+                })?;
                 if !allow_interactive && !yes {
                     return Err(anyhow!(
                         "idle-bias correction changes require --yes when --json is set"
