@@ -236,6 +236,8 @@ export function DevicePowerPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [idleBiasSnapshot, setIdleBiasSnapshot] =
+    useState<IdleBiasResponse | null>(null);
   const [idleBiasLoaded, setIdleBiasLoaded] = useState(false);
   const [idleBiasBusy, setIdleBiasBusy] = useState(false);
   const [idleBiasRunning, setIdleBiasRunning] = useState(false);
@@ -280,8 +282,10 @@ export function DevicePowerPanel({
         setError(configRes.error.message);
       }
       if (idleBiasRes.ok) {
+        setIdleBiasSnapshot(idleBiasRes.value);
         setIdleBiasRunning(idleBiasRes.value.run.state === "running");
       } else {
+        setIdleBiasSnapshot(null);
         setIdleBiasRunning(false);
       }
       setIdleBiasLoaded(true);
@@ -803,6 +807,7 @@ export function DevicePowerPanel({
         <DevicePowerPanelIdleBiasSection
           busy={busy}
           clearIdleBiasCalibration={(owner) => clearIdleBiasCalibration(owner)}
+          initialIdleBias={idleBiasSnapshot}
           loadIdleBias={loadIdleBias}
           lockedByOtherHost={lockedByOtherHost}
           onBusyChange={setIdleBiasBusy}

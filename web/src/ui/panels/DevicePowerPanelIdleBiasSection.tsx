@@ -46,6 +46,7 @@ type DevicePowerPanelIdleBiasSectionProps = {
   clearIdleBiasCalibration: (
     owner: number,
   ) => Promise<Result<IdleBiasResponse>>;
+  initialIdleBias: IdleBiasResponse | null;
   loadIdleBias: () => Promise<Result<IdleBiasResponse>>;
   lockedByOtherHost: boolean;
   onBusyChange?: (busy: boolean) => void;
@@ -313,6 +314,7 @@ function SummaryCard({
 export function DevicePowerPanelIdleBiasSection({
   busy,
   clearIdleBiasCalibration,
+  initialIdleBias,
   loadIdleBias,
   lockedByOtherHost,
   onBusyChange,
@@ -322,7 +324,9 @@ export function DevicePowerPanelIdleBiasSection({
   setIdleBiasCorrection,
 }: DevicePowerPanelIdleBiasSectionProps) {
   const idleBiasViewLabelId = useId();
-  const [idleBias, setIdleBias] = useState<IdleBiasResponse | null>(null);
+  const [idleBias, setIdleBias] = useState<IdleBiasResponse | null>(
+    initialIdleBias,
+  );
   const [idleBiasStatus, setIdleBiasStatus] = useState<string | null>(null);
   const [idleBiasError, setIdleBiasError] = useState<string | null>(null);
   const [idleBiasBusy, setIdleBiasBusy] = useState(false);
@@ -331,6 +335,10 @@ export function DevicePowerPanelIdleBiasSection({
   const [idleBiasTableExpanded, setIdleBiasTableExpanded] = useState(false);
   const [idleBiasViewMode, setIdleBiasViewMode] =
     useState<IdleBiasViewMode>("chart");
+
+  useEffect(() => {
+    setIdleBias(initialIdleBias);
+  }, [initialIdleBias]);
 
   useEffect(() => {
     let cancelled = false;
