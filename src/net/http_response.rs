@@ -222,7 +222,7 @@ pub fn write_idle_bias_json(body: &mut String, idle_bias: &ApiIdleBiasSnapshot) 
     } else {
         let _ = body.push_str("null");
     }
-    let _ = core::write!(body, "}},\"current_applied_offset_ma\":",);
+    let _ = body.push_str("},\"current_applied_offset_ma\":");
     write_json_u32_or_null(body, idle_bias.current_applied_offset_ma);
     let _ = core::write!(
         body,

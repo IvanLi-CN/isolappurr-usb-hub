@@ -878,4 +878,22 @@ mod tests {
             UsbCDownstreamRoute::Mcu
         );
     }
+
+    #[test]
+    fn idle_bias_json_keeps_dataset_object_open_only_once() {
+        let idle_bias = ApiIdleBiasSnapshot {
+            correction_enabled: true,
+            dataset_valid: false,
+            metadata: IdleBiasMetadata::fixed(),
+            current_offsets_ma: [0; IDLE_BIAS_POINT_COUNT],
+            current_applied_offset_ma: Some(7),
+            run: ApiIdleBiasRunSnapshot::idle(),
+        };
+        let mut body = String::new();
+
+        write_idle_bias_json(&mut body, &idle_bias);
+
+        assert!(body.contains("\"offsets_ma\":null,\"current_applied_offset_ma\":7"));
+        assert!(!body.contains("\"offsets_ma\":null},\"current_applied_offset_ma\":7"));
+    }
 }
