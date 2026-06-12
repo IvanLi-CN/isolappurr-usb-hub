@@ -427,12 +427,25 @@ struct CliPowerDiagnostics {
     tps_error_latched: bool,
     sw2303_readback_config: CliPowerCapabilityReadback,
     sw2303_request: CliPowerRequest,
+    #[serde(default)]
+    sw2303_vbus_mv: Option<u32>,
     sw2303_last_valid_request: CliPowerRequest,
+    #[serde(default)]
+    display: Option<CliUsbCDisplay>,
+    #[serde(default)]
+    usb_c_actual: Option<CliPortTelemetry>,
     tps_setpoint: CliPowerSetpoint,
     #[serde(default)]
     idle_bias: CliIdleBias,
     runtime_recovery_count: u32,
     sample_uptime_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliUsbCDisplay {
+    mode: Value,
+    measurements_visible: bool,
+    badge: Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

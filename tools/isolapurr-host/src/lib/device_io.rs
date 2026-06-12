@@ -255,6 +255,7 @@ fn serial_timeout_ms_for_method(method: &str) -> u64 {
         | "power.config_defaults"
         | "power.idle_bias_set"
         | "power.idle_bias_clear" => SERIAL_POWER_CONFIG_TIMEOUT_MS,
+        "power.idle_bias_run" => 178_000,
         "settings.reset" => SERIAL_SETTINGS_RESET_TIMEOUT_MS,
         _ => SERIAL_TIMEOUT_MS,
     }
@@ -278,6 +279,7 @@ mod device_io_tests {
             serial_timeout_ms_for_method("power.idle_bias_clear"),
             SERIAL_POWER_CONFIG_TIMEOUT_MS
         );
+        assert_eq!(serial_timeout_ms_for_method("power.idle_bias_run"), 178_000);
     }
 
     #[test]

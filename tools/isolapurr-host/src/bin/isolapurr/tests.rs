@@ -838,9 +838,28 @@ mod tests {
                 "mv": 12000,
                 "ma": 5000
             },
+            "sw2303_vbus_mv": 11980,
             "sw2303_last_valid_request": {
                 "mv": 12000,
                 "ma": 5000
+            },
+            "display": {
+                "mode": {
+                    "kind": "dc",
+                    "label": "12.0V"
+                },
+                "measurements_visible": true,
+                "badge": {
+                    "kind": "on",
+                    "label": "ON"
+                }
+            },
+            "usb_c_actual": {
+                "status": "ok",
+                "voltage_mv": 11980,
+                "current_ma": 0,
+                "power_mw": 0,
+                "sample_uptime_ms": 1500
             },
             "tps_setpoint": {
                 "output_enabled": true,
@@ -862,6 +881,20 @@ mod tests {
         assert_eq!(
             parsed.sw2303_readback_config.current.fcp_afc_sfcp_limit_ma,
             None
+        );
+        assert_eq!(parsed.sw2303_vbus_mv, Some(11980));
+        assert!(
+            parsed
+                .display
+                .as_ref()
+                .is_some_and(|display| display.measurements_visible)
+        );
+        assert_eq!(
+            parsed
+                .usb_c_actual
+                .as_ref()
+                .and_then(|telemetry| telemetry.current_ma),
+            Some(0)
         );
     }
 

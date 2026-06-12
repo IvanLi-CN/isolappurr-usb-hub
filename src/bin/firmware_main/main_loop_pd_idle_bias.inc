@@ -276,6 +276,7 @@
                     },
                     None,
                 );
+                IDLE_BIAS_RESULT.signal(false);
                 defmt::warn!(
                     "idle-bias: calibration failed after {}/{} points code={}",
                     completed_points,
@@ -299,6 +300,7 @@
                             net::ApiIdleBiasRunSnapshot::idle(),
                             None,
                         );
+                        IDLE_BIAS_RESULT.signal(true);
                         info!("idle-bias: calibration completed and saved to EEPROM U21");
                     }
                     Err(err) => {
@@ -314,6 +316,7 @@
                             },
                             None,
                         );
+                        IDLE_BIAS_RESULT.signal(false);
                         defmt::warn!(
                             "idle-bias: failed to save dataset to EEPROM U21: {:?}",
                             defmt::Debug2Format(&err)

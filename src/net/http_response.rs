@@ -609,6 +609,7 @@ pub async fn try_run_idle_bias(
         return Err(ApiActionError::Busy);
     }
 
+    crate::reset_idle_bias_result();
     guard.pending.idle_bias = Some(ApiIdleBiasCommand::Run);
     guard.idle_bias.run = ApiIdleBiasRunSnapshot {
         state: ApiIdleBiasRunState::Running,
