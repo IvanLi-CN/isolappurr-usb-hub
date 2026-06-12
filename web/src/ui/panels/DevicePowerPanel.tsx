@@ -236,10 +236,12 @@ export function DevicePowerPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [idleBiasLoaded, setIdleBiasLoaded] = useState(false);
   const [idleBiasBusy, setIdleBiasBusy] = useState(false);
   const [idleBiasRunning, setIdleBiasRunning] = useState(false);
   const lockedRef = useRef(false);
   const loadPowerConfigRef = useRef(loadPowerConfig);
+  const loadIdleBiasRef = useRef(loadIdleBias);
   const setPowerLockRef = useRef(setPowerLock);
   const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
 
@@ -255,13 +257,20 @@ export function DevicePowerPanel({
   }, [loadPowerConfig]);
 
   useEffect(() => {
+    loadIdleBiasRef.current = loadIdleBias;
+  }, [loadIdleBias]);
+
+  useEffect(() => {
     setPowerLockRef.current = setPowerLock;
   }, [setPowerLock]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const configRes = await loadPowerConfigRef.current();
+      const [configRes, idleBiasRes] = await Promise.all([
+        loadPowerConfigRef.current(),
+        loadIdleBiasRef.current(),
+      ]);
       if (cancelled) {
         return;
       }
@@ -270,6 +279,12 @@ export function DevicePowerPanel({
       } else {
         setError(configRes.error.message);
       }
+      if (idleBiasRes.ok) {
+        setIdleBiasRunning(idleBiasRes.value.run.state === "running");
+      } else {
+        setIdleBiasRunning(false);
+      }
+      setIdleBiasLoaded(true);
     };
     void load();
     return () => {
@@ -365,7 +380,7 @@ export function DevicePowerPanel({
     );
   }
 
-  if (!form) {
+  if (!form || !idleBiasLoaded) {
     return (
       <section className="flex min-h-[240px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-6 py-8">
         <div className="text-sm text-[var(--muted)]">
