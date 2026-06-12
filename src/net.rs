@@ -893,7 +893,9 @@ mod tests {
 
         write_idle_bias_json(&mut body, &idle_bias);
 
-        assert!(body.contains("\"offsets_ma\":null,\"current_applied_offset_ma\":7"));
-        assert!(!body.contains("\"offsets_ma\":null},\"current_applied_offset_ma\":7"));
+        assert_eq!(
+            body,
+            "{\"correction_enabled\":true,\"dataset\":{\"status\":\"missing\",\"min_voltage_mv\":3000,\"max_voltage_mv\":21000,\"step_mv\":500,\"point_count\":37,\"offsets_ma\":null},\"current_applied_offset_ma\":7,\"run\":{\"state\":\"idle\",\"completed_points\":0,\"point_count\":37,\"target_voltage_mv\":null,\"error\":null}}"
+        );
     }
 }

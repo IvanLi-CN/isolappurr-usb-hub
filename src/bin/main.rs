@@ -37,6 +37,8 @@ use defmt::debug;
 use defmt::info;
 use embassy_executor::Spawner;
 #[cfg(feature = "net_http")]
+use embassy_futures::select::{Either, select};
+#[cfg(feature = "net_http")]
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Timer;
 use esp_hal::clock::CpuClock;

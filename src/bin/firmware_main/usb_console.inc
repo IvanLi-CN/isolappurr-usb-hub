@@ -276,13 +276,37 @@ async fn handle_usb_jsonl_request(
     if request.contains("\"method\":\"power.idle_bias_run\"")
         || request.contains("\"method\": \"power.idle_bias_run\"")
     {
+        const IDLE_BIAS_RUN_PREFLIGHT_WAIT_MS: u64 = 1_000;
         let owner = extract_json_u32(request, "owner");
         match net::try_run_idle_bias(api_state, owner).await {
             Ok(()) => {
-                let state = { *api_state.lock().await };
-                let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
-                net::write_idle_bias_json(&mut body, &state.idle_bias);
-                let _ = body.push('}');
+                let immediate_failure = match select(
+                    Timer::after_millis(IDLE_BIAS_RUN_PREFLIGHT_WAIT_MS),
+                    wait_idle_bias_result(),
+                )
+                .await
+                {
+                    Either::Second(false) => {
+                        let state = { *api_state.lock().await };
+                        Some(state.idle_bias.run.error)
+                    }
+                    Either::First(()) | Either::Second(true) => None,
+                };
+
+                if let Some(Some(error)) = immediate_failure {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        error.as_str(),
+                        error.message(),
+                        !matches!(error, net::ApiIdleBiasErrorCode::AttachDetected),
+                    );
+                } else {
+                    let state = { *api_state.lock().await };
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+                    net::write_idle_bias_json(&mut body, &state.idle_bias);
+                    let _ = body.push('}');
+                }
             }
             Err(net::ApiActionError::Busy) => {
                 write_jsonl_error(

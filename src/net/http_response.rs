@@ -243,7 +243,8 @@ pub fn write_idle_bias_json(body: &mut String, idle_bias: &ApiIdleBiasSnapshot) 
             let _ = body.push_str("null");
         }
     }
-    let _ = body.push_str("}}");
+    let _ = body.push('}');
+    let _ = body.push('}');
 }
 
 fn write_sw2303_readback_json(
