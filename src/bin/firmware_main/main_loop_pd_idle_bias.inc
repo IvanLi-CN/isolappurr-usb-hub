@@ -263,27 +263,9 @@
             last_sw2303_path_control = None;
             last_sw2303_read_attempt = None;
 
-            if let Some(error) = run_error {
-                let mut guard = api_state.lock().await;
-                guard.idle_bias = idle_bias_api_snapshot(
-                    previous_calibration,
-                    net::ApiIdleBiasRunSnapshot {
-                        state: net::ApiIdleBiasRunState::Failed,
-                        completed_points,
-                        point_count: IDLE_BIAS_POINT_COUNT as u8,
-                        target_voltage_mv,
-                        error: Some(error),
-                    },
-                    None,
-                );
-                IDLE_BIAS_RESULT.signal(false);
-                defmt::warn!(
-                    "idle-bias: calibration failed after {}/{} points code={}",
-                    completed_points,
-                    IDLE_BIAS_POINT_COUNT,
-                    error.as_str()
-                );
-            } else {
+            let mut final_run_error = run_error;
+
+            if final_run_error.is_none() {
                 let next_calibration =
                     IdleBiasCalibration::new(preserved_correction_enabled, sampled_offsets);
                 match provisioning::store_idle_bias_calibration(
@@ -294,29 +276,10 @@
                 {
                     Ok(()) => {
                         idle_bias_calibration = Some(next_calibration);
-                        let mut guard = api_state.lock().await;
-                        guard.idle_bias = idle_bias_api_snapshot(
-                            idle_bias_calibration,
-                            net::ApiIdleBiasRunSnapshot::idle(),
-                            None,
-                        );
-                        IDLE_BIAS_RESULT.signal(true);
                         info!("idle-bias: calibration completed and saved to EEPROM U21");
                     }
                     Err(err) => {
-                        let mut guard = api_state.lock().await;
-                        guard.idle_bias = idle_bias_api_snapshot(
-                            previous_calibration,
-                            net::ApiIdleBiasRunSnapshot {
-                                state: net::ApiIdleBiasRunState::Failed,
-                                completed_points,
-                                point_count: IDLE_BIAS_POINT_COUNT as u8,
-                                target_voltage_mv,
-                                error: Some(net::ApiIdleBiasErrorCode::EepromFailed),
-                            },
-                            None,
-                        );
-                        IDLE_BIAS_RESULT.signal(false);
+                        final_run_error = Some(net::ApiIdleBiasErrorCode::EepromFailed);
                         defmt::warn!(
                             "idle-bias: failed to save dataset to EEPROM U21: {:?}",
                             defmt::Debug2Format(&err)
@@ -325,32 +288,122 @@
                 }
             }
 
+            let mut restore_error = false;
+            let previous_usb_c_pd_power_on = matches!(port_usb_c.power, PowerState::On);
+            let manual_vout_mv = quantize_manual_voltage_mv(power_config.manual.voltage_mv);
+
             if sw2303_i2c_allowed {
-                if let Some(previous_path_control) = previous_last_sw2303_path_control {
-                    match set_path_control(&mut sw2303_i2c, previous_path_control).await {
+                let explicit_request_mv = last_valid_sw2303_request
+                    .filter(|request| {
+                        request.status_valid
+                            && (request.negotiated_protocol.is_some()
+                                || request.fast_protocol
+                                || request.fast_voltage)
+                    })
+                    .map(|request| request.v_req_mv);
+                let restored_path_control = previous_last_sw2303_path_control.unwrap_or_else(|| {
+                    if previous_usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual {
+                        resolve_manual_path_control(
+                            power_config.manual.usb_c_path_mode,
+                            manual_vout_mv,
+                            explicit_request_mv,
+                        )
+                    } else {
+                        Sw2303PathControl::Auto
+                    }
+                });
+
+                match set_path_control(&mut sw2303_i2c, restored_path_control).await {
                     Ok(()) => {
-                            last_sw2303_path_control = Some(previous_path_control);
-                            info!(
-                                "idle-bias: restored SW2303 path control to {}",
-                                previous_path_control.as_str()
-                            );
+                        last_sw2303_path_control = Some(restored_path_control);
+                        info!(
+                            "idle-bias: restored SW2303 path control to {}",
+                            restored_path_control.as_str()
+                        );
                     }
                     Err(err) => {
+                        restore_error = true;
                         defmt::warn!(
-                                "idle-bias: failed to restore SW2303 path control to {}: {:?}",
-                                previous_path_control.as_str(),
-                                defmt::Debug2Format(&err)
+                            "idle-bias: failed to restore SW2303 path control to {}: {:?}",
+                            restored_path_control.as_str(),
+                            defmt::Debug2Format(&err)
                         );
                     }
                 }
             }
+
+            let restored_setpoint = if !previous_usb_c_pd_power_on {
+                PowerSetpoint {
+                    output_enabled: false,
+                    ..boot_sp
+                }
+            } else if power_config.tps_mode == TpsMode::Manual {
+                PowerSetpoint {
+                    output_enabled: true,
+                    v_out_mv: manual_vout_mv,
+                    i_lim_ma: power_config.manual.current_limit_ma,
+                }
+            } else if previous_sw2303_stable_reads >= SW2303_STABLE_READS_BEFORE_TPS {
+                previous_last_valid_sw2303_request
+                    .map(power_request_to_setpoint)
+                    .unwrap_or(boot_sp)
+            } else {
+                boot_sp
+            };
+
+            if let Err(err) =
+                apply_setpoint(telemetry_sampler.i2c_mut(), &mut tps_state, restored_setpoint)
+                    .await
+            {
+                restore_error = true;
+                tps_state.last = None;
+                defmt::warn!(
+                    "idle-bias: failed to restore TPS output after calibration: {:?}",
+                    defmt::Debug2Format(&err)
+                );
             }
+
+            if restore_error && final_run_error.is_none() {
+                final_run_error = Some(net::ApiIdleBiasErrorCode::ControllerNotReady);
+            }
+
             #[cfg(feature = "net_http")]
             {
                 let mut guard = api_state.lock().await;
                 guard.power.config = power_config;
                 guard.power.persisted = power_config_persisted;
                 guard.power.last_path_control = last_sw2303_path_control;
+                guard.idle_bias = if let Some(error) = final_run_error {
+                    idle_bias_api_snapshot(
+                        idle_bias_calibration,
+                        net::ApiIdleBiasRunSnapshot {
+                            state: net::ApiIdleBiasRunState::Failed,
+                            completed_points,
+                            point_count: IDLE_BIAS_POINT_COUNT as u8,
+                            target_voltage_mv,
+                            error: Some(error),
+                        },
+                        None,
+                    )
+                } else {
+                    idle_bias_api_snapshot(
+                        idle_bias_calibration,
+                        net::ApiIdleBiasRunSnapshot::idle(),
+                        None,
+                    )
+                };
+            }
+
+            if let Some(error) = final_run_error {
+                IDLE_BIAS_RESULT.signal(false);
+                defmt::warn!(
+                    "idle-bias: calibration failed after {}/{} points code={}",
+                    completed_points,
+                    IDLE_BIAS_POINT_COUNT,
+                    error.as_str()
+                );
+            } else {
+                IDLE_BIAS_RESULT.signal(true);
             }
 
             button_fast_loop_until =
