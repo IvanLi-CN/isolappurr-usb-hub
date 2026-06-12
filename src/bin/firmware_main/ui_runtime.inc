@@ -477,14 +477,6 @@ fn power_request_changed_for_logging(last: Option<PowerRequest>, next: PowerRequ
 }
 
 #[cfg(feature = "net_http")]
-fn telemetry_field_value(field: Field<u32>) -> Option<u32> {
-    match field {
-        Field::Ok(value) => Some(value),
-        Field::Err => None,
-    }
-}
-
-#[cfg(feature = "net_http")]
 fn idle_bias_attach_detected(request: PowerRequest) -> bool {
     if !request.status_valid {
         return true;

@@ -105,12 +105,8 @@ pub fn write_pd_diagnostics_json(
     write_json_u32_or_null(body, pd.sw2303_last_valid_ma);
     let _ = body.push_str("},\"display\":{");
     write_usb_c_display_json(body, pd);
-    let _ = body.push_str("},\"usb_c_actual\":{\"voltage_mv\":");
-    write_json_u32_or_null(body, pd.usb_c_actual_voltage_mv);
-    let _ = body.push_str(",\"current_ma\":");
-    write_json_u32_or_null(body, pd.usb_c_actual_current_ma);
-    let _ = body.push_str(",\"power_mw\":");
-    write_json_u32_or_null(body, pd.usb_c_actual_power_mw);
+    let _ = body.push_str("},\"usb_c_actual\":");
+    write_port_telemetry_json(body, &pd.usb_c_actual);
     let _ = body.push_str("},\"tps_setpoint\":{\"output_enabled\":");
     write_json_bool_or_null(body, pd.tps_setpoint_output_enabled);
     let _ = body.push_str(",\"mv\":");

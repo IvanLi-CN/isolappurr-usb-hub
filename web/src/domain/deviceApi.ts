@@ -149,9 +149,11 @@ export type PdDiagnosticsResponse = {
     };
   };
   usb_c_actual: {
+    status: "ok" | "not_inserted" | "error" | "overrange" | string;
     voltage_mv: number | null;
     current_ma: number | null;
     power_mw: number | null;
+    sample_uptime_ms: number;
   };
   tps_setpoint: {
     output_enabled: boolean | null;
