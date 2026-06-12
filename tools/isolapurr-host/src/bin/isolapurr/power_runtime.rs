@@ -36,6 +36,55 @@ async fn fetch_power_diagnostics(
     )?)?)
 }
 
+async fn fetch_power_idle_bias(
+    client: &Client,
+    devd: &DevdClient,
+    selector: &ApiSelectorArgs,
+) -> anyhow::Result<CliIdleBias> {
+    let current = request_selected(
+        client,
+        devd,
+        selector.clone(),
+        Method::GET,
+        "/power/idle-bias",
+        None,
+    )
+    .await?;
+    Ok(serde_json::from_value(unwrap_device_success_result(
+        current,
+    )?)?)
+}
+
+async fn fetch_ports_snapshot(
+    client: &Client,
+    devd: &DevdClient,
+    selector: &ApiSelectorArgs,
+) -> anyhow::Result<CliPortsResponse> {
+    let current =
+        request_selected(client, devd, selector.clone(), Method::GET, "/ports", None).await?;
+    Ok(serde_json::from_value(unwrap_device_success_result(
+        current,
+    )?)?)
+}
+
+async fn wait_for_idle_bias_completion(
+    client: &Client,
+    devd: &DevdClient,
+    selector: &ApiSelectorArgs,
+) -> anyhow::Result<CliIdleBias> {
+    let deadline = Instant::now() + Duration::from_secs(90);
+    loop {
+        let snapshot = fetch_power_idle_bias(client, devd, selector).await?;
+        if snapshot.run.state != "running" {
+            return Ok(snapshot);
+        }
+        if Instant::now() >= deadline {
+            return Err(anyhow!("idle-bias calibration timed out"));
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
 fn saved_hardware_target_label(device: &DeviceProfile) -> String {
     let target = match &device.transport {
         HardwareTransport::Usb { device_id, .. } => format!("usb {device_id}"),
@@ -333,25 +382,105 @@ async fn handle_power(
         PowerCommand::Show(selector) => {
             let selector =
                 maybe_select_power_target(client, devd, selector, allow_interactive).await?;
-            let config = unwrap_device_success_result(
-                request_selected(
-                    client,
-                    devd,
-                    selector.clone(),
-                    Method::GET,
-                    "/power/config",
-                    None,
-                )
-                .await?,
-            )?;
-            let diagnostics = unwrap_device_success_result(
-                request_selected(client, devd, selector, Method::GET, "/diagnostics", None).await?,
-            )?;
+            let config = serde_json::to_value(fetch_power_config(client, devd, &selector).await?)?;
+            let diagnostics =
+                serde_json::to_value(fetch_power_diagnostics(client, devd, &selector).await?)?;
+            let ports = serde_json::to_value(fetch_ports_snapshot(client, devd, &selector).await?)?;
             Ok(json!({
                 "config": config,
                 "diagnostics": diagnostics,
+                "ports": ports,
             }))
         }
+        PowerCommand::IdleBias { command } => match command {
+            IdleBiasCommand::Show { selector } => {
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                Ok(serde_json::to_value(
+                    fetch_power_idle_bias(client, devd, &selector).await?,
+                )?)
+            }
+            IdleBiasCommand::Run { selector, yes } => {
+                if !allow_interactive && !yes {
+                    return Err(anyhow!(
+                        "idle-bias calibration requires --yes when --json is set"
+                    ));
+                }
+                if allow_interactive && !yes {
+                    confirm_idle_bias_action("run")?;
+                }
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                let owner = next_power_owner();
+                let started = request_selected(
+                    client,
+                    devd,
+                    selector.clone(),
+                    Method::POST,
+                    &format!("/power/idle-bias/run?owner={owner}"),
+                    None,
+                )
+                .await?;
+                let _ = unwrap_device_success_result(started)?;
+                Ok(serde_json::to_value(
+                    wait_for_idle_bias_completion(client, devd, &selector).await?,
+                )?)
+            }
+            IdleBiasCommand::Clear { selector, yes } => {
+                if !allow_interactive && !yes {
+                    return Err(anyhow!("idle-bias clear requires --yes when --json is set"));
+                }
+                if allow_interactive && !yes {
+                    confirm_idle_bias_action("clear")?;
+                }
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                let owner = next_power_owner();
+                unwrap_device_success_result(
+                    request_selected(
+                        client,
+                        devd,
+                        selector,
+                        Method::POST,
+                        &format!("/power/idle-bias/clear?owner={owner}"),
+                        None,
+                    )
+                    .await?,
+                )
+            }
+            IdleBiasCommand::Set {
+                selector,
+                enabled,
+                yes,
+            } => {
+                if !allow_interactive && !yes {
+                    return Err(anyhow!(
+                        "idle-bias correction changes require --yes when --json is set"
+                    ));
+                }
+                if allow_interactive && !yes {
+                    confirm_idle_bias_action(if enabled {
+                        "set-enabled"
+                    } else {
+                        "set-disabled"
+                    })?;
+                }
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                let owner = next_power_owner();
+                unwrap_device_success_result(
+                    request_selected(
+                        client,
+                        devd,
+                        selector,
+                        Method::PUT,
+                        &format!("/power/idle-bias?owner={owner}"),
+                        Some(json!({"correction_enabled": enabled})),
+                    )
+                    .await?,
+                )
+            }
+        },
         PowerCommand::Defaults { selector } => {
             let selector =
                 maybe_select_power_target(client, devd, selector, allow_interactive).await?;

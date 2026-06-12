@@ -4,6 +4,7 @@ extern crate alloc;
 
 pub mod buzzer;
 pub mod display_ui;
+pub mod idle_bias;
 pub mod pd_i2c;
 pub mod power_config;
 pub mod prompt_tone;

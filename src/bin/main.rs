@@ -58,6 +58,12 @@ use isolapurr_usb_hub::display_ui::{
     NormalUiPortBadge, NormalUiPortMode, NormalUiSnapshot, UsbCDisplayInput, WORKBUF_SIZE,
     resolve_usb_c_display,
 };
+#[cfg(feature = "net_http")]
+use isolapurr_usb_hub::idle_bias::{
+    IDLE_BIAS_POINT_COUNT, IDLE_BIAS_SAMPLE_COUNT, IDLE_BIAS_SAMPLE_INTERVAL_MS,
+    IDLE_BIAS_SETTLE_WINDOW_MS, IdleBiasCalibration, IdleBiasMetadata, average_current_ma,
+    corrected_current_ma, corrected_power_mw, idle_bias_point_voltage_mv,
+};
 use isolapurr_usb_hub::pd_i2c::I2cAllowlist;
 use isolapurr_usb_hub::pd_i2c::PowerRequest;
 use isolapurr_usb_hub::pd_i2c::PowerSetpoint;
@@ -71,8 +77,8 @@ use isolapurr_usb_hub::pd_i2c::tps55288::{
     stop_output_and_enable_discharge,
 };
 use isolapurr_usb_hub::power_config::{
-    PowerConfig, Sw2303CapabilityReadback, Sw2303PathControl, TpsMode, quantize_manual_voltage_mv,
-    resolve_manual_path_control,
+    MANUAL_DEFAULT_CURRENT_MA, PowerConfig, Sw2303CapabilityReadback, Sw2303PathControl, TpsMode,
+    clamp_manual_current_ma, quantize_manual_voltage_mv, resolve_manual_path_control,
 };
 use isolapurr_usb_hub::prompt_tone::{
     DEFAULT_DUTY_PCT, DEFAULT_FREQ_HZ, ErrorKind, InitWarnReason, PromptToneManager, SafetyKind,
@@ -117,6 +123,9 @@ static USB_C_ROUTE_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new()
 
 #[cfg(feature = "net_http")]
 static POWER_CONFIG_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+
+#[cfg(feature = "net_http")]
+static IDLE_BIAS_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
 #[cfg(feature = "net_http")]
 #[derive(Clone, Copy, PartialEq, Eq)]

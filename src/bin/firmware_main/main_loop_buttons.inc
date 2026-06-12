@@ -758,6 +758,7 @@
                         api_usb_a_metrics,
                         api_sample_uptime_ms,
                     ),
+                    telemetry_raw: None,
                     state: net::ApiPortState {
                         power_enabled: port_usb_a.power == PowerState::On,
                         data_connected: matches!(port_usb_a.data, DataState::Connected),
@@ -771,6 +772,11 @@
                         api_usb_c_metrics,
                         api_sample_uptime_ms,
                     ),
+                    telemetry_raw: Some(port_metrics_to_api_telemetry(
+                        api_usb_c_present,
+                        api_usb_c_metrics_raw,
+                        api_sample_uptime_ms,
+                    )),
                     state: net::ApiPortState {
                         power_enabled: port_usb_c.power == PowerState::On,
                         data_connected: matches!(port_usb_c.data, DataState::Connected),
@@ -781,6 +787,7 @@
             };
 
             let mut guard = api_state.lock().await;
+            let idle_bias_run = guard.idle_bias.run;
             guard.hub = net::ApiHubSnapshot {
                 upstream_connected: api_isolated_usb_ready,
                 isolated_usb_fault: api_isolated_usb_fault,
@@ -818,6 +825,11 @@
                 runtime_recovery_count: pd_runtime_recovery_count,
                 sample_uptime_ms: uptime_ms_from_instant(now),
             };
+            guard.idle_bias = idle_bias_api_snapshot(
+                idle_bias_calibration,
+                idle_bias_run,
+                current_applied_idle_bias_offset_ma(idle_bias_calibration, api_usb_c_metrics_raw),
+            );
             if let Some(lock) = guard.power.lock {
                 if lock.expires_at_ms <= uptime_ms_from_instant(now) {
                     guard.power.lock = None;

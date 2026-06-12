@@ -12,14 +12,17 @@ import {
   tryBootstrapDesktopAgent,
 } from "../domain/desktopAgent";
 import {
+  clearIdleBiasCalibration,
   clearWifiConfig,
   type DeviceApiError,
   type DeviceInfoResponse,
   getDeviceInfo,
+  getIdleBias,
   getPdDiagnostics,
   getPorts,
   getPowerConfig,
   getWifiConfig,
+  type IdleBiasResponse,
   type PdDiagnosticsResponse,
   type PowerConfigInput,
   type PowerConfigResponse,
@@ -29,8 +32,10 @@ import {
   replugPort,
   resetSettings as resetDeviceSettings,
   restorePowerDefaults,
+  runIdleBiasCalibration,
   type SettingsResetResponse,
   type SettingsResetScope,
+  setIdleBiasCorrection,
   setPortPower,
   setPowerConfig,
   setPowerLock,
@@ -348,6 +353,9 @@ export function DeviceRuntimeProvider({
         if (method === "power.config_get") {
           return getPowerConfig(baseUrl) as Promise<Result<T>>;
         }
+        if (method === "power.idle_bias_get") {
+          return getIdleBias(baseUrl) as Promise<Result<T>>;
+        }
         if (method === "power.config_set") {
           return setPowerConfig(
             baseUrl,
@@ -355,8 +363,27 @@ export function DeviceRuntimeProvider({
             Number(params?.owner ?? 0),
           ) as Promise<Result<T>>;
         }
+        if (method === "power.idle_bias_set") {
+          return setIdleBiasCorrection(
+            baseUrl,
+            Boolean(params?.correction_enabled),
+            Number(params?.owner ?? 0),
+          ) as Promise<Result<T>>;
+        }
         if (method === "power.config_defaults") {
           return restorePowerDefaults(
+            baseUrl,
+            Number(params?.owner ?? 0),
+          ) as Promise<Result<T>>;
+        }
+        if (method === "power.idle_bias_run") {
+          return runIdleBiasCalibration(
+            baseUrl,
+            Number(params?.owner ?? 0),
+          ) as Promise<Result<T>>;
+        }
+        if (method === "power.idle_bias_clear") {
+          return clearIdleBiasCalibration(
             baseUrl,
             Number(params?.owner ?? 0),
           ) as Promise<Result<T>>;
@@ -824,6 +851,16 @@ export function DeviceRuntimeProvider({
     [runDeviceCommand],
   );
 
+  const idleBias = useCallback(
+    async (deviceId: string): Promise<Result<IdleBiasResponse>> => {
+      return runDeviceCommand<IdleBiasResponse>(
+        deviceId,
+        "power.idle_bias_get",
+      );
+    },
+    [runDeviceCommand],
+  );
+
   const savePowerConfig = useCallback(
     async (
       deviceId: string,
@@ -873,6 +910,59 @@ export function DeviceRuntimeProvider({
       });
     },
     [runDeviceCommand],
+  );
+
+  const setIdleBias = useCallback(
+    async (
+      deviceId: string,
+      correctionEnabled: boolean,
+      owner: number,
+    ): Promise<Result<IdleBiasResponse>> => {
+      const res = await runDeviceCommand<IdleBiasResponse>(
+        deviceId,
+        "power.idle_bias_set",
+        { correction_enabled: correctionEnabled, owner },
+      );
+      if (res.ok) {
+        await refreshDevice(deviceId);
+      }
+      return res;
+    },
+    [refreshDevice, runDeviceCommand],
+  );
+
+  const runIdleBias = useCallback(
+    async (
+      deviceId: string,
+      owner: number,
+    ): Promise<Result<IdleBiasResponse>> => {
+      return runDeviceCommand<IdleBiasResponse>(
+        deviceId,
+        "power.idle_bias_run",
+        {
+          owner,
+        },
+      );
+    },
+    [runDeviceCommand],
+  );
+
+  const clearIdleBias = useCallback(
+    async (
+      deviceId: string,
+      owner: number,
+    ): Promise<Result<IdleBiasResponse>> => {
+      const res = await runDeviceCommand<IdleBiasResponse>(
+        deviceId,
+        "power.idle_bias_clear",
+        { owner },
+      );
+      if (res.ok) {
+        await refreshDevice(deviceId);
+      }
+      return res;
+    },
+    [refreshDevice, runDeviceCommand],
   );
 
   const handleApiErrorToast = useCallback(
@@ -1094,9 +1184,13 @@ export function DeviceRuntimeProvider({
       rebootDevice: reboot,
       pdDiagnostics,
       powerConfig,
+      idleBias,
       savePowerConfig,
       restorePowerDefaults: restoreDefaults,
       setPowerLock: setLock,
+      setIdleBiasCorrection: setIdleBias,
+      runIdleBiasCalibration: runIdleBias,
+      clearIdleBiasCalibration: clearIdleBias,
       setPower,
       replug,
       setUsbCDownstreamRoute: setRoute,
@@ -1105,6 +1199,7 @@ export function DeviceRuntimeProvider({
     clearWifi,
     deviceInfo,
     devices,
+    idleBias,
     now,
     pdDiagnostics,
     powerConfig,
@@ -1116,9 +1211,12 @@ export function DeviceRuntimeProvider({
     runtimeById,
     savePowerConfig,
     saveWifiConfig,
+    clearIdleBias,
     setLock,
+    setIdleBias,
     setRoute,
     setPower,
+    runIdleBias,
     wifiConfig,
   ]);
 

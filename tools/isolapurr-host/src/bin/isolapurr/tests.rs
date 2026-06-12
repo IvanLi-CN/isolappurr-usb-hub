@@ -82,6 +82,25 @@ mod power_output_tests {
         .expect("settings reset endpoint with owner should map");
         assert_eq!(path, "/api/v1/settings/reset?scope=other&owner=42");
         assert!(body.is_none());
+
+        let (_, path, body) = map_http_endpoint(Method::GET, "/power/idle-bias", None)
+            .expect("idle-bias show endpoint should map");
+        assert_eq!(path, "/api/v1/power/idle-bias");
+        assert!(body.is_none());
+
+        let (_, path, body) = map_http_endpoint(
+            Method::PUT,
+            "/power/idle-bias?owner=9",
+            Some(json!({"correction_enabled": true})),
+        )
+        .expect("idle-bias set endpoint should map");
+        assert_eq!(path, "/api/v1/power/idle-bias?owner=9");
+        assert_eq!(body, Some(json!({"correction_enabled": true})));
+
+        let (_, path, body) = map_http_endpoint(Method::POST, "/power/idle-bias/run?owner=9", None)
+            .expect("idle-bias run endpoint should map");
+        assert_eq!(path, "/api/v1/power/idle-bias/run?owner=9");
+        assert!(body.is_none());
     }
 
     #[test]
@@ -117,6 +136,27 @@ mod power_output_tests {
         assert_eq!(params["owner"], 7);
         assert_eq!(params["config"]["hardware"], "legacy-hardware");
         assert_eq!(params["config"]["capability"]["power_watts"], 100);
+
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::PUT,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/power/idle-bias?owner=11",
+            Some(json!({"correction_enabled": true})),
+        )
+        .expect("idle-bias set endpoint should map");
+        assert_eq!(method, "device.power.idle_bias_set");
+        assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
+        assert_eq!(params["owner"], 11);
+        assert_eq!(params["correction_enabled"], true);
+
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::POST,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/power/idle-bias/run?owner=11",
+            None,
+        )
+        .expect("idle-bias run endpoint should map");
+        assert_eq!(method, "device.power.idle_bias_run");
+        assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
+        assert_eq!(params["owner"], 11);
 
         let (method, params) = map_devd_ipc_endpoint(
             Method::POST,
@@ -204,6 +244,68 @@ mod power_output_tests {
         assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
         assert!(matches!(scope, SettingsResetScopeArg::Wifi));
         assert!(!yes);
+        assert!(cli.json);
+    }
+
+    #[test]
+    fn idle_bias_cli_parses_set_and_confirmation_flag() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "idle-bias",
+            "set",
+            "--hardware",
+            "bench-hub",
+            "--enabled",
+            "true",
+            "--yes",
+        ])
+        .expect("idle-bias set should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::IdleBias {
+                    command:
+                        IdleBiasCommand::Set {
+                            selector,
+                            enabled,
+                            yes,
+                        },
+                },
+        } = cli.command
+        else {
+            panic!("expected idle-bias set command");
+        };
+        assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
+        assert!(enabled);
+        assert!(yes);
+    }
+
+    #[test]
+    fn idle_bias_cli_parses_run_without_confirmation_in_json_mode() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "--json",
+            "power",
+            "idle-bias",
+            "run",
+            "--hardware",
+            "bench-hub",
+            "--yes",
+        ])
+        .expect("idle-bias run should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::IdleBias {
+                    command: IdleBiasCommand::Run { selector, yes },
+                },
+        } = cli.command
+        else {
+            panic!("expected idle-bias run command");
+        };
+        assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
+        assert!(yes);
         assert!(cli.json);
     }
 
@@ -531,6 +633,26 @@ mod tests {
                 },
                 "lock": null
             },
+            "ports": {
+                "ports": [{
+                    "portId": "port_c",
+                    "label": "USB-C",
+                    "telemetry": {
+                        "status": "ok",
+                        "voltage_mv": 20000,
+                        "current_ma": 3210,
+                        "power_mw": 64200,
+                        "sample_uptime_ms": 1500
+                    },
+                    "telemetry_raw": {
+                        "status": "ok",
+                        "voltage_mv": 20000,
+                        "current_ma": 3250,
+                        "power_mw": 65000,
+                        "sample_uptime_ms": 1500
+                    }
+                }]
+            },
             "diagnostics": {
                 "usb_c_power_enabled": true,
                 "sw2303_i2c_allowed": true,
@@ -578,15 +700,40 @@ mod tests {
                     "mv": 20000,
                     "ilim_ma": 3250
                 },
+                "idle_bias": {
+                    "correction_enabled": true,
+                    "dataset": {
+                        "status": "valid",
+                        "min_voltage_mv": 3000,
+                        "max_voltage_mv": 21000,
+                        "step_mv": 500,
+                        "point_count": 37,
+                        "offsets_ma": [12, 14]
+                    },
+                    "current_applied_offset_ma": 40,
+                    "run": {
+                        "state": "idle",
+                        "completed_points": 0,
+                        "point_count": 37,
+                        "target_voltage_mv": null,
+                        "error": null
+                    }
+                },
                 "runtime_recovery_count": 0,
                 "sample_uptime_ms": 1500
             }
         }));
 
         assert!(rendered.contains("Live USB-C status"));
+        assert!(rendered.contains("USB-C output"));
+        assert!(rendered.contains("Corrected telemetry: 20000 mV @ 3210 mA / 64200 mW"));
         assert!(rendered.contains("Capability state: applied"));
         assert!(rendered.contains("Advertised source: 100 W"));
         assert!(rendered.contains("Negotiated request: 20000 mV @ 3250 mA"));
+        assert!(
+            rendered.contains("Idle-bias dataset: valid (3000..21000 mV, 37 points, step 500 mV)")
+        );
+        assert!(rendered.contains("Idle-bias correction: enabled"));
         assert!(!rendered.to_ascii_lowercase().contains("sw2303"));
         assert!(!rendered.contains("TPS"));
     }

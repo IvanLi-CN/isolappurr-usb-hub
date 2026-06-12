@@ -18,6 +18,7 @@ use esp_radio::{
 };
 use heapless::{String as HString, Vec};
 use isolapurr_usb_hub::display_ui::{NormalUiPortBadge, NormalUiPortMode};
+use isolapurr_usb_hub::idle_bias::{IDLE_BIAS_POINT_COUNT, IdleBiasMetadata};
 use isolapurr_usb_hub::power_config::{
     ManualTpsConfig, ManualUsbCPathMode, PowerConfig, Sw2303CapabilityReadback, TpsMode,
     UsbCCapabilityConfig,
@@ -193,6 +194,7 @@ impl ApiHubSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ApiPortSnapshot {
     pub telemetry: ApiPortTelemetry,
+    pub telemetry_raw: Option<ApiPortTelemetry>,
     pub state: ApiPortState,
 }
 
@@ -200,6 +202,7 @@ impl ApiPortSnapshot {
     pub const fn unknown() -> Self {
         Self {
             telemetry: ApiPortTelemetry::unknown(),
+            telemetry_raw: None,
             state: ApiPortState {
                 power_enabled: false,
                 data_connected: false,
@@ -291,6 +294,97 @@ pub struct ApiPowerLock {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiIdleBiasRunState {
+    Idle,
+    Running,
+    Failed,
+}
+
+impl ApiIdleBiasRunState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Running => "running",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiIdleBiasErrorCode {
+    AttachDetected,
+    ControllerNotReady,
+    TelemetryUnavailable,
+    EepromFailed,
+}
+
+impl ApiIdleBiasErrorCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AttachDetected => "attach_detected",
+            Self::ControllerNotReady => "controller_not_ready",
+            Self::TelemetryUnavailable => "telemetry_unavailable",
+            Self::EepromFailed => "eeprom_failed",
+        }
+    }
+
+    pub const fn message(self) -> &'static str {
+        match self {
+            Self::AttachDetected => "USB-C sink activity was detected during calibration",
+            Self::ControllerNotReady => "USB-C controller is not ready for idle-bias calibration",
+            Self::TelemetryUnavailable => {
+                "USB-C telemetry was unavailable during idle-bias calibration"
+            }
+            Self::EepromFailed => "Idle-bias calibration could not be saved to EEPROM U21",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiIdleBiasRunSnapshot {
+    pub state: ApiIdleBiasRunState,
+    pub completed_points: u8,
+    pub point_count: u8,
+    pub target_voltage_mv: Option<u16>,
+    pub error: Option<ApiIdleBiasErrorCode>,
+}
+
+impl ApiIdleBiasRunSnapshot {
+    pub const fn idle() -> Self {
+        Self {
+            state: ApiIdleBiasRunState::Idle,
+            completed_points: 0,
+            point_count: IDLE_BIAS_POINT_COUNT as u8,
+            target_voltage_mv: None,
+            error: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiIdleBiasSnapshot {
+    pub correction_enabled: bool,
+    pub dataset_valid: bool,
+    pub metadata: IdleBiasMetadata,
+    pub current_offsets_ma: [u16; IDLE_BIAS_POINT_COUNT],
+    pub current_applied_offset_ma: Option<u32>,
+    pub run: ApiIdleBiasRunSnapshot,
+}
+
+impl ApiIdleBiasSnapshot {
+    pub const fn unknown() -> Self {
+        Self {
+            correction_enabled: false,
+            dataset_valid: false,
+            metadata: IdleBiasMetadata::fixed(),
+            current_offsets_ma: [0; IDLE_BIAS_POINT_COUNT],
+            current_applied_offset_ma: None,
+            run: ApiIdleBiasRunSnapshot::idle(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ApiPowerSnapshot {
     pub config: PowerConfig,
     pub persisted: bool,
@@ -322,6 +416,13 @@ pub enum ApiPowerConfigCommand {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiIdleBiasCommand {
+    SetCorrection { enabled: bool },
+    Clear,
+    Run,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiSettingsResetScope {
     Other,
 }
@@ -340,6 +441,7 @@ pub struct ApiPendingActions {
     pub port_c: Option<ApiPortAction>,
     pub usb_c_downstream_route: Option<UsbCDownstreamRoute>,
     pub power_config: Option<ApiPowerConfigCommand>,
+    pub idle_bias: Option<ApiIdleBiasCommand>,
     pub settings_reset: Option<ApiSettingsResetScope>,
 }
 
@@ -350,6 +452,7 @@ impl ApiPendingActions {
             port_c: None,
             usb_c_downstream_route: None,
             power_config: None,
+            idle_bias: None,
             settings_reset: None,
         }
     }
@@ -361,6 +464,7 @@ pub struct ApiSharedState {
     pub ports: ApiPortsSnapshot,
     pub pd: ApiPdSnapshot,
     pub power: ApiPowerSnapshot,
+    pub idle_bias: ApiIdleBiasSnapshot,
     pub pending: ApiPendingActions,
 }
 
@@ -371,6 +475,7 @@ impl ApiSharedState {
             ports: ApiPortsSnapshot::unknown(),
             pd: ApiPdSnapshot::unknown(),
             power: ApiPowerSnapshot::unknown(),
+            idle_bias: ApiIdleBiasSnapshot::unknown(),
             pending: ApiPendingActions::empty(),
         }
     }

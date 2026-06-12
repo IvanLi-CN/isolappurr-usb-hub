@@ -329,6 +329,55 @@ async fn dispatch_ipc_request(
                 .await?,
             ))
         }
+        "device.power.idle_bias_get" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(state, &req.device_id, "power.idle_bias_get", None).await?,
+            ))
+        }
+        "device.power.idle_bias_set" => {
+            let req: DeviceIdleBiasSetRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "power.idle_bias_set",
+                    Some(json!({
+                        "correction_enabled": req.correction_enabled,
+                        "owner": req.owner,
+                    })),
+                )
+                .await?,
+            ))
+        }
+        "device.power.idle_bias_run" => {
+            let req: DevicePowerOwnerRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "power.idle_bias_run",
+                    Some(json!({"owner": req.owner})),
+                )
+                .await?,
+            ))
+        }
+        "device.power.idle_bias_clear" => {
+            let req: DevicePowerOwnerRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "power.idle_bias_clear",
+                    Some(json!({"owner": req.owner})),
+                )
+                .await?,
+            ))
+        }
         "device.power.lock" => {
             let req: DevicePowerLockRequest = serde_json::from_value(params)?;
             require_compatible_project_firmware(state, &req.device_id).await?;
@@ -432,6 +481,13 @@ struct DevicePowerConfigSetRequest {
 #[derive(Debug, Deserialize)]
 struct DevicePowerOwnerRequest {
     device_id: String,
+    owner: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceIdleBiasSetRequest {
+    device_id: String,
+    correction_enabled: bool,
     owner: Option<u32>,
 }
 

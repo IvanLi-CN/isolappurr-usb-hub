@@ -46,13 +46,23 @@ export function DevicePowerPage() {
         key={deviceId}
         deviceKey={deviceId}
         deviceName={device.name}
+        clearIdleBiasCalibration={(owner) =>
+          runtime.clearIdleBiasCalibration(deviceId, owner)
+        }
+        loadIdleBias={() => runtime.idleBias(deviceId)}
         loadPowerConfig={() => runtime.powerConfig(deviceId)}
         localAdvancedLocked={false}
         restorePowerDefaults={(owner) =>
           runtime.restorePowerDefaults(deviceId, owner)
         }
+        runIdleBiasCalibration={(owner) =>
+          runtime.runIdleBiasCalibration(deviceId, owner)
+        }
         savePowerConfig={(input, owner) =>
           runtime.savePowerConfig(deviceId, input, owner)
+        }
+        setIdleBiasCorrection={(enabled, owner) =>
+          runtime.setIdleBiasCorrection(deviceId, enabled, owner)
         }
         setPowerLock={(owner, acquire) =>
           runtime.setPowerLock(deviceId, owner, acquire)

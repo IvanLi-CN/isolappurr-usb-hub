@@ -94,7 +94,6 @@ const BOOT_CE_RECOVERY_POLL_MS: u64 = 5;
 const BOOT_CE_RELEASE_SETTLE_MS: u64 = 10;
 const BOOT_TPS_RETRY_DELAY_MS: u64 = 10;
 const USB_C_PD_RESTART_GUARD_MS: u64 = 500;
-
 // Toast colors (RGB565 raw).
 const TOAST_OK_RAW: u16 = 0x1407; // dark green (same as UI OK power)
 const TOAST_INFO_RAW: u16 = 0x1A7B; // blue for white-background info toasts
@@ -482,6 +481,78 @@ fn telemetry_field_value(field: Field<u32>) -> Option<u32> {
     match field {
         Field::Ok(value) => Some(value),
         Field::Err => None,
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn idle_bias_attach_detected(request: PowerRequest) -> bool {
+    if !request.status_valid {
+        return true;
+    }
+
+    request.cc_attached
+        || request.negotiated_protocol.is_some()
+        || request.fast_protocol
+        || request.fast_voltage
+}
+
+#[cfg(feature = "net_http")]
+fn current_applied_idle_bias_offset_ma(
+    calibration: Option<IdleBiasCalibration>,
+    metrics: PortMetrics,
+) -> Option<u32> {
+    let calibration = calibration?;
+    let Field::Ok(voltage_mv) = metrics.voltage_mv else {
+        return None;
+    };
+    let Field::Ok(_) = metrics.current_ma else {
+        return None;
+    };
+    calibration.current_offset_ma(voltage_mv)
+}
+
+#[cfg(feature = "net_http")]
+fn corrected_port_metrics(
+    metrics: PortMetrics,
+    calibration: Option<IdleBiasCalibration>,
+) -> PortMetrics {
+    let Some(offset_ma) = current_applied_idle_bias_offset_ma(calibration, metrics) else {
+        return metrics;
+    };
+    let (Field::Ok(voltage_mv), Field::Ok(raw_current_ma)) = (metrics.voltage_mv, metrics.current_ma)
+    else {
+        return metrics;
+    };
+    let corrected_current_ma = corrected_current_ma(raw_current_ma, offset_ma);
+    PortMetrics {
+        voltage_mv: Field::Ok(voltage_mv),
+        current_ma: Field::Ok(corrected_current_ma),
+        power_mw: Field::Ok(corrected_power_mw(voltage_mv, corrected_current_ma)),
+    }
+}
+
+#[cfg(feature = "net_http")]
+fn idle_bias_api_snapshot(
+    calibration: Option<IdleBiasCalibration>,
+    run: net::ApiIdleBiasRunSnapshot,
+    current_applied_offset_ma: Option<u32>,
+) -> net::ApiIdleBiasSnapshot {
+    let (correction_enabled, dataset_valid, current_offsets_ma) = match calibration {
+        Some(calibration) => (
+            calibration.correction_enabled,
+            true,
+            calibration.current_offsets_ma,
+        ),
+        None => (false, false, [0; IDLE_BIAS_POINT_COUNT]),
+    };
+
+    net::ApiIdleBiasSnapshot {
+        correction_enabled,
+        dataset_valid,
+        metadata: IdleBiasMetadata::fixed(),
+        current_offsets_ma,
+        current_applied_offset_ma,
+        run,
     }
 }
 

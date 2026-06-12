@@ -9,6 +9,12 @@ setpoint. Operators needed a controlled way to persist and immediately apply
 USB-C source capability and manual TPS bench settings without relying on
 temporary firmware edits.
 
+The USB-C INA226 sits upstream of the SW2303 path, so its raw current and power
+readings also include the SW2303 empty-load draw. Operators need a device-level
+calibration flow that measures this bias with USB-C disconnected and subtracts
+it from the main USB-C telemetry without losing access to the raw INA226 data
+for diagnostics.
+
 ## Goals
 
 - Persist a SW2303-only power configuration record in EEPROM.
@@ -19,6 +25,9 @@ temporary firmware edits.
 - Show the live USB-C source semantics on the Web Dashboard.
 - Provide on-device preset and advanced power pages for the GC9307 settings
   menu.
+- Provide a USB-C idle-bias calibration flow that stores a per-voltage EEPROM
+  dataset, exposes raw plus corrected telemetry, and lets Web or CLI enable the
+  correction explicitly.
 
 ## Non-Goals
 
@@ -26,6 +35,7 @@ temporary firmware edits.
 - Per-field query updates for power settings.
 - Fine-grained voltage/current editing from the two-button GC9307 UI.
 - Bypassing SW2303 protection to make sink-side measurements appear valid.
+- USB-A idle-bias calibration or per-port generalization in this release.
 
 ## Requirements
 
@@ -44,9 +54,31 @@ temporary firmware edits.
   - `force`: force-open unconditionally.
 - HTTP, Web Serial, and Local USB MUST expose config get, config set, defaults,
   and lock commands.
+- Firmware MUST store USB-C idle-bias state in a dedicated EEPROM record that
+  is independent from the main power-config record.
+- The idle-bias dataset MUST sweep `3000..21000 mV` in `500 mV` steps for a
+  total of `37` points.
+- Missing, invalid, or CRC-mismatched idle-bias EEPROM data MUST boot as
+  `dataset missing` with `correction disabled`.
+- Firmware MUST expose USB-C raw INA226 telemetry and corrected telemetry at
+  the same time; the main `/ports` telemetry surface MUST report corrected
+  values while a sibling raw field preserves the original INA226 reading.
+- Corrected USB-C current MUST clamp at `0 mA` after subtracting the
+  interpolated idle-bias offset, and corrected USB-C power MUST be recomputed
+  from raw voltage times corrected current.
+- HTTP, Web Serial, and Local USB MUST expose idle-bias get, correction set,
+  run, and clear commands.
+- Idle-bias calibration MUST run as a device-side async sweep job with host
+  lock and busy-state checks. Partial sweeps or EEPROM failures MUST preserve
+  the previous dataset and restore the prior runtime configuration.
+- Each idle-bias sweep point MUST hold the target output for about `1 s`,
+  spending the first `500 ms` settling and averaging multiple samples across
+  the final `500 ms`.
 - Device-level `settings.reset scope=other` MUST erase the persisted power
   config EEPROM record, restore the runtime config to the full SW2303 defaults,
   report `persisted=false`, and preserve the Wi-Fi EEPROM record.
+- Device-level `settings.reset scope=other` MUST also erase the idle-bias
+  EEPROM record and force `correction_enabled=false`.
 - Host lock MUST use a TTL heartbeat. A host holding the lock MAY refresh it;
   other hosts MUST be rejected until the lock expires or is released.
 - Local advanced controls MUST be blocked while a host lock is active, except
@@ -70,11 +102,18 @@ temporary firmware edits.
 - When live USB-C display badges are absent, or USB-C telemetry is not `ok`,
   the Dashboard MUST preserve the existing USB-C status chip instead of hiding
   fault/legacy state behind the live badges.
+- Web UI MUST add a `USB-C Idle Bias Calibration` section with dataset,
+  correction, and run-state summaries, confirmation flows for destructive or
+  calibration actions, and explicit copy telling the operator to disconnect
+  USB-C before calibration.
+- Web UI and human CLI MUST show corrected USB-C telemetry by default and keep
+  the raw INA226 reading on debug or JSON surfaces only.
 - Storybook coverage MUST include normal, host-locked, failure, save, restore,
-  and narrow states for the power panel, plus Dashboard USB-C card inline
-  live-badge states for auto-follow, `FOCUS`, `ON`, and `OFF`, the legacy
-  no-diagnostics fallback, and the telemetry-error regression where a real
-  error status chip must remain visible.
+  and narrow states for the power panel; power-panel idle-bias uncalibrated,
+  correction off, correction on, running, confirmation, and failure states;
+  plus Dashboard USB-C card inline live-badge states for auto-follow, `FOCUS`,
+  `ON`, and `OFF`, the legacy no-diagnostics fallback, and the telemetry-error
+  regression where a real error status chip must remain visible.
 
 ## Acceptance
 
@@ -129,6 +168,29 @@ temporary firmware edits.
   `settings.reset scope=other`, then the power config record is erased, runtime
   power config returns to defaults, the API reports `persisted=false`, and Wi-Fi
   credentials remain configured.
+- Given a missing or invalid idle-bias EEPROM record, when firmware boots, then
+  the API reports `dataset.status="missing"` and `correction_enabled=false`.
+- Given a successful USB-C idle-bias calibration run, when the MCU completes
+  all `37` points, then firmware writes the full dataset to EEPROM, restores
+  the previous runtime output config, and leaves the correction enable state
+  unchanged.
+- Given an idle-bias calibration point is running, when the MCU samples that
+  voltage, then it waits about `500 ms` for settling and averages multiple
+  readings collected across the following `500 ms`.
+- Given idle-bias correction is enabled and a valid dataset exists, when
+  `/api/v1/ports` reports USB-C telemetry, then `ports[].telemetry` is the
+  corrected value, `ports[].telemetry_raw` remains the raw INA226 value, and
+  corrected current never goes below zero.
+- Given a calibration run fails due to attach detection, controller readiness,
+  telemetry gaps, or EEPROM write failure, when the job stops, then the prior
+  dataset remains intact and the run state reports `failed` with a structured
+  error.
+- Given the operator clears the idle-bias dataset, when the request succeeds,
+  then EEPROM no longer contains the dataset and correction is forced off.
+- Given the Web power panel idle-bias confirmation story, when the operator
+  requests calibration, then the modal warns them to disconnect USB-C and
+  states that the sweep spans 3.0 V to 21.0 V before restoring the prior power
+  configuration.
 
 ## Milestones
 
@@ -140,6 +202,8 @@ temporary firmware edits.
 - [x] Storybook state coverage and interaction checks.
 - [x] GC9307 settings menu preset and advanced power pages.
 - [x] Visual evidence.
+- [x] USB-C idle-bias EEPROM dataset, corrected telemetry split, async sweep
+  job, host/CLI/Web contracts, and calibration UI.
 
 ## Visual Evidence
 
@@ -166,10 +230,90 @@ PR: include
   target_program: `mock-only`
   evidence_note: verifies the normal SW2303 manual TPS settings layout,
   `CC`/`DPDM` negotiation badges on wide protocol cards, path mode choices,
-  guardrails, and actions.
+  actions, and the uncalibrated USB-C idle-bias section.
 
 PR: include
 ![Device power panel desktop](./assets/device-power-panel-default-desktop.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CalibrationApplied`
+  state: idle-bias dataset valid and correction enabled
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the corrected-telemetry state, applied offset summary,
+  and idle-bias action cluster after a successful calibration dataset exists.
+
+PR: include
+![Device power panel idle-bias applied](./assets/device-power-panel-idle-bias-applied.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CalibrationReadyCorrectionOff`
+  state: idle-bias dataset available with table collapsed by default
+  requested_viewport: `1440x1400`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the calibration dataset stays tucked behind a
+  collapsed disclosure by default, while the dataset summary and action row
+  remain immediately visible.
+
+![Device power panel idle-bias dataset collapsed](./assets/device-power-panel-idle-bias-dataset-collapsed.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CalibrationDatasetExpanded`
+  state: idle-bias dataset table expanded
+  requested_viewport: `1440x1400`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the saved `37`-point calibration dataset can be
+  expanded inline as a readable voltage-to-offset table without crowding the
+  default panel state.
+
+![Device power panel idle-bias dataset expanded](./assets/device-power-panel-idle-bias-dataset-expanded.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CalibrationRunning`
+  state: idle-bias sweep in progress
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the running badge, `n/37` progress copy, target
+  voltage display, and disabled power-configuration editing while the sweep is
+  active.
+
+PR: include
+![Device power panel idle-bias running](./assets/device-power-panel-idle-bias-running.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/RunConfirmation`
+  state: idle-bias calibration confirmation modal
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the second confirmation copy for calibration, the
+  USB-C disconnect warning, and the promise that the prior power configuration
+  is restored after the sweep.
+
+PR: include
+![Device power panel idle-bias confirmation](./assets/device-power-panel-idle-bias-confirmation.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/FailureState`
+  state: idle-bias EEPROM or job failure
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies that a failed idle-bias job reports the structured
+  error state without collapsing the rest of the power panel.
+
+PR: include
+![Device power panel idle-bias failure](./assets/device-power-panel-idle-bias-failure.png)
 
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/Narrow`

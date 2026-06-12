@@ -27,9 +27,13 @@ type DeviceRuntimeValueParams = {
   | "rebootDevice"
   | "pdDiagnostics"
   | "powerConfig"
+  | "idleBias"
   | "savePowerConfig"
   | "restorePowerDefaults"
   | "setPowerLock"
+  | "setIdleBiasCorrection"
+  | "runIdleBiasCalibration"
+  | "clearIdleBiasCalibration"
   | "setPower"
   | "replug"
   | "setUsbCDownstreamRoute"
@@ -51,9 +55,13 @@ export function buildDeviceRuntimeContextValue({
   rebootDevice,
   pdDiagnostics,
   powerConfig,
+  idleBias,
   savePowerConfig,
   restorePowerDefaults,
   setPowerLock,
+  setIdleBiasCorrection,
+  runIdleBiasCalibration,
+  clearIdleBiasCalibration,
   setPower,
   replug,
   setUsbCDownstreamRoute,
@@ -145,9 +153,13 @@ export function buildDeviceRuntimeContextValue({
     rebootDevice,
     pdDiagnostics,
     powerConfig,
+    idleBias,
     savePowerConfig,
     restorePowerDefaults,
     setPowerLock,
+    setIdleBiasCorrection,
+    runIdleBiasCalibration,
+    clearIdleBiasCalibration,
     setPower,
     replug,
     setUsbCDownstreamRoute,

@@ -1,6 +1,7 @@
 import type {
   DeviceApiError,
   DeviceInfoResponse,
+  IdleBiasResponse,
   PdDiagnosticsResponse,
   PowerConfigInput,
   PowerConfigResponse,
@@ -75,6 +76,7 @@ export type DeviceRuntimeContextValue = {
   rebootDevice: (deviceId: string) => Promise<Result<RebootResponse>>;
   pdDiagnostics: (deviceId: string) => Promise<Result<PdDiagnosticsResponse>>;
   powerConfig: (deviceId: string) => Promise<Result<PowerConfigResponse>>;
+  idleBias: (deviceId: string) => Promise<Result<IdleBiasResponse>>;
   savePowerConfig: (
     deviceId: string,
     input: PowerConfigInput,
@@ -89,6 +91,19 @@ export type DeviceRuntimeContextValue = {
     owner: number,
     acquire: boolean,
   ) => Promise<Result<PowerConfigResponse>>;
+  setIdleBiasCorrection: (
+    deviceId: string,
+    correctionEnabled: boolean,
+    owner: number,
+  ) => Promise<Result<IdleBiasResponse>>;
+  runIdleBiasCalibration: (
+    deviceId: string,
+    owner: number,
+  ) => Promise<Result<IdleBiasResponse>>;
+  clearIdleBiasCalibration: (
+    deviceId: string,
+    owner: number,
+  ) => Promise<Result<IdleBiasResponse>>;
   setPower: (
     deviceId: string,
     portId: PortId,
