@@ -107,7 +107,7 @@ pub fn write_pd_diagnostics_json(
     write_usb_c_display_json(body, pd);
     let _ = body.push_str("},\"usb_c_actual\":");
     write_port_telemetry_json(body, &pd.usb_c_actual);
-    let _ = body.push_str("},\"tps_setpoint\":{\"output_enabled\":");
+    let _ = body.push_str(",\"tps_setpoint\":{\"output_enabled\":");
     write_json_bool_or_null(body, pd.tps_setpoint_output_enabled);
     let _ = body.push_str(",\"mv\":");
     write_json_u32_or_null(body, pd.tps_setpoint_mv);

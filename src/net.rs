@@ -894,4 +894,44 @@ mod tests {
             "{\"correction_enabled\":true,\"dataset\":{\"status\":\"missing\",\"min_voltage_mv\":3000,\"max_voltage_mv\":21000,\"step_mv\":500,\"point_count\":37,\"offsets_ma\":null},\"current_applied_offset_ma\":7,\"run\":{\"state\":\"idle\",\"completed_points\":0,\"point_count\":37,\"target_voltage_mv\":null,\"error\":null}}"
         );
     }
+
+    #[test]
+    fn pd_diagnostics_json_keeps_usb_c_actual_in_object() {
+        let mut body = String::new();
+        let pd = ApiPdSnapshot {
+            usb_c_power_enabled: true,
+            sw2303_i2c_allowed: true,
+            sw2303_profile_applied: true,
+            sw2303_stable_reads: 3,
+            sw2303_error_latched: false,
+            tps_error_latched: false,
+            sw2303_readback_config: Sw2303CapabilityReadback::unavailable(),
+            sw2303_readback_matches_config: false,
+            sw2303_request_mv: Some(9_000),
+            sw2303_request_ma: Some(3_000),
+            sw2303_vbus_mv: Some(8_950),
+            sw2303_last_valid_mv: Some(9_000),
+            sw2303_last_valid_ma: Some(3_000),
+            usb_c_display_mode: NormalUiPortMode::Pd,
+            usb_c_display_badge: NormalUiPortBadge::VoltageMv(9_000),
+            usb_c_display_measurements_visible: true,
+            usb_c_actual: ApiPortTelemetry {
+                status: ApiTelemetryStatus::Ok,
+                voltage_mv: Some(8_950),
+                current_ma: Some(42),
+                power_mw: Some(376),
+                sample_uptime_ms: 1_500,
+            },
+            tps_setpoint_output_enabled: Some(true),
+            tps_setpoint_mv: Some(9_000),
+            tps_setpoint_ilim_ma: Some(3_000),
+            runtime_recovery_count: 0,
+            sample_uptime_ms: 1_500,
+        };
+        let idle_bias = ApiIdleBiasSnapshot::unknown();
+
+        write_pd_diagnostics_json(&mut body, &pd, &idle_bias);
+
+        assert!(body.contains("\"usb_c_actual\":{\"status\":\"ok\",\"voltage_mv\":8950,\"current_ma\":42,\"power_mw\":376,\"sample_uptime_ms\":1500},\"tps_setpoint\""));
+    }
 }
