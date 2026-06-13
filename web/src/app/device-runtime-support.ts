@@ -14,7 +14,6 @@ import type {
 } from "../domain/deviceApi";
 import type { StoredDevice } from "../domain/devices";
 import {
-  devdLocalUsbDeviceIdFromBaseUrl,
   type JsonlRequest,
   LocalUsbAgentHttpError,
   nextJsonlRequestId,
@@ -107,11 +106,9 @@ export function httpBaseUrlForDevice(device: StoredDevice): string {
   return device.transports?.httpBaseUrl ?? device.baseUrl;
 }
 
-export function localUsbDeviceIdForDevice(device: StoredDevice): string | null {
-  return (
-    device.transports?.localUsbDeviceId ??
-    devdLocalUsbDeviceIdFromBaseUrl(device.baseUrl)
-  );
+export function localUsbPortPathForDevice(device: StoredDevice): string | null {
+  const portPath = device.transports?.localUsbPortPath?.trim();
+  return portPath ? portPath : null;
 }
 
 export function shortApiError(err: DeviceApiError): string {
@@ -262,12 +259,16 @@ export function resolveOrderedDeviceTransports({
   hasWebSerialLink: boolean;
 }): DeviceTransport[] {
   const stored = devices.find((device) => device.id === deviceId);
-  const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
+  const storedLocalUsbPortPath = stored
+    ? localUsbPortPathForDevice(stored)
+    : null;
   const httpLinked =
     !!stored?.transports?.httpBaseUrl ||
-    (stored ? !localUsbDeviceIdForDevice(stored) : false);
+    (stored ? !localUsbPortPathForDevice(stored) : false);
   const localUsbLinked =
-    Boolean(localUsbPortPath) || hasLocalUsbLink || Boolean(devdDeviceId);
+    Boolean(localUsbPortPath) ||
+    hasLocalUsbLink ||
+    Boolean(storedLocalUsbPortPath);
   return orderedDeviceTransports({
     preferred,
     runtimeTransport: runtime?.transport ?? null,
@@ -281,7 +282,7 @@ export function resolveOrderedDeviceTransports({
     httpLinked,
     localUsbLinked,
     webSerialLinked: hasWebSerialLink,
-    preferLocalUsbFirst: Boolean(devdDeviceId),
+    preferLocalUsbFirst: Boolean(storedLocalUsbPortPath),
   });
 }
 

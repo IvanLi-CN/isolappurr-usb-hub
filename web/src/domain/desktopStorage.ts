@@ -3,6 +3,7 @@ import { agentFetch, type DesktopAgent } from "./desktopAgent";
 import {
   type AddDeviceInput,
   normalizeBaseUrl,
+  normalizeStoredDeviceId,
   type StoredDevice,
 } from "./devices";
 
@@ -55,6 +56,10 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
   if (typeof record.id !== "string") {
     return null;
   }
+  const id = normalizeStoredDeviceId(record.id);
+  if (!id) {
+    return null;
+  }
   if (typeof record.name !== "string") {
     return null;
   }
@@ -71,7 +76,7 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
       ? normalizeBaseUrl(transports.httpBaseUrl)
       : null;
   return {
-    id: record.id,
+    id,
     name: record.name,
     baseUrl: normalized.ok ? normalized.baseUrl : record.baseUrl,
     transports: transports
@@ -81,9 +86,9 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
             : typeof transports.httpBaseUrl === "string"
               ? transports.httpBaseUrl
               : undefined,
-          localUsbDeviceId:
-            typeof transports.localUsbDeviceId === "string"
-              ? transports.localUsbDeviceId
+          localUsbPortPath:
+            typeof transports.localUsbPortPath === "string"
+              ? transports.localUsbPortPath
               : undefined,
           webSerialLabel:
             typeof transports.webSerialLabel === "string"

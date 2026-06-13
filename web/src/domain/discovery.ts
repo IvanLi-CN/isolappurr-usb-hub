@@ -1,4 +1,5 @@
 import type { AddDeviceValidationErrors } from "./devices";
+import { isLegacyDeviceId, normalizeStoredDeviceId } from "./devices";
 
 export type DiscoveredDevice = {
   baseUrl: string;
@@ -71,8 +72,9 @@ export function createInitialDiscoverySnapshot({
 }
 
 function deviceDedupKey(device: DiscoveredDevice): string {
-  if (device.device_id && device.device_id.trim().length > 0) {
-    return `id:${device.device_id.trim()}`;
+  const normalized = normalizeStoredDeviceId(device.device_id);
+  if (normalized) {
+    return `id:${normalized}`;
   }
   return `url:${device.baseUrl.trim()}`;
 }
@@ -192,7 +194,8 @@ export function isDiscoveredDeviceAdded(
     Array.from(existingBaseUrls, (v) => v.trim()).filter(Boolean),
   );
 
-  const byId = device.device_id ? ids.has(device.device_id) : false;
+  const normalizedId = normalizeStoredDeviceId(device.device_id);
+  const byId = normalizedId ? ids.has(normalizedId) : false;
   const byUrl = baseUrls.has(device.baseUrl);
   return byId || byUrl;
 }
@@ -206,8 +209,8 @@ export function applyDiscoveredDeviceToManualForm(
       ? device.hostname
       : current.name;
   const suggestedId =
-    current.id.trim().length === 0 && device.device_id
-      ? device.device_id
+    current.id.trim().length === 0 && normalizeStoredDeviceId(device.device_id)
+      ? (normalizeStoredDeviceId(device.device_id) ?? current.id)
       : current.id;
   return {
     name: suggestedName,
@@ -240,7 +243,11 @@ export function parseDiscoveredDeviceFromApiInfo(
     return null;
   }
 
-  const deviceId = nonEmptyString(device.device_id);
+  const deviceIdRaw = nonEmptyString(device.device_id);
+  const deviceId = normalizeStoredDeviceId(deviceIdRaw);
+  if (deviceIdRaw && !deviceId && isLegacyDeviceId(deviceIdRaw)) {
+    return null;
+  }
   const hostname = nonEmptyString(device.hostname);
   const fqdn = nonEmptyString(device.fqdn);
   const variant = nonEmptyString(device.variant);
@@ -270,7 +277,7 @@ export function parseDiscoveredDeviceFromApiInfo(
 
   return {
     baseUrl: preferredBaseUrl,
-    device_id: deviceId,
+    device_id: deviceId ?? undefined,
     hostname,
     fqdn,
     ipv4: wifiIpv4 ?? scannedIpv4,

@@ -42,7 +42,6 @@ import {
 } from "../domain/deviceApi";
 import {
   nextJsonlRequestId,
-  sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
 } from "../domain/hardwareConsole";
 import {
@@ -70,8 +69,8 @@ import {
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
   type JsonlEnvelope,
-  localUsbDeviceIdForDevice,
   localUsbErrorToDeviceApiError,
+  localUsbPortPathForDevice,
   recoverWifiClearLikeTimeout,
   resolveOrderedDeviceTransports,
   shouldResetLocalUsbConnectionCache,
@@ -148,11 +147,7 @@ export function DeviceRuntimeProvider({
   const findLocalUsbTarget = useCallback(
     async (
       deviceId: string,
-    ): Promise<
-      | { kind: "port_path"; portPath: string }
-      | { kind: "devd_device"; deviceId: string }
-      | null
-    > => {
+    ): Promise<{ kind: "port_path"; portPath: string } | null> => {
       const cached = localUsbPortByDevice.current[deviceId];
       if (cached) {
         return { kind: "port_path", portPath: cached };
@@ -163,9 +158,10 @@ export function DeviceRuntimeProvider({
         return { kind: "port_path", portPath: linked };
       }
       const stored = devices.find((device) => device.id === deviceId);
-      const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
-      if (devdDeviceId) {
-        return { kind: "devd_device", deviceId: devdDeviceId };
+      const storedPortPath = stored ? localUsbPortPathForDevice(stored) : null;
+      if (storedPortPath) {
+        localUsbPortByDevice.current[deviceId] = storedPortPath;
+        return { kind: "port_path", portPath: storedPortPath };
       }
       return null;
     },
@@ -205,14 +201,11 @@ export function DeviceRuntimeProvider({
         let caughtError: unknown = null;
         try {
           const request = { id: nextJsonlRequestId(), method, params };
-          const response =
-            target.kind === "devd_device"
-              ? await sendDevdLocalUsbJsonlRequest(
-                  agent,
-                  target.deviceId,
-                  request,
-                )
-              : await sendLocalUsbJsonlRequest(agent, target.portPath, request);
+          const response = await sendLocalUsbJsonlRequest(
+            agent,
+            target.portPath,
+            request,
+          );
           const envelope = response as JsonlEnvelope<T>;
           if (envelope?.ok && envelope.result !== undefined) {
             return { ok: true, value: envelope.result };
@@ -232,13 +225,7 @@ export function DeviceRuntimeProvider({
         }
         const recovered = await recoverWifiClearLikeTimeout<T>(
           async (request) =>
-            target.kind === "devd_device"
-              ? await sendDevdLocalUsbJsonlRequest(
-                  agent,
-                  target.deviceId,
-                  request,
-                )
-              : await sendLocalUsbJsonlRequest(agent, target.portPath, request),
+            await sendLocalUsbJsonlRequest(agent, target.portPath, request),
           method,
           params,
         );

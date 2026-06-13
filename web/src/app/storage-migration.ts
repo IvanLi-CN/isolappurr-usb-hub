@@ -1,6 +1,7 @@
 import {
   DEVICES_STORAGE_KEY,
   normalizeBaseUrl,
+  normalizeStoredDeviceId,
   type StoredDevice,
 } from "../domain/devices";
 import { THEME_STORAGE_KEY, type ThemeId } from "./theme";
@@ -19,6 +20,10 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
   if (typeof record.id !== "string") {
     return null;
   }
+  const id = normalizeStoredDeviceId(record.id);
+  if (!id) {
+    return null;
+  }
   if (typeof record.name !== "string") {
     return null;
   }
@@ -27,7 +32,7 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
   }
   const normalized = normalizeBaseUrl(record.baseUrl);
   return {
-    id: record.id,
+    id,
     name: record.name,
     baseUrl: normalized.ok ? normalized.baseUrl : record.baseUrl,
     lastSeenAt:

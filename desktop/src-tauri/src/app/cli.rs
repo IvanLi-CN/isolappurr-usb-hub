@@ -399,12 +399,25 @@ impl Default for ThemeId {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct StoredDeviceTransports {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    http_base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    local_usb_port_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_serial_label: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct StoredDevice {
     id: String,
     name: String,
     base_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_seen_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transports: Option<StoredDeviceTransports>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -501,6 +514,8 @@ struct UpsertDeviceInput {
     id: Option<String>,
     name: String,
     base_url: String,
+    #[serde(default)]
+    transports: Option<StoredDeviceTransports>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -554,6 +569,8 @@ struct MigrateDeviceInput {
     name: Option<String>,
     base_url: Option<String>,
     last_seen_at: Option<String>,
+    #[serde(default)]
+    transports: Option<StoredDeviceTransports>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

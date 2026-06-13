@@ -539,7 +539,7 @@ mod tests {
 
     fn temp_storage_path(label: &str) -> PathBuf {
         let mut dir = env::temp_dir();
-        let suffix = generate_device_id();
+        let suffix = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
         dir.push(format!("isolapurr-storage-{label}-{suffix}"));
         let _ = fs::create_dir_all(&dir);
         dir.join("storage.json")
@@ -551,9 +551,14 @@ mod tests {
         let manager = StorageManager::load_at(path.clone()).expect("load storage");
         let device = manager
             .upsert_device(UpsertDeviceInput {
-                id: Some("dev-1".to_string()),
+                id: Some("f293cc9c139e".to_string()),
                 name: "Desk Hub".to_string(),
                 base_url: "http://127.0.0.1:1234".to_string(),
+                transports: Some(StoredDeviceTransports {
+                    http_base_url: Some("http://127.0.0.1:1234".to_string()),
+                    local_usb_port_path: Some("/dev/cu.usbmodem21221401".to_string()),
+                    web_serial_label: None,
+                }),
             })
             .await
             .expect("upsert");
@@ -565,6 +570,14 @@ mod tests {
         let list = manager.list_devices().await;
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].base_url, "http://127.0.0.1:1234");
+        assert_eq!(list[0].id, "f293cc9c139e");
+        assert_eq!(
+            list[0]
+                .transports
+                .as_ref()
+                .and_then(|value| value.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem21221401")
+        );
     }
 
     #[tokio::test]
@@ -605,10 +618,15 @@ mod tests {
             .migrate_from_localstorage(MigrateRequest {
                 source: "localStorage".to_string(),
                 devices: Some(vec![MigrateDeviceInput {
-                    id: Some("demo".to_string()),
+                    id: Some("f293cc9c139e".to_string()),
                     name: Some("Demo".to_string()),
                     base_url: Some("http://127.0.0.1:8080".to_string()),
                     last_seen_at: None,
+                    transports: Some(StoredDeviceTransports {
+                        http_base_url: Some("http://127.0.0.1:8080".to_string()),
+                        local_usb_port_path: Some("/dev/cu.usbmodem21221401".to_string()),
+                        web_serial_label: None,
+                    }),
                 }]),
                 settings: Some(MigrateSettingsInput {
                     theme: Some("system".to_string()),
@@ -631,14 +649,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn storage_drops_legacy_and_invalid_device_ids_on_load() {
+        let path = temp_storage_path("legacy-cleanup");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schemaVersion": 1,
+                "devices": [
+                    {
+                        "id": "f293cc",
+                        "name": "Legacy Six",
+                        "baseUrl": "http://127.0.0.1:8080"
+                    },
+                    {
+                        "id": "garbage123",
+                        "name": "Garbage",
+                        "baseUrl": "http://127.0.0.1:9999"
+                    },
+                    {
+                        "id": "f293cc9c139e",
+                        "name": "Canonical",
+                        "baseUrl": "http://127.0.0.1:1234",
+                        "transports": {
+                            "localUsbPortPath": "/dev/cu.usbmodem21221401"
+                        }
+                    }
+                ],
+                "settings": {
+                    "theme": "isolapurr"
+                }
+            }))
+            .expect("encode storage"),
+        )
+        .expect("write storage");
+
+        let manager = StorageManager::load_at(path.clone()).expect("load storage");
+        let list = manager.list_devices().await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "f293cc9c139e");
+        assert_eq!(list[0].name, "Canonical");
+        assert_eq!(
+            list[0]
+                .transports
+                .as_ref()
+                .and_then(|value| value.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem21221401")
+        );
+
+        let persisted = fs::read_to_string(path).expect("read sanitized storage back from disk");
+        assert!(persisted.contains("f293cc9c139e"));
+        assert!(!persisted.contains("\"f293cc\""));
+        assert!(!persisted.contains("garbage123"));
+    }
+
+    #[tokio::test]
     async fn storage_handler_lists_devices() {
         let path = temp_storage_path("handler");
         let manager = StorageManager::load_at(path).expect("load storage");
         manager
             .upsert_device(UpsertDeviceInput {
-                id: Some("dev-1".to_string()),
+                id: Some("f293cc9c139e".to_string()),
                 name: "Desk Hub".to_string(),
                 base_url: "http://127.0.0.1:1234".to_string(),
+                transports: None,
             })
             .await
             .expect("upsert");
@@ -661,7 +734,7 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let parsed: DevicesResponse = serde_json::from_slice(&body).expect("parse response");
         assert_eq!(parsed.devices.len(), 1);
-        assert_eq!(parsed.devices[0].id, "dev-1");
+        assert_eq!(parsed.devices[0].id, "f293cc9c139e");
     }
 
     #[test]
