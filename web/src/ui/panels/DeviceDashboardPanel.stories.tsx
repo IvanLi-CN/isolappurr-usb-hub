@@ -13,45 +13,45 @@ import { ToastProvider } from "../toast/ToastProvider";
 import { DeviceDashboardPanel } from "./DeviceDashboardPanel";
 
 const demoDevice: StoredDevice = {
-  id: "hub-a",
+  id: "aabbcc001122",
   name: "Desk Hub A",
-  baseUrl: "http://hub-a.local",
+  baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
 };
 
 const legacyDevice: StoredDevice = {
-  id: "hub-legacy",
+  id: "bbccdd112233",
   name: "Legacy Hub",
-  baseUrl: "http://hub-legacy.local",
+  baseUrl: "http://isolapurr-usb-hub-bbccdd112233.local",
 };
 
 const mcuRouteDevice: StoredDevice = {
-  id: "hub-mcu",
+  id: "ccddee223344",
   name: "MCU Routed Hub",
-  baseUrl: "http://hub-mcu.local",
+  baseUrl: "http://isolapurr-usb-hub-ccddee223344.local",
 };
 
 const manualFocusDevice: StoredDevice = {
-  id: "hub-manual-focus",
+  id: "ddee33445566",
   name: "Manual Focus Hub",
-  baseUrl: "http://hub-manual-focus.local",
+  baseUrl: "http://isolapurr-usb-hub-ddee33445566.local",
 };
 
 const manualOnDevice: StoredDevice = {
-  id: "hub-manual-on",
+  id: "eeff44556677",
   name: "Manual On Hub",
-  baseUrl: "http://hub-manual-on.local",
+  baseUrl: "http://isolapurr-usb-hub-eeff44556677.local",
 };
 
 const manualOffDevice: StoredDevice = {
-  id: "hub-manual-off",
+  id: "ff0055667788",
   name: "Manual Off Hub",
-  baseUrl: "http://hub-manual-off.local",
+  baseUrl: "http://isolapurr-usb-hub-ff0055667788.local",
 };
 
 const telemetryErrorDevice: StoredDevice = {
-  id: "hub-telemetry-error",
+  id: "aa1166778899",
   name: "Telemetry Error Hub",
-  baseUrl: "http://hub-telemetry-error.local",
+  baseUrl: "http://isolapurr-usb-hub-aa1166778899.local",
 };
 
 const autoPdDiagnostics: PdDiagnosticsResponse = {
@@ -170,7 +170,7 @@ const manualOffDiagnostics: PdDiagnosticsResponse = {
 };
 
 function mockHub(hostname: string) {
-  if (hostname === "hub-legacy.local") {
+  if (hostname === "isolapurr-usb-hub-bbccdd112233.local") {
     return { upstream_connected: true };
   }
   return {
@@ -178,13 +178,15 @@ function mockHub(hostname: string) {
     isolated_usb_fault: false,
     isolated_downstream_connected: true,
     isolated_usb_ready: true,
-    usb_c_downstream_route: hostname === "hub-mcu.local" ? "mcu" : "usb_c",
-    usb_c_downstream_persisted: hostname !== "hub-mcu.local",
+    usb_c_downstream_route:
+      hostname === "isolapurr-usb-hub-ccddee223344.local" ? "mcu" : "usb_c",
+    usb_c_downstream_persisted:
+      hostname !== "isolapurr-usb-hub-ccddee223344.local",
   };
 }
 
 function mockUsbCTelemetry(hostname: string) {
-  if (hostname === "hub-manual-focus.local") {
+  if (hostname === "isolapurr-usb-hub-ddee33445566.local") {
     return {
       status: "ok",
       voltage_mv: 5011,
@@ -193,7 +195,7 @@ function mockUsbCTelemetry(hostname: string) {
       sample_uptime_ms: 2345,
     };
   }
-  if (hostname === "hub-manual-on.local") {
+  if (hostname === "isolapurr-usb-hub-eeff44556677.local") {
     return {
       status: "ok",
       voltage_mv: 9012,
@@ -202,7 +204,7 @@ function mockUsbCTelemetry(hostname: string) {
       sample_uptime_ms: 2345,
     };
   }
-  if (hostname === "hub-manual-off.local") {
+  if (hostname === "isolapurr-usb-hub-ff0055667788.local") {
     return {
       status: "ok",
       voltage_mv: 0,
@@ -211,7 +213,7 @@ function mockUsbCTelemetry(hostname: string) {
       sample_uptime_ms: 2345,
     };
   }
-  if (hostname === "hub-telemetry-error.local") {
+  if (hostname === "isolapurr-usb-hub-aa1166778899.local") {
     return {
       status: "error",
       voltage_mv: null,
@@ -230,13 +232,13 @@ function mockUsbCTelemetry(hostname: string) {
 }
 
 function mockUsbCDiagnostics(hostname: string): PdDiagnosticsResponse {
-  if (hostname === "hub-manual-focus.local") {
+  if (hostname === "isolapurr-usb-hub-ddee33445566.local") {
     return manualFocusDiagnostics;
   }
-  if (hostname === "hub-manual-on.local") {
+  if (hostname === "isolapurr-usb-hub-eeff44556677.local") {
     return manualOnDiagnostics;
   }
-  if (hostname === "hub-manual-off.local") {
+  if (hostname === "isolapurr-usb-hub-ff0055667788.local") {
     return manualOffDiagnostics;
   }
   return autoPdDiagnostics;
@@ -256,13 +258,13 @@ const mockDeviceApi = async (
   );
 
   const knownHosts = new Set([
-    "hub-a.local",
-    "hub-legacy.local",
-    "hub-mcu.local",
-    "hub-manual-focus.local",
-    "hub-manual-on.local",
-    "hub-manual-off.local",
-    "hub-telemetry-error.local",
+    "isolapurr-usb-hub-aabbcc001122.local",
+    "isolapurr-usb-hub-bbccdd112233.local",
+    "isolapurr-usb-hub-ccddee223344.local",
+    "isolapurr-usb-hub-ddee33445566.local",
+    "isolapurr-usb-hub-eeff44556677.local",
+    "isolapurr-usb-hub-ff0055667788.local",
+    "isolapurr-usb-hub-aa1166778899.local",
   ]);
 
   if (!knownHosts.has(url.hostname)) {
@@ -308,7 +310,7 @@ const mockDeviceApi = async (
   }
 
   if (url.pathname === "/api/v1/pd-diagnostics") {
-    if (url.hostname === "hub-legacy.local") {
+    if (url.hostname === "isolapurr-usb-hub-bbccdd112233.local") {
       return new Response(
         JSON.stringify({
           error: {

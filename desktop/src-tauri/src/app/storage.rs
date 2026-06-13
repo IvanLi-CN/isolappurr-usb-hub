@@ -26,13 +26,101 @@ fn normalize_base_url(raw: &str) -> Result<String, StorageError> {
     Ok(url.origin().ascii_serialization())
 }
 
-fn generate_device_id() -> String {
-    use rand::{Rng as _, distributions::Alphanumeric};
-    let mut rng = rand::thread_rng();
-    std::iter::repeat_with(|| rng.sample(Alphanumeric))
-        .take(8)
-        .map(char::from)
-        .collect()
+fn normalize_device_id(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().to_ascii_lowercase();
+    let valid = trimmed.len() == 12 && trimmed.bytes().all(|b| b.is_ascii_hexdigit());
+    if valid { Some(trimmed) } else { None }
+}
+
+fn normalize_transports(
+    transports: Option<StoredDeviceTransports>,
+    fallback_base_url: &str,
+) -> Option<StoredDeviceTransports> {
+    let Some(transports) = transports else {
+        return None;
+    };
+
+    let http_base_url = transports
+        .http_base_url
+        .as_deref()
+        .and_then(|value| normalize_base_url(value).ok())
+        .or_else(|| Some(fallback_base_url.to_string()));
+    let local_usb_port_path = transports.local_usb_port_path.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+    let web_serial_label = transports.web_serial_label.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+
+    if http_base_url.is_none() && local_usb_port_path.is_none() && web_serial_label.is_none() {
+        None
+    } else {
+        Some(StoredDeviceTransports {
+            http_base_url,
+            local_usb_port_path,
+            web_serial_label,
+        })
+    }
+}
+
+fn merge_transports(
+    existing: Option<StoredDeviceTransports>,
+    incoming: Option<StoredDeviceTransports>,
+) -> Option<StoredDeviceTransports> {
+    match (existing, incoming) {
+        (None, None) => None,
+        (Some(existing), None) => Some(existing),
+        (None, Some(incoming)) => Some(incoming),
+        (Some(existing), Some(incoming)) => Some(StoredDeviceTransports {
+            http_base_url: incoming.http_base_url.or(existing.http_base_url),
+            local_usb_port_path: incoming
+                .local_usb_port_path
+                .or(existing.local_usb_port_path),
+            web_serial_label: incoming.web_serial_label.or(existing.web_serial_label),
+        }),
+    }
+}
+
+fn sanitize_storage(storage: &mut DesktopStorage) -> bool {
+    let before = storage.devices.len();
+    storage.devices = storage
+        .devices
+        .drain(..)
+        .filter_map(|device| sanitize_stored_device(device))
+        .collect();
+    before != storage.devices.len()
+}
+
+fn sanitize_stored_device(mut device: StoredDevice) -> Option<StoredDevice> {
+    let id = normalize_device_id(&device.id)?;
+    let name = device.name.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let base_url = normalize_base_url(&device.base_url).ok()?;
+    device.id = id;
+    device.name = name;
+    device.base_url = base_url.clone();
+    device.last_seen_at = device.last_seen_at.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+    device.transports = normalize_transports(device.transports, &base_url);
+    Some(device)
 }
 
 impl StorageManager {
@@ -69,6 +157,9 @@ impl StorageManager {
                         should_persist = true;
                     } else {
                         storage = parsed;
+                        if sanitize_storage(&mut storage) {
+                            should_persist = true;
+                        }
                     }
                 }
                 Err(err) => {
@@ -146,55 +237,53 @@ impl StorageManager {
             return Err(StorageError::BadRequest("Name is required".to_string()));
         }
         let base_url = normalize_base_url(&input.base_url)?;
-        let id = input.id.map(|v| v.trim().to_string());
-        if let Some(id) = &id {
-            if id.is_empty() {
-                return Err(StorageError::BadRequest("ID cannot be blank".to_string()));
-            }
-        }
+        let id = input
+            .id
+            .as_deref()
+            .and_then(normalize_device_id)
+            .ok_or_else(|| {
+                StorageError::BadRequest(
+                    "ID must be a 12-character lowercase hex device_id".to_string(),
+                )
+            })?;
+        let transports = normalize_transports(input.transports, &base_url);
 
         let mut guard = self.inner.write().await;
-        let mut conflict = None;
-        if let Some(id) = &id {
-            let existing_index = guard.devices.iter().position(|d| &d.id == id);
-            let base_conflict = guard
-                .devices
-                .iter()
-                .any(|d| d.base_url == base_url && d.id != id.as_str());
-            if base_conflict {
-                conflict = Some("Base URL already exists".to_string());
-            } else if let Some(index) = existing_index {
-                guard.devices[index].name = name.to_string();
-                guard.devices[index].base_url = base_url.clone();
-                let stored = guard.devices[index].clone();
-                persist_storage(&self.path, &guard)
-                    .map_err(|err| StorageError::Internal(err.to_string()))?;
-                return Ok(stored);
-            } else if guard.devices.iter().any(|d| d.base_url == base_url) {
-                conflict = Some("Base URL already exists".to_string());
-            }
-        } else if let Some(index) = guard.devices.iter().position(|d| d.base_url == base_url) {
+        let existing_index = guard.devices.iter().position(|d| d.id == id);
+        let base_conflict = guard
+            .devices
+            .iter()
+            .any(|d| d.base_url == base_url && d.id != id.as_str());
+        if base_conflict {
+            return Err(StorageError::Conflict(
+                "Base URL already exists".to_string(),
+            ));
+        }
+        if let Some(index) = existing_index {
             guard.devices[index].name = name.to_string();
+            guard.devices[index].base_url = base_url.clone();
+            guard.devices[index].transports =
+                merge_transports(guard.devices[index].transports.take(), transports);
             let stored = guard.devices[index].clone();
             persist_storage(&self.path, &guard)
                 .map_err(|err| StorageError::Internal(err.to_string()))?;
             return Ok(stored);
         }
-
-        if let Some(message) = conflict {
-            return Err(StorageError::Conflict(message));
-        }
-
-        let new_id = id.unwrap_or_else(generate_device_id);
-        if guard.devices.iter().any(|d| d.id == new_id) {
+        if guard.devices.iter().any(|d| d.id == id) {
             return Err(StorageError::Conflict("ID already exists".to_string()));
+        }
+        if guard.devices.iter().any(|d| d.base_url == base_url) {
+            return Err(StorageError::Conflict(
+                "Base URL already exists".to_string(),
+            ));
         }
 
         let stored = StoredDevice {
-            id: new_id,
+            id,
             name: name.to_string(),
             base_url,
             last_seen_at: None,
+            transports,
         };
         guard.devices.push(stored.clone());
         persist_storage(&self.path, &guard)
@@ -262,6 +351,7 @@ impl StorageManager {
                     id,
                     name: name.clone(),
                     base_url: base_url_raw.clone(),
+                    transports: item.transports.clone(),
                 };
                 if self
                     .upsert_device_for_import(&mut guard, input, item.last_seen_at.clone())
@@ -371,6 +461,7 @@ impl StorageManager {
                     id,
                     name: name.clone(),
                     base_url: base_url_raw.clone(),
+                    transports: item.transports.clone(),
                 };
                 let _ = self.upsert_device_for_import(&mut next, input, None);
             }
@@ -409,63 +500,46 @@ impl StorageManager {
             return Err(StorageError::BadRequest("Name is required".to_string()));
         }
         let base_url = normalize_base_url(&input.base_url)?;
-        let id = input.id.map(|v| v.trim().to_string());
-        if let Some(id) = &id {
-            if id.is_empty() {
-                return Err(StorageError::BadRequest("ID cannot be blank".to_string()));
-            }
-        }
+        let Some(id) = input.id.as_deref().and_then(normalize_device_id) else {
+            return Err(StorageError::BadRequest(
+                "ID must be a 12-character lowercase hex device_id".to_string(),
+            ));
+        };
+        let transports = normalize_transports(input.transports, &base_url);
 
-        if let Some(id) = id {
-            let existing_index = storage.devices.iter().position(|d| d.id == id);
-            let base_conflict = storage
-                .devices
-                .iter()
-                .any(|d| d.base_url == base_url && d.id != id.as_str());
-            if base_conflict {
-                return Err(StorageError::Conflict(
-                    "Base URL already exists".to_string(),
-                ));
-            }
-            if let Some(index) = existing_index {
-                storage.devices[index].name = name.to_string();
-                storage.devices[index].base_url = base_url;
-                if let Some(last_seen_at) = last_seen_at.clone() {
-                    if !last_seen_at.trim().is_empty() {
-                        storage.devices[index].last_seen_at = Some(last_seen_at);
-                    }
-                }
-                return Ok(());
-            }
-            if storage.devices.iter().any(|d| d.base_url == base_url) {
-                return Err(StorageError::Conflict(
-                    "Base URL already exists".to_string(),
-                ));
-            }
-            storage.devices.push(StoredDevice {
-                id,
-                name: name.to_string(),
-                base_url,
-                last_seen_at: last_seen_at.filter(|value| !value.trim().is_empty()),
-            });
-            return Ok(());
+        let existing_index = storage.devices.iter().position(|d| d.id == id);
+        let base_conflict = storage
+            .devices
+            .iter()
+            .any(|d| d.base_url == base_url && d.id != id.as_str());
+        if base_conflict {
+            return Err(StorageError::Conflict(
+                "Base URL already exists".to_string(),
+            ));
         }
-
-        if let Some(existing) = storage.devices.iter_mut().find(|d| d.base_url == base_url) {
-            existing.name = name.to_string();
+        if let Some(index) = existing_index {
+            storage.devices[index].name = name.to_string();
+            storage.devices[index].base_url = base_url;
+            storage.devices[index].transports =
+                merge_transports(storage.devices[index].transports.take(), transports);
             if let Some(last_seen_at) = last_seen_at.clone() {
                 if !last_seen_at.trim().is_empty() {
-                    existing.last_seen_at = Some(last_seen_at);
+                    storage.devices[index].last_seen_at = Some(last_seen_at);
                 }
             }
             return Ok(());
         }
-
+        if storage.devices.iter().any(|d| d.base_url == base_url) {
+            return Err(StorageError::Conflict(
+                "Base URL already exists".to_string(),
+            ));
+        }
         storage.devices.push(StoredDevice {
-            id: generate_device_id(),
+            id,
             name: name.to_string(),
             base_url,
             last_seen_at: last_seen_at.filter(|value| !value.trim().is_empty()),
+            transports,
         });
         Ok(())
     }

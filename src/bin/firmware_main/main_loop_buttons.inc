@@ -268,17 +268,17 @@
                                 _ => {}
                             },
                             SettingsMenuItem::Wifi => {
-                                let (short_id, ip) = if let Some(handles) = net_handles.as_ref() {
+                                let (short_device_id, ip) = if let Some(handles) = net_handles.as_ref() {
                                     let ip = {
                                         let state = handles.wifi_state.lock().await;
                                         state.ipv4
                                     };
-                                    (Some(handles.device_names.short_id.as_str()), ip)
+                                    (Some(handles.device_names.short_device_id.as_str()), ip)
                                 } else {
                                     (None, None)
                                 };
 
-                                let lines = net::format_network_toast_lines(short_id, ip);
+                                let lines = net::format_network_toast_lines(short_device_id, ip);
                                 let _ = ui
                                     .show_lines_card(
                                         buttons_now,

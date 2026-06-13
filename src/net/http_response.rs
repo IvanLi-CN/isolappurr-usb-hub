@@ -644,12 +644,11 @@ async fn write_preflight_response(
     );
 
     if request_private_network {
-        let mac = format_mac_lower(device_names.mac);
         let _ = headers.push_str("Access-Control-Allow-Private-Network: true\r\n");
         let _ = core::write!(
             headers,
             "Private-Network-Access-ID: {}\r\nPrivate-Network-Access-Name: {}\r\n",
-            mac.as_str(),
+            device_names.device_id.as_str(),
             device_names.hostname.as_str(),
         );
     }

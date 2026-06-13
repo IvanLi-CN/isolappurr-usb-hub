@@ -102,16 +102,11 @@ async fn discover_usb_devices(
         let Some(usb) = device.usb.clone() else {
             continue;
         };
-        let info = request_selected(
+        let info = devd_request(
             client,
             devd,
-            ApiSelectorArgs {
-                hardware: None,
-                device: Some(device.id.clone()),
-                url: None,
-            },
             Method::GET,
-            "/status",
+            &format!("/api/v1/devices/{}/status", device.id),
             None,
         )
         .await
@@ -121,7 +116,7 @@ async fn discover_usb_devices(
             .as_ref()
             .and_then(parse_discovered_http_info_from_value)
             .map(|parsed| parsed.firmware);
-        let mut keys = vec![format!("usb:{}", normalize_discovery_key(&device.id))];
+        let mut keys = discover_usb_match_keys(&device.id, &usb.port_path);
         if let Some(identity) = &identity {
             extend_unique(&mut keys, discover_identity_match_keys(identity));
         }
@@ -315,7 +310,9 @@ fn parse_discovered_http_info_from_value(value: &Value) -> Option<ParsedDiscover
 }
 
 fn parse_device_identity_from_info(value: &Value) -> Option<DeviceIdentity> {
-    let device = value.get("device")?;
+    let device = value
+        .get("device")
+        .or_else(|| value.get("result").and_then(|result| result.get("device")))?;
     let device_id = device
         .get("device_id")
         .or_else(|| device.get("deviceId"))
@@ -378,20 +375,20 @@ fn saved_hardware_match_for_transport(
 
 fn saved_profile_match_keys(profile: &DeviceProfile) -> Vec<String> {
     let mut keys = Vec::new();
+    if let Some(device_id) = canonical_device_id_candidate(&profile.id) {
+        keys.push(format!("device:{device_id}"));
+    }
     if let Some(identity) = &profile.identity {
         extend_unique(&mut keys, discover_identity_match_keys(identity));
     }
-    match &profile.transport {
-        HardwareTransport::Usb { device_id, .. } => {
-            keys.push(format!("usb:{}", normalize_discovery_key(device_id)));
-        }
-        HardwareTransport::Http { base_url } => {
-            keys.push(format!("http:{}", canonical_base_url(base_url)));
-            if let Some(short_id) = default_hostname_short_id(base_url) {
-                keys.push(format!("device:{short_id}"));
-            }
-        }
-        HardwareTransport::WebSerial { .. } => {}
+    if let Some(port_path) = profile.local_usb_port_path() {
+        keys.push(format!(
+            "usb:{}",
+            normalize_discovery_key(&discover_usb_target_id(port_path))
+        ));
+    }
+    if let Some(base_url) = profile.http_base_url() {
+        keys.push(format!("http:{}", canonical_base_url(base_url)));
     }
     dedupe_strings(keys)
 }
@@ -424,10 +421,12 @@ fn saved_profile_match_score(
 }
 
 fn saved_profile_transport_name(profile: &DeviceProfile) -> &'static str {
-    match &profile.transport {
-        HardwareTransport::Usb { .. } => "usb",
-        HardwareTransport::Http { .. } => "http",
-        HardwareTransport::WebSerial { .. } => "web-serial",
+    if profile.http_base_url().is_some() {
+        "http"
+    } else if profile.local_usb_port_path().is_some() {
+        "usb"
+    } else {
+        "web-serial"
     }
 }
 
@@ -455,10 +454,17 @@ fn discover_identity_match_keys(identity: &DeviceIdentity) -> Vec<String> {
     if let Some(device_id) = identity.device_id.as_deref().map(normalize_discovery_key) {
         keys.push(format!("device:{device_id}"));
     }
-    if let Some(mac_short) = identity.mac.as_deref().and_then(mac_short_id) {
-        keys.push(format!("device:{mac_short}"));
-    }
     dedupe_strings(keys)
+}
+
+fn discover_usb_match_keys(device_id: &str, port_path: &str) -> Vec<String> {
+    dedupe_strings(vec![
+        format!(
+            "usb:{}",
+            normalize_discovery_key(&discover_usb_target_id(port_path))
+        ),
+        format!("usb:{}", normalize_discovery_key(device_id)),
+    ])
 }
 
 fn dedupe_strings(values: Vec<String>) -> Vec<String> {
@@ -491,29 +497,15 @@ fn normalize_discovery_key(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
 
+fn discover_usb_target_id(port_path: &str) -> String {
+    let sanitized = port_path
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect::<String>();
+    format!("usb-{sanitized}")
+}
+
 fn non_empty_string(value: String) -> Option<String> {
     let trimmed = value.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
-}
-
-fn mac_short_id(value: &str) -> Option<String> {
-    let hex = value
-        .chars()
-        .filter(|ch| ch.is_ascii_hexdigit())
-        .collect::<String>();
-    if hex.len() < 6 {
-        return None;
-    }
-    let short_id = &hex[hex.len() - 6..];
-    (short_id.len() == 6 && short_id.chars().all(|ch| ch.is_ascii_hexdigit()))
-        .then(|| short_id.to_ascii_lowercase())
-}
-
-fn default_hostname_short_id(base_url: &str) -> Option<String> {
-    let url = reqwest::Url::parse(base_url).ok()?;
-    let host = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
-    let host = host.strip_suffix(".local").unwrap_or(&host);
-    let short_id = host.strip_prefix("isolapurr-usb-hub-")?;
-    (short_id.len() == 6 && short_id.chars().all(|ch| ch.is_ascii_hexdigit()))
-        .then(|| short_id.to_string())
 }

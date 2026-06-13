@@ -218,7 +218,7 @@ async fn handle_api_request(
             let _ = core::write!(
                 body,
                 "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}},\"uptime_ms\":{},\"wifi\":{{\"state\":\"{}\",\"ipv4\":",
-                device_names.short_id.as_str(),
+                device_names.device_id.as_str(),
                 device_names.hostname.as_str(),
                 device_names.hostname_fqdn.as_str(),
                 mac.as_str(),

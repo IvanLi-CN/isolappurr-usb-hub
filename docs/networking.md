@@ -28,16 +28,16 @@ For firmware maintenance in a developer checkout, use the repo's owner-confirmed
 ## Hostname rule
 
 - If `USB_HUB_WIFI_HOSTNAME` is set, it is used as the hostname (sanitized to lowercase `[a-z0-9-]`).
-- Otherwise, hostname is derived from the MAC:
-  - `short_id = hex(mac[3..6])` (6 chars, lowercase)
-  - `hostname = isolapurr-usb-hub-<short_id>`
+- Otherwise, hostname is derived from the base eFuse MAC:
+  - `device_id = hex(mac[3..6] + mac[0..3])` (12 chars, lowercase)
+  - `hostname = isolapurr-usb-hub-<device_id>`
   - `fqdn = <hostname>.local`
 
 ## UI fallback (IP display)
 
 Hold **both** buttons (left + right) for **1–5 seconds**, then **release**, to show:
 
-- `ID <SHORTID>` (derived from MAC; shown in uppercase hex)
+- `ID <SHORTID>` where `SHORTID` is the first 6 chars of the full `device_id`, shown in uppercase hex
 - IPv4 (fits on one line), or `NO IP` when not connected
 - Holding **> 5 seconds** is treated as invalid and does nothing.
 

@@ -1,5 +1,5 @@
 import type { Decorator } from "@storybook/react";
-import { useEffect } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 
 export type MockFetch = (
   input: Parameters<typeof fetch>[0],
@@ -36,21 +36,30 @@ export function notFound(): Response {
 }
 
 export function mockFetchDecorator(mock: MockFetch): Decorator {
-  return (Story) => {
+  function MockFetchScope({ children }: { children: ReactNode }) {
+    const original = useMemo(() => globalThis.fetch, []);
+    globalThis.fetch = ((input, init) => {
+      const url = toUrl(input);
+      if (!url) {
+        return original(input, init);
+      }
+      return mock(input, init, original);
+    }) as typeof fetch;
+
     useEffect(() => {
-      const original = globalThis.fetch;
-      globalThis.fetch = ((input, init) => {
-        const url = toUrl(input);
-        if (!url) {
-          return original(input, init);
-        }
-        return mock(input, init, original);
-      }) as typeof fetch;
       return () => {
         globalThis.fetch = original;
       };
-    });
+    }, [original]);
 
-    return <Story />;
+    return children;
+  }
+
+  return (Story) => {
+    return (
+      <MockFetchScope>
+        <Story />
+      </MockFetchScope>
+    );
   };
 }

@@ -10,9 +10,13 @@
 - `isolapurr discover` now performs actual mixed discovery: LAN candidates come
   from mDNS/DNS-SD `_http._tcp.local` browsing plus verified `GET /api/v1/info`
   responses, Local USB candidates come from the current devd scan, and saved
-  hardware records are attached back as annotations when identity or transport
+  device profiles are attached back as annotations when identity or transport
   keys match. The owner-facing render now chooses one canonical saved record
   per live result, preferring the same transport before identity-only fallbacks.
+- The next contract sync locks owner-facing selectors to full 12-character
+  `device_id`, while `port_path` remains the only advanced Local USB selector.
+  Saved hardware IDs and temporary devd scan IDs are no longer valid
+  owner-facing identity terms.
 - `isolapurr` now also exposes owner-facing power commands over the same IPC
   path: `power show`, `power defaults`, `power output manual|auto`, and
   `power source-capability set`.
@@ -30,8 +34,8 @@
   field per row, row-local choices on the same line, `Up/Down` field
   navigation, `Left/Right` inline choice changes, `Enter/Space` chip toggles,
   and an inline action row for reload and save/apply.
-  When the owner does not supply `--hardware`, the CLI now prompts from saved
-  hardware only; power commands no longer accept temporary devd `--device`
+  When the owner does not supply `--device-id`, the CLI now prompts from saved
+  devices only; power commands no longer accept temporary devd `--device`
   selectors or direct `--url` targets.
 - Human-readable `power show` and `power defaults` output now translates the
   underlying chip-specific config/diagnostics payload into product-language

@@ -1,6 +1,10 @@
 import type { DesktopAgent } from "../../domain/desktopAgent";
 import type { DeviceInfoResponse } from "../../domain/deviceApi";
 import {
+  isLegacyDeviceId,
+  normalizeStoredDeviceId,
+} from "../../domain/devices";
+import {
   nextJsonlRequestId,
   type SerialPortInfo,
   sendLocalUsbJsonlRequest,
@@ -9,9 +13,11 @@ import {
 
 export type UsbInfoEnvelope = {
   ok?: boolean;
+  response?: UsbInfoEnvelope;
   result?: {
     device?: UsbDeviceInfo;
   };
+  device?: UsbDeviceInfo;
   error?: { message?: string };
 };
 
@@ -30,6 +36,23 @@ export type UsbLogEntry = {
   message: string;
 };
 
+function extractUsbDevice(value: unknown): UsbDeviceInfo | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const envelope = value as UsbInfoEnvelope;
+  if (envelope.device && typeof envelope.device === "object") {
+    return envelope.device;
+  }
+  if (envelope.result?.device && typeof envelope.result.device === "object") {
+    return envelope.result.device;
+  }
+  if (envelope.response) {
+    return extractUsbDevice(envelope.response);
+  }
+  return null;
+}
+
 export function parseUsbInfoEnvelope(
   value: unknown,
 ): { ok: true; device: UsbDeviceInfo } | { ok: false; error: string } {
@@ -43,7 +66,7 @@ export function parseUsbInfoEnvelope(
       error: envelope.error?.message ?? "USB device rejected info request.",
     };
   }
-  const device = envelope.result?.device;
+  const device = extractUsbDevice(value);
   if (!device || typeof device !== "object") {
     return { ok: false, error: "USB device info response is missing device." };
   }
@@ -77,41 +100,41 @@ export function isIsolaPurrDeviceInfo(device: UsbDeviceInfo): boolean {
 }
 
 export function usbInfoMatchesHttpInfo(
-  usbDevice: UsbDeviceInfo,
   usbDeviceId: string,
   httpInfo: DeviceInfoResponse,
 ): boolean {
   const httpDevice = httpInfo.device;
   const httpDeviceId = normalizeDeviceId(httpDevice.device_id);
-  if (httpDeviceId && httpDeviceId === usbDeviceId) {
-    return true;
-  }
-  const usbMac = normalizeMac(usbDevice.mac);
-  const httpMac = normalizeMac(httpDevice.mac);
-  return Boolean(usbMac && httpMac && usbMac === httpMac);
+  return Boolean(httpDeviceId && httpDeviceId === usbDeviceId);
 }
 
 export function normalizeDeviceId(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
+  return normalizeStoredDeviceId(value);
+}
+
+export function parseOwnerFacingUsbDeviceId(
+  value: string | undefined,
+): { ok: true; deviceId: string } | { ok: false; error: string } {
+  const normalized = normalizeStoredDeviceId(value);
+  if (normalized) {
+    return { ok: true, deviceId: normalized };
+  }
+  if (isLegacyDeviceId(value)) {
+    return {
+      ok: false,
+      error:
+        "Connected hub is running a legacy 6-digit device_id firmware. Upgrade it before normal use.",
+    };
+  }
+  return {
+    ok: false,
+    error: "Connected device did not report a valid 12-character device_id.",
+  };
 }
 
 export function normalizeMac(value: string | null | undefined): string | null {
   const hex = value?.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
   return hex && hex.length >= 6 ? hex : null;
-}
-
-export function shortIdFromMac(
-  value: string | null | undefined,
-): string | null {
-  if (!value) {
-    return null;
-  }
-  const hex = value.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
-  if (hex.length < 6) {
-    return null;
-  }
-  return hex.slice(-6);
 }
 
 export function delay(ms: number): Promise<void> {

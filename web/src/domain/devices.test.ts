@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { normalizeBaseUrl, validateAddDeviceInput } from "./devices";
+import {
+  DEVICES_STORAGE_KEY,
+  isLegacyDeviceId,
+  loadStoredDevices,
+  mergeStoredDeviceTransports,
+  normalizeBaseUrl,
+  normalizeDeviceIdPrefix,
+  normalizeStoredDeviceId,
+  validateAddDeviceInput,
+} from "./devices";
 
 describe("normalizeBaseUrl", () => {
   test("requires a valid http/https url", () => {
@@ -41,8 +50,8 @@ describe("validateAddDeviceInput", () => {
 
   test("rejects duplicate id", () => {
     const res = validateAddDeviceInput(
-      { name: "A", baseUrl: "http://example.com", id: "dup" },
-      ["dup"],
+      { name: "A", baseUrl: "http://example.com", id: "aabbcc001122" },
+      ["aabbcc001122"],
     );
     expect(res.ok).toBe(false);
     if (res.ok) {
@@ -64,15 +73,119 @@ describe("validateAddDeviceInput", () => {
     expect(res.errors.baseUrl).toBe("Base URL already exists");
   });
 
-  test("generates id when missing", () => {
+  test("requires device_id when missing", () => {
     const res = validateAddDeviceInput({
       name: "A",
       baseUrl: "http://example.com",
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      throw new Error("expected errors");
+    }
+    expect(res.errors.id).toBe("device_id is required");
+  });
+
+  test("accepts canonical 12-char lowercase hex device_id", () => {
+    const res = validateAddDeviceInput({
+      name: "A",
+      baseUrl: "http://example.com",
+      id: "aabbcc001122",
     });
     expect(res.ok).toBe(true);
     if (!res.ok) {
       throw new Error("expected ok");
     }
-    expect(res.device.id).toHaveLength(8);
+    expect(res.device.id).toBe("aabbcc001122");
+  });
+
+  test("rejects legacy 6-char device_id", () => {
+    const res = validateAddDeviceInput({
+      name: "A",
+      baseUrl: "http://example.com",
+      id: "aabbcc",
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      throw new Error("expected errors");
+    }
+    expect(res.errors.id).toContain("Legacy 6-digit");
+  });
+});
+
+describe("device_id helpers", () => {
+  test("normalizes only canonical full device_id values", () => {
+    expect(normalizeStoredDeviceId("AABBCC001122")).toBe("aabbcc001122");
+    expect(normalizeStoredDeviceId("aabbcc")).toBeNull();
+    expect(normalizeStoredDeviceId("not-an-id")).toBeNull();
+  });
+
+  test("detects legacy ids and valid prefixes", () => {
+    expect(isLegacyDeviceId("aabbcc")).toBe(true);
+    expect(isLegacyDeviceId("aabbcc001122")).toBe(false);
+    expect(normalizeDeviceIdPrefix("AABBCC")).toBe("aabbcc");
+    expect(normalizeDeviceIdPrefix("aabbcc001122")).toBe("aabbcc001122");
+    expect(normalizeDeviceIdPrefix("xyz")).toBeNull();
+  });
+});
+
+describe("mergeStoredDeviceTransports", () => {
+  test("preserves saved channels when upsert input only updates one transport", () => {
+    expect(
+      mergeStoredDeviceTransports(
+        {
+          httpBaseUrl: "http://old.local",
+          localUsbPortPath: "/dev/cu.usbmodem101",
+          webSerialLabel: "ESP32-S3 USB JTAG",
+        },
+        {
+          httpBaseUrl: "http://new.local/info",
+        },
+      ),
+    ).toEqual({
+      httpBaseUrl: "http://new.local",
+      localUsbPortPath: "/dev/cu.usbmodem101",
+      webSerialLabel: "ESP32-S3 USB JTAG",
+    });
+  });
+});
+
+describe("loadStoredDevices", () => {
+  test("prunes invalid records while preserving canonical saved devices", () => {
+    const store = new Map<string, string>();
+    (globalThis as unknown as { window: unknown }).window = {
+      localStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => void store.set(key, value),
+        removeItem: (key: string) => void store.delete(key),
+      },
+    } as unknown as Window;
+
+    store.set(
+      DEVICES_STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: "f293cc",
+          name: "Legacy",
+          baseUrl: "http://legacy.local",
+        },
+        {
+          id: "f293cc9c139e",
+          name: "Canonical",
+          baseUrl: "http://isolapurr-usb-hub-f293cc9c139e.local",
+        },
+      ]),
+    );
+
+    const devices = loadStoredDevices();
+
+    expect(devices).toEqual([
+      {
+        id: "f293cc9c139e",
+        name: "Canonical",
+        baseUrl: "http://isolapurr-usb-hub-f293cc9c139e.local",
+        transports: undefined,
+      },
+    ]);
+    expect(JSON.parse(store.get(DEVICES_STORAGE_KEY) ?? "[]")).toHaveLength(1);
   });
 });

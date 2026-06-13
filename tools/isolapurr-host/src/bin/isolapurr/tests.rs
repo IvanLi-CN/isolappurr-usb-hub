@@ -23,11 +23,10 @@ mod power_output_tests {
         let output = json!({
             "path": "/tmp/devices.json",
             "saved": [{
-                "id": "isolapurr-01",
+                "id": "aabbcc001122",
                 "name": "Bench Hub",
-                "transport": {
-                    "kind": "usb",
-                    "deviceId": "usb--dev-cu-usbmodem101"
+                "transports": {
+                    "localUsbPortPath": "/dev/cu.usbmodem101"
                 }
             }],
             "devd": {
@@ -41,8 +40,8 @@ mod power_output_tests {
 
         let rendered = format_human_output(&output);
         assert!(rendered.contains("Registry: /tmp/devices.json"));
-        assert!(rendered.contains("Saved hardware:"));
-        assert!(rendered.contains("- Bench Hub (isolapurr-01) usb:usb--dev-cu-usbmodem101"));
+        assert!(rendered.contains("Saved devices:"));
+        assert!(rendered.contains("- Bench Hub (aabbcc001122) usb:/dev/cu.usbmodem101"));
         assert!(rendered.contains("Local devd devices:"));
         assert!(rendered.contains("- ESP32-S3 USB JTAG (usb--dev-cu-usbmodem101) - available"));
     }
@@ -195,8 +194,8 @@ mod power_output_tests {
             "--json",
             "settings",
             "reset",
-            "--hardware",
-            "bench-hub",
+            "--device-id",
+            "aabbcc001122",
             "other",
             "--yes",
         ])
@@ -212,7 +211,7 @@ mod power_output_tests {
         else {
             panic!("expected settings reset command");
         };
-        assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
+        assert_eq!(selector.device_id.as_deref(), Some("aabbcc001122"));
         assert!(matches!(scope, SettingsResetScopeArg::Other));
         assert!(yes);
         assert!(cli.json);
@@ -225,8 +224,8 @@ mod power_output_tests {
             "--json",
             "settings",
             "reset",
-            "--hardware",
-            "bench-hub",
+            "--device-id",
+            "aabbcc001122",
             "wifi",
         ])
         .expect("json settings reset should parse without --yes");
@@ -241,7 +240,7 @@ mod power_output_tests {
         else {
             panic!("expected settings reset command");
         };
-        assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
+        assert_eq!(selector.device_id.as_deref(), Some("aabbcc001122"));
         assert!(matches!(scope, SettingsResetScopeArg::Wifi));
         assert!(!yes);
         assert!(cli.json);
@@ -254,8 +253,8 @@ mod power_output_tests {
             "power",
             "idle-bias",
             "set",
-            "--hardware",
-            "bench-hub",
+            "--device-id",
+            "aabbccddeeff",
             "--enabled",
             "true",
             "--yes",
@@ -276,7 +275,7 @@ mod power_output_tests {
         else {
             panic!("expected idle-bias set command");
         };
-        assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
+        assert_eq!(selector.device_id.as_deref(), Some("aabbccddeeff"));
         assert!(enabled);
         assert!(yes);
     }
@@ -288,8 +287,8 @@ mod power_output_tests {
             "power",
             "idle-bias",
             "set",
-            "--hardware",
-            "bench-hub",
+            "--device-id",
+            "aabbccddeeff",
             "--yes",
         ])
         .expect_err("idle-bias set should require --enabled");
@@ -314,8 +313,8 @@ mod power_output_tests {
             "power",
             "idle-bias",
             "run",
-            "--hardware",
-            "bench-hub",
+            "--device-id",
+            "aabbccddeeff",
             "--yes",
         ])
         .expect("idle-bias run should parse");
@@ -329,7 +328,7 @@ mod power_output_tests {
         else {
             panic!("expected idle-bias run command");
         };
-        assert_eq!(selector.hardware.as_deref(), Some("bench-hub"));
+        assert_eq!(selector.device_id.as_deref(), Some("aabbccddeeff"));
         assert!(yes);
         assert!(cli.json);
     }
@@ -386,8 +385,8 @@ mod power_output_tests {
         let cli = Cli::try_parse_from([
             "isolapurr",
             "ports",
-            "--device",
-            "usb--dev-cu-usbmodem21221401",
+            "--device-id",
+            "aabbcc001122",
             "power",
             "--port",
             "port_a",
@@ -411,8 +410,8 @@ mod power_output_tests {
         let cli = Cli::try_parse_from([
             "isolapurr",
             "flash",
-            "--device",
-            "usb--dev-cu-usbmodem21221401",
+            "--device-id",
+            "aabbcc001122",
             "--catalog",
             "catalog.json",
             "--artifact",
@@ -436,8 +435,8 @@ mod power_output_tests {
             "power",
             "source-capability",
             "set",
-            "--hardware",
-            "f293cc",
+            "--device-id",
+            "f293cc9c139e",
             "--power-watts",
             "65",
             "--pd",
@@ -534,8 +533,8 @@ mod power_output_tests {
             "power",
             "output",
             "manual",
-            "--hardware",
-            "f293cc",
+            "--device-id",
+            "f293cc9c139e",
             "--voltage-mv",
             "9000",
             "--current-limit-ma",
@@ -576,8 +575,8 @@ mod power_output_tests {
             "power",
             "output",
             "auto",
-            "--hardware",
-            "f293cc",
+            "--device-id",
+            "f293cc9c139e",
         ])
         .expect("power output auto command should parse");
 
@@ -598,22 +597,25 @@ mod power_output_tests {
             "isolapurr",
             "power",
             "show",
-            "--device",
+            "--port-path",
             "usb--dev-cu-usbmodem21221401",
         ])
-        .expect_err("power show should reject devd temporary device selector");
+        .expect_err("power show should reject Local USB port selector");
 
-        assert!(err.to_string().contains("unexpected argument '--device'"));
+        assert!(
+            err.to_string()
+                .contains("unexpected argument '--port-path'")
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CliPowerConfig, CliPowerDiagnostics, DeviceIdentity, DeviceProfile, DiscoverFirmware,
-        HardwareTransport, ManualOutputArgs, OutputUsbCPathArg, apply_manual_output_args,
-        format_power_config_output, format_power_show_output, parse_discovered_http_info,
-        saved_hardware_match_for_transport,
+        CliPowerConfig, CliPowerDiagnostics, DeviceProfile, DiscoverFirmware, ManualOutputArgs,
+        OutputUsbCPathArg, apply_manual_output_args, discover_usb_match_keys,
+        format_power_config_output, format_power_show_output, parse_device_identity_from_info,
+        parse_discovered_http_info, saved_hardware_match_for_transport,
     };
     use serde_json::json;
 
@@ -1011,9 +1013,9 @@ mod tests {
             "http://192.168.1.42",
             json!({
                 "device": {
-                    "device_id": "aabbccdd",
-                    "hostname": "isolapurr-usb-hub-aabbcc",
-                    "fqdn": "isolapurr-usb-hub-aabbcc.local",
+                    "device_id": "aabbcc001122",
+                    "hostname": "isolapurr-usb-hub-aabbcc001122",
+                    "fqdn": "isolapurr-usb-hub-aabbcc001122.local",
                     "mac": "AA:BB:CC:DD:EE:FF",
                     "firmware": {
                         "name": "isolapurr-usb-hub",
@@ -1028,10 +1030,13 @@ mod tests {
         )
         .expect("discover info should parse");
 
-        assert_eq!(parsed.base_url, "http://isolapurr-usb-hub-aabbcc.local");
+        assert_eq!(
+            parsed.base_url,
+            "http://isolapurr-usb-hub-aabbcc001122.local"
+        );
         assert_eq!(parsed.ipv4.as_deref(), Some("192.168.1.42"));
         let identity = parsed.identity.expect("identity should exist");
-        assert_eq!(identity.device_id.as_deref(), Some("aabbccdd"));
+        assert_eq!(identity.device_id.as_deref(), Some("aabbcc001122"));
         assert_eq!(identity.mac.as_deref(), Some("AA:BB:CC:DD:EE:FF"));
         assert_eq!(
             parsed.firmware,
@@ -1045,38 +1050,26 @@ mod tests {
     #[test]
     fn saved_hardware_match_uses_canonical_owner_facing_name() {
         let saved = vec![
-            DeviceProfile {
-                id: "isolapurr-01".to_string(),
-                name: "Bench Hub".to_string(),
-                transport: HardwareTransport::Usb {
-                    device_id: "usb--dev-cu-usbmodem21221401".to_string(),
-                    devd_url: None,
+            serde_json::from_value::<DeviceProfile>(json!({
+                "id": "856a14abcdef",
+                "name": "Bench Hub",
+                "transports": {
+                    "httpBaseUrl": "http://isolapurr-usb-hub-856a14abcdef.local",
+                    "localUsbPortPath": "/dev/cu.usbmodem21221401"
                 },
-                identity: Some(DeviceIdentity {
-                    device_id: Some("856a14".to_string()),
-                    mac: Some("AA:BB:CC:85:6A:14".to_string()),
-                }),
-                last_seen_at: None,
-            },
-            DeviceProfile {
-                id: "isolapurr-01-wifi".to_string(),
-                name: "Bench Hub Wi-Fi".to_string(),
-                transport: HardwareTransport::Http {
-                    base_url: "http://isolapurr-usb-hub-856a14.local".to_string(),
-                },
-                identity: Some(DeviceIdentity {
-                    device_id: Some("856a14".to_string()),
-                    mac: Some("AA:BB:CC:85:6A:14".to_string()),
-                }),
-                last_seen_at: None,
-            },
+                "identity": {
+                    "deviceId": "856a14abcdef",
+                    "mac": "AA:BB:CC:85:6A:14"
+                }
+            }))
+            .expect("saved profile"),
         ];
 
         let usb_match = saved_hardware_match_for_transport(
             &saved,
             &[
                 "usb:usb--dev-cu-usbmodem21221401".to_string(),
-                "device:856a14".to_string(),
+                "device:856a14abcdef".to_string(),
             ],
             Some("usb"),
         );
@@ -1084,18 +1077,72 @@ mod tests {
         let http_match = saved_hardware_match_for_transport(
             &saved,
             &[
-                "http:http://isolapurr-usb-hub-856a14.local".to_string(),
-                "device:856a14".to_string(),
+                "http:http://isolapurr-usb-hub-856a14abcdef.local".to_string(),
+                "device:856a14abcdef".to_string(),
             ],
             Some("http"),
         );
 
         assert_eq!(usb_match.len(), 1);
-        assert_eq!(usb_match[0].id, "isolapurr-01");
+        assert_eq!(usb_match[0].id, "856a14abcdef");
         assert_eq!(usb_match[0].name, "Bench Hub");
         assert_eq!(http_match.len(), 1);
-        assert_eq!(http_match[0].id, "isolapurr-01");
+        assert_eq!(http_match[0].id, "856a14abcdef");
         assert_eq!(http_match[0].name, "Bench Hub");
         assert_eq!(http_match[0].transport, "http");
+    }
+
+    #[test]
+    fn usb_discovery_identity_parses_ipc_result_envelope() {
+        let identity = parse_device_identity_from_info(&json!({
+            "ok": true,
+            "result": {
+                "device": {
+                    "device_id": "856a14abcdef",
+                    "mac": "AA:BB:CC:85:6A:14"
+                }
+            }
+        }))
+        .expect("identity");
+
+        assert_eq!(identity.device_id.as_deref(), Some("856a14abcdef"));
+        assert_eq!(identity.mac.as_deref(), Some("AA:BB:CC:85:6A:14"));
+    }
+
+    #[test]
+    fn saved_http_profiles_match_discovered_canonical_device_id() {
+        let saved = vec![
+            serde_json::from_value::<DeviceProfile>(json!({
+                "id": "856a14abcdef",
+                "name": "Bench Hub",
+                "transports": {
+                    "httpBaseUrl": "http://old-address.local"
+                }
+            }))
+            .expect("saved profile"),
+        ];
+
+        let http_match = saved_hardware_match_for_transport(
+            &saved,
+            &[
+                "http:http://new-address.local".to_string(),
+                "device:856a14abcdef".to_string(),
+            ],
+            Some("http"),
+        );
+
+        assert_eq!(http_match.len(), 1);
+        assert_eq!(http_match[0].id, "856a14abcdef");
+        assert_eq!(http_match[0].name, "Bench Hub");
+        assert_eq!(http_match[0].transport, "http");
+    }
+
+    #[test]
+    fn usb_discovery_keys_match_saved_port_path_profiles() {
+        let keys =
+            discover_usb_match_keys("usb-/dev/cu.usbmodem21221401", "/dev/cu.usbmodem21221401");
+
+        assert_eq!(keys[0], "usb:usb--dev-cu-usbmodem21221401");
+        assert!(keys.contains(&"usb:usb-/dev/cu.usbmodem21221401".to_string()));
     }
 }

@@ -25,6 +25,14 @@ const LOCAL_USB_BUSY_RETRIES = 5;
 let jsonlRequestSeq = 1;
 const localUsbRequestQueues: Record<string, Promise<void>> = {};
 
+function shouldFallbackToLegacySerialApi(status: number): boolean {
+  return status === 404 || status === 405;
+}
+
+function isUsableLocalUsbJson(value: unknown): boolean {
+  return Boolean(value && typeof value === "object");
+}
+
 export class LocalUsbAgentHttpError extends Error {
   readonly status: number;
   readonly code: string;
@@ -116,7 +124,7 @@ export async function listLocalUsbSerialPorts(
     method: "POST",
   });
   if (!res.ok) {
-    if (res.status === 404) {
+    if (shouldFallbackToLegacySerialApi(res.status)) {
       return listLegacyLocalUsbSerialPorts(agent);
     }
     throw new Error(`Local USB port list failed (${res.status})`);
@@ -360,7 +368,7 @@ async function sendLocalUsbJsonlRequestNow(
       error?: { code?: string; message?: string; retryable?: boolean };
     } | null;
     if (!res.ok) {
-      if (res.status === 404) {
+      if (shouldFallbackToLegacySerialApi(res.status)) {
         return legacyLocalUsbJsonlRequest(agent, portPath, request);
       }
       throw new LocalUsbAgentHttpError(
@@ -370,9 +378,15 @@ async function sendLocalUsbJsonlRequestNow(
         json?.error?.retryable,
       );
     }
+    if (!isUsableLocalUsbJson(json)) {
+      return legacyLocalUsbJsonlRequest(agent, portPath, request);
+    }
     return json?.response ?? json;
   } catch (err) {
-    if (err instanceof LocalUsbAgentHttpError && err.status === 404) {
+    if (
+      err instanceof LocalUsbAgentHttpError &&
+      shouldFallbackToLegacySerialApi(err.status)
+    ) {
       return legacyLocalUsbJsonlRequest(agent, portPath, request);
     }
     throw err;
@@ -442,7 +456,7 @@ async function ensureLocalUsbDeviceRegistered(
     error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!res.ok) {
-    if (res.status === 404) {
+    if (shouldFallbackToLegacySerialApi(res.status)) {
       const ports = await listLegacyLocalUsbSerialPorts(agent);
       if (ports.some((port) => port.path === portPath)) {
         return;

@@ -53,7 +53,7 @@ function mockAgent(snapshot: AgentSnapshot) {
     }
 
     if (url.pathname === "/api/v1/discovery/refresh") {
-      return new Response("", { status: 204 });
+      return new Response(null, { status: 204 });
     }
 
     if (url.pathname === "/api/v1/discovery/snapshot") {
@@ -61,7 +61,7 @@ function mockAgent(snapshot: AgentSnapshot) {
     }
 
     if (url.pathname === "/api/v1/discovery/cancel") {
-      return new Response("", { status: 204 });
+      return new Response(null, { status: 204 });
     }
 
     return original(input, init);
@@ -71,16 +71,17 @@ function mockAgent(snapshot: AgentSnapshot) {
 function longDevices(count: number): DiscoveredDevice[] {
   return Array.from({ length: count }, (_, i) => {
     const n = i + 1;
+    const suffix = (0xaabbcc001100 + n).toString(16).padStart(12, "0");
     return {
-      device_id: `isolapurr-hub-${n}`,
-      hostname: `hub-${n}`,
-      fqdn: `hub-${n}.local`,
+      device_id: suffix,
+      hostname: `isolapurr-usb-hub-${suffix}`,
+      fqdn: `isolapurr-usb-hub-${suffix}.local`,
       ipv4: `192.168.1.${40 + n}`,
       baseUrl:
         n % 3 === 0
-          ? `http://hub-${n}.local/this/is/a/very/long/path/to/trigger/truncation/in/narrow/layouts`
-          : `http://hub-${n}.local`,
-      firmware: { name: "isolapurr", version: `0.1.${n}` },
+          ? `http://isolapurr-usb-hub-${suffix}.local/this/is/a/very/long/path/to/trigger/truncation/in/narrow/layouts`
+          : `http://isolapurr-usb-hub-${suffix}.local`,
+      firmware: { name: "isolapurr-usb-hub", version: `0.1.${n}` },
       variant: "tps-sw",
       last_seen_at: new Date(Date.now() - n * 60_000).toISOString(),
     };
@@ -95,8 +96,8 @@ const meta: Meta<typeof AddDeviceDialog> = {
   },
   args: {
     open: true,
-    existingDeviceIds: ["isolapurr-hub-1"],
-    existingDeviceBaseUrls: ["http://hub-1.local"],
+    existingDeviceIds: ["aabbcc001101"],
+    existingDeviceBaseUrls: ["http://isolapurr-usb-hub-aabbcc001101.local"],
     onClose: () => {},
     onCreate: async () => ({
       ok: true,
@@ -219,12 +220,12 @@ export const AddFailure: Story = {
         status: "ready",
         devices: [
           {
-            device_id: "isolapurr-hub-2",
-            hostname: "hub-2",
-            fqdn: "hub-2.local",
+            device_id: "aabbcc001102",
+            hostname: "isolapurr-usb-hub-aabbcc001102",
+            fqdn: "isolapurr-usb-hub-aabbcc001102.local",
             ipv4: "192.168.1.42",
-            baseUrl: "http://hub-2.local",
-            firmware: { name: "isolapurr", version: "0.1.2" },
+            baseUrl: "http://isolapurr-usb-hub-aabbcc001102.local",
+            firmware: { name: "isolapurr-usb-hub", version: "0.1.2" },
             variant: "tps-sw",
           },
         ],

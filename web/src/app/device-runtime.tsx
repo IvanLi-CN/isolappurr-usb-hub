@@ -59,6 +59,7 @@ import {
   jsonlTimeoutMsForMethod,
   localUsbDeviceIdForDevice,
   localUsbErrorToDeviceApiError,
+  localUsbPortPathForDevice,
   recoverWifiClearLikeTimeout,
   resolveOrderedDeviceTransports,
   shouldResetLocalUsbConnectionCache,
@@ -154,6 +155,11 @@ export function DeviceRuntimeProvider({
       const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
       if (devdDeviceId) {
         return { kind: "devd_device", deviceId: devdDeviceId };
+      }
+      const storedPortPath = stored ? localUsbPortPathForDevice(stored) : null;
+      if (storedPortPath) {
+        localUsbPortByDevice.current[deviceId] = storedPortPath;
+        return { kind: "port_path", portPath: storedPortPath };
       }
       return null;
     },

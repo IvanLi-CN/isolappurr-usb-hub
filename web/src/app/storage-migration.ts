@@ -1,6 +1,7 @@
 import {
   DEVICES_STORAGE_KEY,
   normalizeBaseUrl,
+  normalizeStoredDeviceId,
   type StoredDevice,
 } from "../domain/devices";
 import { THEME_STORAGE_KEY, type ThemeId } from "./theme";
@@ -19,6 +20,10 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
   if (typeof record.id !== "string") {
     return null;
   }
+  const id = normalizeStoredDeviceId(record.id);
+  if (!id) {
+    return null;
+  }
   if (typeof record.name !== "string") {
     return null;
   }
@@ -26,10 +31,35 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
     return null;
   }
   const normalized = normalizeBaseUrl(record.baseUrl);
+  const transports =
+    record.transports && typeof record.transports === "object"
+      ? (record.transports as Record<string, unknown>)
+      : null;
+  const httpBaseUrl =
+    typeof transports?.httpBaseUrl === "string"
+      ? normalizeBaseUrl(transports.httpBaseUrl)
+      : null;
   return {
-    id: record.id,
+    id,
     name: record.name,
     baseUrl: normalized.ok ? normalized.baseUrl : record.baseUrl,
+    transports: transports
+      ? {
+          httpBaseUrl: httpBaseUrl?.ok
+            ? httpBaseUrl.baseUrl
+            : typeof transports.httpBaseUrl === "string"
+              ? transports.httpBaseUrl
+              : undefined,
+          localUsbPortPath:
+            typeof transports.localUsbPortPath === "string"
+              ? transports.localUsbPortPath
+              : undefined,
+          webSerialLabel:
+            typeof transports.webSerialLabel === "string"
+              ? transports.webSerialLabel
+              : undefined,
+        }
+      : undefined,
     lastSeenAt:
       typeof record.lastSeenAt === "string" ? record.lastSeenAt : undefined,
   };

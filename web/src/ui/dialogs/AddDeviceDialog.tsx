@@ -35,11 +35,10 @@ import {
   hydrateInitialUsbLog,
   InlineAddError,
   isIsolaPurrDeviceInfo,
-  normalizeDeviceId,
+  parseOwnerFacingUsbDeviceId,
   parseUsbInfoEnvelope,
   readLocalUsbInfo,
   readWebSerialInfo,
-  shortIdFromMac,
   type UsbDeviceInfo,
   type UsbLogEntry,
   usbInfoMatchesHttpInfo,
@@ -503,7 +502,7 @@ export function AddDeviceDialog({
       );
       return fallbackBaseUrl;
     }
-    if (!usbInfoMatchesHttpInfo(device, id, res.value)) {
+    if (!usbInfoMatchesHttpInfo(id, res.value)) {
       setUsbStep(
         "Wi-Fi HTTP responded, but identity did not match the USB device.",
         "warning",
@@ -536,15 +535,12 @@ export function AddDeviceDialog({
     }
 
     const device = parsed.device;
-    const id =
-      normalizeDeviceId(device.device_id) ??
-      shortIdFromMac(device.mac) ??
-      shortIdFromMac(fallback?.serialNumber ?? "");
-
-    if (!id) {
-      setAddError("Connected device did not report a stable device ID.");
+    const parsedDeviceId = parseOwnerFacingUsbDeviceId(device.device_id);
+    if (!parsedDeviceId.ok) {
+      setAddError(parsedDeviceId.error);
       return false;
     }
+    const id = parsedDeviceId.deviceId;
 
     const hostname = device.hostname?.trim() || `isolapurr-usb-hub-${id}`;
     const baseUrl = await resolveReachableUsbBaseUrl(device, id, hostname, run);
@@ -558,6 +554,10 @@ export function AddDeviceDialog({
       id,
       name: existingName || hostname,
       baseUrl,
+      transports: {
+        httpBaseUrl: baseUrl,
+        localUsbPortPath: fallback?.portPath,
+      },
     };
     const saved = ids.includes(id)
       ? await onUpsert(input)
@@ -871,7 +871,7 @@ export function AddDeviceDialog({
         </div>
 
         <div className="mt-6 flex min-h-0 flex-1 flex-col gap-6">
-          <div className="min-h-0 min-w-0 flex-1">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             {method === "wifi" ? (
               <>
                 <DeviceDiscoveryPanel

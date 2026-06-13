@@ -24,30 +24,44 @@ const HTTP_TXT_PATH: &str = "path=/";
 /// Configuration for the mDNS task.
 #[derive(Clone)]
 pub struct MdnsConfig {
-    /// Hostname without the `.local` suffix, e.g. `isolapurr-usb-hub-a1b2c3`.
+    /// Hostname without the `.local` suffix, e.g. `isolapurr-usb-hub-a1b2c3d4e5f6`.
     pub hostname: String<32>,
-    /// Fully qualified `.local` hostname, e.g. `isolapurr-usb-hub-a1b2c3.local`.
+    /// Fully qualified `.local` hostname, e.g. `isolapurr-usb-hub-a1b2c3d4e5f6.local`.
     pub hostname_fqdn: String<48>,
-    /// Service instance name, e.g. `isolapurr-usb-hub-a1b2c3._http._tcp.local`.
+    /// Service instance name, e.g. `isolapurr-usb-hub-a1b2c3d4e5f6._http._tcp.local`.
     pub instance_name: String<64>,
     /// HTTP service port (currently 80).
     pub port: u16,
 }
 
-/// Derive a 6‑character lowercase hex short ID from the last 3 bytes of the MAC.
-pub fn short_id_from_mac(mac: [u8; 6]) -> String<6> {
-    let mut out: String<6> = String::new();
-    for byte in mac.iter().skip(3) {
+/// Derive the canonical 12-character lowercase hex device ID from the base eFuse MAC.
+///
+/// The byte order is intentionally rotated to put the more distinguishing bytes first:
+/// `mac[3..6] + mac[0..3]`.
+pub fn device_id_from_mac(mac: [u8; 6]) -> String<12> {
+    let mut out: String<12> = String::new();
+    for byte in mac.iter().skip(3).chain(mac.iter().take(3)) {
         let _ = core::write!(out, "{:02x}", byte);
     }
     out
 }
 
-/// Build the hostname (`isolapurr-usb-hub-<short_id>`) from the provided short ID.
-pub fn hostname_from_short_id(short_id: &str) -> String<32> {
+/// Return the owner-facing short display ID / minimum input prefix (first 6 hex chars).
+pub fn short_device_id(device_id: &str) -> String<6> {
+    let mut out: String<6> = String::new();
+    for ch in device_id.chars().take(6) {
+        if ch.is_ascii_hexdigit() {
+            let _ = out.push(ch.to_ascii_lowercase());
+        }
+    }
+    out
+}
+
+/// Build the hostname (`isolapurr-usb-hub-<device_id>`) from the provided device ID.
+pub fn hostname_from_device_id(device_id: &str) -> String<32> {
     let mut out: String<32> = String::new();
     let _ = out.push_str(HOSTNAME_PREFIX);
-    for ch in short_id.chars() {
+    for ch in device_id.chars() {
         if ch.is_ascii_alphanumeric() {
             let _ = out.push(ch.to_ascii_lowercase());
         }
@@ -652,33 +666,46 @@ mod tests {
     extern crate std;
 
     use super::*;
+    use heapless::String as HString;
 
     #[test]
-    fn short_id_from_mac_basic_cases() {
+    fn device_id_from_mac_rotates_distinguishing_bytes_to_the_front() {
         assert_eq!(
-            short_id_from_mac([0x00, 0x11, 0x22, 0xAA, 0xBB, 0xCC]).as_str(),
-            "aabbcc"
+            device_id_from_mac([0x00, 0x11, 0x22, 0xAA, 0xBB, 0xCC]).as_str(),
+            "aabbcc001122"
         );
-        assert_eq!(short_id_from_mac([0, 0, 0, 0, 0, 0]).as_str(), "000000");
-        assert_eq!(short_id_from_mac([0xFF; 6]).as_str(), "ffffff");
+        assert_eq!(
+            device_id_from_mac([0, 0, 0, 0, 0, 0]).as_str(),
+            "000000000000"
+        );
+        assert_eq!(device_id_from_mac([0xFF; 6]).as_str(), "ffffffffffff");
+    }
+
+    #[test]
+    fn short_device_id_uses_the_first_six_hex_chars() {
+        assert_eq!(short_device_id("aabbcc001122").as_str(), "aabbcc");
+        assert_eq!(short_device_id("ABCDEF001122").as_str(), "abcdef");
     }
 
     #[test]
     fn hostname_and_fqdn_are_built_correctly() {
-        let h = hostname_from_short_id("aabbcc");
-        assert_eq!(h.as_str(), "isolapurr-usb-hub-aabbcc");
+        let h = hostname_from_device_id("aabbcc001122");
+        assert_eq!(h.as_str(), "isolapurr-usb-hub-aabbcc001122");
         let fqdn = fqdn_from_hostname(h.as_str());
-        assert_eq!(fqdn.as_str(), "isolapurr-usb-hub-aabbcc.local");
+        assert_eq!(fqdn.as_str(), "isolapurr-usb-hub-aabbcc001122.local");
         let inst = service_instance_name(h.as_str());
-        assert_eq!(inst.as_str(), "isolapurr-usb-hub-aabbcc._http._tcp.local");
+        assert_eq!(
+            inst.as_str(),
+            "isolapurr-usb-hub-aabbcc001122._http._tcp.local"
+        );
     }
 
     #[test]
     fn encode_decode_roundtrip_for_a_response() {
         let cfg = MdnsConfig {
-            hostname: String::from("isolapurr-usb-hub-aabbcc"),
-            hostname_fqdn: String::from("isolapurr-usb-hub-aabbcc.local"),
-            instance_name: String::from("isolapurr-usb-hub-aabbcc._http._tcp.local"),
+            hostname: HString::from("isolapurr-usb-hub-aabbcc001122"),
+            hostname_fqdn: HString::from("isolapurr-usb-hub-aabbcc001122.local"),
+            instance_name: HString::from("isolapurr-usb-hub-aabbcc001122._http._tcp.local"),
             port: 80,
         };
         let ip = Ipv4Address::new(192, 168, 1, 42);

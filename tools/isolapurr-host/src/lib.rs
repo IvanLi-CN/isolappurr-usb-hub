@@ -274,7 +274,15 @@ struct StorageSettings {
 pub struct DeviceProfile {
     pub id: String,
     pub name: String,
-    pub transport: HardwareTransport,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transports: Option<DeviceProfileTransports>,
+    #[serde(
+        default,
+        rename = "transport",
+        skip_serializing,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) legacy_transport: Option<LegacyHardwareTransport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<DeviceIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -283,8 +291,9 @@ pub struct DeviceProfile {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", tag = "kind")]
-pub enum HardwareTransport {
+pub(crate) enum LegacyHardwareTransport {
     Usb {
+        #[serde(alias = "deviceId")]
         device_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         devd_url: Option<String>,
@@ -300,6 +309,37 @@ pub enum HardwareTransport {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct DeviceProfileTransports {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_usb_port_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_serial_label: Option<String>,
+}
+
+impl DeviceProfile {
+    pub fn http_base_url(&self) -> Option<&str> {
+        self.transports
+            .as_ref()
+            .and_then(|transports| transports.http_base_url.as_deref())
+    }
+
+    pub fn local_usb_port_path(&self) -> Option<&str> {
+        self.transports
+            .as_ref()
+            .and_then(|transports| transports.local_usb_port_path.as_deref())
+    }
+
+    pub fn web_serial_label(&self) -> Option<&str> {
+        self.transports
+            .as_ref()
+            .and_then(|transports| transports.web_serial_label.as_deref())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceIdentity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
@@ -309,9 +349,10 @@ pub struct DeviceIdentity {
 
 #[derive(Debug, Clone)]
 pub struct SavedHardwareInput {
-    pub id: String,
+    pub device_id: String,
     pub name: String,
-    pub transport: HardwareTransport,
+    pub transports: DeviceProfileTransports,
+    pub identity: Option<DeviceIdentity>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -536,14 +577,16 @@ mod tests {
         let mut registry = HardwareRegistry {
             schema_version: STORAGE_SCHEMA_VERSION,
             devices: vec![DeviceProfile {
-                id: "bench".to_string(),
+                id: "aabbcc001122".to_string(),
                 name: "Bench".to_string(),
-                transport: HardwareTransport::Usb {
-                    device_id: "usb--dev-cu-usbmodem101".to_string(),
-                    devd_url: None,
-                },
+                transports: Some(DeviceProfileTransports {
+                    http_base_url: None,
+                    local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),
+                    web_serial_label: None,
+                }),
+                legacy_transport: None,
                 identity: Some(DeviceIdentity {
-                    device_id: Some("isolapurr-abc".to_string()),
+                    device_id: Some("aabbcc001122".to_string()),
                     mac: Some("AA:BB:CC:DD:EE:FF".to_string()),
                 }),
                 last_seen_at: Some(1),
@@ -553,12 +596,14 @@ mod tests {
         upsert_profile(
             &mut registry,
             DeviceProfile {
-                id: "bench".to_string(),
+                id: "aabbcc001122".to_string(),
                 name: "Bench renamed".to_string(),
-                transport: HardwareTransport::Usb {
-                    device_id: "usb--dev-cu-usbmodem101".to_string(),
-                    devd_url: None,
-                },
+                transports: Some(DeviceProfileTransports {
+                    http_base_url: None,
+                    local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),
+                    web_serial_label: None,
+                }),
+                legacy_transport: None,
                 identity: None,
                 last_seen_at: Some(2),
             },
@@ -570,56 +615,128 @@ mod tests {
                 .identity
                 .as_ref()
                 .and_then(|identity| identity.device_id.as_deref()),
-            Some("isolapurr-abc")
+            Some("aabbcc001122")
         );
     }
 
     #[test]
-    fn web_storage_coalesces_usb_and_default_wifi_hostname_profiles() {
+    fn web_storage_exports_canonical_transports() {
         let registry = HardwareRegistry {
             schema_version: STORAGE_SCHEMA_VERSION,
-            devices: vec![
-                DeviceProfile {
-                    id: "isolapurr-01".to_string(),
-                    name: "isolapurr-01".to_string(),
-                    transport: HardwareTransport::Usb {
-                        device_id: "usb--dev-cu-usbmodem21221401".to_string(),
-                        devd_url: None,
-                    },
-                    identity: Some(DeviceIdentity {
-                        device_id: Some("856a14".to_string()),
-                        mac: Some("1c:db:d4:85:6a:14".to_string()),
-                    }),
-                    last_seen_at: Some(10),
-                },
-                DeviceProfile {
-                    id: "isolapurr-01-wifi".to_string(),
-                    name: "isolapurr-01 Wi-Fi".to_string(),
-                    transport: HardwareTransport::Http {
-                        base_url: "http://isolapurr-usb-hub-856a14.local".to_string(),
-                    },
-                    identity: None,
-                    last_seen_at: Some(11),
-                },
-            ],
+            devices: vec![DeviceProfile {
+                id: "f293cc9c139e".to_string(),
+                name: "Bench Hub".to_string(),
+                transports: Some(DeviceProfileTransports {
+                    http_base_url: Some("http://isolapurr-usb-hub-f293cc9c139e.local".to_string()),
+                    local_usb_port_path: Some("/dev/cu.usbmodem21221401".to_string()),
+                    web_serial_label: None,
+                }),
+                legacy_transport: None,
+                identity: Some(DeviceIdentity {
+                    device_id: Some("f293cc9c139e".to_string()),
+                    mac: Some("1c:db:d4:85:6a:14".to_string()),
+                }),
+                last_seen_at: Some(11),
+            }],
         };
 
         let devices = web_storage_devices(&registry);
 
         assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0]["id"], "isolapurr-01");
-        assert_eq!(devices[0]["name"], "isolapurr-01");
+        assert_eq!(devices[0]["id"], "f293cc9c139e");
+        assert_eq!(devices[0]["name"], "Bench Hub");
         assert_eq!(
             devices[0]["baseUrl"],
-            "http://isolapurr-usb-hub-856a14.local"
+            "http://isolapurr-usb-hub-f293cc9c139e.local"
         );
         assert_eq!(
             devices[0]["transports"]["httpBaseUrl"],
-            "http://isolapurr-usb-hub-856a14.local"
+            "http://isolapurr-usb-hub-f293cc9c139e.local"
         );
         assert_eq!(
-            devices[0]["transports"]["localUsbDeviceId"],
-            "usb--dev-cu-usbmodem21221401"
+            devices[0]["transports"]["localUsbPortPath"],
+            "/dev/cu.usbmodem21221401"
+        );
+    }
+
+    #[test]
+    fn legacy_transport_profiles_migrate_to_transports_shape() {
+        let mut registry: HardwareRegistry = serde_json::from_value(json!({
+            "schema_version": 1,
+            "devices": [
+                {
+                    "id": "aabbcc001122",
+                    "name": "Legacy USB",
+                    "transport": {
+                        "kind": "usb",
+                        "device_id": "usb--dev-cu-usbmodem101"
+                    },
+                    "identity": {
+                        "deviceId": "aabbcc001122"
+                    }
+                }
+            ]
+        }))
+        .expect("legacy registry should deserialize");
+
+        let changed = sanitize_registry(&mut registry);
+
+        assert!(changed);
+        assert_eq!(registry.devices.len(), 1);
+        let migrated = &registry.devices[0];
+        assert_eq!(migrated.id, "aabbcc001122");
+        assert_eq!(
+            migrated
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem101")
+        );
+    }
+
+    #[test]
+    fn legacy_profiles_rekey_from_identity_or_canonical_hostname() {
+        let mut registry: HardwareRegistry = serde_json::from_value(json!({
+            "schema_version": 1,
+            "devices": [
+                {
+                    "id": "bench-hub",
+                    "name": "Legacy Identity",
+                    "transport": {
+                        "kind": "usb",
+                        "device_id": "usb--dev-cu-usbmodem101"
+                    },
+                    "identity": {
+                        "deviceId": "aabbcc001122"
+                    }
+                },
+                {
+                    "id": "bench-lan",
+                    "name": "Legacy LAN",
+                    "transport": {
+                        "kind": "http",
+                        "base_url": "http://isolapurr-usb-hub-ddeeffaabbcc.local"
+                    }
+                }
+            ]
+        }))
+        .expect("legacy registry should deserialize");
+
+        let changed = sanitize_registry(&mut registry);
+
+        assert!(changed);
+        assert_eq!(registry.devices.len(), 2);
+        assert!(
+            registry
+                .devices
+                .iter()
+                .any(|device| device.id == "aabbcc001122")
+        );
+        assert!(
+            registry
+                .devices
+                .iter()
+                .any(|device| device.id == "ddeeffaabbcc")
         );
     }
 
@@ -695,7 +812,7 @@ mod tests {
             "ok": true,
             "result": {
                 "device": {
-                    "device_id": "abc123",
+                    "device_id": "aabbcc001122",
                     "mac": "AA:BB:CC:DD:EE:FF"
                 }
             }
@@ -703,7 +820,7 @@ mod tests {
         validate_device_identity(
             &info,
             &DeviceIdentity {
-                device_id: Some("abc123".to_string()),
+                device_id: Some("aabbcc001122".to_string()),
                 mac: Some("aa:bb:cc:dd:ee:ff".to_string()),
             },
         )
@@ -759,12 +876,12 @@ mod tests {
 
     #[test]
     fn rejects_mismatched_device_identity() {
-        let info = json!({"result": {"device": {"device_id": "abc123"}}});
+        let info = json!({"result": {"device": {"device_id": "aabbcc001122"}}});
         assert!(
             validate_device_identity(
                 &info,
                 &DeviceIdentity {
-                    device_id: Some("other".to_string()),
+                    device_id: Some("ddeeffaabbcc".to_string()),
                     mac: None,
                 },
             )
@@ -790,17 +907,22 @@ mod tests {
     fn import_accepts_exported_profiles_shape() {
         let req = StorageImportRequest {
             devices: vec![json!({
-                "id": "web",
+                "id": "f293cc9c139e",
                 "name": "Web device",
-                "baseUrl": "isolapurr-devd://usb--dev-cu-usbmodem101"
+                "baseUrl": "http://192.168.1.42",
+                "transports": {
+                    "localUsbPortPath": "/dev/cu.usbmodem101"
+                }
             })],
             profiles: vec![DeviceProfile {
-                id: "cli".to_string(),
+                id: "f293cc9c139e".to_string(),
                 name: "CLI device".to_string(),
-                transport: HardwareTransport::Usb {
-                    device_id: "usb--dev-cu-usbmodem101".to_string(),
-                    devd_url: None,
-                },
+                transports: Some(DeviceProfileTransports {
+                    http_base_url: None,
+                    local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),
+                    web_serial_label: None,
+                }),
+                legacy_transport: None,
                 identity: None,
                 last_seen_at: Some(1),
             }],
@@ -818,24 +940,101 @@ mod tests {
             Some("isolapurr-dark")
         );
         assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].id, "cli");
+        assert_eq!(profiles[0].id, "f293cc9c139e");
 
         let devices = parse_import_profiles(&StorageImportRequest {
             devices: vec![json!({
-                "id": "web",
+                "id": "f293cc9c139e",
                 "name": "Web device",
-                "baseUrl": "isolapurr-devd://usb--dev-cu-usbmodem101"
+                "baseUrl": "http://192.168.1.42",
+                "transports": {
+                    "localUsbPortPath": "/dev/cu.usbmodem101"
+                }
             })],
             profiles: vec![],
             settings: None,
         })
         .expect("web devices should import");
 
-        assert!(matches!(
-            devices[0].transport,
-            HardwareTransport::Usb { ref device_id, .. }
-                if device_id == "usb--dev-cu-usbmodem101"
-        ));
+        assert_eq!(devices[0].id, "f293cc9c139e");
+        assert_eq!(
+            devices[0]
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem101")
+        );
+        assert_eq!(devices[0].http_base_url(), Some("http://192.168.1.42"));
+    }
+
+    #[test]
+    fn import_migrates_legacy_profile_transports() {
+        let req: StorageImportRequest = serde_json::from_value(json!({
+            "profiles": [
+                {
+                    "id": "aabbcc001122",
+                    "name": "Legacy USB",
+                    "transport": {
+                        "kind": "usb",
+                        "device_id": "usb--dev-cu-usbmodem101"
+                    }
+                }
+            ]
+        }))
+        .expect("legacy import request should deserialize");
+
+        let profiles = parse_import_profiles(&req).expect("legacy profiles should import");
+
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(
+            profiles[0]
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem101")
+        );
+        assert!(profiles[0].legacy_transport.is_none());
+    }
+
+    #[test]
+    fn import_migrates_legacy_localstorage_pseudo_urls() {
+        let devices = parse_import_profiles(&StorageImportRequest {
+            devices: vec![
+                json!({
+                    "id": "aabbcc001122",
+                    "name": "Legacy Local USB",
+                    "baseUrl": "isolapurr-devd://usb--dev-cu-usbmodem21221401"
+                }),
+                json!({
+                    "id": "bbccdd001122",
+                    "name": "Legacy Web Serial",
+                    "baseUrl": "webserial://ESP32-S3 USB JTAG"
+                }),
+            ],
+            profiles: vec![],
+            settings: None,
+        })
+        .expect("legacy web devices should import");
+
+        assert_eq!(
+            devices[0]
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem21221401")
+        );
+        assert_eq!(
+            devices[1]
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.web_serial_label.as_deref()),
+            Some("ESP32-S3 USB JTAG")
+        );
+        assert!(
+            devices
+                .iter()
+                .all(|device| device.http_base_url().is_none())
+        );
     }
 
     #[cfg(unix)]

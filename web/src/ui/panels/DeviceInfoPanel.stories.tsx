@@ -6,19 +6,19 @@ import type { StoredDevice } from "../../domain/devices";
 import { DeviceInfoPanel } from "./DeviceInfoPanel";
 
 const demoDevice: StoredDevice = {
-  id: "hub-a",
+  id: "aabbcc001122",
   name: "Desk Hub A",
-  baseUrl: "http://hub-a.local",
+  baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
 };
 
 const mockInfo = {
   device: {
-    device_id: "isolapurr-hub-a",
-    hostname: "hub-a",
-    fqdn: "hub-a.local/this/is/a/very/long/fqdn/to/ensure/truncate/works/in/narrow/layouts",
+    device_id: "aabbcc001122",
+    hostname: "isolapurr-usb-hub-aabbcc001122",
+    fqdn: "isolapurr-usb-hub-aabbcc001122.local/this/is/a/very/long/fqdn/to/ensure/truncate/works/in/narrow/layouts",
     mac: "AA:BB:CC:DD:EE:FF",
     variant: "tps-sw",
-    firmware: { name: "isolapurr", version: "0.1.0" },
+    firmware: { name: "isolapurr-usb-hub", version: "0.1.0" },
     uptime_ms: 123_456,
     wifi: { state: "connected", ipv4: "192.168.1.42", is_static: false },
   },

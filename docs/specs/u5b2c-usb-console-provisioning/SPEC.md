@@ -83,7 +83,7 @@ Default selection is only defined after more than one path is immediately usable
 - Runtime control MUST treat Wi-Fi / LAN, Web Serial, and Local USB as concurrent channels for the same saved device. The active channel is the current primary; if it fails, another available channel MUST be promoted without creating a duplicate device entry.
 - When multiple channels are immediately available, the runtime MAY choose a default preference based on the last successful channel for that device. This preference is a selection rule only and MUST NOT be documented as a quality ranking.
 - When only one channel is immediately available, the runtime MUST use that channel and MUST NOT require any other channel to exist first.
-- When Web Serial or Local USB `info` reports a Wi-Fi IPv4 address, Web UI MUST immediately probe `http://<ipv4>` and bind that Wi-Fi / LAN base URL only when the HTTP identity matches the USB `device_id` or `mac`.
+- When Web Serial or Local USB `info` reports a Wi-Fi IPv4 address, Web UI MUST immediately probe `http://<ipv4>` and bind that Wi-Fi / LAN base URL only when the HTTP identity matches the USB `device_id`.
 - Wi-Fi / LAN MUST be documented as a first-class product path, with explicit limitations for browser private-network access and for operations that require USB-only capabilities.
 - Web Serial MUST be documented as a first-class product path, with explicit limitations when the browser does not expose USB serial access.
 - Local USB MUST be documented as a first-class product path, with explicit limitations tied to local daemon availability and host-tool installation.
@@ -155,7 +155,8 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given EEPROM contains valid Wi-Fi credentials, when default firmware boots, then Wi-Fi uses the stored credentials.
 - Given a browser with Web Serial support, when the user connects over USB, then the app can fetch info/ports and run supported controls via JSONL.
 - Given `Wi-Fi / LAN`, `Web Serial`, or `Local USB` satisfies its immediate-availability prerequisites, when the user runs a function supported by that path, then the UI treats the path as an official delivery route and does not require a different path first.
-- Given a device already exists from Wi-Fi / LAN, when USB connects with the same `device_id`, then the app updates the saved device runtime channel state and telemetry instead of creating a duplicate.
+- Given a device already exists from Wi-Fi / LAN, when USB connects with the same full 12-character `device_id`, then the app updates the saved device runtime channel state and telemetry instead of creating a duplicate.
+- Given Web Serial or Local USB reads a legacy 6-character `device_id`, when the user tries to add or use the device in a normal product flow, then the UI rejects the operation and instructs the user to upgrade firmware first.
 - Given Web Serial or Local USB `info` reports a reachable Wi-Fi IPv4 address whose HTTP identity matches the USB identity, when the hub is added or reconnected, then the saved device base URL is updated to that Wi-Fi address and the Wi-Fi / LAN channel is marked available immediately.
 - Given multiple channels are simultaneously immediately available, when the runtime chooses a primary, then it prefers the last successful channel for that device; when that channel becomes unavailable, it falls back to another immediately available channel without changing the product-quality promise.
 - Given only one channel is immediately available, when the user opens the device or runs a command, then that channel is used directly and no other channel is required to exist.
@@ -177,6 +178,14 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 ## Visual Evidence
 
 Evidence source: Storybook canvas, captured from this worktree implementation.
+
+Add device discovery canonical device IDs:
+
+![Add device discovery canonical device IDs](assets/add-device-discovery-canonical-device-ids.png)
+
+Device info canonical device ID:
+
+![Device info canonical device ID](assets/device-info-canonical-device-id.png)
 
 Add device Web Serial desktop:
 

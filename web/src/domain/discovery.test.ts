@@ -15,12 +15,12 @@ describe("applyDiscoveredDeviceToManualForm", () => {
     const next = applyDiscoveredDeviceToManualForm(current, {
       baseUrl: "http://hub.local",
       hostname: "hub",
-      device_id: "abcd1234",
+      device_id: "aabbcc001122",
     });
     expect(next).toEqual({
       name: "hub",
       baseUrl: "http://hub.local",
-      id: "abcd1234",
+      id: "aabbcc001122",
     });
   });
 
@@ -29,7 +29,7 @@ describe("applyDiscoveredDeviceToManualForm", () => {
     const next = applyDiscoveredDeviceToManualForm(current, {
       baseUrl: "http://hub.local",
       hostname: "hub",
-      device_id: "abcd1234",
+      device_id: "aabbcc001122",
     });
     expect(next).toEqual({
       name: "My hub",
@@ -43,22 +43,22 @@ describe("isDiscoveredDeviceAdded", () => {
   test("dedupes by device_id or baseUrl", () => {
     expect(
       isDiscoveredDeviceAdded(
-        { baseUrl: "http://a.local", device_id: "dev1" },
-        ["dev1"],
+        { baseUrl: "http://a.local", device_id: "aabbcc001122" },
+        ["aabbcc001122"],
         [],
       ),
     ).toBe(true);
     expect(
       isDiscoveredDeviceAdded(
-        { baseUrl: "http://a.local", device_id: "dev2" },
+        { baseUrl: "http://a.local", device_id: "bbccdd112233" },
         [],
         ["http://a.local"],
       ),
     ).toBe(true);
     expect(
       isDiscoveredDeviceAdded(
-        { baseUrl: "http://a.local", device_id: "dev2" },
-        ["dev1"],
+        { baseUrl: "http://a.local", device_id: "bbccdd112233" },
+        ["aabbcc001122"],
         ["http://b.local"],
       ),
     ).toBe(false);
@@ -71,9 +71,9 @@ describe("parseDiscoveredDeviceFromApiInfo", () => {
       "http://192.168.1.42",
       {
         device: {
-          device_id: "aabbccdd",
-          hostname: "isolapurr-usb-hub-aabbccdd",
-          fqdn: "isolapurr-usb-hub-aabbccdd.local",
+          device_id: "aabbcc001122",
+          hostname: "isolapurr-usb-hub-aabbcc001122",
+          fqdn: "isolapurr-usb-hub-aabbcc001122.local",
           variant: "tps-sw",
           firmware: { name: "other", version: "0.0.0" },
           wifi: { ipv4: "192.168.1.42", is_static: false, state: "connected" },
@@ -90,9 +90,9 @@ describe("parseDiscoveredDeviceFromApiInfo", () => {
       "http://192.168.1.42",
       {
         device: {
-          device_id: "aabbccdd",
-          hostname: "isolapurr-usb-hub-aabbccdd",
-          fqdn: "isolapurr-usb-hub-aabbccdd.local",
+          device_id: "aabbcc001122",
+          hostname: "isolapurr-usb-hub-aabbcc001122",
+          fqdn: "isolapurr-usb-hub-aabbcc001122.local",
           variant: "tps-sw",
           firmware: { name: "isolapurr-usb-hub", version: "0.1.0" },
           wifi: { ipv4: "192.168.1.42", is_static: false, state: "connected" },
@@ -102,10 +102,10 @@ describe("parseDiscoveredDeviceFromApiInfo", () => {
       "2026-01-14T00:00:00.000Z",
     );
     expect(res).toEqual({
-      baseUrl: "http://isolapurr-usb-hub-aabbccdd.local",
-      device_id: "aabbccdd",
-      hostname: "isolapurr-usb-hub-aabbccdd",
-      fqdn: "isolapurr-usb-hub-aabbccdd.local",
+      baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
+      device_id: "aabbcc001122",
+      hostname: "isolapurr-usb-hub-aabbcc001122",
+      fqdn: "isolapurr-usb-hub-aabbcc001122.local",
       ipv4: "192.168.1.42",
       variant: "tps-sw",
       firmware: { name: "isolapurr-usb-hub", version: "0.1.0" },

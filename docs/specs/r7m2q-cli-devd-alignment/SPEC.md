@@ -40,7 +40,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST make `isolapurr discover` perform real discovery instead of replaying
   saved bindings: LAN results come from mDNS/DNS-SD service discovery with
   `GET /api/v1/info` verification, Local USB results come from the current
-  local hardware scan, and saved hardware records may only annotate matching
+  local hardware scan, and saved device profiles may only annotate matching
   results rather than replace discovery. When multiple saved records still
   match one live result, the CLI MUST surface only one canonical owner-facing
   saved record instead of listing duplicates for alternate transports.
@@ -61,18 +61,14 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
   `settings reset wifi` is allowed only through Web Serial or Local USB,
   while `settings reset other` may use any currently available device
   transport and must preserve Wi-Fi credentials.
-- MUST treat saved hardware IDs and temporary devd targets as different
-  selector classes with different usage scope.
-- MUST treat `--hardware <saved-id>` as the owner-facing selector for ordinary
+- MUST treat the full 12-character `device_id` as the only owner-facing device selector for ordinary
   device control commands, including `status`, `wifi`, `ports`, `diagnostics`,
   and all `power` commands.
-- MUST treat `--device <temporary-devd-id>` as a temporary devd-target
-  selector that is only valid for flows whose scope is inherently tied to a
-  transient Local USB target, such as pre-bind identification, flashing, and
-  reset/maintenance actions.
-- MUST NOT accept temporary devd-target selectors for owner-facing `power`
-  commands. `power` commands may only use saved hardware IDs or a selector
-  flow that resolves to a saved hardware record.
+- MUST allow advanced Local USB maintenance flows to target hardware by
+  `device_id`, `port_path`, or both together, with an explicit intersection
+  check when both are supplied.
+- MUST NOT expose saved hardware IDs or temporary devd target IDs as
+  owner-facing selector classes.
 - MUST redact PSKs, passwords, passphrases, secrets, and tokens in traces, diagnostics, and CLI output.
 - SHOULD expose bounded session logs/traces for Local USB operations.
 - SHOULD keep product docs and release workflows aligned with the shipped host-tools assets.
@@ -102,13 +98,12 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 
 Selector scope for the released CLI is part of the public contract:
 
-- `--hardware <saved-id>` addresses a saved hardware record and is the
-  owner-facing selector for ordinary control commands.
-- `--device <temporary-devd-id>` addresses a transient devd scan result and is
-  reserved for temporary-target Local USB maintenance flows.
-- `power` commands are in the first category only: they must use
-  `--hardware <saved-id>` or a saved-hardware picker, and they must not expose
-  `--device <temporary-devd-id>` as a supported selector.
+- `--device-id <device_id>` addresses the canonical owner-facing device identity
+  and is the ordinary selector for control commands.
+- `--port-path <port_path>` addresses an OS USB port and is reserved for
+  advanced Local USB maintenance flows.
+- `power` commands are ordinary owner-facing control and therefore must resolve
+  by `device_id`, not by temporary USB scan IDs.
 
 The IPC daemon protocol is newline-delimited JSON request/response. Requests include `{id, method, params}` and responses include `{id, ok, result|error}`. CLI-visible method families include:
 
@@ -170,7 +165,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   IsolaPurr HTTP service and Local USB candidates are currently attached, then
   the CLI must return one combined discovery list where LAN entries come from
   mDNS + verified `info`, USB entries come from the current local scan, and at
-  most one canonical saved hardware record is shown as the owner-facing
+  most one canonical saved device profile is shown as the owner-facing
   annotation on each live discovery result.
 - Given a Local USB target does not answer IsolaPurr `info`, when the user requests status, Wi-Fi, ports, diagnostics, route, replug, or power operations, then devd refuses the operation and reports that the target may be in download mode or running non-IsolaPurr firmware.
 - Given a Local USB target answers `info` with a different `firmware.name`, when any ordinary operation is requested, then devd refuses the operation and reports the expected firmware name.
@@ -186,7 +181,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   line-by-line editor where each row represents one source-capability field,
   shows that field's inline chips/options on the same line, and supports
   arrow-key field/choice navigation before save; if no selector was supplied,
-  the CLI must first prompt for a saved hardware choice with the same friendly
+  the CLI must first prompt for a saved device choice with the same friendly
   terminal selector instead of falling back to a temporary devd target.
 - Given the user runs `isolapurr power output manual`, when manual output flags
   are supplied, then the CLI reads the current whole power config, switches the
@@ -195,7 +190,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   saved config with owner-facing path labels instead of transport enums.
 - Given the user runs a power command, when they try to pass a temporary devd
   target selector, then the CLI must reject that input at parse time and only
-  accept saved hardware IDs or the saved-hardware interactive picker.
+  accept canonical `device_id` selectors or the saved-device interactive picker.
 - Given the user runs `isolapurr power output auto`, when the saved config is
   written successfully, then the CLI returns the output mode to automatic
   USB-C request tracking without discarding the saved manual voltage/current

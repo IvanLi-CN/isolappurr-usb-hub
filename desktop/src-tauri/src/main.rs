@@ -244,27 +244,27 @@ mod tests {
             "ok": true,
             "result": {
                 "device": {
-                    "device_id": "f293cc",
+                    "device_id": "f293cc9c139e",
                     "mac": "aa:bb:cc:dd:ee:ff"
                 }
             }
         });
         let identity = extract_device_identity(&nested).expect("identity");
-        assert_eq!(identity.device_id.as_deref(), Some("f293cc"));
+        assert_eq!(identity.device_id.as_deref(), Some("f293cc9c139e"));
         assert_eq!(identity.mac.as_deref(), Some("aa:bb:cc:dd:ee:ff"));
     }
 
     #[test]
     fn parses_port_preference_cache_with_identity() {
         let cache = parse_port_preference_cache(
-            "/dev/cu.usbmodem212101\nmac=50:78:7d:19:88:40\ndevice_id=isolapurr-198840\n",
+            "/dev/cu.usbmodem212101\nmac=50:78:7d:19:88:40\ndevice_id=19884050787d\n",
         )
         .expect("parse cache")
         .expect("cache present");
 
         assert_eq!(cache.port, "/dev/cu.usbmodem212101");
         assert_eq!(cache.mac.as_deref(), Some("50:78:7d:19:88:40"));
-        assert_eq!(cache.device_id.as_deref(), Some("isolapurr-198840"));
+        assert_eq!(cache.device_id.as_deref(), Some("19884050787d"));
     }
 
     #[test]
@@ -345,7 +345,7 @@ mod tests {
         let actual = PortIdentityCache {
             port: "/dev/cu.usbmodem1".to_string(),
             identity: None,
-            device_id: Some("actual".to_string()),
+            device_id: Some("aabbcc001122".to_string()),
             mac: Some("aa:bb:cc:dd:ee:ff".to_string()),
             confirmed_at: "2026-05-19T00:00:00Z".to_string(),
             source: "test".to_string(),
@@ -353,7 +353,7 @@ mod tests {
         let err = ensure_identity_matches(
             &actual,
             &DeviceIdentityExpectation {
-                device_id: Some("expected".to_string()),
+                device_id: Some("ddeeffaabbcc".to_string()),
                 mac: None,
             },
         )
@@ -375,7 +375,7 @@ mod tests {
     async fn discovery_accepts_valid_device() {
         init_tracing();
         let server = spawn_info_server(InfoResponse::Valid {
-            device_id: Some("dev-1".to_string()),
+            device_id: Some("aabbcc001122".to_string()),
         })
         .await;
         let controller = make_controller(400, Some("mdns unavailable".to_string()));
@@ -392,7 +392,7 @@ mod tests {
             snapshot.devices
         );
         let device = snapshot.devices.first().expect("device entry");
-        assert_eq!(device.device_id.as_deref(), Some("dev-1"));
+        assert_eq!(device.device_id.as_deref(), Some("aabbcc001122"));
         assert_eq!(device.base_url, server.base_url);
         assert_eq!(snapshot.status, DiscoveryStatus::Ready);
     }
@@ -444,11 +444,11 @@ mod tests {
     async fn discovery_dedups_by_device_id() {
         init_tracing();
         let server_a = spawn_info_server(InfoResponse::Valid {
-            device_id: Some("dev-1".to_string()),
+            device_id: Some("aabbcc001122".to_string()),
         })
         .await;
         let server_b = spawn_info_server(InfoResponse::Valid {
-            device_id: Some("dev-1".to_string()),
+            device_id: Some("aabbcc001122".to_string()),
         })
         .await;
         let controller = make_controller(400, Some("mdns unavailable".to_string()));
@@ -470,7 +470,7 @@ mod tests {
             snapshot.devices
         );
         let device = snapshot.devices.first().expect("device entry");
-        assert_eq!(device.device_id.as_deref(), Some("dev-1"));
+        assert_eq!(device.device_id.as_deref(), Some("aabbcc001122"));
         assert_eq!(
             device.base_url, server_b.base_url,
             "expected latest base_url to win"
@@ -539,7 +539,7 @@ mod tests {
 
     fn temp_storage_path(label: &str) -> PathBuf {
         let mut dir = env::temp_dir();
-        let suffix = generate_device_id();
+        let suffix = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
         dir.push(format!("isolapurr-storage-{label}-{suffix}"));
         let _ = fs::create_dir_all(&dir);
         dir.join("storage.json")
@@ -551,9 +551,14 @@ mod tests {
         let manager = StorageManager::load_at(path.clone()).expect("load storage");
         let device = manager
             .upsert_device(UpsertDeviceInput {
-                id: Some("dev-1".to_string()),
+                id: Some("f293cc9c139e".to_string()),
                 name: "Desk Hub".to_string(),
                 base_url: "http://127.0.0.1:1234".to_string(),
+                transports: Some(StoredDeviceTransports {
+                    http_base_url: Some("http://127.0.0.1:1234".to_string()),
+                    local_usb_port_path: Some("/dev/cu.usbmodem21221401".to_string()),
+                    web_serial_label: None,
+                }),
             })
             .await
             .expect("upsert");
@@ -565,6 +570,61 @@ mod tests {
         let list = manager.list_devices().await;
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].base_url, "http://127.0.0.1:1234");
+        assert_eq!(list[0].id, "f293cc9c139e");
+        assert_eq!(
+            list[0]
+                .transports
+                .as_ref()
+                .and_then(|value| value.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem21221401")
+        );
+    }
+
+    #[tokio::test]
+    async fn storage_upsert_merges_device_transports() {
+        let path = temp_storage_path("merge-transports");
+        let manager = StorageManager::load_at(path).expect("load storage");
+        manager
+            .upsert_device(UpsertDeviceInput {
+                id: Some("f293cc9c139e".to_string()),
+                name: "Desk Hub".to_string(),
+                base_url: "http://isolapurr-usb-hub-f293cc9c139e.local".to_string(),
+                transports: Some(StoredDeviceTransports {
+                    http_base_url: Some("http://isolapurr-usb-hub-f293cc9c139e.local".to_string()),
+                    local_usb_port_path: None,
+                    web_serial_label: Some("ESP32-S3 USB JTAG".to_string()),
+                }),
+            })
+            .await
+            .expect("initial upsert");
+
+        let updated = manager
+            .upsert_device(UpsertDeviceInput {
+                id: Some("f293cc9c139e".to_string()),
+                name: "Desk Hub".to_string(),
+                base_url: "http://isolapurr-usb-hub-f293cc9c139e.local".to_string(),
+                transports: Some(StoredDeviceTransports {
+                    http_base_url: None,
+                    local_usb_port_path: Some("/dev/cu.usbmodem21221401".to_string()),
+                    web_serial_label: None,
+                }),
+            })
+            .await
+            .expect("usb refresh upsert");
+
+        let transports = updated.transports.expect("transports");
+        assert_eq!(
+            transports.http_base_url.as_deref(),
+            Some("http://isolapurr-usb-hub-f293cc9c139e.local")
+        );
+        assert_eq!(
+            transports.local_usb_port_path.as_deref(),
+            Some("/dev/cu.usbmodem21221401")
+        );
+        assert_eq!(
+            transports.web_serial_label.as_deref(),
+            Some("ESP32-S3 USB JTAG")
+        );
     }
 
     #[tokio::test]
@@ -605,10 +665,15 @@ mod tests {
             .migrate_from_localstorage(MigrateRequest {
                 source: "localStorage".to_string(),
                 devices: Some(vec![MigrateDeviceInput {
-                    id: Some("demo".to_string()),
+                    id: Some("f293cc9c139e".to_string()),
                     name: Some("Demo".to_string()),
                     base_url: Some("http://127.0.0.1:8080".to_string()),
                     last_seen_at: None,
+                    transports: Some(StoredDeviceTransports {
+                        http_base_url: Some("http://127.0.0.1:8080".to_string()),
+                        local_usb_port_path: Some("/dev/cu.usbmodem21221401".to_string()),
+                        web_serial_label: None,
+                    }),
                 }]),
                 settings: Some(MigrateSettingsInput {
                     theme: Some("system".to_string()),
@@ -631,14 +696,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn storage_drops_legacy_and_invalid_device_ids_on_load() {
+        let path = temp_storage_path("legacy-cleanup");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schemaVersion": 1,
+                "devices": [
+                    {
+                        "id": "f293cc",
+                        "name": "Legacy Six",
+                        "baseUrl": "http://127.0.0.1:8080"
+                    },
+                    {
+                        "id": "garbage123",
+                        "name": "Garbage",
+                        "baseUrl": "http://127.0.0.1:9999"
+                    },
+                    {
+                        "id": "f293cc9c139e",
+                        "name": "Canonical",
+                        "baseUrl": "http://127.0.0.1:1234",
+                        "transports": {
+                            "localUsbPortPath": "/dev/cu.usbmodem21221401"
+                        }
+                    }
+                ],
+                "settings": {
+                    "theme": "isolapurr"
+                }
+            }))
+            .expect("encode storage"),
+        )
+        .expect("write storage");
+
+        let manager = StorageManager::load_at(path.clone()).expect("load storage");
+        let list = manager.list_devices().await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "f293cc9c139e");
+        assert_eq!(list[0].name, "Canonical");
+        assert_eq!(
+            list[0]
+                .transports
+                .as_ref()
+                .and_then(|value| value.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem21221401")
+        );
+
+        let persisted = fs::read_to_string(path).expect("read sanitized storage back from disk");
+        assert!(persisted.contains("f293cc9c139e"));
+        assert!(!persisted.contains("\"f293cc\""));
+        assert!(!persisted.contains("garbage123"));
+    }
+
+    #[tokio::test]
     async fn storage_handler_lists_devices() {
         let path = temp_storage_path("handler");
         let manager = StorageManager::load_at(path).expect("load storage");
         manager
             .upsert_device(UpsertDeviceInput {
-                id: Some("dev-1".to_string()),
+                id: Some("f293cc9c139e".to_string()),
                 name: "Desk Hub".to_string(),
                 base_url: "http://127.0.0.1:1234".to_string(),
+                transports: None,
             })
             .await
             .expect("upsert");
@@ -661,7 +781,7 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let parsed: DevicesResponse = serde_json::from_slice(&body).expect("parse response");
         assert_eq!(parsed.devices.len(), 1);
-        assert_eq!(parsed.devices[0].id, "dev-1");
+        assert_eq!(parsed.devices[0].id, "f293cc9c139e");
     }
 
     #[test]
