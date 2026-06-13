@@ -324,6 +324,7 @@ fn parse_web_storage_device(value: &Value) -> anyhow::Result<DeviceProfile> {
         id,
         name,
         transports: Some(parse_storage_transports(device, base_url)),
+        legacy_transport: None,
         identity: None,
         last_seen_at: Some(now_unix_seconds()),
     })
@@ -333,18 +334,17 @@ pub(super) fn parse_import_profiles(
     req: &StorageImportRequest,
 ) -> anyhow::Result<Vec<DeviceProfile>> {
     if !req.profiles.is_empty() {
-        return Ok(req.profiles.clone());
+        return Ok(req
+            .profiles
+            .iter()
+            .cloned()
+            .filter_map(sanitize_profile)
+            .collect());
     }
     req.devices
         .iter()
         .cloned()
-        .map(|device| {
-            if device.get("transports").is_some() {
-                serde_json::from_value(device).context("parse device profile")
-            } else {
-                parse_web_storage_device(&device)
-            }
-        })
+        .map(|device| parse_web_storage_device(&device))
         .collect()
 }
 
@@ -378,11 +378,14 @@ fn parse_storage_transports(
     base_url: &str,
 ) -> DeviceProfileTransports {
     let transports = device.get("transports").and_then(Value::as_object);
+    if transports.is_none() {
+        return parse_legacy_storage_base_url(base_url);
+    }
     let http_base_url = transports
         .and_then(|transports| transports.get("httpBaseUrl"))
         .and_then(Value::as_str)
         .map(str::to_string)
-        .or_else(|| Some(base_url.to_string()));
+        .or_else(|| http_storage_base_url(base_url));
     let local_usb_port_path = transports
         .and_then(|transports| transports.get("localUsbPortPath"))
         .and_then(Value::as_str)
@@ -396,6 +399,33 @@ fn parse_storage_transports(
         http_base_url,
         local_usb_port_path,
         web_serial_label,
+    }
+}
+
+fn http_storage_base_url(base_url: &str) -> Option<String> {
+    let trimmed = base_url.trim();
+    (trimmed.starts_with("http://") || trimmed.starts_with("https://")).then(|| trimmed.to_string())
+}
+
+fn parse_legacy_storage_base_url(base_url: &str) -> DeviceProfileTransports {
+    if let Some(value) = base_url.strip_prefix("isolapurr-devd://") {
+        return DeviceProfileTransports {
+            http_base_url: None,
+            local_usb_port_path: legacy_local_usb_port_path(value),
+            web_serial_label: None,
+        };
+    }
+    if let Some(value) = base_url.strip_prefix("webserial://") {
+        return DeviceProfileTransports {
+            http_base_url: None,
+            local_usb_port_path: None,
+            web_serial_label: Some(value.trim().to_string()),
+        };
+    }
+    DeviceProfileTransports {
+        http_base_url: Some(base_url.to_string()),
+        local_usb_port_path: None,
+        web_serial_label: None,
     }
 }
 

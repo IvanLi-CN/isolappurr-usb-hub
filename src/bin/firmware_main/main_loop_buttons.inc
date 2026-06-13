@@ -758,6 +758,7 @@
                         api_usb_a_metrics,
                         api_sample_uptime_ms,
                     ),
+                    telemetry_raw: None,
                     state: net::ApiPortState {
                         power_enabled: port_usb_a.power == PowerState::On,
                         data_connected: matches!(port_usb_a.data, DataState::Connected),
@@ -771,6 +772,11 @@
                         api_usb_c_metrics,
                         api_sample_uptime_ms,
                     ),
+                    telemetry_raw: Some(port_metrics_to_api_telemetry(
+                        api_usb_c_present,
+                        api_usb_c_metrics_raw,
+                        api_sample_uptime_ms,
+                    )),
                     state: net::ApiPortState {
                         power_enabled: port_usb_c.power == PowerState::On,
                         data_connected: matches!(port_usb_c.data, DataState::Connected),
@@ -781,6 +787,8 @@
             };
 
             let mut guard = api_state.lock().await;
+            let idle_bias_run = guard.idle_bias.run;
+            let previous_reported_path_control = guard.power.last_path_control;
             guard.hub = net::ApiHubSnapshot {
                 upstream_connected: api_isolated_usb_ready,
                 isolated_usb_fault: api_isolated_usb_fault,
@@ -809,15 +817,22 @@
                 usb_c_display_mode: usb_c_display.mode,
                 usb_c_display_badge: usb_c_display.badge,
                 usb_c_display_measurements_visible: usb_c_display.measurements_visible,
-                usb_c_actual_voltage_mv: telemetry_field_value(api_usb_c_metrics.voltage_mv),
-                usb_c_actual_current_ma: telemetry_field_value(api_usb_c_metrics.current_ma),
-                usb_c_actual_power_mw: telemetry_field_value(api_usb_c_metrics.power_mw),
+                usb_c_actual: port_metrics_to_api_telemetry(
+                    api_usb_c_present,
+                    api_usb_c_metrics_raw,
+                    api_sample_uptime_ms,
+                ),
                 tps_setpoint_output_enabled: tps_state.last.map(|setpoint| setpoint.output_enabled),
                 tps_setpoint_mv: tps_state.last.map(|setpoint| setpoint.v_out_mv as u32),
                 tps_setpoint_ilim_ma: tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32),
                 runtime_recovery_count: pd_runtime_recovery_count,
                 sample_uptime_ms: uptime_ms_from_instant(now),
             };
+            guard.idle_bias = idle_bias_api_snapshot(
+                idle_bias_calibration,
+                idle_bias_run,
+                current_applied_idle_bias_offset_ma(idle_bias_calibration, api_usb_c_metrics_raw),
+            );
             if let Some(lock) = guard.power.lock {
                 if lock.expires_at_ms <= uptime_ms_from_instant(now) {
                     guard.power.lock = None;
@@ -825,7 +840,13 @@
             }
             guard.power.config = power_config;
             guard.power.persisted = power_config_persisted;
-            guard.power.last_path_control = last_sw2303_path_control;
+            guard.power.last_path_control = last_sw2303_path_control.or({
+                if idle_bias_run.state == net::ApiIdleBiasRunState::Failed {
+                    previous_reported_path_control
+                } else {
+                    None
+                }
+            });
         }
 
         let now_us = esp_hal::time::Instant::now()

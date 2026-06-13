@@ -90,9 +90,11 @@ const autoPdDiagnostics: PdDiagnosticsResponse = {
     badge: { kind: "voltage", label: "9V" },
   },
   usb_c_actual: {
+    status: "ok",
     voltage_mv: 9000,
     current_ma: 310,
     power_mw: 2790,
+    sample_uptime_ms: 123_456,
   },
   tps_setpoint: {
     output_enabled: false,
@@ -111,9 +113,11 @@ const manualFocusDiagnostics: PdDiagnosticsResponse = {
     badge: { kind: "focus", label: "FOCUS" },
   },
   usb_c_actual: {
+    status: "ok",
     voltage_mv: 5011,
     current_ma: 0,
     power_mw: 3,
+    sample_uptime_ms: 123_456,
   },
   tps_setpoint: {
     output_enabled: true,
@@ -130,9 +134,11 @@ const manualOnDiagnostics: PdDiagnosticsResponse = {
     badge: { kind: "on", label: "ON" },
   },
   usb_c_actual: {
+    status: "ok",
     voltage_mv: 9012,
     current_ma: 812,
     power_mw: 7318,
+    sample_uptime_ms: 123_456,
   },
   tps_setpoint: {
     output_enabled: true,
@@ -150,9 +156,11 @@ const manualOffDiagnostics: PdDiagnosticsResponse = {
   },
   sw2303_vbus_mv: 0,
   usb_c_actual: {
+    status: "ok",
     voltage_mv: 0,
     current_ma: 0,
     power_mw: 0,
+    sample_uptime_ms: 123_456,
   },
   tps_setpoint: {
     output_enabled: true,

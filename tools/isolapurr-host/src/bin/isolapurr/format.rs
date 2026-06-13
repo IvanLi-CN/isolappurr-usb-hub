@@ -25,6 +25,10 @@ fn format_human_output(output: &Value) -> String {
         return format_power_show_output(output);
     }
 
+    if output.get("dataset").is_some() && output.get("run").is_some() {
+        return format_idle_bias_output(output);
+    }
+
     if output.get("capability").is_some() && output.get("manual").is_some() {
         return format_power_config_output(output);
     }
@@ -238,6 +242,22 @@ fn format_power_show_output(output: &Value) -> String {
         rendered.push_str("Power config\n");
         rendered.push_str(&format_power_config_output(config));
     }
+    if let Some(ports) = output.get("ports") {
+        let Ok(ports) = serde_json::from_value::<CliPortsResponse>(ports.clone()) else {
+            return format!(
+                "{}\n",
+                serde_json::to_string_pretty(output).unwrap_or_else(|_| output.to_string())
+            );
+        };
+        if let Some(port_c) = ports.ports.iter().find(|port| port.port_id == "port_c") {
+            rendered.push('\n');
+            rendered.push_str("USB-C output\n");
+            rendered.push_str(&format!(
+                "Corrected telemetry: {}\n",
+                format_port_telemetry(&port_c.telemetry)
+            ));
+        }
+    }
     if let Some(diagnostics) = output.get("diagnostics") {
         rendered.push('\n');
         rendered.push_str("Live USB-C status\n");
@@ -341,6 +361,30 @@ fn format_live_power_output(output: &Value) -> String {
         format_output_target(&diagnostics.tps_setpoint)
     ));
     lines.push(format!(
+        "Idle-bias dataset: {}",
+        format_idle_bias_dataset(&diagnostics.idle_bias.dataset)
+    ));
+    lines.push(format!(
+        "Idle-bias correction: {}",
+        if diagnostics.idle_bias.correction_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    ));
+    lines.push(format!(
+        "Idle-bias applied offset: {}",
+        diagnostics
+            .idle_bias
+            .current_applied_offset_ma
+            .map(|value| format!("{value} mA"))
+            .unwrap_or_else(|| "none".to_string())
+    ));
+    lines.push(format!(
+        "Idle-bias run: {}",
+        format_idle_bias_run(&diagnostics.idle_bias.run)
+    ));
+    lines.push(format!(
         "Runtime recoveries: {}",
         diagnostics.runtime_recovery_count
     ));
@@ -350,6 +394,102 @@ fn format_live_power_output(output: &Value) -> String {
         diagnostics.sample_uptime_ms
     ));
     format!("{}\n", lines.join("\n"))
+}
+
+fn format_idle_bias_output(output: &Value) -> String {
+    let Ok(idle_bias) = serde_json::from_value::<CliIdleBias>(output.clone()) else {
+        return format!(
+            "{}\n",
+            serde_json::to_string_pretty(output).unwrap_or_else(|_| output.to_string())
+        );
+    };
+
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Correction: {}",
+        if idle_bias.correction_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    ));
+    lines.push(format!(
+        "Dataset: {}",
+        format_idle_bias_dataset(&idle_bias.dataset)
+    ));
+    lines.push(format!(
+        "Applied offset: {}",
+        idle_bias
+            .current_applied_offset_ma
+            .map(|value| format!("{value} mA"))
+            .unwrap_or_else(|| "none".to_string())
+    ));
+    lines.push(format!(
+        "Run state: {}",
+        format_idle_bias_run(&idle_bias.run)
+    ));
+    format!("{}\n", lines.join("\n"))
+}
+
+fn format_port_telemetry(telemetry: &CliPortTelemetry) -> String {
+    match telemetry.status.as_str() {
+        "ok" => match (
+            telemetry.voltage_mv,
+            telemetry.current_ma,
+            telemetry.power_mw,
+        ) {
+            (Some(voltage_mv), Some(current_ma), Some(power_mw)) => {
+                format!("{voltage_mv} mV @ {current_ma} mA / {power_mw} mW")
+            }
+            (Some(voltage_mv), Some(current_ma), None) => {
+                format!("{voltage_mv} mV @ {current_ma} mA")
+            }
+            _ => "telemetry unavailable".to_string(),
+        },
+        "not_inserted" => "not inserted".to_string(),
+        "overrange" => "overrange".to_string(),
+        _ => "telemetry error".to_string(),
+    }
+}
+
+fn format_idle_bias_dataset(dataset: &CliIdleBiasDataset) -> String {
+    if dataset.status != "valid" {
+        return dataset.status.clone();
+    }
+    format!(
+        "valid ({}..{} mV, {} points, step {} mV)",
+        dataset.min_voltage_mv, dataset.max_voltage_mv, dataset.point_count, dataset.step_mv
+    )
+}
+
+fn format_idle_bias_run(run: &CliIdleBiasRun) -> String {
+    match run.state.as_str() {
+        "running" => format!(
+            "running {}/{}{}",
+            run.completed_points,
+            run.point_count,
+            run.target_voltage_mv
+                .map(|mv| format!(" @ {mv} mV"))
+                .unwrap_or_default()
+        ),
+        "failed" => {
+            let reason = run
+                .error
+                .as_ref()
+                .map(|error| error.message.as_str())
+                .unwrap_or("unknown error");
+            format!(
+                "failed {}/{}{}: {}",
+                run.completed_points,
+                run.point_count,
+                run.target_voltage_mv
+                    .map(|mv| format!(" @ {mv} mV"))
+                    .unwrap_or_default(),
+                reason
+            )
+        }
+        _ => "idle".to_string(),
+    }
 }
 
 fn format_power_mode(mode: &str) -> &'static str {

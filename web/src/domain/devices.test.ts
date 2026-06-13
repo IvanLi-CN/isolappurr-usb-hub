@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  DEVICES_STORAGE_KEY,
   isLegacyDeviceId,
+  loadStoredDevices,
+  mergeStoredDeviceTransports,
   normalizeBaseUrl,
   normalizeDeviceIdPrefix,
   normalizeStoredDeviceId,
@@ -122,5 +125,67 @@ describe("device_id helpers", () => {
     expect(normalizeDeviceIdPrefix("AABBCC")).toBe("aabbcc");
     expect(normalizeDeviceIdPrefix("aabbcc001122")).toBe("aabbcc001122");
     expect(normalizeDeviceIdPrefix("xyz")).toBeNull();
+  });
+});
+
+describe("mergeStoredDeviceTransports", () => {
+  test("preserves saved channels when upsert input only updates one transport", () => {
+    expect(
+      mergeStoredDeviceTransports(
+        {
+          httpBaseUrl: "http://old.local",
+          localUsbPortPath: "/dev/cu.usbmodem101",
+          webSerialLabel: "ESP32-S3 USB JTAG",
+        },
+        {
+          httpBaseUrl: "http://new.local/info",
+        },
+      ),
+    ).toEqual({
+      httpBaseUrl: "http://new.local",
+      localUsbPortPath: "/dev/cu.usbmodem101",
+      webSerialLabel: "ESP32-S3 USB JTAG",
+    });
+  });
+});
+
+describe("loadStoredDevices", () => {
+  test("prunes invalid records while preserving canonical saved devices", () => {
+    const store = new Map<string, string>();
+    (globalThis as unknown as { window: unknown }).window = {
+      localStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => void store.set(key, value),
+        removeItem: (key: string) => void store.delete(key),
+      },
+    } as unknown as Window;
+
+    store.set(
+      DEVICES_STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: "f293cc",
+          name: "Legacy",
+          baseUrl: "http://legacy.local",
+        },
+        {
+          id: "f293cc9c139e",
+          name: "Canonical",
+          baseUrl: "http://isolapurr-usb-hub-f293cc9c139e.local",
+        },
+      ]),
+    );
+
+    const devices = loadStoredDevices();
+
+    expect(devices).toEqual([
+      {
+        id: "f293cc9c139e",
+        name: "Canonical",
+        baseUrl: "http://isolapurr-usb-hub-f293cc9c139e.local",
+        transports: undefined,
+      },
+    ]);
+    expect(JSON.parse(store.get(DEVICES_STORAGE_KEY) ?? "[]")).toHaveLength(1);
   });
 });

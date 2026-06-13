@@ -132,6 +132,17 @@ function normalizeAddDeviceTransports(
   return Object.keys(transports).length > 0 ? transports : undefined;
 }
 
+export function mergeStoredDeviceTransports(
+  existing: StoredDevice["transports"],
+  next: AddDeviceInput["transports"],
+): StoredDevice["transports"] {
+  const merged = {
+    ...existing,
+    ...normalizeAddDeviceTransports(next),
+  };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
 export function normalizeBaseUrl(
   raw: string,
 ): { ok: true; baseUrl: string } | { ok: false; error: string } {
@@ -254,8 +265,7 @@ export function loadStoredDevices(): StoredDevice[] {
       };
     });
     if (devices.length !== parsed.length) {
-      window.localStorage.removeItem(DEVICES_STORAGE_KEY);
-      return [];
+      saveStoredDevices(devices);
     }
     return devices;
   } catch {

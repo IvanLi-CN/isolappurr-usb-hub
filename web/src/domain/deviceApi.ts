@@ -149,9 +149,11 @@ export type PdDiagnosticsResponse = {
     };
   };
   usb_c_actual: {
+    status: "ok" | "not_inserted" | "error" | "overrange" | string;
     voltage_mv: number | null;
     current_ma: number | null;
     power_mw: number | null;
+    sample_uptime_ms: number;
   };
   tps_setpoint: {
     output_enabled: boolean | null;
@@ -160,6 +162,35 @@ export type PdDiagnosticsResponse = {
   };
   runtime_recovery_count: number;
   sample_uptime_ms: number;
+};
+
+export type IdleBiasDataset = {
+  status: "valid" | "missing" | string;
+  min_voltage_mv: number;
+  max_voltage_mv: number;
+  step_mv: number;
+  point_count: number;
+  offsets_ma: number[] | null;
+};
+
+export type IdleBiasError = {
+  code: string;
+  message: string;
+};
+
+export type IdleBiasRun = {
+  state: "idle" | "running" | "failed" | string;
+  completed_points: number;
+  point_count: number;
+  target_voltage_mv: number | null;
+  error: IdleBiasError | null;
+};
+
+export type IdleBiasResponse = {
+  correction_enabled: boolean;
+  dataset: IdleBiasDataset;
+  current_applied_offset_ma: number | null;
+  run: IdleBiasRun;
 };
 
 type ErrorEnvelope = {
@@ -412,6 +443,52 @@ export async function setPowerLock(
   return fetchJson<PowerConfigResponse>(
     baseUrl,
     `/api/v1/power/config/${acquire ? "lock" : "release"}?owner=${owner}`,
+    { method: "POST" },
+  );
+}
+
+export async function getIdleBias(
+  baseUrl: string,
+): Promise<Result<IdleBiasResponse>> {
+  return fetchJson<IdleBiasResponse>(baseUrl, "/api/v1/power/idle-bias", {
+    method: "GET",
+  });
+}
+
+export async function setIdleBiasCorrection(
+  baseUrl: string,
+  correctionEnabled: boolean,
+  owner: number,
+): Promise<Result<IdleBiasResponse>> {
+  return fetchJson<IdleBiasResponse>(
+    baseUrl,
+    `/api/v1/power/idle-bias?owner=${owner}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ correction_enabled: correctionEnabled }),
+    },
+  );
+}
+
+export async function runIdleBiasCalibration(
+  baseUrl: string,
+  owner: number,
+): Promise<Result<IdleBiasResponse>> {
+  return fetchJson<IdleBiasResponse>(
+    baseUrl,
+    `/api/v1/power/idle-bias/run?owner=${owner}`,
+    { method: "POST" },
+  );
+}
+
+export async function clearIdleBiasCalibration(
+  baseUrl: string,
+  owner: number,
+): Promise<Result<IdleBiasResponse>> {
+  return fetchJson<IdleBiasResponse>(
+    baseUrl,
+    `/api/v1/power/idle-bias/clear?owner=${owner}`,
     { method: "POST" },
   );
 }

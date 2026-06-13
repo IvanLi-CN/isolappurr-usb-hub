@@ -1,7 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, userEvent, within } from "@storybook/test";
 
-import type { PowerConfigResponse, Result } from "../../domain/deviceApi";
+import type {
+  IdleBiasResponse,
+  PowerConfigResponse,
+  Result,
+} from "../../domain/deviceApi";
 import { DevicePowerPanel } from "./DevicePowerPanel";
 
 const manualConfig: PowerConfigResponse = {
@@ -60,7 +64,85 @@ const manualForceConfig: PowerConfigResponse = {
   },
 };
 
+const idleBiasMissing: IdleBiasResponse = {
+  correction_enabled: false,
+  dataset: {
+    status: "missing",
+    min_voltage_mv: 3000,
+    max_voltage_mv: 21000,
+    step_mv: 500,
+    point_count: 37,
+    offsets_ma: null,
+  },
+  current_applied_offset_ma: null,
+  run: {
+    state: "idle",
+    completed_points: 0,
+    point_count: 37,
+    target_voltage_mv: null,
+    error: null,
+  },
+};
+
+const idleBiasReadyOff: IdleBiasResponse = {
+  correction_enabled: false,
+  dataset: {
+    status: "valid",
+    min_voltage_mv: 3000,
+    max_voltage_mv: 21000,
+    step_mv: 500,
+    point_count: 37,
+    offsets_ma: [
+      12, 13, 15, 16, 18, 20, 21, 23, 24, 26, 27, 28, 29, 31, 32, 33, 35, 36,
+      37, 38, 39, 40, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51, 52, 54, 55, 56,
+      57,
+    ],
+  },
+  current_applied_offset_ma: null,
+  run: {
+    state: "idle",
+    completed_points: 0,
+    point_count: 37,
+    target_voltage_mv: null,
+    error: null,
+  },
+};
+
+const idleBiasReadyOn: IdleBiasResponse = {
+  ...idleBiasReadyOff,
+  correction_enabled: true,
+  current_applied_offset_ma: 42,
+};
+
+const idleBiasRunning: IdleBiasResponse = {
+  ...idleBiasReadyOff,
+  run: {
+    state: "running",
+    completed_points: 19,
+    point_count: 37,
+    target_voltage_mv: 12500,
+    error: null,
+  },
+};
+
+const idleBiasFailed: IdleBiasResponse = {
+  ...idleBiasReadyOff,
+  run: {
+    state: "failed",
+    completed_points: 37,
+    point_count: 37,
+    target_voltage_mv: null,
+    error: {
+      code: "eeprom_failed",
+      message: "Idle-bias calibration could not be saved to EEPROM U21",
+    },
+  },
+};
+
 const ok = (value: PowerConfigResponse): Promise<Result<PowerConfigResponse>> =>
+  Promise.resolve({ ok: true, value });
+
+const okIdle = (value: IdleBiasResponse): Promise<Result<IdleBiasResponse>> =>
   Promise.resolve({ ok: true, value });
 
 const apiError = (message: string): Promise<Result<PowerConfigResponse>> =>
@@ -97,17 +179,23 @@ export default meta;
 
 type Story = StoryObj<typeof DevicePowerPanel>;
 
+const defaultArgs: Story["args"] = {
+  deviceKey: "bench-hub",
+  deviceName: "Bench Hub",
+  transportLabel: "local_usb",
+  localAdvancedLocked: false,
+  loadPowerConfig: () => ok(manualConfig),
+  loadIdleBias: () => okIdle(idleBiasMissing),
+  savePowerConfig: () => ok(manualConfig),
+  restorePowerDefaults: () => ok(autoConfig),
+  setPowerLock: () => ok(manualConfig),
+  setIdleBiasCorrection: () => okIdle(idleBiasReadyOn),
+  runIdleBiasCalibration: () => okIdle(idleBiasRunning),
+  clearIdleBiasCalibration: () => okIdle(idleBiasMissing),
+};
+
 export const Default: Story = {
-  args: {
-    deviceKey: "bench-hub",
-    deviceName: "Bench Hub",
-    transportLabel: "local_usb",
-    localAdvancedLocked: false,
-    loadPowerConfig: () => ok(manualConfig),
-    savePowerConfig: () => ok(manualConfig),
-    restorePowerDefaults: () => ok(autoConfig),
-    setPowerLock: () => ok(manualConfig),
-  },
+  args: defaultArgs,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
@@ -116,22 +204,21 @@ export const Default: Story = {
     await expect(canvas.getByTestId("PPS-negotiation-badge")).toHaveTextContent(
       "CC",
     );
-    await expect(canvas.getByTestId("PD-negotiation-badge")).toHaveTextContent(
-      "CC",
-    );
     await expect(canvas.getByTestId("QC2-negotiation-badge")).toHaveTextContent(
       "DPDM",
     );
     await expect(
-      canvas.getByTestId("SFCP-negotiation-badge"),
-    ).toHaveTextContent("DPDM");
+      await canvas.findByRole("button", { name: "Run calibration" }),
+    ).toBeVisible();
+    await expect(await canvas.findByText("Missing")).toBeVisible();
   },
 };
 
 export const HostLocked: Story = {
   args: {
-    ...Default.args,
+    ...defaultArgs,
     loadPowerConfig: () => ok(hostLockedConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
     setPowerLock: () => apiError("Power settings are locked by another host"),
     transportLabel: "http",
   },
@@ -141,13 +228,17 @@ export const HostLocked: Story = {
     await expect(
       canvas.getByRole("slider", { name: /Voltage/ }),
     ).toBeDisabled();
+    await expect(
+      canvas.getByRole("button", { name: "Run calibration" }),
+    ).toBeDisabled();
   },
 };
 
 export const AutoFollowDefaults: Story = {
   args: {
-    ...Default.args,
+    ...defaultArgs,
     loadPowerConfig: () => ok(autoConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
     savePowerConfig: () => ok(autoConfig),
     setPowerLock: () => ok(autoConfig),
   },
@@ -155,8 +246,9 @@ export const AutoFollowDefaults: Story = {
 
 export const SaveManualFlow: Story = {
   args: {
-    ...Default.args,
+    ...defaultArgs,
     loadPowerConfig: () => ok(autoConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
     savePowerConfig: (_input, _owner) => ok(manualConfig),
     setPowerLock: () => ok(autoConfig),
   },
@@ -177,7 +269,8 @@ export const SaveManualFlow: Story = {
 
 export const RestoreDefaultsFlow: Story = {
   args: {
-    ...Default.args,
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
     restorePowerDefaults: () => ok(autoConfig),
   },
   play: async ({ canvasElement }) => {
@@ -189,9 +282,115 @@ export const RestoreDefaultsFlow: Story = {
   },
 };
 
+export const CalibrationReadyCorrectionOff: Story = {
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+    setIdleBiasCorrection: () => okIdle(idleBiasReadyOn),
+  },
+};
+
+export const CalibrationApplied: Story = {
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOn),
+    setIdleBiasCorrection: () => okIdle(idleBiasReadyOff),
+  },
+};
+
+export const CalibrationDatasetExpanded: Story = {
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: /Calibration dataset table/i,
+      }),
+    );
+    await expect(
+      await canvas.findByRole("tab", { name: "Chart", selected: true }),
+    ).toBeVisible();
+    await expect(
+      await canvas.findByText(/voltage to idle-current drift/i),
+    ).toBeVisible();
+  },
+};
+
+export const CalibrationDatasetTableView: Story = {
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: /Calibration dataset table/i,
+      }),
+    );
+    await userEvent.click(await canvas.findByRole("tab", { name: "Table" }));
+    await expect(
+      await canvas.findByRole("tab", { name: "Table", selected: true }),
+    ).toBeVisible();
+    await expect(await canvas.findAllByText("Point")).toHaveLength(3);
+    await expect(await canvas.findByText("21 V")).toBeVisible();
+    await expect(await canvas.findByText("20.5 V")).toBeVisible();
+  },
+};
+
+export const CalibrationRunning: Story = {
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasRunning),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(/Calibration progress: 19\/37/),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Run calibration" }),
+    ).toBeDisabled();
+    await expect(
+      canvas.getByRole("slider", { name: /Voltage/ }),
+    ).toBeDisabled();
+  },
+};
+
+export const RunConfirmation: Story = {
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasMissing),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Run calibration" }),
+    );
+    await expect(
+      await canvas.findByRole("alertdialog", {
+        name: "Run USB-C idle-bias calibration?",
+      }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByText(/Disconnect every USB-C device first/),
+    ).toBeVisible();
+  },
+};
+
+export const FailureState: Story = {
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasFailed),
+  },
+};
+
 export const ApiFailure: Story = {
   args: {
-    ...Default.args,
+    ...defaultArgs,
     loadPowerConfig: () => apiError("EEPROM U21 write failed"),
   },
 };
@@ -208,7 +407,8 @@ export const Narrow: Story = {
     ),
   ],
   args: {
-    ...Default.args,
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -236,7 +436,8 @@ export const MediumWideCards: Story = {
     ),
   ],
   args: {
-    ...Default.args,
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -249,8 +450,9 @@ export const MediumWideCards: Story = {
 
 export const ManualForceConfigOnly: Story = {
   args: {
-    ...Default.args,
+    ...defaultArgs,
     loadPowerConfig: () => ok(manualForceConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
     savePowerConfig: () => ok(manualForceConfig),
     setPowerLock: () => ok(manualForceConfig),
   },

@@ -581,6 +581,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn storage_upsert_merges_device_transports() {
+        let path = temp_storage_path("merge-transports");
+        let manager = StorageManager::load_at(path).expect("load storage");
+        manager
+            .upsert_device(UpsertDeviceInput {
+                id: Some("f293cc9c139e".to_string()),
+                name: "Desk Hub".to_string(),
+                base_url: "http://isolapurr-usb-hub-f293cc9c139e.local".to_string(),
+                transports: Some(StoredDeviceTransports {
+                    http_base_url: Some("http://isolapurr-usb-hub-f293cc9c139e.local".to_string()),
+                    local_usb_port_path: None,
+                    web_serial_label: Some("ESP32-S3 USB JTAG".to_string()),
+                }),
+            })
+            .await
+            .expect("initial upsert");
+
+        let updated = manager
+            .upsert_device(UpsertDeviceInput {
+                id: Some("f293cc9c139e".to_string()),
+                name: "Desk Hub".to_string(),
+                base_url: "http://isolapurr-usb-hub-f293cc9c139e.local".to_string(),
+                transports: Some(StoredDeviceTransports {
+                    http_base_url: None,
+                    local_usb_port_path: Some("/dev/cu.usbmodem21221401".to_string()),
+                    web_serial_label: None,
+                }),
+            })
+            .await
+            .expect("usb refresh upsert");
+
+        let transports = updated.transports.expect("transports");
+        assert_eq!(
+            transports.http_base_url.as_deref(),
+            Some("http://isolapurr-usb-hub-f293cc9c139e.local")
+        );
+        assert_eq!(
+            transports.local_usb_port_path.as_deref(),
+            Some("/dev/cu.usbmodem21221401")
+        );
+        assert_eq!(
+            transports.web_serial_label.as_deref(),
+            Some("ESP32-S3 USB JTAG")
+        );
+    }
+
+    #[tokio::test]
     async fn storage_recovers_from_corrupt_file() {
         let path = temp_storage_path("corrupt");
         fs::write(&path, "not-json").expect("write corrupt");

@@ -3,9 +3,9 @@ import { expect, test } from "@playwright/test";
 test("renders devices list and mock dashboard", async ({ page }) => {
   const storageKey = "isolapurr_usb_hub.devices";
   const device = {
-    id: "demo",
+    id: "aabbcc001122",
     name: "Demo Hub",
-    baseUrl: "http://192.168.1.23",
+    baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
   };
 
   await page.addInitScript(
@@ -18,9 +18,9 @@ test("renders devices list and mock dashboard", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByTestId("device-list")).toBeVisible();
-  await expect(page.getByTestId("device-card-demo")).toBeVisible();
+  await expect(page.getByTestId("device-card-aabbcc001122")).toBeVisible();
 
-  await page.getByTestId("device-card-demo").click();
+  await page.getByTestId("device-card-aabbcc001122").click();
   await expect(page.getByTestId("device-dashboard")).toBeVisible();
 
   await expect(page.getByTestId("port-card-port_a")).toBeVisible();

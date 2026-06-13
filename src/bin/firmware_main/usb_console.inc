@@ -103,7 +103,7 @@ async fn handle_usb_jsonl_request(
     {
         let state = { *api_state.lock().await };
         let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
-        net::write_pd_diagnostics_json(&mut body, &state.pd);
+        net::write_pd_diagnostics_json(&mut body, &state.pd, &state.idle_bias);
         let _ = body.push('}');
         return body;
     }
@@ -200,6 +200,158 @@ async fn handle_usb_jsonl_request(
                     true,
                 );
             }
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"power.idle_bias_get\"")
+        || request.contains("\"method\": \"power.idle_bias_get\"")
+    {
+        let state = { *api_state.lock().await };
+        let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+        net::write_idle_bias_json(&mut body, &state.idle_bias);
+        let _ = body.push('}');
+        return body;
+    }
+
+    if request.contains("\"method\":\"power.idle_bias_set\"")
+        || request.contains("\"method\": \"power.idle_bias_set\"")
+    {
+        let Some(enabled) = extract_json_bool(request, "correction_enabled") else {
+            write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "bad_request",
+                "missing correction_enabled",
+                false,
+            );
+            return body;
+        };
+        let owner = extract_json_u32(request, "owner");
+        match net::try_set_idle_bias(
+            api_state,
+            net::ApiIdleBiasCommand::SetCorrection { enabled },
+            owner,
+        )
+        .await
+        {
+            Ok(()) => {
+                if wait_idle_bias_result().await {
+                    let state = { *api_state.lock().await };
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+                    net::write_idle_bias_json(&mut body, &state.idle_bias);
+                    let _ = body.push('}');
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "eeprom_failed",
+                        "Idle-bias correction could not be saved to EEPROM U21",
+                        true,
+                    );
+                }
+            }
+            Err(net::ApiIdleBiasActionError::Busy) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "busy",
+                    "idle-bias settings are busy or locked",
+                    true,
+                );
+            }
+            Err(net::ApiIdleBiasActionError::DatasetMissing) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "dataset_missing",
+                    "Run USB-C idle-bias calibration before enabling correction",
+                    false,
+                );
+            }
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"power.idle_bias_run\"")
+        || request.contains("\"method\": \"power.idle_bias_run\"")
+    {
+        const IDLE_BIAS_RUN_PREFLIGHT_WAIT_MS: u64 = 1_000;
+        let owner = extract_json_u32(request, "owner");
+        match net::try_run_idle_bias(api_state, owner).await {
+            Ok(()) => {
+                let immediate_failure = match select(
+                    Timer::after_millis(IDLE_BIAS_RUN_PREFLIGHT_WAIT_MS),
+                    wait_idle_bias_result(),
+                )
+                .await
+                {
+                    Either::Second(false) => {
+                        let state = { *api_state.lock().await };
+                        Some(state.idle_bias.run.error)
+                    }
+                    Either::First(()) | Either::Second(true) => None,
+                };
+
+                if let Some(Some(error)) = immediate_failure {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        error.as_str(),
+                        error.message(),
+                        !matches!(error, net::ApiIdleBiasErrorCode::AttachDetected),
+                    );
+                } else {
+                    let state = { *api_state.lock().await };
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+                    net::write_idle_bias_json(&mut body, &state.idle_bias);
+                    let _ = body.push('}');
+                }
+            }
+            Err(net::ApiActionError::Busy) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "busy",
+                    "idle-bias calibration is busy or locked",
+                    true,
+                );
+            }
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"power.idle_bias_clear\"")
+        || request.contains("\"method\": \"power.idle_bias_clear\"")
+    {
+        let owner = extract_json_u32(request, "owner");
+        match net::try_set_idle_bias(api_state, net::ApiIdleBiasCommand::Clear, owner).await {
+            Ok(()) => {
+                if wait_idle_bias_result().await {
+                    let state = { *api_state.lock().await };
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+                    net::write_idle_bias_json(&mut body, &state.idle_bias);
+                    let _ = body.push('}');
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "eeprom_failed",
+                        "Idle-bias dataset could not be cleared from EEPROM U21",
+                        true,
+                    );
+                }
+            }
+            Err(net::ApiIdleBiasActionError::Busy) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "busy",
+                    "idle-bias settings are busy or locked",
+                    true,
+                );
+            }
+            Err(net::ApiIdleBiasActionError::DatasetMissing) => unreachable!(),
         }
         return body;
     }
@@ -610,6 +762,16 @@ pub(crate) fn reset_power_config_result() {
 }
 
 #[cfg(feature = "net_http")]
+pub(crate) async fn wait_idle_bias_result() -> bool {
+    IDLE_BIAS_RESULT.wait().await
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) fn reset_idle_bias_result() {
+    IDLE_BIAS_RESULT.reset();
+}
+
+#[cfg(feature = "net_http")]
 pub(crate) async fn wait_settings_reset_result() -> SettingsResetResult {
     SETTINGS_RESET_RESULT.wait().await
 }
@@ -739,8 +901,27 @@ fn write_usb_port_json(
     write_usb_u32_or_null(body, port.telemetry.power_mw);
     let _ = write!(
         body,
-        ",\"sample_uptime_ms\":{}}},\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}}}}",
+        ",\"sample_uptime_ms\":{}}},\"telemetry_raw\":",
         port.telemetry.sample_uptime_ms,
+    );
+    if let Some(raw) = port.telemetry_raw {
+        let _ = write!(
+            body,
+            "{{\"status\":\"{}\",\"voltage_mv\":",
+            raw.status.as_str()
+        );
+        write_usb_u32_or_null(body, raw.voltage_mv);
+        let _ = body.push_str(",\"current_ma\":");
+        write_usb_u32_or_null(body, raw.current_ma);
+        let _ = body.push_str(",\"power_mw\":");
+        write_usb_u32_or_null(body, raw.power_mw);
+        let _ = write!(body, ",\"sample_uptime_ms\":{}}}", raw.sample_uptime_ms);
+    } else {
+        let _ = body.push_str("null");
+    }
+    let _ = write!(
+        body,
+        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}}}}",
         port.state.power_enabled,
         port.state.data_connected,
         port.state.replugging,

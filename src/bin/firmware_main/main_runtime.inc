@@ -378,11 +378,40 @@
                 (PowerConfig::defaults(), false)
             }
         };
+    #[cfg(feature = "net_http")]
+    let mut idle_bias_calibration = match provisioning::load_idle_bias_calibration(&mut telemetry_i2c)
+        .await
+    {
+        Ok(Some(calibration)) => {
+            info!("provisioning: idle-bias calibration loaded from EEPROM U21");
+            Some(calibration)
+        }
+        Ok(None) => {
+            info!("provisioning: idle-bias EEPROM record empty; correction disabled");
+            None
+        }
+        Err(err) => {
+            defmt::warn!(
+                "provisioning: failed to load idle-bias calibration from EEPROM U21: {:?}; correction disabled",
+                defmt::Debug2Format(&err)
+            );
+            None
+        }
+    };
     #[cfg(not(feature = "net_http"))]
     let mut power_config = PowerConfig::defaults();
     let mut last_sw2303_path_control: Option<Sw2303PathControl> = None;
     #[cfg(feature = "net_http")]
     let mut settings_reset_inflight: Option<net::ApiSettingsResetScope> = None;
+    #[cfg(feature = "net_http")]
+    {
+        let mut guard = api_state.lock().await;
+        guard.idle_bias = idle_bias_api_snapshot(
+            idle_bias_calibration,
+            net::ApiIdleBiasRunSnapshot::idle(),
+            None,
+        );
+    }
     #[cfg(feature = "net_http")]
     let net_handles =
         net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state, wifi_credentials);
@@ -503,6 +532,8 @@
     let mut api_usb_a_metrics = PortMetrics::err();
     #[cfg(feature = "net_http")]
     let mut api_usb_c_metrics = PortMetrics::err();
+    #[cfg(feature = "net_http")]
+    let mut api_usb_c_metrics_raw = PortMetrics::err();
 
     prompt_tone.notify(SoundEvent::InitDone);
     {

@@ -189,23 +189,32 @@ async fn verify_other_settings_reset_after_serial_reconnect(
                 continue;
             }
         };
-        if other_settings_reset_is_verified(&ports, &power) {
+        let idle_bias = match usb_jsonl_request(state, device_id, "power.idle_bias_get", None).await
+        {
+            Ok(value) => value,
+            Err(err) => {
+                last_error = Some(err);
+                continue;
+            }
+        };
+        if other_settings_reset_is_verified(&ports, &power, &idle_bias) {
             return Ok(());
         }
         last_error = Some(anyhow!(
-            "other settings reset did not report default route and power config yet"
+            "other settings reset did not report default route, power config, and idle-bias state yet"
         ));
     }
     Err(last_error
         .unwrap_or_else(|| anyhow!("other settings reset did not verify after serial reconnect")))
 }
 
-fn other_settings_reset_is_verified(ports: &Value, power: &Value) -> bool {
+fn other_settings_reset_is_verified(ports: &Value, power: &Value, idle_bias: &Value) -> bool {
     let hub = ports
         .get("result")
         .and_then(|result| result.get("hub"))
         .or_else(|| ports.get("hub"));
     let power = power.get("result").unwrap_or(power);
+    let idle_bias = idle_bias.get("result").unwrap_or(idle_bias);
     hub.and_then(Value::as_object).is_some_and(|hub| {
         hub.get("usb_c_downstream_route").and_then(Value::as_str) == Some("mcu")
             && hub
@@ -219,6 +228,12 @@ fn other_settings_reset_is_verified(ports: &Value, power: &Value) -> bool {
             .and_then(|manual| manual.get("voltage_mv"))
             .and_then(Value::as_u64)
             == Some(5_000)
+        && idle_bias.get("correction_enabled").and_then(Value::as_bool) == Some(false)
+        && idle_bias
+            .get("dataset")
+            .and_then(|dataset| dataset.get("status"))
+            .and_then(Value::as_str)
+            == Some("missing")
 }
 
 async fn device_usb_port_path(state: &AppState, device_id: &str) -> anyhow::Result<String> {
@@ -236,7 +251,11 @@ async fn device_usb_port_path(state: &AppState, device_id: &str) -> anyhow::Resu
 
 fn serial_timeout_ms_for_method(method: &str) -> u64 {
     match method {
-        "power.config_set" | "power.config_defaults" => SERIAL_POWER_CONFIG_TIMEOUT_MS,
+        "power.config_set"
+        | "power.config_defaults"
+        | "power.idle_bias_set"
+        | "power.idle_bias_clear" => SERIAL_POWER_CONFIG_TIMEOUT_MS,
+        "power.idle_bias_run" => 178_000,
         "settings.reset" => SERIAL_SETTINGS_RESET_TIMEOUT_MS,
         _ => SERIAL_TIMEOUT_MS,
     }
@@ -252,6 +271,15 @@ mod device_io_tests {
             serial_timeout_ms_for_method("settings.reset"),
             SERIAL_SETTINGS_RESET_TIMEOUT_MS
         );
+        assert_eq!(
+            serial_timeout_ms_for_method("power.idle_bias_set"),
+            SERIAL_POWER_CONFIG_TIMEOUT_MS
+        );
+        assert_eq!(
+            serial_timeout_ms_for_method("power.idle_bias_clear"),
+            SERIAL_POWER_CONFIG_TIMEOUT_MS
+        );
+        assert_eq!(serial_timeout_ms_for_method("power.idle_bias_run"), 178_000);
     }
 
     #[test]
@@ -297,6 +325,15 @@ mod device_io_tests {
                         "voltage_mv": 5000
                     }
                 }
+            }),
+            &json!({
+                "ok": true,
+                "result": {
+                    "correction_enabled": false,
+                    "dataset": {
+                        "status": "missing"
+                    }
+                }
             })
         ));
         assert!(!other_settings_reset_is_verified(
@@ -316,6 +353,15 @@ mod device_io_tests {
                     "tps_mode": "manual",
                     "manual": {
                         "voltage_mv": 9000
+                    }
+                }
+            }),
+            &json!({
+                "ok": true,
+                "result": {
+                    "correction_enabled": true,
+                    "dataset": {
+                        "status": "valid"
                     }
                 }
             })

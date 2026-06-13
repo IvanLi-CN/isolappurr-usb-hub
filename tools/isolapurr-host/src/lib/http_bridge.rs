@@ -58,6 +58,18 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             get(device_power_config_get).put(device_power_config_set),
         )
         .route(
+            "/api/v1/devices/{id}/power/idle-bias",
+            get(device_power_idle_bias_get).put(device_power_idle_bias_set),
+        )
+        .route(
+            "/api/v1/devices/{id}/power/idle-bias/run",
+            post(device_power_idle_bias_run),
+        )
+        .route(
+            "/api/v1/devices/{id}/power/idle-bias/clear",
+            post(device_power_idle_bias_clear),
+        )
+        .route(
             "/api/v1/devices/{id}/power/config/defaults",
             post(device_power_config_defaults),
         )
@@ -742,6 +754,23 @@ async fn device_power_config_get(
     }
 }
 
+async fn device_power_idle_bias_get(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "power.idle_bias_get", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
 async fn device_power_config_set(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -764,6 +793,29 @@ async fn device_power_config_set(
                 Err(_) => error_from_anyhow(err),
             }
         }
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_idle_bias_set(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+    Json(body): Json<Value>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    let params = json!({
+        "correction_enabled": body.get("correction_enabled").cloned().unwrap_or(Value::Null),
+        "owner": query.owner,
+    });
+    match usb_jsonl_request(&state, &id, "power.idle_bias_set", Some(params)).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }
 }
@@ -795,6 +847,56 @@ async fn device_power_config_defaults(
                 Err(_) => error_from_anyhow(err),
             }
         }
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_idle_bias_run(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "power.idle_bias_run",
+        Some(json!({"owner": query.owner})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_idle_bias_clear(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "power.idle_bias_clear",
+        Some(json!({"owner": query.owner})),
+    )
+    .await
+    {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }
 }

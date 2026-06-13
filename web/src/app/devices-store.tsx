@@ -20,6 +20,7 @@ import type {
 } from "../domain/devices";
 import {
   loadStoredDevices,
+  mergeStoredDeviceTransports,
   normalizeBaseUrl,
   saveStoredDevices,
   validateAddDeviceInput,
@@ -213,11 +214,15 @@ export function DevicesProvider({
         if (devices.some((d) => d.id !== id && d.baseUrl === baseUrl.baseUrl)) {
           return { ok: false, errors: { baseUrl: "Base URL already exists" } };
         }
+        const existing = devices.find((d) => d.id === id);
         return persistDevice({
           id,
           name,
           baseUrl: baseUrl.baseUrl,
-          transports: input.transports,
+          transports: mergeStoredDeviceTransports(
+            existing?.transports,
+            input.transports,
+          ),
         });
       },
       removeDevice: async (deviceId) => {

@@ -116,7 +116,7 @@ async fn discover_usb_devices(
             .as_ref()
             .and_then(parse_discovered_http_info_from_value)
             .map(|parsed| parsed.firmware);
-        let mut keys = vec![format!("usb:{}", normalize_discovery_key(&device.id))];
+        let mut keys = discover_usb_match_keys(&device.id, &usb.port_path);
         if let Some(identity) = &identity {
             extend_unique(&mut keys, discover_identity_match_keys(identity));
         }
@@ -310,7 +310,9 @@ fn parse_discovered_http_info_from_value(value: &Value) -> Option<ParsedDiscover
 }
 
 fn parse_device_identity_from_info(value: &Value) -> Option<DeviceIdentity> {
-    let device = value.get("device")?;
+    let device = value
+        .get("device")
+        .or_else(|| value.get("result").and_then(|result| result.get("device")))?;
     let device_id = device
         .get("device_id")
         .or_else(|| device.get("deviceId"))
@@ -373,6 +375,9 @@ fn saved_hardware_match_for_transport(
 
 fn saved_profile_match_keys(profile: &DeviceProfile) -> Vec<String> {
     let mut keys = Vec::new();
+    if let Some(device_id) = canonical_device_id_candidate(&profile.id) {
+        keys.push(format!("device:{device_id}"));
+    }
     if let Some(identity) = &profile.identity {
         extend_unique(&mut keys, discover_identity_match_keys(identity));
     }
@@ -450,6 +455,16 @@ fn discover_identity_match_keys(identity: &DeviceIdentity) -> Vec<String> {
         keys.push(format!("device:{device_id}"));
     }
     dedupe_strings(keys)
+}
+
+fn discover_usb_match_keys(device_id: &str, port_path: &str) -> Vec<String> {
+    dedupe_strings(vec![
+        format!(
+            "usb:{}",
+            normalize_discovery_key(&discover_usb_target_id(port_path))
+        ),
+        format!("usb:{}", normalize_discovery_key(device_id)),
+    ])
 }
 
 fn dedupe_strings(values: Vec<String>) -> Vec<String> {

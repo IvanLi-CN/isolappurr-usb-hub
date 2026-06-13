@@ -73,6 +73,24 @@ fn normalize_transports(
     }
 }
 
+fn merge_transports(
+    existing: Option<StoredDeviceTransports>,
+    incoming: Option<StoredDeviceTransports>,
+) -> Option<StoredDeviceTransports> {
+    match (existing, incoming) {
+        (None, None) => None,
+        (Some(existing), None) => Some(existing),
+        (None, Some(incoming)) => Some(incoming),
+        (Some(existing), Some(incoming)) => Some(StoredDeviceTransports {
+            http_base_url: incoming.http_base_url.or(existing.http_base_url),
+            local_usb_port_path: incoming
+                .local_usb_port_path
+                .or(existing.local_usb_port_path),
+            web_serial_label: incoming.web_serial_label.or(existing.web_serial_label),
+        }),
+    }
+}
+
 fn sanitize_storage(storage: &mut DesktopStorage) -> bool {
     let before = storage.devices.len();
     storage.devices = storage
@@ -244,7 +262,8 @@ impl StorageManager {
         if let Some(index) = existing_index {
             guard.devices[index].name = name.to_string();
             guard.devices[index].base_url = base_url.clone();
-            guard.devices[index].transports = transports;
+            guard.devices[index].transports =
+                merge_transports(guard.devices[index].transports.take(), transports);
             let stored = guard.devices[index].clone();
             persist_storage(&self.path, &guard)
                 .map_err(|err| StorageError::Internal(err.to_string()))?;
@@ -501,7 +520,8 @@ impl StorageManager {
         if let Some(index) = existing_index {
             storage.devices[index].name = name.to_string();
             storage.devices[index].base_url = base_url;
-            storage.devices[index].transports = transports;
+            storage.devices[index].transports =
+                merge_transports(storage.devices[index].transports.take(), transports);
             if let Some(last_seen_at) = last_seen_at.clone() {
                 if !last_seen_at.trim().is_empty() {
                     storage.devices[index].last_seen_at = Some(last_seen_at);

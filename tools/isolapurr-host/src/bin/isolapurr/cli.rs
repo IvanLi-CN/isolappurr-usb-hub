@@ -211,6 +211,14 @@ enum DiagnosticsCommand {
 enum PowerCommand {
     #[command(about = "Show saved power settings and live USB-C source status")]
     Show(PowerSelectorArgs),
+    #[command(
+        name = "idle-bias",
+        about = "Inspect or calibrate USB-C empty-load idle-bias correction"
+    )]
+    IdleBias {
+        #[command(subcommand)]
+        command: IdleBiasCommand,
+    },
     #[command(about = "Restore the default USB-C source capability profile")]
     Defaults {
         #[command(flatten)]
@@ -228,6 +236,38 @@ enum PowerCommand {
     SourceCapability {
         #[command(subcommand)]
         command: SourceCapabilityCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum IdleBiasCommand {
+    #[command(about = "Show the saved USB-C idle-bias dataset and correction state")]
+    Show {
+        #[command(flatten)]
+        selector: PowerSelectorArgs,
+    },
+    #[command(about = "Run a 3.0V to 21.0V USB-C empty-load calibration sweep")]
+    Run {
+        #[command(flatten)]
+        selector: PowerSelectorArgs,
+        #[arg(long)]
+        yes: bool,
+    },
+    #[command(about = "Clear the saved USB-C idle-bias dataset")]
+    Clear {
+        #[command(flatten)]
+        selector: PowerSelectorArgs,
+        #[arg(long)]
+        yes: bool,
+    },
+    #[command(about = "Enable or disable applying USB-C idle-bias correction")]
+    Set {
+        #[command(flatten)]
+        selector: PowerSelectorArgs,
+        #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
+        enabled: bool,
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -378,9 +418,83 @@ struct CliPowerDiagnostics {
     tps_error_latched: bool,
     sw2303_readback_config: CliPowerCapabilityReadback,
     sw2303_request: CliPowerRequest,
+    #[serde(default)]
+    sw2303_vbus_mv: Option<u32>,
     sw2303_last_valid_request: CliPowerRequest,
+    #[serde(default)]
+    display: Option<CliUsbCDisplay>,
+    #[serde(default)]
+    usb_c_actual: Option<CliPortTelemetry>,
     tps_setpoint: CliPowerSetpoint,
+    #[serde(default)]
+    idle_bias: CliIdleBias,
     runtime_recovery_count: u32,
+    sample_uptime_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliUsbCDisplay {
+    mode: Value,
+    measurements_visible: bool,
+    badge: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+struct CliIdleBias {
+    correction_enabled: bool,
+    #[serde(default)]
+    dataset: CliIdleBiasDataset,
+    current_applied_offset_ma: Option<u32>,
+    #[serde(default)]
+    run: CliIdleBiasRun,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliIdleBiasDataset {
+    status: String,
+    min_voltage_mv: u16,
+    max_voltage_mv: u16,
+    step_mv: u16,
+    point_count: u8,
+    offsets_ma: Option<Vec<u16>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+struct CliIdleBiasRun {
+    state: String,
+    completed_points: u8,
+    point_count: u8,
+    target_voltage_mv: Option<u32>,
+    error: Option<CliIdleBiasError>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliIdleBiasError {
+    code: String,
+    message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliPortsResponse {
+    ports: Vec<CliPort>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliPort {
+    #[serde(rename = "portId")]
+    port_id: String,
+    label: String,
+    telemetry: CliPortTelemetry,
+    #[serde(default)]
+    telemetry_raw: Option<CliPortTelemetry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliPortTelemetry {
+    status: String,
+    voltage_mv: Option<u32>,
+    current_ma: Option<u32>,
+    power_mw: Option<u32>,
     sample_uptime_ms: u64,
 }
 
@@ -449,6 +563,19 @@ impl Default for CliPowerCurrentReadback {
     }
 }
 
+impl Default for CliIdleBiasDataset {
+    fn default() -> Self {
+        Self {
+            status: "missing".to_string(),
+            min_voltage_mv: 3000,
+            max_voltage_mv: 21000,
+            step_mv: 500,
+            point_count: 37,
+            offsets_ma: None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct UserCancelled;
 
@@ -478,6 +605,28 @@ fn confirm_settings_reset(scope: &str) -> anyhow::Result<()> {
     let mut line = String::new();
     std::io::stdin().read_line(&mut line)?;
     if line.trim() != format!("reset {scope}") {
+        return Err(UserCancelled.into());
+    }
+    Ok(())
+}
+
+fn confirm_idle_bias_action(action: &str) -> anyhow::Result<()> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        return Err(anyhow!(
+            "idle-bias mutation requires an interactive terminal or --yes"
+        ));
+    }
+    eprintln!("USB-C idle-bias action: {action}");
+    eprintln!("Disconnect any USB-C device before continuing.");
+    eprintln!(
+        "Calibration sweeps 3.0V to 21.0V and restores the pre-calibration runtime output afterward."
+    );
+    eprintln!("Type 'idle-bias {action}' to continue:");
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    if line.trim() != format!("idle-bias {action}") {
         return Err(UserCancelled.into());
     }
     Ok(())

@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getStablePowerLockOwner } from "../../app/device-runtime-support";
 import type {
+  IdleBiasResponse,
   PowerConfigInput,
   PowerConfigResponse,
   Result,
 } from "../../domain/deviceApi";
+import { DevicePowerPanelIdleBiasSection } from "./DevicePowerPanelIdleBiasSection";
 
 const HEARTBEAT_MS = 8_000;
 
@@ -15,6 +17,7 @@ type DevicePowerPanelProps = {
   transportLabel: string;
   localAdvancedLocked: boolean;
   loadPowerConfig: () => Promise<Result<PowerConfigResponse>>;
+  loadIdleBias: () => Promise<Result<IdleBiasResponse>>;
   savePowerConfig: (
     input: PowerConfigInput,
     owner: number,
@@ -24,6 +27,14 @@ type DevicePowerPanelProps = {
     owner: number,
     acquire: boolean,
   ) => Promise<Result<PowerConfigResponse>>;
+  setIdleBiasCorrection: (
+    enabled: boolean,
+    owner: number,
+  ) => Promise<Result<IdleBiasResponse>>;
+  runIdleBiasCalibration: (owner: number) => Promise<Result<IdleBiasResponse>>;
+  clearIdleBiasCalibration: (
+    owner: number,
+  ) => Promise<Result<IdleBiasResponse>>;
 };
 
 type FormState = PowerConfigInput;
@@ -64,7 +75,12 @@ function quantize(value: number, step: number): number {
 }
 
 function normalizeUnit(raw: string): string {
-  return raw.trim().toLowerCase().replaceAll("μ", "u").replaceAll("µ", "u");
+  return raw
+    .trim()
+    .toLowerCase()
+    .replaceAll("μ", "u")
+    .replaceAll("µ", "u")
+    .replaceAll("mu", "u");
 }
 
 function parseUnitNumber(raw: string): { value: number; unit: string } | null {
@@ -211,9 +227,13 @@ export function DevicePowerPanel({
   transportLabel,
   localAdvancedLocked,
   loadPowerConfig,
+  loadIdleBias,
   savePowerConfig,
   restorePowerDefaults,
   setPowerLock,
+  setIdleBiasCorrection,
+  runIdleBiasCalibration,
+  clearIdleBiasCalibration,
 }: DevicePowerPanelProps) {
   const [config, setConfig] = useState<PowerConfigResponse | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -221,8 +241,13 @@ export function DevicePowerPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [idleBiasSnapshot, setIdleBiasSnapshot] =
+    useState<IdleBiasResponse | null>(null);
+  const [idleBiasBusy, setIdleBiasBusy] = useState(false);
+  const [idleBiasRunning, setIdleBiasRunning] = useState(false);
   const lockedRef = useRef(false);
   const loadPowerConfigRef = useRef(loadPowerConfig);
+  const loadIdleBiasRef = useRef(loadIdleBias);
   const setPowerLockRef = useRef(setPowerLock);
   const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
 
@@ -238,12 +263,16 @@ export function DevicePowerPanel({
   }, [loadPowerConfig]);
 
   useEffect(() => {
+    loadIdleBiasRef.current = loadIdleBias;
+  }, [loadIdleBias]);
+
+  useEffect(() => {
     setPowerLockRef.current = setPowerLock;
   }, [setPowerLock]);
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
+    const loadConfig = async () => {
       const configRes = await loadPowerConfigRef.current();
       if (cancelled) {
         return;
@@ -254,7 +283,21 @@ export function DevicePowerPanel({
         setError(configRes.error.message);
       }
     };
-    void load();
+    const loadIdleBiasSnapshot = async () => {
+      const idleBiasRes = await loadIdleBiasRef.current();
+      if (cancelled) {
+        return;
+      }
+      if (idleBiasRes.ok) {
+        setIdleBiasSnapshot(idleBiasRes.value);
+        setIdleBiasRunning(idleBiasRes.value.run.state === "running");
+      } else {
+        setIdleBiasSnapshot(null);
+        setIdleBiasRunning(false);
+      }
+    };
+    void loadConfig();
+    void loadIdleBiasSnapshot();
     return () => {
       cancelled = true;
     };
@@ -285,9 +328,12 @@ export function DevicePowerPanel({
         return;
       }
       const res = await setPowerLockRef.current(ownerRef.current, true);
-      if (!cancelled && !res.ok) {
+      if (cancelled) {
+        return;
+      }
+      if (!res.ok) {
         setError(res.error.message);
-      } else if (!cancelled && res.ok) {
+      } else {
         setConfig(res.value);
       }
     };
@@ -328,7 +374,10 @@ export function DevicePowerPanel({
     config?.lock !== null &&
     config?.lock !== undefined &&
     config.lock.owner !== ownerRef.current;
-  const advancedDisabled = localAdvancedLocked || lockedByOtherHost;
+  const advancedDisabled =
+    localAdvancedLocked || lockedByOtherHost || idleBiasRunning;
+  const powerControlsDisabled = advancedDisabled || busy || idleBiasBusy;
+
   if (!form && error) {
     return (
       <section className="flex min-h-[240px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-6 py-8">
@@ -346,7 +395,7 @@ export function DevicePowerPanel({
     return (
       <section className="flex min-h-[240px] items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-6 py-8">
         <div className="text-sm text-[var(--muted)]">
-          Loading power settings…
+          Loading power settings...
         </div>
       </section>
     );
@@ -500,7 +549,7 @@ export function DevicePowerPanel({
 
   const submit = async () => {
     setBusy(true);
-    setStatus("Saving and applying power configuration…");
+    setStatus("Saving and applying power configuration...");
     setError(null);
     const res = await savePowerConfig(form, ownerRef.current);
     setBusy(false);
@@ -517,7 +566,7 @@ export function DevicePowerPanel({
 
   const restore = async () => {
     setBusy(true);
-    setStatus("Restoring defaults…");
+    setStatus("Restoring defaults...");
     setError(null);
     const res = await restorePowerDefaults(ownerRef.current);
     setBusy(false);
@@ -555,6 +604,11 @@ export function DevicePowerPanel({
           >
             {lockedByOtherHost ? "Host lock active" : "Host lock idle"}
           </span>
+          <span
+            className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${idleBiasRunning ? "bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
+          >
+            {idleBiasRunning ? "Calibration running" : "Calibration idle"}
+          </span>
         </div>
       </header>
 
@@ -570,6 +624,7 @@ export function DevicePowerPanel({
             </div>
           </div>
           <UnitSliderField
+            disabled={powerControlsDisabled}
             formatValue={formatPowerInput}
             label="Power cap"
             max={100}
@@ -582,7 +637,7 @@ export function DevicePowerPanel({
           <div className="protocol-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {protocolToggles.map((protocol) => (
               <label
-                className={`protocol-card flex min-h-[64px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"}`}
+                className={`protocol-card flex min-h-[64px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
                 key={protocol.label}
               >
                 <span className="grid min-w-0 gap-1">
@@ -604,6 +659,7 @@ export function DevicePowerPanel({
                 <input
                   checked={protocol.checked}
                   className="peer sr-only"
+                  disabled={powerControlsDisabled}
                   onChange={(event) => protocol.onChange(event.target.checked)}
                   type="checkbox"
                 />
@@ -632,14 +688,16 @@ export function DevicePowerPanel({
               </div>
               <div className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-1 sm:w-auto">
                 <button
-                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "auto_follow" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"}`}
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "auto_follow" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  disabled={powerControlsDisabled}
                   onClick={() => setTpsMode("auto_follow")}
                   type="button"
                 >
                   Auto follow
                 </button>
                 <button
-                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "manual" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"}`}
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "manual" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  disabled={powerControlsDisabled}
                   onClick={() => setTpsMode("manual")}
                   type="button"
                 >
@@ -650,7 +708,7 @@ export function DevicePowerPanel({
 
             <div className="grid gap-4">
               <UnitSliderField
-                disabled={advancedDisabled || form.tps_mode !== "manual"}
+                disabled={powerControlsDisabled || form.tps_mode !== "manual"}
                 formatValue={formatVoltageInput}
                 label="Voltage"
                 max={21000}
@@ -661,7 +719,7 @@ export function DevicePowerPanel({
                 value={form.manual.voltage_mv}
               />
               <UnitSliderField
-                disabled={advancedDisabled || form.tps_mode !== "manual"}
+                disabled={powerControlsDisabled || form.tps_mode !== "manual"}
                 formatValue={formatCurrentInput}
                 label="Current limit"
                 max={6350}
@@ -682,7 +740,7 @@ export function DevicePowerPanel({
                   [
                     "default",
                     "Default",
-                    "Auto while manual voltage stays within the default 5V Type-C fallback or the negotiated SW2303 request.",
+                    "Disconnect only while manual voltage exceeds negotiated SW2303 request.",
                   ],
                   [
                     "disconnect",
@@ -697,8 +755,10 @@ export function DevicePowerPanel({
                 ].map(([value, label, detail]) => (
                   <button
                     key={value}
-                    className={`flex min-h-[88px] flex-col items-start justify-between rounded-[8px] border px-3 py-3 text-left ${form.manual.usb_c_path_mode === value ? "border-[var(--primary)] bg-[var(--panel)]" : "border-[var(--border)] bg-[var(--panel)]"} ${advancedDisabled || form.tps_mode !== "manual" ? "opacity-60" : ""}`}
-                    disabled={advancedDisabled || form.tps_mode !== "manual"}
+                    className={`flex min-h-[88px] flex-col items-start justify-between rounded-[8px] border px-3 py-3 text-left ${form.manual.usb_c_path_mode === value ? "border-[var(--primary)] bg-[var(--panel)]" : "border-[var(--border)] bg-[var(--panel)]"} ${powerControlsDisabled || form.tps_mode !== "manual" ? "opacity-60" : ""}`}
+                    disabled={
+                      powerControlsDisabled || form.tps_mode !== "manual"
+                    }
                     onClick={() =>
                       setPathMode(
                         value as FormState["manual"]["usb_c_path_mode"],
@@ -722,7 +782,7 @@ export function DevicePowerPanel({
               <div className="mt-4 flex flex-col gap-3">
                 <button
                   className="flex h-11 items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={busy || !dirty}
+                  disabled={powerControlsDisabled || !dirty}
                   onClick={() => void submit()}
                   type="button"
                 >
@@ -730,7 +790,7 @@ export function DevicePowerPanel({
                 </button>
                 <button
                   className="flex h-11 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={busy}
+                  disabled={powerControlsDisabled}
                   onClick={() => void restore()}
                   type="button"
                 >
@@ -750,6 +810,21 @@ export function DevicePowerPanel({
             </section>
           </aside>
         </div>
+
+        <DevicePowerPanelIdleBiasSection
+          busy={busy}
+          clearIdleBiasCalibration={(owner) => clearIdleBiasCalibration(owner)}
+          initialIdleBias={idleBiasSnapshot}
+          loadIdleBias={loadIdleBias}
+          lockedByOtherHost={lockedByOtherHost}
+          onBusyChange={setIdleBiasBusy}
+          onRunningChange={setIdleBiasRunning}
+          owner={ownerRef.current}
+          runIdleBiasCalibration={(owner) => runIdleBiasCalibration(owner)}
+          setIdleBiasCorrection={(enabled, owner) =>
+            setIdleBiasCorrection(enabled, owner)
+          }
+        />
       </div>
     </section>
   );

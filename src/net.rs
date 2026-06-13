@@ -18,6 +18,7 @@ use esp_radio::{
 };
 use heapless::{String as HString, Vec};
 use isolapurr_usb_hub::display_ui::{NormalUiPortBadge, NormalUiPortMode};
+use isolapurr_usb_hub::idle_bias::{IDLE_BIAS_POINT_COUNT, IdleBiasMetadata};
 use isolapurr_usb_hub::power_config::{
     ManualTpsConfig, ManualUsbCPathMode, PowerConfig, Sw2303CapabilityReadback, TpsMode,
     UsbCCapabilityConfig,
@@ -194,6 +195,7 @@ impl ApiHubSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ApiPortSnapshot {
     pub telemetry: ApiPortTelemetry,
+    pub telemetry_raw: Option<ApiPortTelemetry>,
     pub state: ApiPortState,
 }
 
@@ -201,6 +203,7 @@ impl ApiPortSnapshot {
     pub const fn unknown() -> Self {
         Self {
             telemetry: ApiPortTelemetry::unknown(),
+            telemetry_raw: None,
             state: ApiPortState {
                 power_enabled: false,
                 data_connected: false,
@@ -244,9 +247,7 @@ pub struct ApiPdSnapshot {
     pub usb_c_display_mode: NormalUiPortMode,
     pub usb_c_display_badge: NormalUiPortBadge,
     pub usb_c_display_measurements_visible: bool,
-    pub usb_c_actual_voltage_mv: Option<u32>,
-    pub usb_c_actual_current_ma: Option<u32>,
-    pub usb_c_actual_power_mw: Option<u32>,
+    pub usb_c_actual: ApiPortTelemetry,
     pub tps_setpoint_output_enabled: Option<bool>,
     pub tps_setpoint_mv: Option<u32>,
     pub tps_setpoint_ilim_ma: Option<u32>,
@@ -273,9 +274,7 @@ impl ApiPdSnapshot {
             usb_c_display_mode: NormalUiPortMode::Off,
             usb_c_display_badge: NormalUiPortBadge::Off,
             usb_c_display_measurements_visible: false,
-            usb_c_actual_voltage_mv: None,
-            usb_c_actual_current_ma: None,
-            usb_c_actual_power_mw: None,
+            usb_c_actual: ApiPortTelemetry::unknown(),
             tps_setpoint_output_enabled: None,
             tps_setpoint_mv: None,
             tps_setpoint_ilim_ma: None,
@@ -289,6 +288,97 @@ impl ApiPdSnapshot {
 pub struct ApiPowerLock {
     pub owner: u32,
     pub expires_at_ms: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiIdleBiasRunState {
+    Idle,
+    Running,
+    Failed,
+}
+
+impl ApiIdleBiasRunState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Running => "running",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiIdleBiasErrorCode {
+    AttachDetected,
+    ControllerNotReady,
+    TelemetryUnavailable,
+    EepromFailed,
+}
+
+impl ApiIdleBiasErrorCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AttachDetected => "attach_detected",
+            Self::ControllerNotReady => "controller_not_ready",
+            Self::TelemetryUnavailable => "telemetry_unavailable",
+            Self::EepromFailed => "eeprom_failed",
+        }
+    }
+
+    pub const fn message(self) -> &'static str {
+        match self {
+            Self::AttachDetected => "USB-C sink activity was detected during calibration",
+            Self::ControllerNotReady => "USB-C controller is not ready for idle-bias calibration",
+            Self::TelemetryUnavailable => {
+                "USB-C telemetry was unavailable during idle-bias calibration"
+            }
+            Self::EepromFailed => "Idle-bias calibration could not be saved to EEPROM U21",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiIdleBiasRunSnapshot {
+    pub state: ApiIdleBiasRunState,
+    pub completed_points: u8,
+    pub point_count: u8,
+    pub target_voltage_mv: Option<u16>,
+    pub error: Option<ApiIdleBiasErrorCode>,
+}
+
+impl ApiIdleBiasRunSnapshot {
+    pub const fn idle() -> Self {
+        Self {
+            state: ApiIdleBiasRunState::Idle,
+            completed_points: 0,
+            point_count: IDLE_BIAS_POINT_COUNT as u8,
+            target_voltage_mv: None,
+            error: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiIdleBiasSnapshot {
+    pub correction_enabled: bool,
+    pub dataset_valid: bool,
+    pub metadata: IdleBiasMetadata,
+    pub current_offsets_ma: [u16; IDLE_BIAS_POINT_COUNT],
+    pub current_applied_offset_ma: Option<u32>,
+    pub run: ApiIdleBiasRunSnapshot,
+}
+
+impl ApiIdleBiasSnapshot {
+    pub const fn unknown() -> Self {
+        Self {
+            correction_enabled: false,
+            dataset_valid: false,
+            metadata: IdleBiasMetadata::fixed(),
+            current_offsets_ma: [0; IDLE_BIAS_POINT_COUNT],
+            current_applied_offset_ma: None,
+            run: ApiIdleBiasRunSnapshot::idle(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -323,6 +413,13 @@ pub enum ApiPowerConfigCommand {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiIdleBiasCommand {
+    SetCorrection { enabled: bool },
+    Clear,
+    Run,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiSettingsResetScope {
     Other,
 }
@@ -341,6 +438,7 @@ pub struct ApiPendingActions {
     pub port_c: Option<ApiPortAction>,
     pub usb_c_downstream_route: Option<UsbCDownstreamRoute>,
     pub power_config: Option<ApiPowerConfigCommand>,
+    pub idle_bias: Option<ApiIdleBiasCommand>,
     pub settings_reset: Option<ApiSettingsResetScope>,
 }
 
@@ -351,6 +449,7 @@ impl ApiPendingActions {
             port_c: None,
             usb_c_downstream_route: None,
             power_config: None,
+            idle_bias: None,
             settings_reset: None,
         }
     }
@@ -362,6 +461,7 @@ pub struct ApiSharedState {
     pub ports: ApiPortsSnapshot,
     pub pd: ApiPdSnapshot,
     pub power: ApiPowerSnapshot,
+    pub idle_bias: ApiIdleBiasSnapshot,
     pub pending: ApiPendingActions,
 }
 
@@ -372,6 +472,7 @@ impl ApiSharedState {
             ports: ApiPortsSnapshot::unknown(),
             pd: ApiPdSnapshot::unknown(),
             power: ApiPowerSnapshot::unknown(),
+            idle_bias: ApiIdleBiasSnapshot::unknown(),
             pending: ApiPendingActions::empty(),
         }
     }
@@ -774,5 +875,65 @@ mod tests {
             ApiHubSnapshot::unknown().usb_c_downstream_route,
             UsbCDownstreamRoute::Mcu
         );
+    }
+
+    #[test]
+    fn idle_bias_json_keeps_dataset_object_open_only_once() {
+        let idle_bias = ApiIdleBiasSnapshot {
+            correction_enabled: true,
+            dataset_valid: false,
+            metadata: IdleBiasMetadata::fixed(),
+            current_offsets_ma: [0; IDLE_BIAS_POINT_COUNT],
+            current_applied_offset_ma: Some(7),
+            run: ApiIdleBiasRunSnapshot::idle(),
+        };
+        let mut body = String::new();
+
+        write_idle_bias_json(&mut body, &idle_bias);
+
+        assert_eq!(
+            body,
+            "{\"correction_enabled\":true,\"dataset\":{\"status\":\"missing\",\"min_voltage_mv\":3000,\"max_voltage_mv\":21000,\"step_mv\":500,\"point_count\":37,\"offsets_ma\":null},\"current_applied_offset_ma\":7,\"run\":{\"state\":\"idle\",\"completed_points\":0,\"point_count\":37,\"target_voltage_mv\":null,\"error\":null}}"
+        );
+    }
+
+    #[test]
+    fn pd_diagnostics_json_keeps_usb_c_actual_in_object() {
+        let mut body = String::new();
+        let pd = ApiPdSnapshot {
+            usb_c_power_enabled: true,
+            sw2303_i2c_allowed: true,
+            sw2303_profile_applied: true,
+            sw2303_stable_reads: 3,
+            sw2303_error_latched: false,
+            tps_error_latched: false,
+            sw2303_readback_config: Sw2303CapabilityReadback::unavailable(),
+            sw2303_readback_matches_config: false,
+            sw2303_request_mv: Some(9_000),
+            sw2303_request_ma: Some(3_000),
+            sw2303_vbus_mv: Some(8_950),
+            sw2303_last_valid_mv: Some(9_000),
+            sw2303_last_valid_ma: Some(3_000),
+            usb_c_display_mode: NormalUiPortMode::Pd,
+            usb_c_display_badge: NormalUiPortBadge::VoltageMv(9_000),
+            usb_c_display_measurements_visible: true,
+            usb_c_actual: ApiPortTelemetry {
+                status: ApiTelemetryStatus::Ok,
+                voltage_mv: Some(8_950),
+                current_ma: Some(42),
+                power_mw: Some(376),
+                sample_uptime_ms: 1_500,
+            },
+            tps_setpoint_output_enabled: Some(true),
+            tps_setpoint_mv: Some(9_000),
+            tps_setpoint_ilim_ma: Some(3_000),
+            runtime_recovery_count: 0,
+            sample_uptime_ms: 1_500,
+        };
+        let idle_bias = ApiIdleBiasSnapshot::unknown();
+
+        write_pd_diagnostics_json(&mut body, &pd, &idle_bias);
+
+        assert!(body.contains("\"usb_c_actual\":{\"status\":\"ok\",\"voltage_mv\":8950,\"current_ma\":42,\"power_mw\":376,\"sample_uptime_ms\":1500},\"tps_setpoint\""));
     }
 }

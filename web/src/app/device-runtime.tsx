@@ -11,37 +11,24 @@ import {
   type DesktopAgent,
   tryBootstrapDesktopAgent,
 } from "../domain/desktopAgent";
-import {
-  clearWifiConfig,
-  type DeviceApiError,
-  type DeviceInfoResponse,
-  getDeviceInfo,
-  getPdDiagnostics,
-  getPorts,
-  getPowerConfig,
-  getWifiConfig,
-  type PdDiagnosticsResponse,
-  type PowerConfigInput,
-  type PowerConfigResponse,
-  type RebootResponse,
-  type Result,
-  rebootDevice,
-  replugPort,
-  resetSettings as resetDeviceSettings,
-  restorePowerDefaults,
-  type SettingsResetResponse,
-  type SettingsResetScope,
-  setPortPower,
-  setPowerConfig,
-  setPowerLock,
-  setUsbCDownstreamRoute,
-  setWifiConfig,
-  type WifiConfigInput,
-  type WifiConfigResponse,
-  type WifiMutationResponse,
+import type {
+  DeviceApiError,
+  DeviceInfoResponse,
+  IdleBiasResponse,
+  PdDiagnosticsResponse,
+  PowerConfigInput,
+  PowerConfigResponse,
+  RebootResponse,
+  Result,
+  SettingsResetResponse,
+  SettingsResetScope,
+  WifiConfigInput,
+  WifiConfigResponse,
+  WifiMutationResponse,
 } from "../domain/deviceApi";
 import {
   nextJsonlRequestId,
+  sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
 } from "../domain/hardwareConsole";
 import {
@@ -69,12 +56,15 @@ import {
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
   type JsonlEnvelope,
+  jsonlTimeoutMsForMethod,
+  localUsbDeviceIdForDevice,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
   recoverWifiClearLikeTimeout,
   resolveOrderedDeviceTransports,
   shouldResetLocalUsbConnectionCache,
 } from "./device-runtime-support";
+import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
 import { useDevices } from "./devices-store";
 
@@ -147,7 +137,11 @@ export function DeviceRuntimeProvider({
   const findLocalUsbTarget = useCallback(
     async (
       deviceId: string,
-    ): Promise<{ kind: "port_path"; portPath: string } | null> => {
+    ): Promise<
+      | { kind: "port_path"; portPath: string }
+      | { kind: "devd_device"; deviceId: string }
+      | null
+    > => {
       const cached = localUsbPortByDevice.current[deviceId];
       if (cached) {
         return { kind: "port_path", portPath: cached };
@@ -158,6 +152,10 @@ export function DeviceRuntimeProvider({
         return { kind: "port_path", portPath: linked };
       }
       const stored = devices.find((device) => device.id === deviceId);
+      const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
+      if (devdDeviceId) {
+        return { kind: "devd_device", deviceId: devdDeviceId };
+      }
       const storedPortPath = stored ? localUsbPortPathForDevice(stored) : null;
       if (storedPortPath) {
         localUsbPortByDevice.current[deviceId] = storedPortPath;
@@ -188,6 +186,7 @@ export function DeviceRuntimeProvider({
           error: { kind: "offline", message: "Local USB device not found" },
         };
       }
+      const timeoutMs = jsonlTimeoutMsForMethod(method, params);
       const previous =
         localUsbRequestQueues.current[deviceId] ?? Promise.resolve();
       let releaseQueue: () => void = () => undefined;
@@ -200,12 +199,20 @@ export function DeviceRuntimeProvider({
       try {
         let caughtError: unknown = null;
         try {
-          const request = { id: nextJsonlRequestId(), method, params };
-          const response = await sendLocalUsbJsonlRequest(
-            agent,
-            target.portPath,
-            request,
-          );
+          const request = {
+            id: nextJsonlRequestId(),
+            method,
+            params,
+            timeoutMs,
+          };
+          const response =
+            target.kind === "devd_device"
+              ? await sendDevdLocalUsbJsonlRequest(
+                  agent,
+                  target.deviceId,
+                  request,
+                )
+              : await sendLocalUsbJsonlRequest(agent, target.portPath, request);
           const envelope = response as JsonlEnvelope<T>;
           if (envelope?.ok && envelope.result !== undefined) {
             return { ok: true, value: envelope.result };
@@ -225,7 +232,13 @@ export function DeviceRuntimeProvider({
         }
         const recovered = await recoverWifiClearLikeTimeout<T>(
           async (request) =>
-            await sendLocalUsbJsonlRequest(agent, target.portPath, request),
+            target.kind === "devd_device"
+              ? await sendDevdLocalUsbJsonlRequest(
+                  agent,
+                  target.deviceId,
+                  request,
+                )
+              : await sendLocalUsbJsonlRequest(agent, target.portPath, request),
           method,
           params,
         );
@@ -264,15 +277,12 @@ export function DeviceRuntimeProvider({
         };
       }
       try {
+        const timeoutMs = jsonlTimeoutMsForMethod(method, params);
         const response = await transport.request({
           id: nextJsonlRequestId(),
           method,
           params,
-          timeoutMs:
-            method === "wifi.clear" ||
-            (method === "settings.reset" && params?.scope === "wifi")
-              ? 8_000
-              : undefined,
+          timeoutMs,
         });
         const envelope = response as JsonlEnvelope<T>;
         if (envelope?.ok && envelope.result !== undefined) {
@@ -320,78 +330,7 @@ export function DeviceRuntimeProvider({
       params?: Record<string, unknown>,
     ): Promise<Result<T>> => {
       if (transport === "http") {
-        if (method === "ports.get") {
-          return getPorts(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "info") {
-          return getDeviceInfo(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "wifi.get") {
-          return getWifiConfig(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "pd.diagnostics_get") {
-          return getPdDiagnostics(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "power.config_get") {
-          return getPowerConfig(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "power.config_set") {
-          return setPowerConfig(
-            baseUrl,
-            params?.config as PowerConfigInput,
-            Number(params?.owner ?? 0),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "power.config_defaults") {
-          return restorePowerDefaults(
-            baseUrl,
-            Number(params?.owner ?? 0),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "power.lock") {
-          return setPowerLock(
-            baseUrl,
-            Number(params?.owner ?? 0),
-            Boolean(params?.acquire ?? true),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "wifi.set") {
-          return setWifiConfig(baseUrl, {
-            ssid: String(params?.ssid ?? ""),
-            psk: String(params?.psk ?? ""),
-          }) as Promise<Result<T>>;
-        }
-        if (method === "wifi.clear") {
-          return clearWifiConfig(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "settings.reset") {
-          return resetDeviceSettings(
-            baseUrl,
-            params?.scope as SettingsResetScope,
-            params?.owner === undefined ? undefined : Number(params.owner),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "reboot") {
-          return rebootDevice(baseUrl) as Promise<Result<T>>;
-        }
-        if (method === "port.power_set") {
-          return setPortPower(
-            baseUrl,
-            params?.port as PortId,
-            Boolean(params?.enabled),
-          ) as Promise<Result<T>>;
-        }
-        if (method === "port.replug") {
-          return replugPort(baseUrl, params?.port as PortId) as Promise<
-            Result<T>
-          >;
-        }
-        if (method === "hub.route_set") {
-          return setUsbCDownstreamRoute(
-            baseUrl,
-            params?.route as UsbCDownstreamRoute,
-          ) as Promise<Result<T>>;
-        }
+        return requestHttpTransport<T>(baseUrl, method, params);
       }
       if (transport === "web_serial") {
         return requestWebSerial<T>(deviceId, method, params);
@@ -811,6 +750,16 @@ export function DeviceRuntimeProvider({
     [runDeviceCommand],
   );
 
+  const idleBias = useCallback(
+    async (deviceId: string): Promise<Result<IdleBiasResponse>> => {
+      return runDeviceCommand<IdleBiasResponse>(
+        deviceId,
+        "power.idle_bias_get",
+      );
+    },
+    [runDeviceCommand],
+  );
+
   const savePowerConfig = useCallback(
     async (
       deviceId: string,
@@ -860,6 +809,59 @@ export function DeviceRuntimeProvider({
       });
     },
     [runDeviceCommand],
+  );
+
+  const setIdleBias = useCallback(
+    async (
+      deviceId: string,
+      correctionEnabled: boolean,
+      owner: number,
+    ): Promise<Result<IdleBiasResponse>> => {
+      const res = await runDeviceCommand<IdleBiasResponse>(
+        deviceId,
+        "power.idle_bias_set",
+        { correction_enabled: correctionEnabled, owner },
+      );
+      if (res.ok) {
+        await refreshDevice(deviceId);
+      }
+      return res;
+    },
+    [refreshDevice, runDeviceCommand],
+  );
+
+  const runIdleBias = useCallback(
+    async (
+      deviceId: string,
+      owner: number,
+    ): Promise<Result<IdleBiasResponse>> => {
+      return runDeviceCommand<IdleBiasResponse>(
+        deviceId,
+        "power.idle_bias_run",
+        {
+          owner,
+        },
+      );
+    },
+    [runDeviceCommand],
+  );
+
+  const clearIdleBias = useCallback(
+    async (
+      deviceId: string,
+      owner: number,
+    ): Promise<Result<IdleBiasResponse>> => {
+      const res = await runDeviceCommand<IdleBiasResponse>(
+        deviceId,
+        "power.idle_bias_clear",
+        { owner },
+      );
+      if (res.ok) {
+        await refreshDevice(deviceId);
+      }
+      return res;
+    },
+    [refreshDevice, runDeviceCommand],
   );
 
   const handleApiErrorToast = useCallback(
@@ -1081,9 +1083,13 @@ export function DeviceRuntimeProvider({
       rebootDevice: reboot,
       pdDiagnostics,
       powerConfig,
+      idleBias,
       savePowerConfig,
       restorePowerDefaults: restoreDefaults,
       setPowerLock: setLock,
+      setIdleBiasCorrection: setIdleBias,
+      runIdleBiasCalibration: runIdleBias,
+      clearIdleBiasCalibration: clearIdleBias,
       setPower,
       replug,
       setUsbCDownstreamRoute: setRoute,
@@ -1092,6 +1098,7 @@ export function DeviceRuntimeProvider({
     clearWifi,
     deviceInfo,
     devices,
+    idleBias,
     now,
     pdDiagnostics,
     powerConfig,
@@ -1103,9 +1110,12 @@ export function DeviceRuntimeProvider({
     runtimeById,
     savePowerConfig,
     saveWifiConfig,
+    clearIdleBias,
     setLock,
+    setIdleBias,
     setRoute,
     setPower,
+    runIdleBias,
     wifiConfig,
   ]);
 

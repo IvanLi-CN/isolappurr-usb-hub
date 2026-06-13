@@ -66,6 +66,12 @@
                 // Telemetry/PD loop continues unaffected.
             } else {
                 let telemetry = telemetry_sampler.sample().await;
+                #[cfg(feature = "net_http")]
+                let usb_c_raw_metrics = telemetry.usb_c;
+                #[cfg(feature = "net_http")]
+                let usb_c_metrics = corrected_port_metrics(usb_c_raw_metrics, idle_bias_calibration);
+                #[cfg(not(feature = "net_http"))]
+                let usb_c_metrics = telemetry.usb_c;
 
                 // Presence rules (frozen spec):
                 // - USB-A: if voltage is Ok(v_mv) and v_mv < 1000 => NotPresent; else Present (incl. read error).
@@ -96,7 +102,8 @@
                     api_usb_a_present = usb_a_present;
                     api_usb_c_present = usb_c_api_present;
                     api_usb_a_metrics = telemetry.usb_a;
-                    api_usb_c_metrics = telemetry.usb_c;
+                    api_usb_c_metrics = usb_c_metrics;
+                    api_usb_c_metrics_raw = usb_c_raw_metrics;
                     api_sample_uptime_ms = uptime_ms_from_instant(ui_tick_now);
                 }
 
@@ -117,9 +124,9 @@
                         present: usb_c_display.measurements_visible,
                         mode: usb_c_display.mode,
                         badge: usb_c_display.badge,
-                        voltage_uv: telemetry_field_to_ui(telemetry.usb_c.voltage_mv),
-                        current_ua: telemetry_field_to_ui(telemetry.usb_c.current_ma),
-                        power_uw: telemetry_field_to_ui(telemetry.usb_c.power_mw),
+                        voltage_uv: telemetry_field_to_ui(usb_c_metrics.voltage_mv),
+                        current_ua: telemetry_field_to_ui(usb_c_metrics.current_ma),
+                        power_uw: telemetry_field_to_ui(usb_c_metrics.power_mw),
                     },
                 };
 

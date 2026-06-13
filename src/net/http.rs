@@ -288,7 +288,7 @@ async fn handle_api_request(
         ("GET", "/api/v1/pd-diagnostics") => {
             let state = { *api_state.lock().await };
             let mut body = String::new();
-            write_pd_diagnostics_json(&mut body, &state.pd);
+            write_pd_diagnostics_json(&mut body, &state.pd, &state.idle_bias);
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
         }
@@ -296,6 +296,13 @@ async fn handle_api_request(
             let state = { *api_state.lock().await };
             let mut body = String::new();
             write_power_config_json(&mut body, &state.power);
+            write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+            return Ok(());
+        }
+        ("GET", "/api/v1/power/idle-bias") => {
+            let state = { *api_state.lock().await };
+            let mut body = String::new();
+            write_idle_bias_json(&mut body, &state.idle_bias);
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
         }
@@ -348,6 +355,70 @@ async fn handle_api_request(
             }
             return Ok(());
         }
+        ("PUT", "/api/v1/power/idle-bias") => {
+            let Some(enabled) = parse_idle_bias_body(body) else {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "missing or invalid correction_enabled",
+                    false,
+                )
+                .await?;
+                return Ok(());
+            };
+            let owner = parse_owner_query(query);
+            match try_set_idle_bias(
+                api_state,
+                ApiIdleBiasCommand::SetCorrection { enabled },
+                owner,
+            )
+            .await
+            {
+                Ok(()) => {
+                    if crate::wait_idle_bias_result().await {
+                        let state = { *api_state.lock().await };
+                        let mut body = String::new();
+                        write_idle_bias_json(&mut body, &state.idle_bias);
+                        write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+                    } else {
+                        write_api_error(
+                            socket,
+                            "500 Internal Server Error",
+                            allow_origin,
+                            "eeprom_failed",
+                            "Idle-bias correction could not be saved to EEPROM U21",
+                            true,
+                        )
+                        .await?;
+                    }
+                }
+                Err(ApiIdleBiasActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "idle-bias settings are busy or locked",
+                        true,
+                    )
+                    .await?;
+                }
+                Err(ApiIdleBiasActionError::DatasetMissing) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "dataset_missing",
+                        "Run USB-C idle-bias calibration before enabling correction",
+                        false,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
         ("POST", "/api/v1/power/config/defaults") => {
             let owner = parse_owner_query(query);
             match try_set_power_config(api_state, ApiPowerConfigCommand::Defaults, owner).await {
@@ -380,6 +451,66 @@ async fn handle_api_request(
                     )
                     .await?;
                 }
+            }
+            return Ok(());
+        }
+        ("POST", "/api/v1/power/idle-bias/run") => {
+            let owner = parse_owner_query(query);
+            match try_run_idle_bias(api_state, owner).await {
+                Ok(()) => {
+                    let state = { *api_state.lock().await };
+                    let mut body = String::new();
+                    write_idle_bias_json(&mut body, &state.idle_bias);
+                    write_json_response(socket, "202 Accepted", allow_origin, body.as_str())
+                        .await?;
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "idle-bias calibration is busy or locked",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
+        ("POST", "/api/v1/power/idle-bias/clear") => {
+            let owner = parse_owner_query(query);
+            match try_set_idle_bias(api_state, ApiIdleBiasCommand::Clear, owner).await {
+                Ok(()) => {
+                    if crate::wait_idle_bias_result().await {
+                        let state = { *api_state.lock().await };
+                        let mut body = String::new();
+                        write_idle_bias_json(&mut body, &state.idle_bias);
+                        write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+                    } else {
+                        write_api_error(
+                            socket,
+                            "500 Internal Server Error",
+                            allow_origin,
+                            "eeprom_failed",
+                            "Idle-bias dataset could not be cleared from EEPROM U21",
+                            true,
+                        )
+                        .await?;
+                    }
+                }
+                Err(ApiIdleBiasActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "idle-bias settings are busy or locked",
+                        true,
+                    )
+                    .await?;
+                }
+                Err(ApiIdleBiasActionError::DatasetMissing) => core::unreachable!(),
             }
             return Ok(());
         }
@@ -866,6 +997,10 @@ pub fn parse_power_config_body(body: &str) -> Option<PowerConfig> {
     set_bool_if_present(body, "pps", &mut config.capability.pps_enabled);
     apply_fixed_voltages_if_present(body, &mut config.capability)?;
     config.validated().ok()
+}
+
+pub fn parse_idle_bias_body(body: &str) -> Option<bool> {
+    extract_body_bool(body, "correction_enabled")
 }
 
 fn set_bool_if_present(body: &str, key: &str, target: &mut bool) {
