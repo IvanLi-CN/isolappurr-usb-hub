@@ -778,6 +778,7 @@ fn run_firmware_monitor(
         .with_context(|| format!("open {port_path} failed"))?;
     let mut pending = Vec::<u8>::new();
     let mut buf = [0u8; 256];
+    let mut in_binary_burst = false;
     loop {
         match port.read(&mut buf) {
             Ok(0) => continue,
@@ -785,10 +786,17 @@ fn run_firmware_monitor(
                 pending.extend_from_slice(&buf[..n]);
                 while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
                     let line: Vec<u8> = pending.drain(..=newline).collect();
-                    let record = parse_monitor_record(&line);
+                    let mut record = parse_monitor_record(&line);
+                    if in_binary_burst
+                        && record.kind == "log"
+                        && is_single_byte_monitor_fragment(trim_monitor_line_bytes(&line))
+                    {
+                        record = MonitorRecord::binary(trim_monitor_line_bytes(&line));
+                    }
                     if record.kind == "log" && record.line.as_deref() == Some("") {
                         continue;
                     }
+                    in_binary_burst = record.kind == "binary";
                     if json {
                         println!("{}", serde_json::to_string(&monitor_record_json(&record))?);
                     } else if let Some(line) = record.line.as_deref() {
@@ -818,9 +826,6 @@ fn parse_monitor_record(bytes: &[u8]) -> MonitorRecord {
         return MonitorRecord::binary(bytes);
     }
     let kind = classify_monitor_line(line);
-    if kind == "log" && !is_plausible_monitor_log_line(line) {
-        return MonitorRecord::binary(bytes);
-    }
     MonitorRecord::text(kind, line)
 }
 
@@ -836,8 +841,8 @@ fn contains_monitor_control_bytes(line: &str) -> bool {
     line.chars().any(|ch| ch.is_control() && ch != '\t')
 }
 
-fn is_plausible_monitor_log_line(line: &str) -> bool {
-    line.trim().is_empty() || line.chars().count() >= 3
+fn is_single_byte_monitor_fragment(bytes: &[u8]) -> bool {
+    matches!(bytes, [byte] if byte.is_ascii_graphic())
 }
 
 fn monitor_record_json(record: &MonitorRecord) -> serde_json::Value {

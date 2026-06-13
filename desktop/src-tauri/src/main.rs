@@ -241,7 +241,10 @@ mod tests {
     fn monitor_jsonl_classification_requires_json_object() {
         assert_eq!(classify_monitor_line("{\"id\":1,\"ok\":true}"), "jsonl");
         assert_eq!(classify_monitor_line("2"), "log");
-        assert_eq!(parse_monitor_record(b"2\n").kind, "binary");
+        assert_eq!(parse_monitor_record(b"2\n").kind, "log");
+        assert_eq!(parse_monitor_record(b"OK\n").line.as_deref(), Some("OK"));
+        assert!(is_single_byte_monitor_fragment(b"2"));
+        assert!(!is_single_byte_monitor_fragment(b"OK"));
     }
 
     #[test]
@@ -255,10 +258,6 @@ mod tests {
         let control_record = parse_monitor_record(&[b'a', 0x00, b'b', b'\n']);
         assert_eq!(control_record.kind, "binary");
         assert_eq!(control_record.line, None);
-
-        let fragment_record = parse_monitor_record(b"d\n");
-        assert_eq!(fragment_record.kind, "binary");
-        assert_eq!(fragment_record.line, None);
 
         let boot_record = parse_monitor_record(b"ESP-ROM:esp32s3-20210327\n");
         assert_eq!(boot_record.kind, "boot");
