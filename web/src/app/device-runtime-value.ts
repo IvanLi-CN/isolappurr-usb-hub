@@ -7,7 +7,7 @@ import {
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
   type DeviceTransport,
-  localUsbDeviceIdForDevice,
+  localUsbPortPathForDevice,
   shortApiError,
 } from "./device-runtime-support";
 
@@ -96,7 +96,7 @@ export function buildDeviceRuntimeContextValue({
     if (
       localUsbPortByDevice[deviceId] ||
       getLocalUsbDeviceLink(deviceId) ||
-      (stored ? localUsbDeviceIdForDevice(stored) : null)
+      (stored ? localUsbPortPathForDevice(stored) : null)
     ) {
       return "local_usb";
     }

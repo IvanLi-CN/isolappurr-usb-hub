@@ -11,7 +11,7 @@ use embassy_net::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Timer};
-use esp_hal::{peripherals::WIFI, rng::Rng, time::Instant as HalInstant};
+use esp_hal::{efuse::Efuse, peripherals::WIFI, rng::Rng, time::Instant as HalInstant};
 use esp_radio::{
     Controller as RadioController, init as radio_init,
     wifi::{self, ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent},
@@ -49,7 +49,8 @@ pub struct NetHandles {
 #[derive(Clone)]
 pub struct DeviceNames {
     pub mac: [u8; 6],
-    pub short_id: HString<6>,
+    pub device_id: HString<12>,
+    pub short_device_id: HString<6>,
     pub hostname: HString<32>,
     pub hostname_fqdn: HString<48>,
 }
@@ -421,7 +422,8 @@ pub fn spawn_wifi_mdns_http(
 
     let wifi_device: WifiDevice<'static> = wifi_interfaces.sta;
     let wifi_mac = wifi_device.mac_address();
-    let device_names = DEVICE_NAMES_CELL.init(derive_device_names(wifi_mac));
+    let base_mac = Efuse::read_base_mac_address();
+    let device_names = DEVICE_NAMES_CELL.init(derive_device_names(base_mac));
 
     if credentials.is_none() {
         info!("Wi-Fi credentials not configured in EEPROM; network services idle until configured");
@@ -467,7 +469,7 @@ pub fn spawn_wifi_mdns_http(
 }
 
 pub fn format_network_toast_lines(
-    short_id: Option<&str>,
+    short_device_id: Option<&str>,
     ip: Option<Ipv4Address>,
 ) -> [[u8; 20]; 3] {
     let mut lines = [[b' '; 20]; 3];
@@ -476,8 +478,8 @@ pub fn format_network_toast_lines(
     // digits, '.', '-', space, and a subset of uppercase letters.
     // Do NOT render arbitrary hostnames here (will show '?' for missing glyphs).
 
-    // Line 0: device hint ("ID <short_id>") or a fallback.
-    if let Some(id) = short_id.and_then(|v| {
+    // Line 0: device hint ("ID <short_device_id>") or a fallback.
+    if let Some(id) = short_device_id.and_then(|v| {
         let s = v.trim();
         if s.is_empty() { None } else { Some(s) }
     }) {

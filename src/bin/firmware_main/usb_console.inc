@@ -776,7 +776,7 @@ fn write_usb_info_json(
     if let Some(names) = device_names {
         let mac = format_usb_mac_lower(names.mac);
         let _ = write!(body, "\"device_id\":");
-        write_json_string(body, names.short_id.as_str());
+        write_json_string(body, names.device_id.as_str());
         let _ = write!(body, ",\"hostname\":");
         write_json_string(body, names.hostname.as_str());
         let _ = write!(body, ",\"fqdn\":");

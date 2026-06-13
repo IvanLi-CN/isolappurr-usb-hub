@@ -30,16 +30,18 @@ fn format_mac_lower(mac: [u8; 6]) -> HString<17> {
 }
 
 fn derive_device_names(mac: [u8; 6]) -> DeviceNames {
-    let short_id = mdns::short_id_from_mac(mac);
+    let device_id = mdns::device_id_from_mac(mac);
+    let short_device_id = mdns::short_device_id(device_id.as_str());
     let hostname = WIFI_HOSTNAME
         .map(sanitize_hostname)
         .filter(|hostname| !hostname.is_empty())
-        .unwrap_or_else(|| mdns::hostname_from_short_id(short_id.as_str()));
+        .unwrap_or_else(|| mdns::hostname_from_device_id(device_id.as_str()));
     let hostname_fqdn = mdns::fqdn_from_hostname(hostname.as_str());
 
     DeviceNames {
         mac,
-        short_id,
+        device_id,
+        short_device_id,
         hostname,
         hostname_fqdn,
     }

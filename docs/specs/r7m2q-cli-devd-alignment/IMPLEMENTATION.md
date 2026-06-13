@@ -13,6 +13,10 @@
   hardware records are attached back as annotations when identity or transport
   keys match. The owner-facing render now chooses one canonical saved record
   per live result, preferring the same transport before identity-only fallbacks.
+- The next contract sync locks owner-facing selectors to full 12-character
+  `device_id`, while `port_path` remains the only advanced Local USB selector.
+  Saved hardware IDs and temporary devd scan IDs are no longer valid
+  owner-facing identity terms.
 - `isolapurr` now also exposes owner-facing power commands over the same IPC
   path: `power show`, `power defaults`, `power output manual|auto`, and
   `power source-capability set`.
