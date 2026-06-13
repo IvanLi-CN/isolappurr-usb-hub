@@ -161,7 +161,7 @@ fn format_discover_output(output: &Value) -> String {
             })
             .unwrap_or_default();
         if !saved.is_empty() {
-            detail.push_str(" [saved: ");
+            detail.push_str(" [saved device: ");
             detail.push_str(&saved.join(", "));
             detail.push(']');
         }
@@ -178,7 +178,7 @@ fn format_hardware_available(output: &Value) -> String {
         lines.push(format!("Registry: {path}"));
     }
 
-    lines.push("Saved hardware:".to_string());
+    lines.push("Saved devices:".to_string());
     match output.get("saved").and_then(Value::as_array) {
         Some(saved) if !saved.is_empty() => {
             for device in saved {
@@ -579,27 +579,22 @@ fn format_faults(diagnostics: &CliPowerDiagnostics) -> String {
 }
 
 fn transport_label(device: &Value) -> String {
-    let Some(transport) = device.get("transport") else {
+    let Some(transports) = device.get("transports") else {
         return "(unknown transport)".to_string();
     };
-    let kind = transport
-        .get("kind")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-    match kind {
-        "usb" => transport
-            .get("deviceId")
-            .or_else(|| transport.get("device_id"))
-            .and_then(Value::as_str)
-            .map(|device_id| format!("usb:{device_id}"))
-            .unwrap_or_else(|| "usb".to_string()),
-        "http" => transport
-            .get("baseUrl")
-            .or_else(|| transport.get("base_url"))
-            .and_then(Value::as_str)
-            .map(|base_url| format!("http:{base_url}"))
-            .unwrap_or_else(|| "http".to_string()),
-        "webSerial" | "web_serial" => "web_serial".to_string(),
-        other => other.to_string(),
+    let mut labels = Vec::new();
+    if let Some(port_path) = transports.get("localUsbPortPath").and_then(Value::as_str) {
+        labels.push(format!("usb:{port_path}"));
+    }
+    if let Some(base_url) = transports.get("httpBaseUrl").and_then(Value::as_str) {
+        labels.push(format!("http:{base_url}"));
+    }
+    if let Some(label) = transports.get("webSerialLabel").and_then(Value::as_str) {
+        labels.push(format!("web_serial:{label}"));
+    }
+    if labels.is_empty() {
+        "unlinked".to_string()
+    } else {
+        labels.join(", ")
     }
 }

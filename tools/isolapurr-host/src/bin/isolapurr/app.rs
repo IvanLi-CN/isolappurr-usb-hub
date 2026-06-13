@@ -69,7 +69,12 @@ async fn main() -> anyhow::Result<()> {
             }
             Command::Flash(args) => handle_flash(&client, &devd, args).await?,
             Command::Reset(selector) => {
-                let device = resolve_usb_device(&selector, &devd.endpoint)?;
+                let device = materialize_live_usb_device(
+                    &client,
+                    &devd,
+                    resolve_usb_device(&selector, &devd.endpoint)?,
+                )
+                .await?;
                 let device_devd = devd.with_endpoint(device.devd.clone());
                 devd_device_post_with_lease(
                     &client,
@@ -81,7 +86,12 @@ async fn main() -> anyhow::Result<()> {
                 .await?
             }
             Command::Monitor { selector, tail } => {
-                let device = resolve_usb_device(&selector, &devd.endpoint)?;
+                let device = materialize_live_usb_device(
+                    &client,
+                    &devd,
+                    resolve_usb_device(&selector, &devd.endpoint)?,
+                )
+                .await?;
                 let device_devd = devd.with_endpoint(device.devd.clone());
                 devd_request(
                     &client,

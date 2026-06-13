@@ -61,17 +61,15 @@ enum Command {
 
 #[derive(Debug, clap::Args, Clone)]
 struct ApiSelectorArgs {
-    #[arg(long)]
-    hardware: Option<String>,
-    #[arg(long)]
-    device: Option<String>,
+    #[arg(long = "device-id")]
+    device_id: Option<String>,
     #[arg(long)]
     url: Option<String>,
 }
 
 impl ApiSelectorArgs {
     fn selection_count(&self) -> u8 {
-        self.hardware.is_some() as u8 + self.device.is_some() as u8 + self.url.is_some() as u8
+        self.device_id.is_some() as u8 + self.url.is_some() as u8
     }
 
     fn is_empty(&self) -> bool {
@@ -81,22 +79,22 @@ impl ApiSelectorArgs {
 
 #[derive(Debug, clap::Args, Clone, Default)]
 struct PowerSelectorArgs {
-    #[arg(long)]
-    hardware: Option<String>,
+    #[arg(long = "device-id")]
+    device_id: Option<String>,
 }
 
 impl PowerSelectorArgs {
     fn is_empty(&self) -> bool {
-        self.hardware.is_none()
+        self.device_id.is_none()
     }
 }
 
 #[derive(Debug, clap::Args, Clone)]
 struct UsbSelectorArgs {
-    #[arg(long)]
-    hardware: Option<String>,
-    #[arg(long)]
-    device: Option<String>,
+    #[arg(long = "device-id")]
+    device_id: Option<String>,
+    #[arg(long = "port-path")]
+    port_path: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -109,27 +107,20 @@ enum HardwareCommand {
     List,
     Path,
     Save {
-        #[arg(long)]
-        id: String,
+        #[arg(long = "device-id")]
+        device_id: String,
         #[arg(long)]
         name: String,
-        #[arg(long, value_enum)]
-        transport: TransportArg,
-        #[arg(long)]
-        device: Option<String>,
+        #[arg(long = "port-path")]
+        port_path: Option<String>,
         #[arg(long)]
         url: Option<String>,
+        #[arg(long = "web-serial-label")]
+        web_serial_label: Option<String>,
     },
     Forget {
-        id: String,
+        device_id: String,
     },
-}
-
-#[derive(Debug, Clone, ValueEnum)]
-enum TransportArg {
-    Usb,
-    Http,
-    WebSerial,
 }
 
 #[derive(Debug, Subcommand)]

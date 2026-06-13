@@ -16,83 +16,77 @@ fn resolve_api_selector(
 ) -> anyhow::Result<ResolvedTarget> {
     let count = selector.selection_count();
     if count != 1 {
-        return Err(anyhow!(
-            "select exactly one of --hardware, --device, or --url"
-        ));
+        return Err(anyhow!("select exactly one of --device-id or --url"));
     }
     if let Some(url) = selector.url {
         return Ok(ResolvedTarget::Http(url));
     }
-    if let Some(device) = selector.device {
-        return Ok(ResolvedTarget::Usb(ResolvedUsb {
-            device,
-            devd: default_devd.to_string(),
-            identity: None,
-        }));
+    let device_id = selector.device_id.expect("count checked");
+    let saved_device = find_saved_device(&device_id).ok();
+    if let Some(base_url) = saved_device
+        .as_ref()
+        .and_then(|device| device.http_base_url().map(str::to_string))
+    {
+        return Ok(ResolvedTarget::Http(base_url));
     }
-    let hardware_id = selector.hardware.expect("count checked");
-    let hardware = find_hardware(&hardware_id)?;
-    let identity = hardware.identity.clone();
-    match hardware.transport {
-        HardwareTransport::Usb {
-            device_id,
-            devd_url,
-        } => {
-            let _ = devd_url;
-            Ok(ResolvedTarget::Usb(ResolvedUsb {
-                device: device_id,
-                devd: default_devd.to_string(),
-                identity,
-            }))
-        }
-        HardwareTransport::Http { base_url } => Ok(ResolvedTarget::Http(base_url)),
-        HardwareTransport::WebSerial { .. } => Err(anyhow!(
-            "saved hardware {hardware_id} uses Web Serial; CLI automation requires devd USB or HTTP"
-        )),
-    }
+    let resolved = resolve_saved_or_live_usb(&device_id, saved_device, default_devd)?;
+    Ok(ResolvedTarget::Usb(resolved))
 }
 
 fn resolve_usb_device(
     selector: &UsbSelectorArgs,
     default_devd: &str,
 ) -> anyhow::Result<ResolvedUsb> {
-    if selector.hardware.is_some() == selector.device.is_some() {
-        return Err(anyhow!("select exactly one of --hardware or --device"));
+    if selector.device_id.is_some() == selector.port_path.is_some() {
+        return Err(anyhow!(
+            "select exactly one of --device-id or --port-path for Local USB"
+        ));
     }
-    if let Some(device) = selector.device.clone() {
+    if let Some(port_path) = selector.port_path.clone() {
         return Ok(ResolvedUsb {
-            device,
+            device: stable_usb_device_id(&port_path),
             devd: default_devd.to_string(),
             identity: None,
         });
     }
-    let hardware_id = selector.hardware.as_ref().expect("checked");
-    let hardware = find_hardware(hardware_id)?;
-    let identity = hardware.identity.clone();
-    match hardware.transport {
-        HardwareTransport::Usb {
-            device_id,
-            devd_url,
-        } => {
-            let _ = devd_url;
-            Ok(ResolvedUsb {
-                device: device_id,
-                devd: default_devd.to_string(),
-                identity,
-            })
-        }
-        _ => Err(anyhow!(
-            "saved hardware {hardware_id} is not devd USB hardware"
-        )),
-    }
+    let device_id = selector.device_id.clone().expect("checked");
+    let saved_device = find_saved_device(&device_id).ok();
+    resolve_saved_or_live_usb(&device_id, saved_device, default_devd)
 }
 
-fn find_hardware(id: &str) -> anyhow::Result<DeviceProfile> {
+fn find_saved_device(id: &str) -> anyhow::Result<DeviceProfile> {
     read_hardware_registry()?
         .devices
         .into_iter()
         .find(|device| device.id == id)
-        .ok_or_else(|| anyhow!("saved hardware not found: {id}"))
+        .ok_or_else(|| anyhow!("saved device not found: {id}"))
+}
+
+fn resolve_saved_or_live_usb(
+    device_id: &str,
+    saved_device: Option<DeviceProfile>,
+    default_devd: &str,
+) -> anyhow::Result<ResolvedUsb> {
+    let identity = saved_device
+        .as_ref()
+        .and_then(|device| device.identity.clone());
+    let port_path = saved_device
+        .as_ref()
+        .and_then(|device| device.local_usb_port_path().map(str::to_string));
+    let Some(live_target) = port_path
+        .as_deref()
+        .map(stable_usb_device_id)
+        .or_else(|| canonical_device_id_candidate(device_id))
+    else {
+        return Err(anyhow!(
+            "saved device {device_id} has no Local USB port_path; use --port-path for Local USB operations"
+        ));
+    };
+    Ok(ResolvedUsb {
+        device: live_target,
+        devd: default_devd.to_string(),
+        identity,
+    })
 }
 
 async fn devd_request(
@@ -323,7 +317,7 @@ async fn request_selected(
     match selected {
         ResolvedTarget::Usb(usb) => {
             let usb_devd = devd.with_endpoint(usb.devd.clone());
-            ensure_devd_device_registered(client, &usb_devd, &usb.device).await?;
+            let usb = materialize_live_usb_device(client, &usb_devd, usb).await?;
             devd_request(
                 client,
                 &usb_devd,
@@ -502,36 +496,42 @@ async fn handle_hardware(
             }))
         }
         HardwareCommand::Save {
-            id,
+            device_id,
             name,
-            transport,
-            device,
+            port_path,
             url,
+            web_serial_label,
         } => {
-            let transport = match transport {
-                TransportArg::Usb => HardwareTransport::Usb {
-                    device_id: device
-                        .ok_or_else(|| anyhow!("--device is required for usb hardware"))?,
-                    devd_url: None,
-                },
-                TransportArg::Http => HardwareTransport::Http {
-                    base_url: url.ok_or_else(|| anyhow!("--url is required for http hardware"))?,
-                },
-                TransportArg::WebSerial => HardwareTransport::WebSerial { label: device },
-            };
+            if port_path.is_none() && url.is_none() && web_serial_label.is_none() {
+                return Err(anyhow!(
+                    "save requires at least one of --port-path, --url, or --web-serial-label"
+                ));
+            }
             let saved = save_hardware(SavedHardwareInput {
-                id,
+                device_id: device_id.clone(),
                 name,
-                transport,
+                transports: DeviceProfileTransports {
+                    http_base_url: url,
+                    local_usb_port_path: port_path,
+                    web_serial_label,
+                },
+                identity: Some(DeviceIdentity {
+                    device_id: Some(device_id),
+                    mac: None,
+                }),
             })?;
             Ok(json!({"path": path, "device": saved}))
         }
-        HardwareCommand::Forget { id } => {
+        HardwareCommand::Forget { device_id } => {
             let mut registry = read_hardware_registry()?;
             let before = registry.devices.len();
-            registry.devices.retain(|device| device.id != id);
+            registry.devices.retain(|device| device.id != device_id);
             isolapurr_host::write_hardware_registry(&registry)?;
-            Ok(json!({"path": path, "id": id, "removed": before != registry.devices.len()}))
+            Ok(json!({
+                "path": path,
+                "device_id": device_id,
+                "removed": before != registry.devices.len()
+            }))
         }
     }
 }
@@ -560,7 +560,12 @@ async fn handle_flash(
     devd: &DevdClient,
     args: FlashArgs,
 ) -> anyhow::Result<Value> {
-    let device = resolve_usb_device(&args.selector, &devd.endpoint)?;
+    let device = materialize_live_usb_device(
+        client,
+        devd,
+        resolve_usb_device(&args.selector, &devd.endpoint)?,
+    )
+    .await?;
     let device_devd = devd.with_endpoint(device.devd.clone());
     let expected_identity = DeviceIdentity {
         device_id: args.expected_device_id.clone().or_else(|| {
@@ -582,7 +587,7 @@ async fn handle_flash(
         && expected_identity.mac.is_none()
     {
         return Err(anyhow!(
-            "normal flash requires --expected-device-id/--expected-mac or saved hardware identity"
+            "normal flash requires --expected-device-id/--expected-mac or saved device identity"
         ));
     }
     let catalog: FirmwareCatalog =
@@ -682,6 +687,92 @@ async fn ensure_devd_device_registered(
         return Err(anyhow!("device not found after scan: {device}"));
     }
     Ok(())
+}
+
+async fn materialize_live_usb_device(
+    client: &Client,
+    devd: &DevdClient,
+    usb: ResolvedUsb,
+) -> anyhow::Result<ResolvedUsb> {
+    if ensure_devd_device_registered(client, devd, &usb.device)
+        .await
+        .is_ok()
+    {
+        return Ok(usb);
+    }
+    let canonical_device_id = usb
+        .identity
+        .as_ref()
+        .and_then(|identity| identity.device_id.clone())
+        .or_else(|| canonical_device_id_candidate(&usb.device));
+    let Some(canonical_device_id) = canonical_device_id else {
+        return Err(anyhow!("device not found after scan: {}", usb.device));
+    };
+    let live_device = find_live_usb_target_by_device_id(client, devd, &canonical_device_id)
+        .await?
+        .ok_or_else(|| {
+            anyhow!("connected Local USB target not found for device_id {canonical_device_id}")
+        })?;
+    Ok(ResolvedUsb {
+        device: live_device,
+        ..usb
+    })
+}
+
+async fn find_live_usb_target_by_device_id(
+    client: &Client,
+    devd: &DevdClient,
+    canonical_device_id: &str,
+) -> anyhow::Result<Option<String>> {
+    let value = devd_request(client, devd, Method::POST, "/api/v1/devices/scan", None).await?;
+    let devices = value
+        .get("devices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("device scan returned no device list"))?
+        .iter()
+        .cloned()
+        .map(serde_json::from_value::<DeviceRecord>)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for device in devices {
+        let Some(_usb) = &device.usb else {
+            continue;
+        };
+        let info = devd_request(
+            client,
+            devd,
+            Method::GET,
+            &format!("/api/v1/devices/{}/status", device.id),
+            None,
+        )
+        .await;
+        let Ok(info) = info else {
+            continue;
+        };
+        let reported = info
+            .get("device")
+            .or_else(|| info.get("result").and_then(|result| result.get("device")))
+            .and_then(|device| device.get("device_id").or_else(|| device.get("deviceId")))
+            .and_then(Value::as_str);
+        if reported == Some(canonical_device_id) {
+            return Ok(Some(device.id));
+        }
+    }
+    Ok(None)
+}
+
+fn canonical_device_id_candidate(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    (normalized.len() == 12 && normalized.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .then_some(normalized)
+}
+
+fn stable_usb_device_id(port_path: &str) -> String {
+    let sanitized = port_path
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect::<String>();
+    format!("usb-{sanitized}")
 }
 
 async fn create_lease(

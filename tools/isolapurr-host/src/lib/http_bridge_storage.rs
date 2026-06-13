@@ -222,28 +222,35 @@ fn parse_storage_save_input(value: Value) -> anyhow::Result<SavedHardwareInput> 
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("device.baseUrl is required"))?
             .to_string();
-        let id = device
+        let device_id = device
             .get("id")
             .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_else(|| stable_http_device_id(&base_url));
+            .ok_or_else(|| anyhow!("device.id is required"))
+            .and_then(normalize_canonical_device_id)?;
+        let transports = parse_storage_transports(device, &base_url);
         return Ok(SavedHardwareInput {
-            id,
+            device_id,
             name,
-            transport: hardware_transport_from_storage_url(&base_url),
+            transports,
+            identity: None,
         });
     }
     #[derive(Deserialize)]
     struct Wire {
-        id: String,
+        #[serde(rename = "deviceId", alias = "device_id", alias = "id")]
+        device_id: String,
         name: String,
-        transport: HardwareTransport,
+        #[serde(default)]
+        transports: Option<DeviceProfileTransports>,
+        #[serde(default)]
+        identity: Option<DeviceIdentity>,
     }
     let wire: Wire = serde_json::from_value(value)?;
     Ok(SavedHardwareInput {
-        id: wire.id,
+        device_id: normalize_canonical_device_id(&wire.device_id)?,
         name: wire.name,
-        transport: wire.transport,
+        transports: wire.transports.unwrap_or_default(),
+        identity: wire.identity,
     })
 }
 
@@ -252,78 +259,37 @@ fn web_storage_device(profile: &DeviceProfile) -> Value {
 }
 
 pub(super) fn web_storage_devices(registry: &HardwareRegistry) -> Vec<Value> {
-    let mut groups: Vec<(String, Vec<&DeviceProfile>)> = Vec::new();
-    for profile in &registry.devices {
-        let key = profile_group_key(profile);
-        if let Some((_, profiles)) = groups.iter_mut().find(|(existing, _)| existing == &key) {
-            profiles.push(profile);
-        } else {
-            groups.push((key, vec![profile]));
-        }
-    }
-    groups
-        .into_iter()
-        .map(|(_, profiles)| web_storage_group_device(&profiles))
-        .collect()
+    registry.devices.iter().map(web_storage_device).collect()
 }
 
 fn web_storage_device_for_profile(
     registry: &HardwareRegistry,
     profile: &DeviceProfile,
 ) -> Option<Value> {
-    let key = profile_group_key(profile);
-    let profiles = registry
+    registry
         .devices
         .iter()
-        .filter(|candidate| profile_group_key(candidate) == key)
-        .collect::<Vec<_>>();
-    (!profiles.is_empty()).then(|| web_storage_group_device(&profiles))
+        .find(|candidate| candidate.id == profile.id)
+        .map(web_storage_device)
 }
 
 fn web_storage_group_device(profiles: &[&DeviceProfile]) -> Value {
     let primary = profiles
-        .iter()
-        .find(|profile| matches!(profile.transport, HardwareTransport::Usb { .. }))
-        .or_else(|| profiles.first())
+        .first()
         .expect("web storage group must contain at least one profile");
-
-    let mut http_base_url = None;
-    let mut local_usb_device_id = None;
-    let mut web_serial_label = None;
-    let mut last_seen_at = primary.last_seen_at;
-    for profile in profiles {
-        last_seen_at = last_seen_at.max(profile.last_seen_at);
-        match &profile.transport {
-            HardwareTransport::Http { base_url } => {
-                http_base_url = Some(base_url.clone());
-            }
-            HardwareTransport::Usb { device_id, .. } => {
-                local_usb_device_id = Some(device_id.clone());
-            }
-            HardwareTransport::WebSerial { label } => {
-                web_serial_label = label.clone().or_else(|| Some(profile.id.clone()));
-            }
-        }
-    }
-
-    let base_url = http_base_url
+    let transports_value = primary.transports.clone().unwrap_or_default();
+    let base_url = transports_value
+        .http_base_url
         .clone()
-        .unwrap_or_else(|| match &primary.transport {
-            HardwareTransport::Http { base_url } => base_url.clone(),
-            HardwareTransport::Usb { device_id, .. } => format!("isolapurr-devd://{device_id}"),
-            HardwareTransport::WebSerial { label } => {
-                format!("webserial://{}", label.as_deref().unwrap_or(&primary.id))
-            }
-        });
-
+        .unwrap_or_else(|| format!("http://isolapurr-usb-hub-{}.local", primary.id));
     let mut transports = serde_json::Map::new();
-    if let Some(value) = http_base_url {
+    if let Some(value) = transports_value.http_base_url {
         transports.insert("httpBaseUrl".to_string(), json!(value));
     }
-    if let Some(value) = local_usb_device_id {
-        transports.insert("localUsbDeviceId".to_string(), json!(value));
+    if let Some(value) = transports_value.local_usb_port_path {
+        transports.insert("localUsbPortPath".to_string(), json!(value));
     }
-    if let Some(value) = web_serial_label {
+    if let Some(value) = transports_value.web_serial_label {
         transports.insert("webSerialLabel".to_string(), json!(value));
     }
 
@@ -331,88 +297,9 @@ fn web_storage_group_device(profiles: &[&DeviceProfile]) -> Value {
         "id": primary.id,
         "name": primary.name,
         "baseUrl": base_url,
-        "lastSeenAt": last_seen_at.map(|ts| ts.to_string()),
+        "lastSeenAt": primary.last_seen_at.map(|ts| ts.to_string()),
         "transports": Value::Object(transports),
     })
-}
-
-fn profile_group_key(profile: &DeviceProfile) -> String {
-    profile_identity_key(profile).unwrap_or_else(|| {
-        let id = profile.id.trim().to_ascii_lowercase();
-        if is_short_device_id(&id) {
-            format!("device:{id}")
-        } else {
-            format!("id:{id}")
-        }
-    })
-}
-
-fn profile_identity_key(profile: &DeviceProfile) -> Option<String> {
-    profile
-        .identity
-        .as_ref()
-        .and_then(device_identity_key)
-        .or_else(|| match &profile.transport {
-            HardwareTransport::Http { base_url } => {
-                default_hostname_short_id(base_url).map(|id| format!("device:{id}"))
-            }
-            _ => None,
-        })
-}
-
-fn device_identity_key(identity: &DeviceIdentity) -> Option<String> {
-    identity
-        .device_id
-        .as_deref()
-        .map(normalize_device_id)
-        .filter(|id| !id.is_empty())
-        .or_else(|| identity.mac.as_deref().and_then(mac_short_id))
-        .map(|id| format!("device:{id}"))
-}
-
-fn normalize_device_id(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
-}
-
-fn mac_short_id(value: &str) -> Option<String> {
-    let hex = value
-        .chars()
-        .filter(|ch| ch.is_ascii_hexdigit())
-        .collect::<String>();
-    if hex.len() < 6 {
-        return None;
-    }
-    let short_id = &hex[hex.len() - 6..];
-    is_short_device_id(short_id).then(|| short_id.to_string())
-}
-
-fn default_hostname_short_id(base_url: &str) -> Option<String> {
-    let url = reqwest::Url::parse(base_url).ok()?;
-    let host = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
-    let host = host.strip_suffix(".local").unwrap_or(&host);
-    let short_id = host.strip_prefix("isolapurr-usb-hub-")?;
-    is_short_device_id(short_id).then(|| short_id.to_string())
-}
-
-fn is_short_device_id(value: &str) -> bool {
-    value.len() == 6 && value.chars().all(|ch| ch.is_ascii_hexdigit())
-}
-
-fn hardware_transport_from_storage_url(base_url: &str) -> HardwareTransport {
-    if let Some(device_id) = base_url.strip_prefix("isolapurr-devd://") {
-        HardwareTransport::Usb {
-            device_id: device_id.to_string(),
-            devd_url: None,
-        }
-    } else if let Some(label) = base_url.strip_prefix("webserial://") {
-        HardwareTransport::WebSerial {
-            label: Some(label.to_string()),
-        }
-    } else {
-        HardwareTransport::Http {
-            base_url: base_url.to_string(),
-        }
-    }
 }
 
 fn parse_web_storage_device(value: &Value) -> anyhow::Result<DeviceProfile> {
@@ -422,8 +309,8 @@ fn parse_web_storage_device(value: &Value) -> anyhow::Result<DeviceProfile> {
     let id = device
         .get("id")
         .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("device.id is required"))?
-        .to_string();
+        .ok_or_else(|| anyhow!("device.id is required"))
+        .and_then(normalize_canonical_device_id)?;
     let name = device
         .get("name")
         .and_then(Value::as_str)
@@ -436,7 +323,7 @@ fn parse_web_storage_device(value: &Value) -> anyhow::Result<DeviceProfile> {
     Ok(DeviceProfile {
         id,
         name,
-        transport: hardware_transport_from_storage_url(base_url),
+        transports: Some(parse_storage_transports(device, base_url)),
         identity: None,
         last_seen_at: Some(now_unix_seconds()),
     })
@@ -452,7 +339,7 @@ pub(super) fn parse_import_profiles(
         .iter()
         .cloned()
         .map(|device| {
-            if device.get("transport").is_some() {
+            if device.get("transports").is_some() {
                 serde_json::from_value(device).context("parse device profile")
             } else {
                 parse_web_storage_device(&device)
@@ -484,6 +371,43 @@ fn migrate_localstorage_payload(value: Value) -> anyhow::Result<(usize, bool)> {
         settings_written = true;
     }
     Ok((imported_devices, settings_written))
+}
+
+fn parse_storage_transports(
+    device: &serde_json::Map<String, Value>,
+    base_url: &str,
+) -> DeviceProfileTransports {
+    let transports = device.get("transports").and_then(Value::as_object);
+    let http_base_url = transports
+        .and_then(|transports| transports.get("httpBaseUrl"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| Some(base_url.to_string()));
+    let local_usb_port_path = transports
+        .and_then(|transports| transports.get("localUsbPortPath"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let web_serial_label = transports
+        .and_then(|transports| transports.get("webSerialLabel"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+
+    DeviceProfileTransports {
+        http_base_url,
+        local_usb_port_path,
+        web_serial_label,
+    }
+}
+
+fn normalize_canonical_device_id(value: &str) -> anyhow::Result<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.len() == 12 && normalized.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        Ok(normalized)
+    } else {
+        Err(anyhow!(
+            "device.id must be a 12-character lowercase hex device_id"
+        ))
+    }
 }
 
 pub(super) async fn storage_import(

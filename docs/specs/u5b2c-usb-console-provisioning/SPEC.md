@@ -179,6 +179,14 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 
 Evidence source: Storybook canvas, captured from this worktree implementation.
 
+Add device discovery canonical device IDs:
+
+![Add device discovery canonical device IDs](assets/add-device-discovery-canonical-device-ids.png)
+
+Device info canonical device ID:
+
+![Device info canonical device ID](assets/device-info-canonical-device-id.png)
+
 Add device Web Serial desktop:
 
 PR: include

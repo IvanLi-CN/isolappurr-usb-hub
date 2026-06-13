@@ -16,9 +16,14 @@ pub fn read_hardware_registry() -> anyhow::Result<HardwareRegistry> {
         }
         Err(err) => return Err(err).context("read hardware registry"),
     };
-    let mut registry: HardwareRegistry = serde_json::from_slice(&raw)?;
+    let mut registry: HardwareRegistry =
+        serde_json::from_slice(&raw).context("parse hardware registry")?;
     if registry.schema_version == 0 {
         registry.schema_version = STORAGE_SCHEMA_VERSION;
+    }
+    let changed = sanitize_registry(&mut registry);
+    if changed {
+        let _ = write_hardware_registry(&registry);
     }
     Ok(registry)
 }
@@ -71,13 +76,26 @@ fn write_storage_settings(settings: &StorageSettings) -> anyhow::Result<()> {
 
 pub fn save_hardware(input: SavedHardwareInput) -> anyhow::Result<DeviceProfile> {
     let mut registry = read_hardware_registry()?;
+    let device_id = normalize_canonical_device_id(&input.device_id)
+        .ok_or_else(|| anyhow!("device_id must be a 12-character lowercase hex value"))?;
     let profile = DeviceProfile {
-        id: input.id,
-        name: input.name,
-        transport: input.transport,
-        identity: None,
+        id: device_id.clone(),
+        name: input.name.trim().to_string(),
+        transports: normalize_transports(Some(input.transports), &device_id),
+        identity: Some(DeviceIdentity {
+            device_id: Some(device_id),
+            mac: input.identity.and_then(|identity| identity.mac),
+        }),
         last_seen_at: Some(now_unix_seconds()),
     };
+    if profile.name.is_empty() {
+        return Err(anyhow!("name is required"));
+    }
+    if profile.transports.is_none() {
+        return Err(anyhow!(
+            "at least one of http_base_url, local_usb_port_path, or web_serial_label is required"
+        ));
+    }
     upsert_profile(&mut registry, profile.clone());
     write_hardware_registry(&registry)?;
     Ok(profile)
@@ -85,6 +103,9 @@ pub fn save_hardware(input: SavedHardwareInput) -> anyhow::Result<DeviceProfile>
 
 fn delete_hardware(id: &str) -> anyhow::Result<bool> {
     let mut registry = read_hardware_registry()?;
+    let Some(id) = normalize_canonical_device_id(id) else {
+        return Ok(false);
+    };
     let before = registry.devices.len();
     registry.devices.retain(|device| device.id != id);
     write_hardware_registry(&registry)?;
@@ -111,11 +132,10 @@ fn upsert_profile(registry: &mut HardwareRegistry, profile: DeviceProfile) {
         .iter_mut()
         .find(|device| device.id == profile.id)
     {
-        let mut profile = profile;
-        if profile.identity.is_none() {
-            profile.identity = existing.identity.clone();
-        }
-        *existing = profile;
+        existing.name = profile.name;
+        existing.identity = merge_identity(existing.identity.take(), profile.identity);
+        existing.transports = merge_transports(existing.transports.take(), profile.transports);
+        existing.last_seen_at = existing.last_seen_at.max(profile.last_seen_at);
     } else {
         registry.devices.push(profile);
     }
@@ -377,13 +397,12 @@ async fn persist_captured_identity(
 
     let mut registry = read_hardware_registry()?;
     let mut changed = false;
+    let canonical_device_id = identity
+        .device_id
+        .as_deref()
+        .and_then(normalize_canonical_device_id);
     for profile in &mut registry.devices {
-        if let HardwareTransport::Usb {
-            device_id: saved_device_id,
-            ..
-        } = &profile.transport
-            && saved_device_id == device_id
-        {
+        if canonical_device_id.as_deref() == Some(profile.id.as_str()) {
             profile.identity = Some(identity.clone());
             profile.last_seen_at = Some(now_unix_seconds());
             changed = true;
@@ -393,6 +412,142 @@ async fn persist_captured_identity(
         write_hardware_registry(&registry)?;
     }
     Ok(())
+}
+
+fn sanitize_registry(registry: &mut HardwareRegistry) -> bool {
+    let original_len = registry.devices.len();
+    let mut next = Vec::new();
+    for profile in std::mem::take(&mut registry.devices) {
+        let Some(profile) = sanitize_profile(profile) else {
+            continue;
+        };
+        if let Some(existing) = next
+            .iter_mut()
+            .find(|device: &&mut DeviceProfile| device.id == profile.id)
+        {
+            existing.name = profile.name;
+            existing.identity = merge_identity(existing.identity.take(), profile.identity);
+            existing.transports = merge_transports(existing.transports.take(), profile.transports);
+            existing.last_seen_at = existing.last_seen_at.max(profile.last_seen_at);
+        } else {
+            next.push(profile);
+        }
+    }
+    let changed = registry.schema_version != STORAGE_SCHEMA_VERSION || original_len != next.len();
+    registry.schema_version = STORAGE_SCHEMA_VERSION;
+    registry.devices = next;
+    changed
+}
+
+fn sanitize_profile(mut profile: DeviceProfile) -> Option<DeviceProfile> {
+    let id = normalize_canonical_device_id(&profile.id)?;
+    let name = profile.name.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let transports = normalize_transports(profile.transports.take(), &id)?;
+    let mac = profile.identity.take().and_then(|identity| identity.mac);
+    Some(DeviceProfile {
+        id: id.clone(),
+        name,
+        transports: Some(transports),
+        identity: Some(DeviceIdentity {
+            device_id: Some(id),
+            mac,
+        }),
+        last_seen_at: profile.last_seen_at,
+    })
+}
+
+fn normalize_transports(
+    transports: Option<DeviceProfileTransports>,
+    device_id: &str,
+) -> Option<DeviceProfileTransports> {
+    let transports = transports?;
+    let http_base_url = transports.http_base_url.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+    let local_usb_port_path = transports.local_usb_port_path.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() || trimmed.starts_with("usb-") {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+    let web_serial_label = transports.web_serial_label.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+
+    let normalized = DeviceProfileTransports {
+        http_base_url,
+        local_usb_port_path,
+        web_serial_label,
+    };
+    (!transports_empty(&normalized))
+        .then_some(normalized)
+        .or_else(|| {
+            Some(DeviceProfileTransports {
+                http_base_url: Some(format!("http://isolapurr-usb-hub-{device_id}.local")),
+                local_usb_port_path: None,
+                web_serial_label: None,
+            })
+        })
+}
+
+fn merge_transports(
+    existing: Option<DeviceProfileTransports>,
+    incoming: Option<DeviceProfileTransports>,
+) -> Option<DeviceProfileTransports> {
+    match (existing, incoming) {
+        (None, None) => None,
+        (Some(existing), None) => Some(existing),
+        (None, Some(incoming)) => Some(incoming),
+        (Some(existing), Some(incoming)) => Some(DeviceProfileTransports {
+            http_base_url: incoming.http_base_url.or(existing.http_base_url),
+            local_usb_port_path: incoming
+                .local_usb_port_path
+                .or(existing.local_usb_port_path),
+            web_serial_label: incoming.web_serial_label.or(existing.web_serial_label),
+        }),
+    }
+}
+
+fn merge_identity(
+    existing: Option<DeviceIdentity>,
+    incoming: Option<DeviceIdentity>,
+) -> Option<DeviceIdentity> {
+    match (existing, incoming) {
+        (None, None) => None,
+        (Some(existing), None) => Some(existing),
+        (None, Some(incoming)) => Some(incoming),
+        (Some(existing), Some(incoming)) => Some(DeviceIdentity {
+            device_id: incoming.device_id.or(existing.device_id),
+            mac: incoming.mac.or(existing.mac),
+        }),
+    }
+}
+
+fn normalize_canonical_device_id(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    (normalized.len() == 12 && normalized.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .then_some(normalized)
+}
+
+fn transports_empty(transports: &DeviceProfileTransports) -> bool {
+    transports.http_base_url.is_none()
+        && transports.local_usb_port_path.is_none()
+        && transports.web_serial_label.is_none()
 }
 
 pub fn redact_sensitive(value: &Value) -> Value {

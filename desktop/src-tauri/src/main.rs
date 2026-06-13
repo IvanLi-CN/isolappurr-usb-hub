@@ -244,27 +244,27 @@ mod tests {
             "ok": true,
             "result": {
                 "device": {
-                    "device_id": "f293cc",
+                    "device_id": "f293cc9c139e",
                     "mac": "aa:bb:cc:dd:ee:ff"
                 }
             }
         });
         let identity = extract_device_identity(&nested).expect("identity");
-        assert_eq!(identity.device_id.as_deref(), Some("f293cc"));
+        assert_eq!(identity.device_id.as_deref(), Some("f293cc9c139e"));
         assert_eq!(identity.mac.as_deref(), Some("aa:bb:cc:dd:ee:ff"));
     }
 
     #[test]
     fn parses_port_preference_cache_with_identity() {
         let cache = parse_port_preference_cache(
-            "/dev/cu.usbmodem212101\nmac=50:78:7d:19:88:40\ndevice_id=isolapurr-198840\n",
+            "/dev/cu.usbmodem212101\nmac=50:78:7d:19:88:40\ndevice_id=19884050787d\n",
         )
         .expect("parse cache")
         .expect("cache present");
 
         assert_eq!(cache.port, "/dev/cu.usbmodem212101");
         assert_eq!(cache.mac.as_deref(), Some("50:78:7d:19:88:40"));
-        assert_eq!(cache.device_id.as_deref(), Some("isolapurr-198840"));
+        assert_eq!(cache.device_id.as_deref(), Some("19884050787d"));
     }
 
     #[test]
@@ -345,7 +345,7 @@ mod tests {
         let actual = PortIdentityCache {
             port: "/dev/cu.usbmodem1".to_string(),
             identity: None,
-            device_id: Some("actual".to_string()),
+            device_id: Some("aabbcc001122".to_string()),
             mac: Some("aa:bb:cc:dd:ee:ff".to_string()),
             confirmed_at: "2026-05-19T00:00:00Z".to_string(),
             source: "test".to_string(),
@@ -353,7 +353,7 @@ mod tests {
         let err = ensure_identity_matches(
             &actual,
             &DeviceIdentityExpectation {
-                device_id: Some("expected".to_string()),
+                device_id: Some("ddeeffaabbcc".to_string()),
                 mac: None,
             },
         )
@@ -375,7 +375,7 @@ mod tests {
     async fn discovery_accepts_valid_device() {
         init_tracing();
         let server = spawn_info_server(InfoResponse::Valid {
-            device_id: Some("dev-1".to_string()),
+            device_id: Some("aabbcc001122".to_string()),
         })
         .await;
         let controller = make_controller(400, Some("mdns unavailable".to_string()));
@@ -392,7 +392,7 @@ mod tests {
             snapshot.devices
         );
         let device = snapshot.devices.first().expect("device entry");
-        assert_eq!(device.device_id.as_deref(), Some("dev-1"));
+        assert_eq!(device.device_id.as_deref(), Some("aabbcc001122"));
         assert_eq!(device.base_url, server.base_url);
         assert_eq!(snapshot.status, DiscoveryStatus::Ready);
     }
@@ -444,11 +444,11 @@ mod tests {
     async fn discovery_dedups_by_device_id() {
         init_tracing();
         let server_a = spawn_info_server(InfoResponse::Valid {
-            device_id: Some("dev-1".to_string()),
+            device_id: Some("aabbcc001122".to_string()),
         })
         .await;
         let server_b = spawn_info_server(InfoResponse::Valid {
-            device_id: Some("dev-1".to_string()),
+            device_id: Some("aabbcc001122".to_string()),
         })
         .await;
         let controller = make_controller(400, Some("mdns unavailable".to_string()));
@@ -470,7 +470,7 @@ mod tests {
             snapshot.devices
         );
         let device = snapshot.devices.first().expect("device entry");
-        assert_eq!(device.device_id.as_deref(), Some("dev-1"));
+        assert_eq!(device.device_id.as_deref(), Some("aabbcc001122"));
         assert_eq!(
             device.base_url, server_b.base_url,
             "expected latest base_url to win"

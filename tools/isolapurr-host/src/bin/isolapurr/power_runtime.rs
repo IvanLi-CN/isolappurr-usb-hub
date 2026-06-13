@@ -37,21 +37,21 @@ async fn fetch_power_diagnostics(
 }
 
 fn saved_hardware_target_label(device: &DeviceProfile) -> String {
-    let target = match &device.transport {
-        HardwareTransport::Usb { device_id, .. } => format!("usb {device_id}"),
-        HardwareTransport::Http { base_url } => format!("http {base_url}"),
-        HardwareTransport::WebSerial { label } => label
-            .as_ref()
-            .map(|value| format!("web-serial {value}"))
-            .unwrap_or_else(|| "web-serial".to_string()),
+    let target = if let Some(base_url) = device.http_base_url() {
+        format!("http {base_url}")
+    } else if let Some(port_path) = device.local_usb_port_path() {
+        format!("usb {port_path}")
+    } else if let Some(label) = device.web_serial_label() {
+        format!("web-serial {label}")
+    } else {
+        "unlinked".to_string()
     };
     format!("{} ({}) - {}", device.name, device.id, target)
 }
 
 fn power_selector_to_api_selector(selector: PowerSelectorArgs) -> ApiSelectorArgs {
     ApiSelectorArgs {
-        hardware: selector.hardware,
-        device: None,
+        device_id: selector.device_id,
         url: None,
     }
 }
@@ -68,8 +68,7 @@ async fn finalize_power_target_candidate(
     candidate: PowerTargetCandidate,
 ) -> anyhow::Result<ApiSelectorArgs> {
     let selector = ApiSelectorArgs {
-        hardware: Some(candidate.hardware.id.clone()),
-        device: None,
+        device_id: Some(candidate.hardware.id.clone()),
         url: None,
     };
     if candidate.verify_http_after_select {
@@ -77,7 +76,7 @@ async fn finalize_power_target_candidate(
             .await
             .with_context(|| {
                 format!(
-                    "saved LAN hardware {} is not reachable right now",
+                    "saved LAN device {} is not reachable right now",
                     candidate.hardware.id
                 )
             })?;
@@ -109,8 +108,7 @@ async fn collect_scanned_saved_usb_power_targets(
             client,
             devd,
             ApiSelectorArgs {
-                hardware: None,
-                device: Some(device.id.clone()),
+                device_id: Some(device.id.clone()),
                 url: None,
             },
             Method::GET,
@@ -123,10 +121,10 @@ async fn collect_scanned_saved_usb_power_targets(
             continue;
         }
         if let Some(saved_device) = saved.iter().find(|saved_device| {
-            matches!(
-                &saved_device.transport,
-                HardwareTransport::Usb { device_id, .. } if device_id == &device.id
-            )
+            saved_device
+                .local_usb_port_path()
+                .zip(device.usb.as_ref().map(|usb| usb.port_path.as_str()))
+                .is_some_and(|(saved_path, live_path)| saved_path == live_path)
         }) {
             matched.push(saved_device.clone());
         }
@@ -144,23 +142,25 @@ async fn select_saved_power_target_interactively(
     }
     if !io::stdin().is_terminal() {
         return Err(anyhow!(
-            "select --hardware; interactive power target selection requires a terminal"
+            "select --device-id; interactive power target selection requires a terminal"
         ));
     }
 
     let mut saved = read_hardware_registry()?.devices;
-    saved.retain(|device| !matches!(device.transport, HardwareTransport::WebSerial { .. }));
+    saved.retain(|device| {
+        device.http_base_url().is_some() || device.local_usb_port_path().is_some()
+    });
     saved.sort_by(|a, b| b.last_seen_at.cmp(&a.last_seen_at));
 
     if saved.is_empty() {
         return Err(anyhow!(
-            "no saved hardware is available; bind hardware first with `isolapurr hardware save`"
+            "no saved device is available; save a device first with `isolapurr hardware save --device-id ...`"
         ));
     }
 
     let lan_candidates = saved
         .iter()
-        .filter(|device| matches!(device.transport, HardwareTransport::Http { .. }))
+        .filter(|device| device.http_base_url().is_some())
         .cloned()
         .map(|hardware| PowerTargetCandidate {
             hardware,
@@ -190,9 +190,9 @@ async fn select_saved_power_target_interactively(
         .map(|candidate| saved_hardware_target_label(&candidate.hardware))
         .collect::<Vec<_>>();
     let selected = run_tui_list_menu(
-        "Select saved hardware for power control",
+        "Select saved device for power control",
         Some(
-            "Saved LAN hardware is listed first. Saved USB hardware appears only after the current scan sees it online. Use Up/Down to move, Enter to select, Esc to cancel.",
+            "Saved LAN devices are listed first. Saved USB devices appear only after the current scan sees the saved port_path online. Use Up/Down to move, Enter to select, Esc to cancel.",
         ),
         &items,
         &[],
@@ -213,7 +213,7 @@ async fn select_api_target_interactively(
     }
     if !io::stdin().is_terminal() {
         return Err(anyhow!(
-            "select one of --hardware, --device, or --url; interactive device selection requires a terminal"
+            "select one of --device-id or --url; interactive device selection requires a terminal"
         ));
     }
 
@@ -229,7 +229,7 @@ async fn select_api_target_interactively(
 
     if devices.is_empty() {
         return Err(anyhow!(
-            "no devd devices found; connect hardware or pass --hardware/--device/--url explicitly"
+            "no devd devices found; connect hardware or pass --device-id/--url explicitly"
         ));
     }
 
@@ -237,8 +237,7 @@ async fn select_api_target_interactively(
     let mut rejected = Vec::new();
     for device in devices {
         let selector = ApiSelectorArgs {
-            hardware: None,
-            device: Some(device.id.clone()),
+            device_id: Some(device.id.clone()),
             url: None,
         };
         match request_selected(client, devd, selector.clone(), Method::GET, "/status", None).await {

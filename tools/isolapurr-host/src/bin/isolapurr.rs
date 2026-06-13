@@ -3,7 +3,7 @@ use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use crossterm::terminal;
 use dialoguer::{MultiSelect, Select};
 use isolapurr_host::{
-    DeviceIdentity, DeviceProfile, DeviceRecord, FirmwareCatalog, HardwareTransport,
+    DeviceIdentity, DeviceProfile, DeviceProfileTransports, DeviceRecord, FirmwareCatalog,
     SavedHardwareInput, api_url, default_ipc_endpoint, ipc_call, read_hardware_registry,
     redact_sensitive, registry_path, save_hardware,
 };

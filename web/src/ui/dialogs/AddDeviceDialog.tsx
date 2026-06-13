@@ -871,7 +871,7 @@ export function AddDeviceDialog({
         </div>
 
         <div className="mt-6 flex min-h-0 flex-1 flex-col gap-6">
-          <div className="min-h-0 min-w-0 flex-1">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             {method === "wifi" ? (
               <>
                 <DeviceDiscoveryPanel
