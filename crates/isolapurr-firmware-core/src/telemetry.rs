@@ -1,6 +1,6 @@
 use crate::pd_i2c::PowerSetpoint;
 
-pub const U17_R29_SHUNT_RESISTANCE_UOHMS: u32 = 1_000;
+pub const U17_R29_SHUNT_RESISTANCE_UOHMS: u32 = 10_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Field<T> {
@@ -105,5 +105,21 @@ pub fn derive_u14_meas_from_u17(u17_meas: VoltageCurrent) -> VoltageCurrent {
     VoltageCurrent {
         voltage_mv,
         current_ma: u17_meas.current_ma,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Field, VoltageCurrent, derive_u14_meas_from_u17};
+
+    #[test]
+    fn derives_u14_voltage_with_real_10_mohm_shunt() {
+        let derived = derive_u14_meas_from_u17(VoltageCurrent {
+            voltage_mv: Field::Ok(20_000),
+            current_ma: Field::Ok(5_000),
+        });
+
+        assert_eq!(derived.voltage_mv, Field::Ok(20_050));
+        assert_eq!(derived.current_ma, Field::Ok(5_000));
     }
 }
