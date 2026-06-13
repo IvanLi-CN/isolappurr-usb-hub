@@ -268,6 +268,20 @@ mod tests {
     }
 
     #[test]
+    fn monitor_parser_only_folds_one_startup_fragment_after_binary() {
+        let mut state = MonitorParserState::default();
+
+        assert_eq!(state.parse_line(&[0xff, 0x00, b'E', b'\n']).kind, "binary");
+        let fragment = state.parse_line(b"2\n");
+        assert_eq!(fragment.kind, "binary");
+        assert_eq!(fragment.data_base64.as_deref(), Some("Mg=="));
+
+        let log = state.parse_line(b"O\n");
+        assert_eq!(log.kind, "log");
+        assert_eq!(log.line.as_deref(), Some("O"));
+    }
+
+    #[test]
     fn extracts_identity_from_info_response_shapes() {
         let nested = serde_json::json!({
             "id": 1,

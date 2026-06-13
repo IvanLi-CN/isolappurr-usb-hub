@@ -752,6 +752,29 @@ impl MonitorRecord {
     }
 }
 
+#[derive(Debug, Default)]
+struct MonitorParserState {
+    binary_fragment_budget: usize,
+}
+
+impl MonitorParserState {
+    fn parse_line(&mut self, line: &[u8]) -> MonitorRecord {
+        let parsed = parse_monitor_record(line);
+        let parsed_binary = parsed.kind == "binary";
+        let should_fold_fragment = self.binary_fragment_budget > 0
+            && parsed.kind == "log"
+            && is_single_byte_monitor_fragment(trim_monitor_line_bytes(line));
+        let record = if should_fold_fragment {
+            MonitorRecord::binary(trim_monitor_line_bytes(line))
+        } else {
+            parsed
+        };
+
+        self.binary_fragment_budget = if parsed_binary { 1 } else { 0 };
+        record
+    }
+}
+
 fn run_firmware_monitor(
     port_path: &str,
     elf_path: Option<&Path>,
@@ -778,7 +801,7 @@ fn run_firmware_monitor(
         .with_context(|| format!("open {port_path} failed"))?;
     let mut pending = Vec::<u8>::new();
     let mut buf = [0u8; 256];
-    let mut in_binary_burst = false;
+    let mut parser_state = MonitorParserState::default();
     loop {
         match port.read(&mut buf) {
             Ok(0) => continue,
@@ -786,17 +809,10 @@ fn run_firmware_monitor(
                 pending.extend_from_slice(&buf[..n]);
                 while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
                     let line: Vec<u8> = pending.drain(..=newline).collect();
-                    let mut record = parse_monitor_record(&line);
-                    if in_binary_burst
-                        && record.kind == "log"
-                        && is_single_byte_monitor_fragment(trim_monitor_line_bytes(&line))
-                    {
-                        record = MonitorRecord::binary(trim_monitor_line_bytes(&line));
-                    }
+                    let record = parser_state.parse_line(&line);
                     if record.kind == "log" && record.line.as_deref() == Some("") {
                         continue;
                     }
-                    in_binary_burst = record.kind == "binary";
                     if json {
                         println!("{}", serde_json::to_string(&monitor_record_json(&record))?);
                     } else if let Some(line) = record.line.as_deref() {
