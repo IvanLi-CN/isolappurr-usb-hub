@@ -4,11 +4,14 @@ mod dashboard;
 mod dashboard_font;
 mod font6x8;
 mod menu;
-mod normal_ui_policy;
 mod surface;
 mod usb_c_display;
 
 pub use dashboard::DASHBOARD_BG_RGB8;
+pub use isolapurr_firmware_core::display_ui::{
+    NormalUiField, NormalUiPort, NormalUiPortBadge, NormalUiPortMode, NormalUiSnapshot,
+    normal_ui_usb_c_mode, normal_ui_usb_c_present, normal_ui_usb_c_protocol_active,
+};
 pub(super) use surface::{FrameSurface, blend565, measure_text_aa, rgb565_raw};
 pub use usb_c_display::{
     USB_C_DISPLAY_TEXT_CAPACITY, UsbCDisplayInput, UsbCDisplayState, format_port_badge_text,
@@ -28,9 +31,7 @@ use esp_alloc::ExternalMemory;
 use esp_hal::time::{Duration, Instant};
 use gc9307_async::{Config, Error as GcError, GC9307C, Orientation, Timer};
 
-use crate::pd_i2c::PowerRequest;
 use crate::telemetry::{Field, TelemetrySnapshot};
-use normal_ui_policy::{UsbCModeKind, UsbCPolicyInput};
 
 pub const WORKBUF_SIZE: usize = gc9307_async::BUF_SIZE;
 pub const DISPLAY_WIDTH: u16 = 320;
@@ -65,115 +66,6 @@ const UI_BG_RAW: u16 = 0xFFFF;
 const UI_STATUS_NOT_PRESENT_RAW: u16 = 0x4AAC;
 const UI_STATUS_ERROR_RAW: u16 = 0x98C3;
 const UI_STATUS_OVER_RAW: u16 = 0xC201;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NormalUiField {
-    Ok(u32),
-    Err,
-}
-
-impl NormalUiField {
-    pub const fn ok(value: u32) -> Self {
-        Self::Ok(value)
-    }
-
-    pub const fn err() -> Self {
-        Self::Err
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NormalUiPortMode {
-    UsbA,
-    Pd,
-    Pps,
-    Dc,
-    ManualVoltageMv(u16),
-    Off,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NormalUiPortBadge {
-    VoltageMv(u16),
-    Focus,
-    On,
-    Off,
-    Unknown,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NormalUiPort {
-    pub present: bool,
-    pub mode: NormalUiPortMode,
-    pub badge: NormalUiPortBadge,
-    /// Voltage in µV.
-    pub voltage_uv: NormalUiField,
-    /// Current in µA.
-    pub current_ua: NormalUiField,
-    /// Power in µW.
-    pub power_uw: NormalUiField,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NormalUiSnapshot {
-    /// Left column: USB-A.
-    pub usb_a: NormalUiPort,
-    /// Right column: USB-C/PD.
-    pub usb_c: NormalUiPort,
-}
-
-pub fn normal_ui_usb_c_protocol_active(request: Option<PowerRequest>) -> bool {
-    request
-        .map(|request| {
-            request.negotiated_protocol.is_some() || request.fast_protocol || request.fast_voltage
-        })
-        .unwrap_or(false)
-}
-
-fn field_ok(field: Field<u32>) -> Option<u32> {
-    match field {
-        Field::Ok(value) => Some(value),
-        Field::Err => None,
-    }
-}
-
-fn usb_c_policy_input(
-    request: Option<PowerRequest>,
-    voltage_mv: Field<u32>,
-    current_ma: Field<u32>,
-) -> UsbCPolicyInput {
-    UsbCPolicyInput {
-        voltage_mv: field_ok(voltage_mv),
-        current_ma: field_ok(current_ma),
-        cc_attached: request.map(|request| request.cc_attached).unwrap_or(false),
-        protocol_active: normal_ui_usb_c_protocol_active(request),
-        pd_protocol: request
-            .map(|request| request.negotiated_protocol == Some(sw2303::ProtocolType::PD))
-            .unwrap_or(false),
-        request_mv: request.map(|request| request.v_req_mv),
-    }
-}
-
-pub fn normal_ui_usb_c_present(
-    request: Option<PowerRequest>,
-    voltage_mv: Field<u32>,
-    current_ma: Field<u32>,
-) -> bool {
-    normal_ui_policy::usb_c_present(usb_c_policy_input(request, voltage_mv, current_ma))
-}
-
-pub fn normal_ui_usb_c_mode(
-    request: Option<PowerRequest>,
-    voltage_mv: Field<u32>,
-    current_ma: Field<u32>,
-) -> NormalUiPortMode {
-    match normal_ui_policy::usb_c_mode(usb_c_policy_input(request, voltage_mv, current_ma)) {
-        UsbCModeKind::Pd => NormalUiPortMode::Pd,
-        UsbCModeKind::Pps => NormalUiPortMode::Pps,
-        UsbCModeKind::Dc => NormalUiPortMode::Dc,
-        UsbCModeKind::Off => NormalUiPortMode::Off,
-    }
-}
 
 pub trait BacklightControl {
     fn on(&mut self);

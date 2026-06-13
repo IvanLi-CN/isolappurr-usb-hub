@@ -102,9 +102,11 @@
 - Local USB browser verification against `HIL-f293cc-USB`
 - `cd web && bun test ./src`
 
-`cargo test power_config` is not a valid gate for this repository target as
-currently configured because the ESP `xtensa-esp32s3-none-elf` target lacks the
-standard `test` crate.
+Root `cargo test power_config` is not a valid gate for this repository target
+as currently configured because the ESP `xtensa-esp32s3-none-elf` target lacks
+the standard `test` crate. Migrated pure power-config and idle-bias logic now
+runs through the shared firmware core host tests:
+`cargo +stable test --manifest-path crates/isolapurr-firmware-core/Cargo.toml --target "$host"`.
 
 `cd web && bun run test:storybook` was not run in this pass.
 

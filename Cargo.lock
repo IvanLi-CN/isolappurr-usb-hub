@@ -1155,6 +1155,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "isolapurr-firmware-core"
+version = "0.1.0"
+dependencies = [
+ "heapless 0.8.0",
+ "sw2303",
+]
+
+[[package]]
 name = "isolapurr-usb-hub"
 version = "0.1.0"
 dependencies = [
@@ -1180,6 +1188,7 @@ dependencies = [
  "gc9307-async",
  "heapless 0.8.0",
  "ina226",
+ "isolapurr-firmware-core",
  "smoltcp",
  "static_cell",
  "sw2303",
