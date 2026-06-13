@@ -724,6 +724,34 @@ fn reset_esp32s3_usb_jtag(port: &mut dyn serialport::SerialPort) -> serialport::
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct MonitorRecord {
+    kind: &'static str,
+    line: Option<String>,
+    data_base64: Option<String>,
+    byte_len: Option<usize>,
+}
+
+impl MonitorRecord {
+    fn text(kind: &'static str, line: &str) -> Self {
+        Self {
+            kind,
+            line: Some(line.to_string()),
+            data_base64: None,
+            byte_len: None,
+        }
+    }
+
+    fn binary(bytes: &[u8]) -> Self {
+        Self {
+            kind: "binary",
+            line: None,
+            data_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
+            byte_len: Some(bytes.len()),
+        }
+    }
+}
+
 fn run_firmware_monitor(
     port_path: &str,
     elf_path: Option<&Path>,
@@ -757,25 +785,73 @@ fn run_firmware_monitor(
                 pending.extend_from_slice(&buf[..n]);
                 while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
                     let line: Vec<u8> = pending.drain(..=newline).collect();
-                    let line = String::from_utf8_lossy(&line);
-                    let line = line.trim_end_matches(['\r', '\n']);
-                    let kind = classify_monitor_line(line);
+                    let record = parse_monitor_record(&line);
+                    if record.kind == "log" && record.line.as_deref() == Some("") {
+                        continue;
+                    }
                     if json {
-                        println!(
-                            "{}",
-                            serde_json::to_string(&serde_json::json!({
-                                "kind": kind,
-                                "line": line,
-                            }))?
-                        );
+                        println!("{}", serde_json::to_string(&monitor_record_json(&record))?);
+                    } else if let Some(line) = record.line.as_deref() {
+                        println!("[{}] {line}", record.kind);
                     } else {
-                        println!("[{kind}] {line}");
+                        println!(
+                            "[{}] {} bytes base64:{}",
+                            record.kind,
+                            record.byte_len.unwrap_or(0),
+                            record.data_base64.as_deref().unwrap_or("")
+                        );
                     }
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::TimedOut => continue,
             Err(err) => return Err(anyhow!("serial monitor read failed: {err}")),
         }
+    }
+}
+
+fn parse_monitor_record(bytes: &[u8]) -> MonitorRecord {
+    let bytes = trim_monitor_line_bytes(bytes);
+    let Ok(line) = std::str::from_utf8(bytes) else {
+        return MonitorRecord::binary(bytes);
+    };
+    if contains_monitor_control_bytes(line) {
+        return MonitorRecord::binary(bytes);
+    }
+    let kind = classify_monitor_line(line);
+    if kind == "log" && !is_plausible_monitor_log_line(line) {
+        return MonitorRecord::binary(bytes);
+    }
+    MonitorRecord::text(kind, line)
+}
+
+fn trim_monitor_line_bytes(bytes: &[u8]) -> &[u8] {
+    let mut end = bytes.len();
+    while end > 0 && matches!(bytes[end - 1], b'\r' | b'\n') {
+        end -= 1;
+    }
+    &bytes[..end]
+}
+
+fn contains_monitor_control_bytes(line: &str) -> bool {
+    line.chars().any(|ch| ch.is_control() && ch != '\t')
+}
+
+fn is_plausible_monitor_log_line(line: &str) -> bool {
+    line.trim().is_empty() || line.chars().count() >= 3
+}
+
+fn monitor_record_json(record: &MonitorRecord) -> serde_json::Value {
+    if let Some(line) = record.line.as_deref() {
+        serde_json::json!({
+            "kind": record.kind,
+            "line": line,
+        })
+    } else {
+        serde_json::json!({
+            "kind": record.kind,
+            "byte_len": record.byte_len.unwrap_or(0),
+            "data_base64": record.data_base64.as_deref().unwrap_or(""),
+        })
     }
 }
 
@@ -816,7 +892,10 @@ fn run_espflash_monitor(port_path: &str, elf_path: &Path, reset: bool) -> anyhow
 
 fn classify_monitor_line(line: &str) -> &'static str {
     let lower = line.to_lowercase();
-    if serde_json::from_str::<serde_json::Value>(line).is_ok() {
+    if serde_json::from_str::<serde_json::Value>(line)
+        .map(|value| value.is_object())
+        .unwrap_or(false)
+    {
         "jsonl"
     } else if lower.contains("panic") || lower.contains("backtrace") {
         "panic"
