@@ -3,6 +3,7 @@
 ## Project Structure & Module Organization
 
 - Firmware (ESP32‑S3, Rust `no_std`): `src/`, `Cargo.toml`, `.cargo/config.toml`, `tools/mcu-agentd-runner` (Local USB runner)
+- Shared firmware core (`no_std`, host-tested pure logic): `crates/isolapurr-firmware-core/`
 - Web UI (React SPA): `web/` (see `web/src/`, `web/public/`, `web/vite.config.ts`)
 - Docs & datasheets: `docs/`
 - Hardware variants & netlists: `hardware/` (per-variant artifacts; see `docs/hardware-variants.md`)
@@ -13,6 +14,8 @@
 Prefer `Justfile`:
 
 - `just build` — build firmware with the Local USB JSONL console (`cargo build --release`)
+- `just firmware-core-test` — run host tests for `crates/isolapurr-firmware-core` with an explicit host target
+- `just firmware-check` — run firmware build, shared firmware core host tests, and host-tools tests
 - `just desktop-agent-build` — build the project-local `isolapurr-desktop` CLI once before using `just ports` on a fresh checkout
 - `just desktop-agent` — run the project-local `isolapurr-desktop` CLI
 - `just ports` — list ESP32-S3 USB Serial/JTAG candidates
@@ -28,6 +31,7 @@ Prefer `Justfile`:
 Direct equivalents:
 
 - Firmware (recommended): `just flash-monitor`
+- Firmware validation: `just firmware-check`
 - Firmware (via cargo runner): `cargo run --release` (invokes `tools/mcu-agentd-runner`, now a Local USB runner)
 - Web: `cd web && bun install && bun dev`
 
@@ -42,7 +46,12 @@ Direct equivalents:
 There are no dedicated test suites yet. At minimum, keep:
 
 - `cargo build` passing for firmware
+- `just firmware-core-test` passing for host-runnable shared firmware logic
 - `cd web && bun run check && bun run build` passing for the SPA
+
+Root `cargo test` is not a valid firmware gate while the repository default
+target is `xtensa-esp32s3-none-elf`; use `just firmware-core-test` for pure
+firmware logic and HIL/manual validation for target-bound behavior.
 
 ## Commit & Pull Request Guidelines
 

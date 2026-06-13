@@ -67,3 +67,4 @@
 | r7m2q | CLI/devd host-tools alignment | 已验证 | `r7m2q-cli-devd-alignment/SPEC.md` | 2026-05-31 | Split `isolapurr-devd` + `isolapurr`, shared device profiles, firmware catalog, skills, and desktop-as-client boundary |
 | jdyh2 | PR label driven automatic release | 已完成 | `jdyh2-pr-label-release-automation/SPEC.md` | 2026-06-01 | Label Gate, centralized Release workflow, manifest-free version injection, and release failure notifier |
 | d8s4n | Source structure guard | 已完成 | `d8s4n-source-structure-guard/SPEC.md` | 2026-06-02 | Source length guard, generated-file exemption, and oversized source split |
+| k7p9x | Firmware Validation Contract | 已完成 | `k7p9x-firmware-validation-contract/SPEC.md` | 2026-06-13 | Shared no_std firmware core host tests plus firmware-check validation entrypoint |

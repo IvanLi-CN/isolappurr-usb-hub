@@ -92,6 +92,13 @@ jobs:
           fi
           ln -s "$GITHUB_WORKSPACE/sw2303-rs" ../sw2303-rs
 
+      - name: Test shared firmware core (host)
+        if: steps.gate.outputs.run_build == 'true'
+        run: |
+          set -euo pipefail
+          host="$(rustc +stable -vV | sed -n 's/^host: //p')"
+          cargo +stable test --manifest-path crates/isolapurr-firmware-core/Cargo.toml --target "$host"
+
       - name: cargo build
         if: steps.gate.outputs.run_build == 'true'
         run: cargo build

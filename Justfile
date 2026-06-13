@@ -14,6 +14,15 @@ default:
 build:
 	cargo build --release
 
+firmware-core-test:
+	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
+	cargo +stable test --manifest-path {{ROOT}}/crates/isolapurr-firmware-core/Cargo.toml --target "$host"
+
+firmware-check:
+	just build
+	just firmware-core-test
+	just host-tools-test
+
 fmt:
 	cargo +stable fmt
 
