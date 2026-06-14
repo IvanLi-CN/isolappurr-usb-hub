@@ -17,6 +17,25 @@
   It is only valid for advanced Local USB flows such as first flash, firmware upgrade, add-device bootstrap, and development maintenance.
   It is not a second device identity.
 
+## Hardware interfaces
+
+- `USB-A`
+  The fixed downstream USB-A interface.
+
+- `USB-C`
+  The downstream USB-C interface on the TPS/SW2303 power channel.
+
+- `2 mm banana jack`
+  The bench-output interface on the same TPS/SW2303 power channel as `USB-C`.
+  It is not an independent power rail.
+  _Avoid_: banana output, 2mm output
+
+- `shared TPS/SW2303 power channel`
+  The power channel shared by `USB-C` and the `2 mm banana jack`.
+
+- `SW2303 VBUS path`
+  The connector-side VBUS path controlled through SW2303 for `USB-C`.
+
 ## Excluded terms
 
 - `hardware_id`
