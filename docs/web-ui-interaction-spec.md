@@ -47,6 +47,17 @@
   - 允许“侧栏内部滚动”（推荐）或“整页滚动”（备选），但必须避免出现“侧栏与主内容同时滚动且难以控制”的双滚动体验。
 - 所有可滚动区域必须有明确边界（容器高度与 `overflow-y` 归属清晰）。
 
+## PWA 与离线启动
+
+Web 控制台必须作为可安装 PWA 提供稳定 App shell。已经访问过的控制台应优先从本地缓存启动；真实设备 API 在离线或不可达时继续使用现有 offline/degraded 状态，不伪造设备在线。
+
+规范性要求：
+
+- `vite-plugin-pwa` 负责 manifest、service worker、Workbox 预缓存与离线 App shell。
+- 更新策略使用 prompt 模式：发现新 service worker 后显示 toast，用户点击更新时先关闭 toast，再调用 `updateSW(true)` 刷新到新版本。
+- 离线可启动范围仅包含 Web App shell 与静态资源；设备 HTTP/Web Serial/Local USB 连接状态仍由现有运行时通道判断。
+- 页面标题、theme-color、favicon、Apple touch icon 和 PWA manifest 必须使用 IsolaPurr 产品身份，不得保留 Vite 默认资源。
+
 ## Modal 通用规则
 
 ### 打开与关闭

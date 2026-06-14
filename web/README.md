@@ -18,8 +18,11 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 
 - Install: `bun install`
 - Dev server: `bun dev` (default: `http://127.0.0.1:45173`)
+- Icons: `bun run icons` regenerates favicon, Apple, PWA, maskable, and desktop-ready PNG assets from `src/assets/brand/isolapurr-mark.svg`
 - Storybook: `bun run storybook` (default: `http://127.0.0.1:46006`)
 - Preview: `bun run preview` (default: `http://127.0.0.1:45175`)
+
+Icon regeneration requires `rsvg-convert` from librsvg and Python Pillow (`python3 -m pip install Pillow`).
 
 ## Review tips
 

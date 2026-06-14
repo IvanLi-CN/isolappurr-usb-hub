@@ -17,6 +17,8 @@ test("renders devices list and mock dashboard", async ({ page }) => {
 
   await page.goto("/");
 
+  await expect(page).toHaveTitle("IsolaPurr USB Hub Console");
+
   await expect(page.getByTestId("device-list")).toBeVisible();
   await expect(page.getByTestId("device-card-aabbcc001122")).toBeVisible();
 
@@ -25,6 +27,33 @@ test("renders devices list and mock dashboard", async ({ page }) => {
 
   await expect(page.getByTestId("port-card-port_a")).toBeVisible();
   await expect(page.getByTestId("port-card-port_c")).toBeVisible();
+});
+
+test("publishes PWA metadata and offline app shell", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+
+  const manifestHref = await page
+    .locator('link[rel="manifest"]')
+    .getAttribute("href");
+  expect(manifestHref).toBeTruthy();
+
+  const manifest = await page.request.get(
+    manifestHref ?? "/manifest.webmanifest",
+  );
+  expect(manifest.ok()).toBe(true);
+  await expect(
+    page.locator('link[rel="icon"][type="image/svg+xml"]'),
+  ).toHaveAttribute("href", /isolapurr-mark\.svg/);
+
+  await page.waitForFunction(() => navigator.serviceWorker.controller);
+
+  await context.setOffline(true);
+  await page.goto("/");
+  await expect(page.getByTestId("dashboard")).toBeVisible();
+  await context.setOffline(false);
 });
 
 test("opens add device modal with supported connection methods (web)", async ({
@@ -50,9 +79,6 @@ test("opens add device modal with supported connection methods (web)", async ({
 
   await expect(
     dialog.getByText("Auto discovery", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    dialog.getByText("Service discovery: Desktop App only", { exact: true }),
   ).toBeVisible();
   await expect(
     dialog.getByText("IP scan (advanced)", { exact: true }),

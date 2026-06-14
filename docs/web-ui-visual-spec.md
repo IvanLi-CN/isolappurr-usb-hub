@@ -70,6 +70,17 @@
 - `success/warning/error/info`：仅用于状态表达，不用于“装饰性上色”。
 - disabled：保持文字可读，不通过极低 opacity 让内容“消失”。
 
+## 品牌与安装图标（Brand / Icons）
+
+Web 控制台使用圆角方形隔离 hub 作为产品 mark：外轮廓呼应硬件设备的方形形态，内部留白表达被隔离的连接通道。图标必须保持圆润、扁平、可缩小，不使用写实硬件、猫形、复杂电路或营销式吉祥物。
+
+规范性要求：
+
+- 图标源文件以 `web/src/assets/brand/isolapurr-mark.svg` 为 master，单色版本为 `web/src/assets/brand/isolapurr-mark-mono.svg`。
+- favicon、Apple touch icon、PWA any/maskable icon、desktop-ready PNG 均从 master 派生；更新 master 后运行 `cd web && bun run icons` 重新生成。
+- UI 内品牌位优先使用 `BrandMark` 组件，按当前亮/暗主题选择清晰可读的变体。
+- 图标色彩遵循当前 restrained product palette：主色只服务识别、当前选择与安装入口，不作为大面积装饰。
+
 ## 文字与长字段（Overflow / Truncation）
 
 目标：长字段不破坏布局；用户能理解“这是一段被截断的文本”。

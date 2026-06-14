@@ -5,11 +5,12 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100dvh;
 }
 
 :root {
@@ -19,8 +20,8 @@ body {
   --border: #e5e7eb;
   --text: #111827;
   --muted: #6b7280;
-  --primary: #5c6ac4;
-  --primary-2: #6b78d6;
+  --primary: #6f9886;
+  --primary-2: #7fae9a;
   --primary-text: #ffffff;
   --success: #16a34a;
   --warning: #d97706;
@@ -56,8 +57,8 @@ body {
   --border: #1f2937;
   --text: #e5e7eb;
   --muted: #94a3b8;
-  --primary: #9aa2f0;
-  --primary-2: #a7aef5;
+  --primary: #a6c9bd;
+  --primary-2: #bddbcf;
   --primary-text: #0b1220;
   --success: #22c55e;
   --warning: #f59e0b;
@@ -93,8 +94,8 @@ body {
     --border: #1f2937;
     --text: #e5e7eb;
     --muted: #94a3b8;
-    --primary: #9aa2f0;
-    --primary-2: #a7aef5;
+    --primary: #a6c9bd;
+    --primary-2: #bddbcf;
     --primary-text: #0b1220;
     --success: #22c55e;
     --warning: #f59e0b;
@@ -126,6 +127,11 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
+}
+
+#root {
+  min-height: 100dvh;
+  background: var(--bg);
 }
 
 .iso-card {

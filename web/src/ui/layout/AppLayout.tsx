@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { useTheme } from "../../app/theme-ui";
+import { BrandMark } from "../brand/BrandMark";
 import { ThemeMenu } from "../nav/ThemeMenu";
 
 export function AppLayout({
@@ -19,8 +20,15 @@ export function AppLayout({
     <div className="flex min-h-screen flex-col">
       <header className="h-16 border-b border-[var(--border)] bg-[var(--panel-2)]">
         <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
-          <Link className="min-w-0 truncate text-[16px] font-bold" to="/">
-            Isolapurr USB Hub
+          <Link
+            className="flex min-w-0 items-center gap-2.5 truncate text-[16px] font-bold"
+            to="/"
+          >
+            <BrandMark
+              className="h-8 w-8 shrink-0"
+              variant={theme === "isolapurr-dark" ? "dark" : "color"}
+            />
+            <span className="min-w-0 truncate">IsolaPurr USB Hub</span>
           </Link>
           <div className="flex items-center gap-3">
             {showTheme ? (

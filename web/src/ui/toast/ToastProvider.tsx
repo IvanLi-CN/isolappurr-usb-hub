@@ -1,10 +1,5 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useMemo } from "react";
+import { Toaster, toast } from "sonner";
 
 export type ToastVariant = "info" | "success" | "warning" | "error";
 
@@ -14,43 +9,17 @@ export type ToastInput = {
   durationMs?: number;
 };
 
-type Toast = {
-  id: string;
-  message: string;
-  variant: ToastVariant;
-};
-
 type ToastContextValue = {
   pushToast: (toast: ToastInput) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-function alertClass(variant: ToastVariant): string {
-  switch (variant) {
-    case "success":
-      return "alert-success";
-    case "warning":
-      return "alert-warning";
-    case "error":
-      return "alert-error";
-    case "info":
-      return "alert-info";
-  }
-}
-
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
   const pushToast = useCallback((input: ToastInput) => {
-    const id = crypto.randomUUID();
     const variant = input.variant ?? "info";
     const durationMs = input.durationMs ?? 2500;
-
-    setToasts((prev) => [...prev, { id, message: input.message, variant }]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, durationMs);
+    toast[variant](input.message, { duration: durationMs });
   }, []);
 
   const value = useMemo(() => ({ pushToast }), [pushToast]);
@@ -58,13 +27,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="toast toast-end z-50">
-        {toasts.map((t) => (
-          <div key={t.id} className={`alert ${alertClass(t.variant)}`}>
-            <span>{t.message}</span>
-          </div>
-        ))}
-      </div>
+      <Toaster
+        closeButton
+        richColors
+        position="bottom-right"
+        toastOptions={{
+          classNames: {
+            toast:
+              "border border-[var(--border)] bg-[var(--panel)] text-[var(--text)]",
+            description: "text-[var(--muted)]",
+            actionButton:
+              "bg-[var(--primary)] text-[var(--primary-text)] font-bold",
+            cancelButton:
+              "border border-[var(--border)] bg-[var(--panel-2)] text-[var(--text)] font-bold",
+          },
+        }}
+      />
     </ToastContext.Provider>
   );
 }

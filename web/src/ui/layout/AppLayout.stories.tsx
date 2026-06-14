@@ -23,7 +23,7 @@ const meta: Meta<typeof AppLayout> = {
     layout: "fullscreen",
   },
   decorators: [
-    (Story) => (
+    (Story, context) => (
       <MemoryRouter>
         <DesktopAgentProvider>
           <ThemeProvider>
@@ -38,7 +38,12 @@ const meta: Meta<typeof AppLayout> = {
                       device: devices[0],
                     })}
                   >
-                    <div className="h-screen" data-theme="isolapurr">
+                    <div
+                      className="min-h-screen"
+                      data-theme={
+                        context.parameters.isolapurrTheme ?? "isolapurr"
+                      }
+                    >
                       <Story />
                     </div>
                   </AddDeviceUiProvider>
@@ -86,5 +91,13 @@ export const Mobile: Story = {
   ...Default,
   parameters: {
     viewport: { defaultViewport: "isolapurrMobile" },
+  },
+};
+
+export const DarkDesktop: Story = {
+  ...Default,
+  parameters: {
+    isolapurrTheme: "isolapurr-dark",
+    viewport: { defaultViewport: "isolapurrDesktop" },
   },
 };
