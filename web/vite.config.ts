@@ -87,17 +87,6 @@ export default defineConfig(() => {
           clientsClaim: true,
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
           navigateFallback: `${base}index.html`,
-          runtimeCaching: [
-            {
-              urlPattern: ({ request, url }) =>
-                request.mode === "navigate" && url.protocol.startsWith("http"),
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "isolapurr-navigations",
-                networkTimeoutSeconds: 2,
-              },
-            },
-          ],
         },
       }),
     ],
