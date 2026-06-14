@@ -5,11 +5,12 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100dvh;
 }
 
 :root {
@@ -126,6 +127,11 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
+}
+
+#root {
+  min-height: 100dvh;
+  background: var(--bg);
 }
 
 .iso-card {

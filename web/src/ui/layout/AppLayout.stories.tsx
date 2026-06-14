@@ -38,7 +38,7 @@ const meta: Meta<typeof AppLayout> = {
                       device: devices[0],
                     })}
                   >
-                    <div className="h-screen" data-theme="isolapurr">
+                    <div className="min-h-screen" data-theme="isolapurr">
                       <Story />
                     </div>
                   </AddDeviceUiProvider>
@@ -86,5 +86,40 @@ export const Mobile: Story = {
   ...Default,
   parameters: {
     viewport: { defaultViewport: "isolapurrMobile" },
+  },
+};
+
+export const DarkDesktop: Story = {
+  ...Default,
+  decorators: [
+    (Story) => (
+      <MemoryRouter>
+        <DesktopAgentProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <DevicesProvider initialDevices={devices}>
+                <DeviceRuntimeProvider>
+                  <AddDeviceUiProvider
+                    existingDeviceIds={devices.map((d) => d.id)}
+                    existingDeviceBaseUrls={devices.map((d) => d.baseUrl)}
+                    onCreate={async () => ({
+                      ok: true,
+                      device: devices[0],
+                    })}
+                  >
+                    <div className="min-h-screen" data-theme="isolapurr-dark">
+                      <Story />
+                    </div>
+                  </AddDeviceUiProvider>
+                </DeviceRuntimeProvider>
+              </DevicesProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </DesktopAgentProvider>
+      </MemoryRouter>
+    ),
+  ],
+  parameters: {
+    viewport: { defaultViewport: "isolapurrDesktop" },
   },
 };

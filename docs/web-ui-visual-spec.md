@@ -70,6 +70,17 @@
 - `success/warning/error/info`：仅用于状态表达，不用于“装饰性上色”。
 - disabled：保持文字可读，不通过极低 opacity 让内容“消失”。
 
+## 品牌与安装图标（Brand / Icons）
+
+Web 控制台使用“猫爪电路”作为产品 mark：猫爪轮廓表达 IsolaPurr 识别度，内部电路走线表达 USB Hub 与工作台仪器属性。图标必须保持工程化、扁平、可缩小，不使用写实猫、玩具化插画或营销式吉祥物。
+
+规范性要求：
+
+- 图标源文件以 `web/src/assets/brand/isolapurr-mark.svg` 为 master，单色版本为 `web/src/assets/brand/isolapurr-mark-mono.svg`。
+- favicon、Apple touch icon、PWA any/maskable icon、desktop-ready PNG 均从 master 派生；更新 master 后运行 `cd web && bun run icons` 重新生成。
+- UI 内品牌位优先使用 `BrandMark` 组件，按当前亮/暗主题选择清晰可读的变体。
+- 图标色彩遵循当前 restrained product palette：主色只服务识别、当前选择与安装入口，不作为大面积装饰。
+
 ## 文字与长字段（Overflow / Truncation）
 
 目标：长字段不破坏布局；用户能理解“这是一段被截断的文本”。
