@@ -22,6 +22,8 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 - Storybook: `bun run storybook` (default: `http://127.0.0.1:46006`)
 - Preview: `bun run preview` (default: `http://127.0.0.1:45175`)
 
+Icon regeneration requires `rsvg-convert` from librsvg and Python Pillow (`python3 -m pip install Pillow`).
+
 ## Review tips
 
 - Storybook includes viewport presets for quick layout checks:

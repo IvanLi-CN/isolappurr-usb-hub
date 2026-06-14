@@ -25,7 +25,11 @@ const pngTargets = [
 function run(command, args) {
   return new Promise((resolveRun, reject) => {
     const child = spawn(command, args, { stdio: "inherit" });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      reject(
+        new Error(`${command} is required to generate icons: ${error.message}`),
+      );
+    });
     child.on("exit", (code) => {
       if (code === 0) {
         resolveRun();
@@ -35,6 +39,9 @@ function run(command, args) {
     });
   });
 }
+
+await run("rsvg-convert", ["--version"]);
+await run("python3", ["-c", "import PIL"]);
 
 await mkdir(iconDir, { recursive: true });
 await copyFile(source, resolve(iconDir, "isolapurr-mark.svg"));
