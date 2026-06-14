@@ -36,3 +36,13 @@ export const ConnectedAndHistory: Story = {
     ],
   },
 };
+
+export const SerialHistoryOnly: Story = {
+  args: {
+    status: "offline",
+    transportBadges: [
+      { transport: "http", state: "connected" },
+      { transport: "web_serial", state: "history" },
+    ],
+  },
+};

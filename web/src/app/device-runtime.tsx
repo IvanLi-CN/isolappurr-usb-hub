@@ -55,13 +55,16 @@ import {
   getStablePowerLockOwner,
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
+  isLinkedTransportActive,
   type JsonlEnvelope,
   jsonlTimeoutMsForMethod,
   localUsbDeviceIdForDevice,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
   recoverWifiClearLikeTimeout,
+  resolveActiveDeviceTransport,
   resolveOrderedDeviceTransports,
+  shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
 } from "./device-runtime-support";
 import { requestHttpTransport } from "./device-runtime-transport";
@@ -307,7 +310,9 @@ export function DeviceRuntimeProvider({
         if (recovered) {
           return recovered;
         }
-        forgetWebSerialDeviceTransport(deviceId);
+        if (shouldForgetWebSerialTransport(err)) {
+          forgetWebSerialDeviceTransport(deviceId);
+        }
         return {
           ok: false,
           error: {
@@ -453,12 +458,32 @@ export function DeviceRuntimeProvider({
             };
           }
           delete preferredTransportByDevice.current[deviceId];
+          const hasWebSerialLink = Boolean(
+            getWebSerialDeviceTransport(deviceId),
+          );
+          const hasLocalUsbLink = Boolean(getLocalUsbDeviceLink(deviceId));
+          const stored = devices.find((device) => device.id === deviceId);
+          const httpLinked =
+            !!stored?.transports?.httpBaseUrl ||
+            (stored ? !localUsbPortPathForDevice(stored) : false);
+          const localUsbLinked =
+            Boolean(localUsbPortByDevice.current[deviceId]) ||
+            hasLocalUsbLink ||
+            Boolean(stored ? localUsbPortPathForDevice(stored) : null);
+          const activeTransport = isLinkedTransportActive({
+            transport: current.transport,
+            httpLinked,
+            localUsbLinked,
+            webSerialLinked: hasWebSerialLink,
+          })
+            ? current.transport
+            : null;
           return {
             ...prev,
             [deviceId]: {
               ...current,
               lastError: res.error,
-              transport: current.transport,
+              transport: activeTransport,
             },
           };
         });
@@ -565,7 +590,15 @@ export function DeviceRuntimeProvider({
   const deviceInfo = useCallback(
     async (deviceId: string): Promise<Result<DeviceInfoResponse>> => {
       const device = devices.find((d) => d.id === deviceId);
-      const activeTransport = runtimeById[deviceId]?.transport;
+      const activeTransport = resolveActiveDeviceTransport({
+        deviceId,
+        devices,
+        runtime: runtimeById[deviceId],
+        preferred: preferredTransportByDevice.current[deviceId],
+        localUsbPortPath: localUsbPortByDevice.current[deviceId],
+        hasLocalUsbLink: Boolean(getLocalUsbDeviceLink(deviceId)),
+        hasWebSerialLink: Boolean(getWebSerialDeviceTransport(deviceId)),
+      });
       if (!device || !activeTransport) {
         return {
           ok: false,
@@ -594,6 +627,9 @@ export function DeviceRuntimeProvider({
             } satisfies Result<DeviceInfoResponse>)
           : res;
       markChannelResult(deviceId, activeTransport, checked);
+      if (checked.ok) {
+        preferredTransportByDevice.current[deviceId] = activeTransport;
+      }
       return checked;
     },
     [devices, markChannelResult, requestTransport, runtimeById],

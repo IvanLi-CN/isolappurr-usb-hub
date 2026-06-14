@@ -199,6 +199,18 @@ export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {
   };
 }
 
+export function shouldForgetWebSerialTransport(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("web serial transport is not connected") ||
+    normalized.includes("web serial transport disconnected") ||
+    normalized.includes("serial stream closed") ||
+    normalized.includes("the port is closed") ||
+    normalized.includes("the device has been lost")
+  );
+}
+
 export function jsonlTimeoutMsForMethod(
   method: string,
   params?: Record<string, unknown>,
@@ -278,6 +290,29 @@ export function orderedDeviceTransports({
       ]);
 }
 
+export function isLinkedTransportActive({
+  transport,
+  httpLinked,
+  localUsbLinked,
+  webSerialLinked,
+}: {
+  transport: DeviceTransport | null | undefined;
+  httpLinked: boolean;
+  localUsbLinked: boolean;
+  webSerialLinked: boolean;
+}): boolean {
+  if (!transport) {
+    return false;
+  }
+  if (transport === "http") {
+    return httpLinked;
+  }
+  if (transport === "local_usb") {
+    return localUsbLinked;
+  }
+  return webSerialLinked;
+}
+
 export function resolveOrderedDeviceTransports({
   deviceId,
   devices,
@@ -321,6 +356,90 @@ export function resolveOrderedDeviceTransports({
     webSerialLinked: hasWebSerialLink,
     preferLocalUsbFirst: Boolean(storedLocalUsbPortPath),
   });
+}
+
+export function resolveActiveDeviceTransport({
+  deviceId,
+  devices,
+  runtime,
+  preferred,
+  localUsbPortPath,
+  hasLocalUsbLink,
+  hasWebSerialLink,
+}: {
+  deviceId: string;
+  devices: StoredDevice[];
+  runtime: DeviceRuntime | null | undefined;
+  preferred: DeviceTransport | null | undefined;
+  localUsbPortPath: string | null | undefined;
+  hasLocalUsbLink: boolean;
+  hasWebSerialLink: boolean;
+}): DeviceTransport | null {
+  const stored = devices.find((device) => device.id === deviceId);
+  const storedLocalUsbPortPath = stored
+    ? localUsbPortPathForDevice(stored)
+    : null;
+  const httpLinked =
+    !!stored?.transports?.httpBaseUrl ||
+    (stored ? !localUsbPortPathForDevice(stored) : false);
+  const localUsbLinked =
+    Boolean(localUsbPortPath) ||
+    hasLocalUsbLink ||
+    Boolean(storedLocalUsbPortPath);
+  const activeTransport = runtime?.transport ?? null;
+  if (
+    isLinkedTransportActive({
+      transport: activeTransport,
+      httpLinked,
+      localUsbLinked,
+      webSerialLinked: hasWebSerialLink,
+    })
+  ) {
+    return activeTransport;
+  }
+  const next = orderedDeviceTransports({
+    preferred,
+    runtimeTransport: activeTransport,
+    channelLastOkAt: runtime
+      ? {
+          http: runtime.channels.http.lastOkAt,
+          web_serial: runtime.channels.web_serial.lastOkAt,
+          local_usb: runtime.channels.local_usb.lastOkAt,
+        }
+      : null,
+    httpLinked,
+    localUsbLinked,
+    webSerialLinked: hasWebSerialLink,
+    preferLocalUsbFirst: Boolean(storedLocalUsbPortPath),
+  });
+  return next[0] ?? null;
+}
+
+export type DeviceTransportBadgeState = "primary" | "connected" | "history";
+
+export function resolveTransportBadgeState({
+  candidate,
+  activeTransport,
+  channelOnline,
+  linked,
+  hasHistory,
+}: {
+  candidate: DeviceTransport;
+  activeTransport: DeviceTransport | null;
+  channelOnline: boolean;
+  linked: boolean;
+  hasHistory: boolean;
+}): DeviceTransportBadgeState | null {
+  if (!hasHistory && !linked) {
+    return null;
+  }
+  if (candidate === activeTransport && linked && channelOnline) {
+    return "primary";
+  }
+  if (linked && channelOnline) {
+    return "connected";
+  }
+  return "history";
 }
 
 const WIFI_CLEAR_VERIFY_DELAY_MS = 500;

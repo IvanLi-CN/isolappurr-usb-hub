@@ -217,6 +217,10 @@ PR: include
 
 ![Device connection badges](assets/device-card-connection-badges.png)
 
+Device list Serial history-only badge:
+
+![Device list Serial history-only badge](assets/device-card-serial-history-only.png)
+
 Device Hardware Wi-Fi configuration:
 
 PR: include

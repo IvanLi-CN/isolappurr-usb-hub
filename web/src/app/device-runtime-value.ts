@@ -8,6 +8,7 @@ import {
   type DeviceRuntimeContextValue,
   type DeviceTransport,
   localUsbPortPathForDevice,
+  resolveActiveDeviceTransport,
   shortApiError,
 } from "./device-runtime-support";
 
@@ -88,12 +89,20 @@ export function buildDeviceRuntimeContextValue({
   };
 
   const transport = (deviceId: string): DeviceTransport | null =>
-    runtimeById[deviceId]?.transport ?? null;
+    resolveActiveDeviceTransport({
+      deviceId,
+      devices,
+      runtime: runtimeById[deviceId],
+      preferred: null,
+      localUsbPortPath: localUsbPortByDevice[deviceId],
+      hasLocalUsbLink: Boolean(getLocalUsbDeviceLink(deviceId)),
+      hasWebSerialLink: Boolean(getWebSerialDeviceTransport(deviceId)),
+    });
 
   const wifiManagementTransport = (
     deviceId: string,
   ): DeviceTransport | null => {
-    const active = runtimeById[deviceId]?.transport ?? null;
+    const active = transport(deviceId);
     const stored = devices.find((device) => device.id === deviceId);
     if (active === "web_serial" || active === "local_usb") {
       return active;
