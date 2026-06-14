@@ -53,7 +53,7 @@ export default defineConfig(() => {
           display_override: ["window-controls-overlay", "standalone"],
           orientation: "any",
           background_color: "#f6f7fb",
-          theme_color: "#5c6ac4",
+          theme_color: "#a6c9bd",
           categories: ["productivity", "utilities"],
           icons: [
             {

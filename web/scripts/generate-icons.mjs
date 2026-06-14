@@ -68,7 +68,7 @@ await run("python3", [
     "from PIL import Image",
     "from pathlib import Path",
     `root=Path(${JSON.stringify(iconDir)})`,
-    "imgs=[Image.open(root/f'favicon-{s}.png') for s in (16,32,48)]",
-    `imgs[0].save(${JSON.stringify(resolve(publicDir, "favicon.ico"))}, sizes=[(16,16),(32,32),(48,48)], append_images=imgs[1:])`,
+    "img=Image.open(root/'favicon-48.png')",
+    `img.save(${JSON.stringify(resolve(publicDir, "favicon.ico"))}, sizes=[(16,16),(32,32),(48,48)])`,
   ].join(";"),
 ]);

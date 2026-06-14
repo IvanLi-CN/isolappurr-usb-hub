@@ -12,14 +12,19 @@ export function BrandMark({
   const isMono = variant === "mono";
   const background =
     variant === "dark"
-      ? "oklch(0.22 0.035 264)"
+      ? "oklch(0.28 0.045 160)"
       : variant === "light"
-        ? "oklch(0.98 0.008 240)"
-        : "oklch(0.97 0.009 240)";
-  const shadow = isMono ? "none" : "0 4px 12px oklch(0.35 0.04 264 / 0.18)";
-  const padFill = isMono ? "var(--text)" : "url(#brand-pad-gradient)";
-  const surfaceFill = isMono ? "var(--panel)" : "oklch(0.985 0.006 240)";
-  const trace = isMono ? "var(--text)" : "url(#brand-trace-gradient)";
+        ? "oklch(0.82 0.045 160)"
+        : "oklch(0.82 0.05 170)";
+  const markFill =
+    variant === "color"
+      ? "url(#brand-mark-gradient)"
+      : variant === "dark"
+        ? "oklch(0.95 0.028 88)"
+        : "oklch(0.97 0.03 88)";
+  const shadow = isMono ? "none" : "0 5px 14px oklch(0.35 0.045 160 / 0.16)";
+  const bodyFill =
+    variant === "color" ? "url(#brand-body-gradient)" : background;
 
   return (
     <svg
@@ -30,64 +35,36 @@ export function BrandMark({
     >
       <defs>
         <linearGradient
-          id="brand-pad-gradient"
-          x1="64"
-          x2="192"
-          y1="32"
-          y2="224"
+          id="brand-body-gradient"
+          x1="34"
+          x2="220"
+          y1="22"
+          y2="232"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0" stopColor="oklch(0.78 0.105 190)" />
-          <stop offset="0.56" stopColor="oklch(0.56 0.13 276)" />
-          <stop offset="1" stopColor="oklch(0.38 0.075 270)" />
+          <stop offset="0" stopColor="#bcded5" />
+          <stop offset="1" stopColor="#a8cbbf" />
         </linearGradient>
         <linearGradient
-          id="brand-trace-gradient"
-          x1="52"
-          x2="212"
-          y1="46"
-          y2="196"
+          id="brand-mark-gradient"
+          x1="82"
+          x2="178"
+          y1="28"
+          y2="210"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0" stopColor="oklch(0.94 0.05 184)" />
-          <stop offset="1" stopColor="oklch(0.88 0.06 275)" />
+          <stop offset="0" stopColor="#fffaf0" />
+          <stop offset="1" stopColor="#f9efd8" />
         </linearGradient>
       </defs>
-      <rect width="256" height="256" rx="56" fill={background} />
-      <path
-        fill="oklch(0.15 0.028 264)"
-        d="M128 32c47.5 0 86 38.5 86 86 0 27.3-12.8 51.7-32.7 67.4l5.5 24.3c1.7 7.7-5.9 14.1-13.2 11l-22.7-9.5a86 86 0 1 1-22.9-179.2Z"
-        opacity={isMono ? 0 : 0.08}
-      />
-      <path
-        fill={padFill}
-        style={{ filter: `drop-shadow(${shadow})` }}
-        d="M128 38c43.6 0 79 35.4 79 79 0 25.6-12.2 48.4-31.1 62.9l5.7 25.4c.9 4.1-3.2 7.5-7.1 5.9l-24.3-10.2A79 79 0 1 1 128 38Z"
-      />
-      <g fill={surfaceFill}>
-        <circle cx="84" cy="91" r="21" />
-        <circle cx="116" cy="70" r="20" />
-        <circle cx="151" cy="70" r="20" />
-        <circle cx="181" cy="94" r="21" />
-        <path d="M84 148c0-27.6 18.4-49 44-49s44 21.4 44 49c0 21.6-13.7 33-30.4 26.4-8.9-3.5-18.3-3.5-27.2 0C97.7 181 84 169.6 84 148Z" />
-      </g>
-      <g
-        fill="none"
-        stroke={trace}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="8"
-      >
-        <path d="M128 99v45" />
-        <path d="M105 143H74" />
-        <path d="M151 143h31" />
-        <path d="M116 119 91 94" />
-        <path d="M140 119 166 93" />
-      </g>
-      <g fill="oklch(0.15 0.028 264)">
-        <circle cx="74" cy="143" r="6" />
-        <circle cx="182" cy="143" r="6" />
-        <circle cx="128" cy="144" r="7" />
+      <rect width="256" height="256" fill="oklch(0.97 0.008 120)" />
+      <rect width="256" height="256" rx="54" fill={bodyFill} />
+      <g transform="matrix(1.07 0 0 1.07 -18.59 0.5)">
+        <path
+          fill={markFill}
+          style={{ filter: `drop-shadow(${shadow})` }}
+          d="M80 31H194C206 31 216 41 216 53C216 64 208 73 197 75L176 78C163 80 154 91 154 104V125C154 138 163 149 176 151L197 154C208 156 216 165 216 176C216 188 206 198 194 198H80C68 198 58 188 58 176C58 165 66 156 77 154L98 151C111 149 119 138 119 125V104C119 91 111 80 98 78L77 75C66 73 58 64 58 53C58 41 68 31 80 31Z"
+        />
       </g>
     </svg>
   );
