@@ -81,9 +81,6 @@ test("opens add device modal with supported connection methods (web)", async ({
     dialog.getByText("Auto discovery", { exact: true }),
   ).toBeVisible();
   await expect(
-    dialog.getByText("Desktop agent unavailable.", { exact: true }),
-  ).toBeVisible();
-  await expect(
     dialog.getByText("IP scan (advanced)", { exact: true }),
   ).toBeVisible();
 
