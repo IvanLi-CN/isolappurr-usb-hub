@@ -13,6 +13,9 @@ Use this skill for owner-facing operation of released IsolaPurr USB Hub hardware
 - Agent-driven hardware operation defaults to CLI/devd over local IPC, not browser automation or localhost HTTP.
 - Web Serial is still an official user path. Use it when the user is operating the Web UI directly or explicitly asks for browser Web Serial.
 - Do not require a source checkout, Rust, Bun, Just, `espflash`, or project-local caches for ordinary user operation.
+- Treat the owner-visible hardware interfaces as `USB-A`, `USB-C`, and the `2 mm banana jack`.
+- The `2 mm banana jack` is a bench output on the same TPS/SW2303 power channel as `USB-C`; it is not an independent power rail.
+- For manual TPS / bench output that uses only the `2 mm banana jack`, keep the `USB-C` SW2303 VBUS path disconnected by default. Only leave `USB-C` powered when the owner explicitly requests shared output and accepts the attached-load risk.
 - Before giving any hardware workflow, first verify both host tools are installed and usable:
 
 ```bash

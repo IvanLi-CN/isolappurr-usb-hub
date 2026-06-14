@@ -40,6 +40,9 @@ test -d desktop
 - First-time full flash requires explicit confirmation and post-flash identity capture.
 - Do not use `mcu-agentd` except as a legacy/emergency path.
 - Keep Web Serial as an official product path. Do not downgrade it to debug-only while implementing devd.
+- Treat the owner-visible hardware interfaces as `USB-A`, `USB-C`, and the `2 mm banana jack`.
+- The `2 mm banana jack` is a bench output on the same TPS/SW2303 power channel as `USB-C`; it is not an independent supply for HIL, debugging, calibration, monitoring, development flashing, or bench testing.
+- For manual TPS / bench output that uses only the `2 mm banana jack`, keep the `USB-C` SW2303 VBUS path disconnected by default. Only leave `USB-C` powered when the owner explicitly requests shared output and accepts the attached-load risk.
 
 ## Release Maintenance
 
