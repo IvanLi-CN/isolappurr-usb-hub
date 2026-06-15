@@ -23,7 +23,7 @@
 ### Non-goals
 
 - 不引入新的 UI 框架/依赖（沿用 React + Tailwind + DaisyUI + 现有 `iso-*` 组件风格）。
-- 不定义业务规则（例如连接协议、串口筛选、HTTP fallback、设备 API 行为等）。
+- 不定义业务规则（例如连接协议、串口筛选、HTTP LAN 行为、设备 API 行为等）。
 
 ## 自适应与多尺寸（Responsive）
 

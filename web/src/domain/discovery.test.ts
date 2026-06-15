@@ -85,7 +85,7 @@ describe("parseDiscoveredDeviceFromApiInfo", () => {
     expect(res).toBeNull();
   });
 
-  test("prefers fqdn baseUrl when available", () => {
+  test("prefers verified IPv4 baseUrl when fqdn is also available", () => {
     const res = parseDiscoveredDeviceFromApiInfo(
       "http://192.168.1.42",
       {
@@ -102,7 +102,7 @@ describe("parseDiscoveredDeviceFromApiInfo", () => {
       "2026-01-14T00:00:00.000Z",
     );
     expect(res).toEqual({
-      baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
+      baseUrl: "http://192.168.1.42",
       device_id: "aabbcc001122",
       hostname: "isolapurr-usb-hub-aabbcc001122",
       fqdn: "isolapurr-usb-hub-aabbcc001122.local",

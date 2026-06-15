@@ -28,7 +28,7 @@ const meta: Meta<typeof DeviceDiscoveryPanel> = {
   args: {
     snapshot: baseSnapshot,
     existingDeviceIds: ["f293cc9c139e"],
-    existingDeviceBaseUrls: ["http://isolapurr-usb-hub-f293cc9c139e.local"],
+    existingDeviceBaseUrls: ["http://192.168.31.224"],
     onRefresh: () => {},
     onToggleIpScan: () => {},
     onStartScan: () => {},
@@ -53,7 +53,7 @@ export const WithResults: Story = {
       status: "ready",
       devices: [
         {
-          baseUrl: "http://isolapurr-usb-hub-f293cc9c139e.local",
+          baseUrl: "http://192.168.31.224",
           device_id: "f293cc9c139e",
           hostname: "isolapurr-usb-hub-f293cc9c139e",
           fqdn: "isolapurr-usb-hub-f293cc9c139e.local",
@@ -62,7 +62,7 @@ export const WithResults: Story = {
           last_seen_at: "2026-01-14T00:00:00.000Z",
         },
         {
-          baseUrl: "http://isolapurr-usb-hub-a1b2c3d4e5f6.local",
+          baseUrl: "http://192.168.31.233",
           device_id: "a1b2c3d4e5f6",
           hostname: "isolapurr-usb-hub-a1b2c3d4e5f6",
           fqdn: "isolapurr-usb-hub-a1b2c3d4e5f6.local",
@@ -85,6 +85,18 @@ export const ScanningIpScan: Story = {
       devices: [],
       ipScan: { expanded: true, expandedBy: "auto" },
       scan: { cidr: "192.168.31.0/24", done: 42, total: 254 },
+    },
+  },
+};
+
+export const BrowserBlockedHint: Story = {
+  args: {
+    snapshot: {
+      ...baseSnapshot,
+      status: "ready",
+      error:
+        "Browser blocked private-network access. Allow LAN access in the browser, or connect by USB first to verify and save the IPv4 path.",
+      ipScan: { expanded: true, expandedBy: "auto" },
     },
   },
 };

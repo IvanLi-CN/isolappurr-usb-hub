@@ -8,8 +8,24 @@ import {
   normalizeBaseUrl,
   normalizeDeviceIdPrefix,
   normalizeStoredDeviceId,
+  preferVerifiedHttpBaseUrl,
   validateAddDeviceInput,
 } from "./devices";
+
+const originalWindow = globalThis.window;
+
+function installWindowWithLocalStorage(store: Map<string, string>) {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => void store.set(key, value),
+        removeItem: (key: string) => void store.delete(key),
+      },
+    },
+  });
+}
 
 describe("normalizeBaseUrl", () => {
   test("requires a valid http/https url", () => {
@@ -149,16 +165,37 @@ describe("mergeStoredDeviceTransports", () => {
   });
 });
 
+describe("preferVerifiedHttpBaseUrl", () => {
+  test("rebinds saved mDNS URLs to the verified IPv4 LAN path", () => {
+    expect(
+      preferVerifiedHttpBaseUrl(
+        {
+          id: "f293cc9c139e",
+          name: "Bench Hub",
+          baseUrl: "http://isolapurr-usb-hub-f293cc9c139e.local",
+          transports: {
+            httpBaseUrl: "http://isolapurr-usb-hub-f293cc9c139e.local",
+            localUsbPortPath: "/dev/cu.usbmodem101",
+          },
+        },
+        "http://192.168.31.224",
+      ),
+    ).toEqual({
+      id: "f293cc9c139e",
+      name: "Bench Hub",
+      baseUrl: "http://192.168.31.224",
+      transports: {
+        httpBaseUrl: "http://192.168.31.224",
+        localUsbPortPath: "/dev/cu.usbmodem101",
+      },
+    });
+  });
+});
+
 describe("loadStoredDevices", () => {
   test("prunes invalid records while preserving canonical saved devices", () => {
     const store = new Map<string, string>();
-    (globalThis as unknown as { window: unknown }).window = {
-      localStorage: {
-        getItem: (key: string) => store.get(key) ?? null,
-        setItem: (key: string, value: string) => void store.set(key, value),
-        removeItem: (key: string) => void store.delete(key),
-      },
-    } as unknown as Window;
+    installWindowWithLocalStorage(store);
 
     store.set(
       DEVICES_STORAGE_KEY,
@@ -187,5 +224,10 @@ describe("loadStoredDevices", () => {
       },
     ]);
     expect(JSON.parse(store.get(DEVICES_STORAGE_KEY) ?? "[]")).toHaveLength(1);
+
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: originalWindow,
+    });
   });
 });

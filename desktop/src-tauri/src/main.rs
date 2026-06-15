@@ -362,6 +362,17 @@ mod tests {
     }
 
     #[test]
+    fn confirmed_flash_identify_retries_timeout_message() {
+        let err = identify_port_for_confirmed_flash("/dev/cu.definitely-missing")
+            .expect_err("missing port should fail");
+        assert!(
+            err.contains("open /dev/cu.definitely-missing failed")
+                || err.contains("serial response timed out"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn serial_port_names_match_windows_case_insensitively() {
         assert!(serial_port_name_matches("COM3", "com3"));
         assert!(serial_port_name_matches(

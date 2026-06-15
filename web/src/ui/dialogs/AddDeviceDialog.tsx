@@ -482,32 +482,35 @@ export function AddDeviceDialog({
     hostname: string,
     run?: { id: number; method: AddDeviceMethod },
   ): Promise<string> => {
-    const fallbackBaseUrl = `http://${device.fqdn?.trim() || `${hostname}.local`}`;
+    const mdnsBaseUrl = `http://${device.fqdn?.trim() || `${hostname}.local`}`;
     const ipv4 = device.wifi?.ipv4?.trim();
     if (!ipv4) {
-      setUsbStep("USB info did not report a Wi-Fi IPv4 address.", "warning");
-      return fallbackBaseUrl;
+      setUsbStep(
+        "USB info did not report a Wi-Fi IPv4 address. Saving the mDNS URL instead.",
+        "warning",
+      );
+      return mdnsBaseUrl;
     }
 
     const wifiBaseUrl = `http://${ipv4}`;
     setUsbStep(`Checking Wi-Fi reachability at ${wifiBaseUrl}...`);
     const res = await getDeviceInfo(wifiBaseUrl);
     if (run && !isActiveUsbRun(run.id, run.method)) {
-      return fallbackBaseUrl;
+      return mdnsBaseUrl;
     }
     if (!res.ok) {
       setUsbStep(
-        `Wi-Fi reported ${ipv4}, but HTTP is not reachable yet: ${res.error.message}`,
+        `Wi-Fi reported ${ipv4}, but verified HTTP is not ready yet: ${res.error.message}`,
         "warning",
       );
-      return fallbackBaseUrl;
+      return mdnsBaseUrl;
     }
     if (!usbInfoMatchesHttpInfo(id, res.value)) {
       setUsbStep(
         "Wi-Fi HTTP responded, but identity did not match the USB device.",
         "warning",
       );
-      return fallbackBaseUrl;
+      return mdnsBaseUrl;
     }
 
     setUsbStep("Wi-Fi HTTP link verified and will be saved.", "success");
@@ -955,7 +958,7 @@ export function AddDeviceDialog({
                         dispatch({ type: "scan_progress", done });
 
                         if (!res.ok) {
-                          if (res.error.kind === "preflight_blocked") {
+                          if (res.error.kind === "browser_blocked") {
                             preflightBlocked = true;
                           }
                           continue;
@@ -986,7 +989,7 @@ export function AddDeviceDialog({
                         dispatch({
                           type: "set_error",
                           error:
-                            "Local network access blocked (PNA/CORS preflight). Try allowing private network access, or connect by USB first.",
+                            "Browser blocked private-network access. Allow LAN access in the browser, or connect by USB first to verify and save the IPv4 path.",
                         });
                       }
                       dispatch({ type: "scan_done" });

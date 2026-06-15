@@ -137,8 +137,11 @@ export function shortApiError(err: DeviceApiError): string {
   if (err.kind === "offline") {
     return "Offline: device unreachable";
   }
-  if (err.kind === "preflight_blocked") {
-    return "Blocked: CORS/PNA preflight";
+  if (err.kind === "name_resolution") {
+    return "Name/Reachability: use verified IPv4";
+  }
+  if (err.kind === "browser_blocked") {
+    return "Browser blocked: private-network access";
   }
   if (err.kind === "invalid_response") {
     return "Invalid response";
@@ -234,6 +237,29 @@ export function jsonlTimeoutMsForMethod(
     return 8_000;
   }
   return undefined;
+}
+
+export async function runQueuedDeviceRequest<T>(
+  queues: Record<string, Promise<void>>,
+  deviceId: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = queues[deviceId] ?? Promise.resolve();
+  let releaseQueue: () => void = () => undefined;
+  const current = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+  const queued = previous.catch(() => undefined).then(() => current);
+  queues[deviceId] = queued;
+  await previous.catch(() => undefined);
+  try {
+    return await run();
+  } finally {
+    releaseQueue();
+    if (queues[deviceId] === queued) {
+      delete queues[deviceId];
+    }
+  }
 }
 
 export function uniqueTransports(

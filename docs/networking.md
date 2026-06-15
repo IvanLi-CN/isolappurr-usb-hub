@@ -1,17 +1,32 @@
-# Networking (Wi‑Fi + mDNS + HTTP fallback)
+# Networking (Wi‑Fi + mDNS + HTTP LAN access)
 
-This page documents the device networking runtime and HTTP fallback. The product Web App uses Add device for Wi-Fi / LAN, Web Serial, and Local USB connection, then uses the saved device pages for Wi-Fi maintenance, telemetry, controls, and firmware update. A saved hub may have Wi-Fi and USB channels active at the same time; the runtime promotes an available channel when the current primary fails. Treat the flashing notes below as a developer maintenance path, not the user-facing onboarding path.
+This page documents the device networking runtime and Wi-Fi / LAN HTTP access. The product Web App uses Add device for Wi-Fi / LAN, Web Serial, and Local USB connection, then uses the saved device pages for Wi-Fi maintenance, telemetry, controls, and firmware update. A saved hub may have Wi-Fi and USB channels active at the same time; the runtime promotes an available channel when the current primary fails. Treat the flashing notes below as a developer maintenance path, not the user-facing onboarding path.
 
 This project includes an **experimental** networking feature (`net_http`) that enables:
 
 - Wi‑Fi STA (DHCP by default; optional static IPv4)
-- mDNS hostname resolution: `http://<hostname>.local/`
+- mDNS URL: `http://<hostname>.local/` (manual / diagnostic LAN entry)
 - mDNS HTTP service discovery: `_http._tcp.local`
 - Minimal HTTP server: `GET /` → `Hello World`
 - Device HTTP APIs (JSON): `/api/v1/...` (for Web UI integration)
   - CORS allowlist (prod): `https://isolapurr.ivanli.cc`
   - CORS allowlist (dev): `http://localhost:*` / `http://127.0.0.1:*`
-  - Private Network Access (PNA) preflight support for Chrome/Chromium HTTPS → HTTP device access
+- Private Network Access (PNA) preflight support for Chrome/Chromium HTTPS → HTTP device access
+
+## Recommended saved LAN address
+
+For the product Web App, the recommended saved LAN address is a verified IPv4 URL:
+
+- Preferred: `http://<ipv4>`
+- Optional mDNS URL for manual input or diagnostics: `http://<hostname>.local`
+
+Reason:
+
+- verified IPv4 avoids resolver differences across macOS / Linux / browser environments
+- the mDNS URL can still work, but it depends on mDNS / local name resolution and may be less stable across environments
+- on some macOS networks, `.local` can be delayed by an IPv6 / `AAAA` resolver path even when IPv4 HTTP is healthy
+- the Web app gives `.local` requests a slightly longer timeout budget than verified IPv4 so slow resolver paths are less likely to be misclassified as hard device outages
+- the Web UI now treats `.local` reachability failures and browser private-network blocking as different user-facing problems
 
 ## Build
 
@@ -50,10 +65,15 @@ Note: the toast overlay uses a tiny fixed font with limited glyph coverage, so i
 - Resolve hostname:
   - `ping <hostname>.local`
   - `dns-sd -G v4 <hostname>.local`
+- Compare resolver family timing when `.local` feels slow:
+  - `python3 - <<'PY'` / `socket.getaddrinfo(... AF_UNSPEC vs AF_INET ...)`
+  - `curl -4 http://<hostname>.local/api/v1/info`
 - Browse HTTP services:
   - `dns-sd -B _http._tcp`
 - Request:
   - `curl http://<hostname>.local/`
+
+If `curl -4` is fast but plain `curl http://<hostname>.local/...` spends about 5 seconds in name lookup, the device HTTP server is probably fine and the macOS `.local` resolver path is the slow layer.
 
 ### Linux (Avahi)
 
@@ -94,6 +114,14 @@ Notes:
   - `Access-Control-Allow-Private-Network: true` (when requested)
   - `Private-Network-Access-ID/Name` for the Chrome permission prompt
 
+User-facing diagnosis now splits failures into separate buckets:
+
+- `Name/Reachability`: the saved hostname or LAN path could not be reached; prefer a verified IPv4
+- `Browser blocked`: Chrome/Chromium blocked private-network access from the HTTPS page
+- `Device API error`: the device responded, but the API returned a structured error
+
+For `.local`, the product also treats hostname timeouts as `Name/Reachability` because some host environments delay `.local` resolution even while verified IPv4 HTTP stays healthy.
+
 ### Quick checks (curl)
 
 Basic CORS:
@@ -117,7 +145,7 @@ curl -i -X OPTIONS \
 ## Known limitations
 
 - IPv4 only (no IPv6 / mDNS over IPv6 yet).
-- Provisioning is handled by the Web App; this page only covers the runtime networking and HTTP fallback surface.
+- Provisioning is handled by the Web App; this page only covers the runtime networking and Wi-Fi / LAN HTTP surface.
 
 ## Wi‑Fi / LAN discovery helper
 

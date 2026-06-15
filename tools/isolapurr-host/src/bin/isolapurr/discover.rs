@@ -279,11 +279,7 @@ fn parse_discovered_http_info(
             .unwrap_or_else(|| "unknown".to_string()),
     };
     let fqdn = env.device.fqdn.and_then(non_empty_string);
-    let base_url = if let Some(fqdn) = fqdn.as_deref().filter(|fqdn| fqdn.ends_with(".local")) {
-        format!("http://{fqdn}")
-    } else {
-        base_url_by_ip.to_string()
-    };
+    let base_url = base_url_by_ip.to_string();
     let identity = match (
         env.device.device_id.and_then(non_empty_string),
         env.device.mac.and_then(non_empty_string),

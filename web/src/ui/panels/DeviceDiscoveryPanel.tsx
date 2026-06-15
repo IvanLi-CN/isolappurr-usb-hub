@@ -114,7 +114,8 @@ export function DeviceDiscoveryPanel({
         <div>
           <div className="text-[16px] font-bold">Auto discovery</div>
           <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
-            Find hubs on your local network; pick one to add it.
+            Find hubs on your local network; verified IPv4 is the preferred
+            saved address.
           </div>
         </div>
         <button
@@ -198,8 +199,13 @@ export function DeviceDiscoveryPanel({
                       {unknown(d.device_id)}
                     </div>
                     <div className="mt-1 min-w-0 truncate font-mono text-[12px] font-semibold text-[var(--muted)]">
-                      baseUrl: {unknown(d.baseUrl)}
+                      saved LAN URL: {unknown(d.baseUrl)}
                     </div>
+                    {d.fqdn ? (
+                      <div className="mt-1 min-w-0 truncate font-mono text-[12px] font-semibold text-[var(--muted)]">
+                        mDNS URL: http://{d.fqdn}
+                      </div>
+                    ) : null}
                     <div className="mt-1 text-[12px] font-semibold text-[var(--muted)]">
                       fw: {unknown(d.firmware?.version)}
                     </div>
@@ -318,6 +324,12 @@ export function DeviceDiscoveryPanel({
                 {cidrError}
               </div>
             ) : null}
+
+            <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
+              Prefer a verified IPv4 for saved devices. The mDNS URL remains
+              useful for manual input or diagnostics when your LAN resolver is
+              healthy.
+            </div>
 
             {scanning && snapshot.scan ? (
               <div className="mt-2 flex items-center justify-between text-[12px] font-semibold text-[var(--muted)]">

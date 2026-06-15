@@ -61,7 +61,7 @@ fn power_config_set_updates_only_requested_fields() {
 }
 
 #[test]
-fn parse_discover_http_info_prefers_fqdn_base_url() {
+fn parse_discover_http_info_prefers_verified_ipv4_base_url() {
     let parsed = parse_discovered_http_info(
         "http://192.168.1.42",
         json!({
@@ -83,10 +83,7 @@ fn parse_discover_http_info_prefers_fqdn_base_url() {
     )
     .expect("discover info should parse");
 
-    assert_eq!(
-        parsed.base_url,
-        "http://isolapurr-usb-hub-aabbcc001122.local"
-    );
+    assert_eq!(parsed.base_url, "http://192.168.1.42");
     assert_eq!(parsed.ipv4.as_deref(), Some("192.168.1.42"));
     let identity = parsed.identity.expect("identity should exist");
     assert_eq!(identity.device_id.as_deref(), Some("aabbcc001122"));
