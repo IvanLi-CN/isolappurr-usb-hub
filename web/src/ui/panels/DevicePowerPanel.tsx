@@ -4,6 +4,7 @@ import { getStablePowerLockOwner } from "../../app/device-runtime-support";
 import type {
   IdleBiasResponse,
   PowerConfigInput,
+  PowerConfigManualInput,
   PowerConfigResponse,
   Result,
 } from "../../domain/deviceApi";
@@ -51,8 +52,13 @@ function cloneConfig(config: PowerConfigResponse): FormState {
   return {
     hardware: "sw2303",
     tps_mode: config.tps_mode,
+    light_load_mode: config.light_load_mode,
     capability: config.capability,
-    manual: config.manual,
+    manual: {
+      voltage_mv: config.manual.voltage_mv,
+      current_limit_ma: config.manual.current_limit_ma,
+      usb_c_path_mode: config.manual.usb_c_path_mode,
+    },
   };
 }
 
@@ -251,12 +257,14 @@ export function DevicePowerPanel({
   const setPowerLockRef = useRef(setPowerLock);
   const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
 
-  const applyLoadedConfig = useCallback((nextConfig: PowerConfigResponse) => {
-    setConfig(nextConfig);
-    setForm(cloneConfig(nextConfig));
-    setError(null);
-    setDirty(false);
-  }, []);
+  const initializeLoadedConfig = useCallback(
+    (nextConfig: PowerConfigResponse) => {
+      setConfig(nextConfig);
+      setForm((current) => current ?? cloneConfig(nextConfig));
+      setError(null);
+    },
+    [],
+  );
 
   useEffect(() => {
     loadPowerConfigRef.current = loadPowerConfig;
@@ -278,7 +286,7 @@ export function DevicePowerPanel({
         return;
       }
       if (configRes.ok) {
-        applyLoadedConfig(configRes.value);
+        initializeLoadedConfig(configRes.value);
       } else {
         setError(configRes.error.message);
       }
@@ -301,7 +309,7 @@ export function DevicePowerPanel({
     return () => {
       cancelled = true;
     };
-  }, [applyLoadedConfig]);
+  }, [initializeLoadedConfig]);
 
   useEffect(() => {
     if (form || transportLabel === "unknown") {
@@ -313,13 +321,13 @@ export function DevicePowerPanel({
       if (cancelled || !configRes.ok) {
         return;
       }
-      applyLoadedConfig(configRes.value);
+      initializeLoadedConfig(configRes.value);
     };
     void retry();
     return () => {
       cancelled = true;
     };
-  }, [applyLoadedConfig, form, transportLabel]);
+  }, [form, initializeLoadedConfig, transportLabel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -406,6 +414,13 @@ export function DevicePowerPanel({
     setDirty(true);
   };
 
+  const setLightLoadMode = (mode: FormState["light_load_mode"]) => {
+    setForm((current) =>
+      current ? { ...current, light_load_mode: mode } : current,
+    );
+    setDirty(true);
+  };
+
   const setManualNumber = (
     key: "voltage_mv" | "current_limit_ma",
     value: number,
@@ -439,7 +454,7 @@ export function DevicePowerPanel({
     setDirty(true);
   };
 
-  const setPathMode = (mode: FormState["manual"]["usb_c_path_mode"]) => {
+  const setPathMode = (mode: PowerConfigManualInput["usb_c_path_mode"]) => {
     setForm((current) =>
       current
         ? { ...current, manual: { ...current.manual, usb_c_path_mode: mode } }
@@ -703,6 +718,34 @@ export function DevicePowerPanel({
                 >
                   Manual TPS
                 </button>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <div className="text-[13px] font-medium text-[var(--muted)]">
+                TPS light-load mode
+              </div>
+              <div className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-1 sm:w-auto">
+                <button
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.light_load_mode === "pfm" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  disabled={powerControlsDisabled}
+                  onClick={() => setLightLoadMode("pfm")}
+                  type="button"
+                >
+                  PFM
+                </button>
+                <button
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.light_load_mode === "fpwm" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  disabled={powerControlsDisabled}
+                  onClick={() => setLightLoadMode("fpwm")}
+                  type="button"
+                >
+                  FPWM
+                </button>
+              </div>
+              <div className="text-[12px] text-[var(--muted)]">
+                PFM follows the board default. FPWM forces TPS55288 PWM at light
+                load and is saved with the same power config.
               </div>
             </div>
 

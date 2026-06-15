@@ -1,6 +1,9 @@
 import { useAddDeviceUi } from "../../app/add-device-ui";
 import { useDeviceRuntime } from "../../app/device-runtime";
+import { resolveTransportBadgeState } from "../../app/device-runtime-support";
 import type { StoredDevice } from "../../domain/devices";
+import { getLocalUsbDeviceLink } from "../../domain/localUsbLinks";
+import { getWebSerialDeviceTransport } from "../../domain/webSerialLinks";
 import { DeviceCard, type DeviceTransportBadge } from "../cards/DeviceCard";
 
 const TRANSPORT_ORDER: DeviceTransportBadge["transport"][] = [
@@ -27,21 +30,39 @@ export function DeviceListPanel({
   const transportBadges = (deviceId: string): DeviceTransportBadge[] => {
     const current = transport(deviceId);
     const channels = runtimeById[deviceId]?.channels;
+    const device = devices.find((candidate) => candidate.id === deviceId);
     if (!channels) {
       return [];
     }
     return TRANSPORT_ORDER.flatMap((candidate) => {
       const channel = channels[candidate];
-      const hasHistory = Boolean(channel?.lastOkAt || channel?.lastError);
-      if (!hasHistory) {
+      const hasHistory =
+        candidate === "web_serial"
+          ? Boolean(
+              channel?.lastOkAt ||
+                channel?.lastError ||
+                device?.transports?.webSerialLabel,
+            )
+          : Boolean(channel?.lastOkAt || channel?.lastError);
+      const linked =
+        candidate === "http"
+          ? Boolean(device?.transports?.httpBaseUrl || device?.baseUrl)
+          : candidate === "local_usb"
+            ? Boolean(
+                getLocalUsbDeviceLink(deviceId) ??
+                  device?.transports?.localUsbPortPath,
+              )
+            : Boolean(getWebSerialDeviceTransport(deviceId));
+      const state = resolveTransportBadgeState({
+        candidate,
+        activeTransport: current,
+        channelOnline: channelState(deviceId, candidate) === "online",
+        linked,
+        hasHistory,
+      });
+      if (!state) {
         return [];
       }
-      const state =
-        candidate === current && channelState(deviceId, candidate) === "online"
-          ? "primary"
-          : channelState(deviceId, candidate) === "online"
-            ? "connected"
-            : "history";
       return [{ transport: candidate, state }];
     });
   };

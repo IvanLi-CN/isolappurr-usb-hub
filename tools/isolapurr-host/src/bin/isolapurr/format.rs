@@ -283,6 +283,10 @@ fn format_power_config_output(output: &Value) -> String {
         "Output mode: {}",
         format_power_mode(&config.tps_mode)
     ));
+    lines.push(format!(
+        "Light-load mode: {}",
+        format_light_load_mode(&config.light_load_mode)
+    ));
     lines.push(format!("Power cap: {} W", config.capability.power_watts));
     lines.push(format!(
         "Advertised protocols: {}",
@@ -505,6 +509,14 @@ fn format_usb_c_path_mode(mode: &str) -> &'static str {
         "default" => "automatic",
         "disconnect" => "disconnected",
         "force" => "forced on",
+        _ => "unknown",
+    }
+}
+
+fn format_light_load_mode(mode: &str) -> &'static str {
+    match mode {
+        "pfm" => "PFM",
+        "fpwm" => "FPWM",
         _ => "unknown",
     }
 }

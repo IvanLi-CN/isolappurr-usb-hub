@@ -503,14 +503,14 @@ fn should_verify_power_config_after_serial_error(err: &anyhow::Error) -> bool {
     message.contains("serial response timed out") || message.contains("serial read")
 }
 
-async fn verify_power_config_after_set_timeout(
+async fn power_config_saved_after_serial_timeout(
     state: &AppState,
     id: &str,
     expected: &Value,
 ) -> anyhow::Result<Value> {
     let mut last_error = None;
-    for _ in 0..10 {
-        tokio::time::sleep(Duration::from_millis(500)).await;
+    for _ in 0..6 {
+        tokio::time::sleep(Duration::from_millis(250)).await;
         match usb_jsonl_request(state, id, "power.config_get", None).await {
             Ok(mut value) => {
                 if power_config_matches_expected(&value, expected) {
@@ -529,10 +529,13 @@ async fn verify_power_config_after_set_timeout(
     Err(last_error.unwrap_or_else(|| anyhow!("power config did not verify after serial timeout")))
 }
 
-async fn verify_power_defaults_after_timeout(state: &AppState, id: &str) -> anyhow::Result<Value> {
+async fn power_defaults_saved_after_serial_timeout(
+    state: &AppState,
+    id: &str,
+) -> anyhow::Result<Value> {
     let mut last_error = None;
-    for _ in 0..10 {
-        tokio::time::sleep(Duration::from_millis(500)).await;
+    for _ in 0..6 {
+        tokio::time::sleep(Duration::from_millis(250)).await;
         match usb_jsonl_request(state, id, "power.config_get", None).await {
             Ok(mut value) => {
                 if power_config_matches_defaults(&value) {
@@ -556,6 +559,7 @@ fn power_config_matches_expected(value: &Value, expected: &Value) -> bool {
     observed.get("persisted").and_then(Value::as_bool) == Some(true)
         && observed.get("hardware") == expected.get("hardware")
         && observed.get("tps_mode") == expected.get("tps_mode")
+        && observed.get("light_load_mode") == expected.get("light_load_mode")
         && observed.get("capability") == expected.get("capability")
         && observed.pointer("/manual/voltage_mv") == expected.pointer("/manual/voltage_mv")
         && observed.pointer("/manual/current_limit_ma")
@@ -569,6 +573,7 @@ fn power_config_matches_defaults(value: &Value) -> bool {
     observed.get("persisted").and_then(Value::as_bool) == Some(true)
         && observed.get("hardware").and_then(Value::as_str) == Some("sw2303")
         && observed.get("tps_mode").and_then(Value::as_str) == Some("auto_follow")
+        && observed.get("light_load_mode").and_then(Value::as_str) == Some("pfm")
         && observed
             .pointer("/capability/profile")
             .and_then(Value::as_str)
@@ -788,7 +793,7 @@ async fn device_power_config_set(
     match usb_jsonl_request(&state, &id, "power.config_set", Some(params)).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) if should_verify_power_config_after_serial_error(&err) => {
-            match verify_power_config_after_set_timeout(&state, &id, &config).await {
+            match power_config_saved_after_serial_timeout(&state, &id, &config).await {
                 Ok(value) => Json(redact_sensitive(&value)).into_response(),
                 Err(_) => error_from_anyhow(err),
             }
@@ -842,7 +847,7 @@ async fn device_power_config_defaults(
     {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) if should_verify_power_config_after_serial_error(&err) => {
-            match verify_power_defaults_after_timeout(&state, &id).await {
+            match power_defaults_saved_after_serial_timeout(&state, &id).await {
                 Ok(value) => Json(redact_sensitive(&value)).into_response(),
                 Err(_) => error_from_anyhow(err),
             }

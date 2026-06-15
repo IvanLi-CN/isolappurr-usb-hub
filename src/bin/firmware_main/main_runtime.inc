@@ -228,6 +228,20 @@
     }
     Timer::after_millis(BOOT_PD_DISCHARGE_SETTLE_MS).await;
 
+    if let Err(err) = apply_light_load_mode(
+        &mut telemetry_i2c,
+        &mut tps_state,
+        PowerConfig::defaults().light_load_mode,
+    )
+    .await
+    {
+        defmt::warn!(
+            "tps55288 boot light-load mode apply failed; continuing with board default: {:?}",
+            defmt::Debug2Format(&err)
+        );
+        tps_state.light_load_mode = None;
+    }
+
     let mut tps_boot_ready = false;
     let mut sw2303_i2c_allowed = false;
     let mut boot_retry_recovery_cycled = false;
@@ -378,6 +392,7 @@
                 (PowerConfig::defaults(), false)
             }
         };
+    tps_state.light_load_mode = None;
     #[cfg(feature = "net_http")]
     let mut idle_bias_calibration = match provisioning::load_idle_bias_calibration(&mut telemetry_i2c)
         .await
@@ -549,6 +564,8 @@
         let sw2303_was_in_error = sw2303_error_latched;
         let tps_was_in_error = tps_error_latched;
         let ui_was_in_error = ui_error_latched;
+        #[cfg(feature = "net_http")]
+        let mut power_config_result_pending: Option<bool> = None;
         let usb_c_pd_power_on: bool;
         let usb_c_power_off_setpoint: PowerSetpoint;
         let mut request: Option<PowerRequest>;

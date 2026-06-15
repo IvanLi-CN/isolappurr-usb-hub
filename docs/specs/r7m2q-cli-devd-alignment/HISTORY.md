@@ -14,3 +14,13 @@
 - Tightened discover annotation rendering so one live result surfaces only one
   canonical saved device profile instead of echoing duplicate saved entries
   from alternate transports of the same device.
+- Added `isolapurr power config show|set` as the owner-facing whole-config
+  entrypoint for saved TPS power settings, while keeping `power output ...` and
+  `power source-capability set` as compatibility wrappers over the same merged
+  config write path.
+- Extended the aligned power-config transport contract with top-level
+  `light_load_mode=pfm|fpwm`, defaulting missing legacy values to `pfm` on the
+  host side.
+- Tightened the aligned write model so Web power-config saves only send
+  writable fields, avoiding accidental echo of read-only `manual.path_policy`
+  back into the bridge/device contract.

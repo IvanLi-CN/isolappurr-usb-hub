@@ -1,4 +1,5 @@
 use super::{PowerRequest, PowerSetpoint, TPS55288_ADDR_7BIT};
+use crate::power_config::LightLoadMode;
 
 /// Default "keep-alive" setpoint used to power SW2303 before PD negotiation.
 ///
@@ -12,6 +13,53 @@ pub const fn boot_supply_setpoint() -> PowerSetpoint {
         v_out_mv: TPS_BOOT_VOUT_MV,
         i_lim_ma: TPS_BOOT_ILIM_MA,
     }
+}
+
+fn mode_bits_for_light_load(
+    mut mode: tps55288::registers::ModeBits,
+    light_load_mode: LightLoadMode,
+) -> tps55288::registers::ModeBits {
+    use tps55288::registers::ModeBits;
+
+    match light_load_mode {
+        LightLoadMode::Pfm => {
+            mode.remove(ModeBits::MODE);
+            mode.remove(ModeBits::PFM);
+        }
+        LightLoadMode::Fpwm => {
+            mode.insert(ModeBits::MODE);
+            mode.insert(ModeBits::PFM);
+            mode.insert(ModeBits::VCC_EXT);
+            mode.remove(ModeBits::I2CADD);
+        }
+    }
+
+    mode
+}
+
+pub async fn apply_light_load_mode<I2C>(
+    i2c: &mut I2C,
+    state: &mut TpsApplyState,
+    light_load_mode: LightLoadMode,
+) -> Result<(), tps55288::Error<I2C::Error>>
+where
+    I2C: embedded_hal_async::i2c::I2c,
+{
+    if state.light_load_mode == Some(light_load_mode) {
+        return Ok(());
+    }
+
+    use tps55288::registers::{ModeBits, addr};
+
+    let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
+    let raw_mode = dev.read_reg(addr::MODE).await?;
+    let mode = ModeBits::from_bits_truncate(raw_mode);
+    let next_mode = mode_bits_for_light_load(mode, light_load_mode);
+    if next_mode.bits() != raw_mode {
+        dev.write_reg(addr::MODE, next_mode.bits()).await?;
+    }
+    state.light_load_mode = Some(light_load_mode);
+    Ok(())
 }
 
 pub async fn stop_output_and_enable_discharge<I2C>(
@@ -59,11 +107,15 @@ where
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct TpsApplyState {
     pub last: Option<PowerSetpoint>,
+    pub light_load_mode: Option<LightLoadMode>,
 }
 
 impl TpsApplyState {
     pub const fn new() -> Self {
-        Self { last: None }
+        Self {
+            last: None,
+            light_load_mode: None,
+        }
     }
 }
 

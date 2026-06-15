@@ -20,8 +20,8 @@ use heapless::{String as HString, Vec};
 use isolapurr_usb_hub::display_ui::{NormalUiPortBadge, NormalUiPortMode};
 use isolapurr_usb_hub::idle_bias::{IDLE_BIAS_POINT_COUNT, IdleBiasMetadata};
 use isolapurr_usb_hub::power_config::{
-    ManualTpsConfig, ManualUsbCPathMode, PowerConfig, Sw2303CapabilityReadback, TpsMode,
-    UsbCCapabilityConfig,
+    LightLoadMode, ManualTpsConfig, ManualUsbCPathMode, PowerConfig, Sw2303CapabilityReadback,
+    TpsMode, UsbCCapabilityConfig,
 };
 use isolapurr_usb_hub::provisioning::{
     DEFAULT_USB_C_DOWNSTREAM_ROUTE, UsbCDownstreamRoute, WifiCredentials,
@@ -935,5 +935,43 @@ mod tests {
         write_pd_diagnostics_json(&mut body, &pd, &idle_bias);
 
         assert!(body.contains("\"usb_c_actual\":{\"status\":\"ok\",\"voltage_mv\":8950,\"current_ma\":42,\"power_mw\":376,\"sample_uptime_ms\":1500},\"tps_setpoint\""));
+    }
+
+    #[test]
+    fn power_config_json_falls_back_to_auto_path_policy_without_live_snapshot() {
+        let mut body = String::new();
+        let power = ApiPowerSnapshot {
+            config: PowerConfig::defaults(),
+            persisted: true,
+            lock: None,
+            last_path_control: None,
+        };
+
+        write_power_config_json(&mut body, &power);
+
+        assert!(body.contains("\"path_policy\":\"auto\""));
+    }
+
+    #[test]
+    fn power_config_json_derives_manual_path_policy_when_live_snapshot_is_missing() {
+        let mut body = String::new();
+        let power = ApiPowerSnapshot {
+            config: PowerConfig {
+                tps_mode: TpsMode::Manual,
+                manual: ManualTpsConfig {
+                    voltage_mv: 9_000,
+                    current_limit_ma: 1_000,
+                    usb_c_path_mode: ManualUsbCPathMode::Default,
+                },
+                ..PowerConfig::defaults()
+            },
+            persisted: true,
+            lock: None,
+            last_path_control: None,
+        };
+
+        write_power_config_json(&mut body, &power);
+
+        assert!(body.contains("\"path_policy\":\"force_close\""));
     }
 }

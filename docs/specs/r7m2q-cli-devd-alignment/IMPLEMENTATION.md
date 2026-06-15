@@ -20,6 +20,11 @@
 - `isolapurr` now also exposes owner-facing power commands over the same IPC
   path: `power show`, `power defaults`, `power output manual|auto`, and
   `power source-capability set`.
+- `isolapurr power config show|set` now fronts the whole saved power-config
+  surface directly. `show` returns the persisted config snapshot, and `set`
+  reads the current config first, mutates only explicitly provided fields such
+  as `light_load_mode`, `tps_mode`, manual output, or source-capability flags,
+  then writes the merged payload back through `power.config_set`.
 - The CLI power flow reads the whole persisted config, mutates only the
   requested source-capability fields requested by the user, including protocol
   toggles, PD options, power cap, and current tiers, and writes the full config
@@ -28,6 +33,14 @@
   only the requested manual voltage/current/path fields while preserving the
   existing source-capability profile; `power output auto` switches back to
   automatic request tracking without clearing the saved manual target.
+- The aligned power-config contract now includes top-level
+  `light_load_mode: "pfm" | "fpwm"` across host JSON, Local USB JSONL, and
+  device bridge HTTP responses, with host-side normalization defaulting missing
+  legacy values to `pfm`.
+- The bridge-facing Web client now serializes `power/config` writes from a
+  writable-only request model so read-only response decorations such as
+  `manual.path_policy` never leak back into the aligned `PUT /power/config`
+  contract.
 - `power source-capability set` now has a terminal-only interactive mode when
   no update flags are supplied: it reads current config plus live status first,
   then renders a `ratatui`-based inline chip editor: one source-capability
@@ -43,6 +56,9 @@
 - `power defaults` now shares the same timeout-recovery behavior as config
   writes: after a serial timeout it re-reads the saved config and returns
   success when the expected default profile actually applied.
+- Added a live Playwright regression over `isolapurr-devd bridge-http` so the
+  built Web page exercises the same aligned `power/config` contract that the
+  CLI and bridge expose, instead of relying only on mock Storybook coverage.
 - Local USB operations verify project firmware metadata from `info` before ordinary control paths. Non-project firmware, download-mode/no-JSONL targets, and incompatible firmware versions are rejected with corrective guidance; first-time full flash requires explicit confirmation.
 - Web Local USB discovery/request/flash code now targets the new `/api/v1/devices/*` and lease APIs while leaving Web Serial intact. Device profiles can retain HTTP and Local USB transports for one hardware identity, and the runtime prefers successful Local USB operations for unsupported or unreachable Wi-Fi/HTTP paths.
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.

@@ -9,7 +9,9 @@ async fn usb_console_task(
     use embedded_io_async::Read as _;
 
     let mut rx = [0u8; 64];
-    let mut line = [0u8; 512];
+    // Whole-config power JSONL writes can exceed 512 bytes once capability,
+    // manual, and light-load settings are all present in one frame.
+    let mut line = [0u8; 1024];
     let mut len = 0usize;
 
     loop {

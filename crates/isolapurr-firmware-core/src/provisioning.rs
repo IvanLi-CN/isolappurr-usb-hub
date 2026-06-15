@@ -3,7 +3,7 @@ use crate::idle_bias::{
     IdleBiasCalibration, IdleBiasMetadata,
 };
 use crate::power_config::{
-    ManualTpsConfig, ManualUsbCPathMode, PowerConfig, PowerHardwareKind, TpsMode,
+    LightLoadMode, ManualTpsConfig, ManualUsbCPathMode, PowerConfig, PowerHardwareKind, TpsMode,
     UsbCCapabilityConfig,
 };
 
@@ -67,6 +67,10 @@ pub fn encode_power_config(record: &mut [u8; POWER_SETTINGS_RECORD_LEN], config:
     record[16] = config.capability.power_watts;
     record[17] = pack_protocol_flags(config.capability);
     record[18] = pack_pd_flags(config.capability);
+    record[19] = match config.light_load_mode {
+        LightLoadMode::Pfm => 0,
+        LightLoadMode::Fpwm => 1,
+    };
 }
 
 pub fn decode_power_config(record: &[u8; POWER_SETTINGS_RECORD_LEN]) -> Option<PowerConfig> {
@@ -87,9 +91,15 @@ pub fn decode_power_config(record: &[u8; POWER_SETTINGS_RECORD_LEN]) -> Option<P
     };
     let voltage_mv = u16::from_le_bytes([record[12], record[13]]);
     let current_limit_ma = u16::from_le_bytes([record[14], record[15]]);
+    let light_load_mode = match record[19] {
+        0 => LightLoadMode::Pfm,
+        1 => LightLoadMode::Fpwm,
+        _ => return None,
+    };
     Some(PowerConfig {
         hardware,
         tps_mode,
+        light_load_mode,
         manual: ManualTpsConfig {
             voltage_mv,
             current_limit_ma,
@@ -197,6 +207,7 @@ mod tests {
     fn power_config_record_round_trips() {
         let config = PowerConfig {
             tps_mode: TpsMode::Manual,
+            light_load_mode: LightLoadMode::Fpwm,
             manual: ManualTpsConfig {
                 voltage_mv: 9_000,
                 current_limit_ma: 3_000,
@@ -210,6 +221,30 @@ mod tests {
         encode_power_config(&mut record, config);
 
         assert_eq!(decode_power_config(&record), Some(config));
+    }
+
+    #[test]
+    fn power_config_legacy_reserved_byte_defaults_to_pfm() {
+        let config = PowerConfig {
+            tps_mode: TpsMode::Manual,
+            light_load_mode: LightLoadMode::Fpwm,
+            manual: ManualTpsConfig {
+                voltage_mv: 9_000,
+                current_limit_ma: 3_000,
+                usb_c_path_mode: ManualUsbCPathMode::Force,
+            },
+            ..PowerConfig::defaults()
+        };
+        let mut record = [0u8; POWER_SETTINGS_RECORD_LEN];
+        record[..POWER_SETTINGS_MAGIC.len()].copy_from_slice(POWER_SETTINGS_MAGIC);
+        record[POWER_SETTINGS_MAGIC.len()] = POWER_SETTINGS_VERSION;
+        encode_power_config(&mut record, config);
+        record[19] = 0;
+
+        let decoded = decode_power_config(&record).expect("legacy record should decode");
+        assert_eq!(decoded.light_load_mode, LightLoadMode::Pfm);
+        assert_eq!(decoded.tps_mode, TpsMode::Manual);
+        assert_eq!(decoded.manual.voltage_mv, 9_000);
     }
 
     #[test]

@@ -33,3 +33,17 @@
 - Legacy 6-character firmware `device_id` values are upgrade-only.
 - Normal runtime, storage, and owner-facing control must reject them and require firmware upgrade first.
 - Existing local records that do not use the canonical 12-character `device_id` are cleared instead of migrated by guesswork.
+
+## Power configuration
+
+- `tps_mode`
+  The saved TPS output target source mode.
+  `auto_follow` means TPS follows the live USB-C request.
+  `manual` means TPS uses the saved manual voltage/current target.
+  It does not describe the TPS switching mode.
+
+- `light_load_mode`
+  The saved TPS55288 light-load switching mode.
+  `pfm` means the board-default PFM behavior.
+  `fpwm` means force-PWM behavior through the TPS55288 `MODE` register override.
+  It is independent from `tps_mode`.

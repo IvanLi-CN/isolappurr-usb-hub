@@ -27,6 +27,21 @@ impl TpsMode {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LightLoadMode {
+    Pfm,
+    Fpwm,
+}
+
+impl LightLoadMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pfm => "pfm",
+            Self::Fpwm => "fpwm",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ManualUsbCPathMode {
     Default,
     Disconnect,
@@ -113,6 +128,7 @@ pub struct PowerConfig {
     pub hardware: PowerHardwareKind,
     pub capability: UsbCCapabilityConfig,
     pub tps_mode: TpsMode,
+    pub light_load_mode: LightLoadMode,
     pub manual: ManualTpsConfig,
 }
 
@@ -202,6 +218,7 @@ impl PowerConfig {
             hardware: PowerHardwareKind::Sw2303,
             capability: UsbCCapabilityConfig::full_100w(),
             tps_mode: TpsMode::AutoFollow,
+            light_load_mode: LightLoadMode::Pfm,
             manual: ManualTpsConfig {
                 voltage_mv: MANUAL_DEFAULT_VOLTAGE_MV,
                 current_limit_ma: MANUAL_DEFAULT_CURRENT_MA,
@@ -293,6 +310,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(cfg.manual.current_limit_ma, 4_750);
+    }
+
+    #[test]
+    fn defaults_to_pfm_light_load_mode() {
+        assert_eq!(PowerConfig::defaults().light_load_mode, LightLoadMode::Pfm);
     }
 
     #[test]
