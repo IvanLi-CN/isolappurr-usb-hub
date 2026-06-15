@@ -8,6 +8,7 @@ fn power_config_verify_matches_requested_payload_without_runtime_only_fields() {
             "hardware": "sw2303",
             "persisted": true,
             "tps_mode": "manual",
+            "light_load_mode": "fpwm",
             "capability": {
                 "profile": "full",
                 "power_watts": 100,
@@ -42,6 +43,7 @@ fn power_config_verify_matches_requested_payload_without_runtime_only_fields() {
     let expected = json!({
         "hardware": "sw2303",
         "tps_mode": "manual",
+        "light_load_mode": "fpwm",
         "capability": {
             "profile": "full",
             "power_watts": 100,
@@ -79,6 +81,7 @@ fn power_config_verify_rejects_mismatched_requested_payload() {
             "hardware": "sw2303",
             "persisted": true,
             "tps_mode": "manual",
+            "light_load_mode": "pfm",
             "capability": {
                 "profile": "full",
                 "power_watts": 100,
@@ -108,6 +111,7 @@ fn power_config_verify_rejects_mismatched_requested_payload() {
     let expected = json!({
         "hardware": "sw2303",
         "tps_mode": "manual",
+        "light_load_mode": "fpwm",
         "capability": {
             "profile": "full",
             "power_watts": 100,
@@ -145,6 +149,7 @@ fn power_config_defaults_match_full_profile() {
             "hardware": "sw2303",
             "persisted": true,
             "tps_mode": "auto_follow",
+            "light_load_mode": "pfm",
             "capability": {
                 "profile": "full",
                 "power_watts": 100,

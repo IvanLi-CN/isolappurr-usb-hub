@@ -5,6 +5,9 @@
 - Added `src/power_config.rs` with SW2303-only config types, validation,
   100 W current limiting, manual voltage/current quantization, and three-state
   USB-C path policy resolution.
+- Extended the shared saved power config with `light_load_mode` using the
+  existing EEPROM power record reserved byte, keeping record length/version
+  compatibility and decoding missing legacy data as `pfm`.
 - Added EEPROM load/store for a dedicated power-config record with fallback to
   full SW2303 auto-follow defaults.
 - Extended API shared state with power config, lock, pending command, persisted
@@ -14,9 +17,25 @@
   - `power.config_set`
   - `power.config_defaults`
   - `power.lock`
+- Extended the existing `power/config` request and response contract with a
+  top-level `light_load_mode: "pfm" | "fpwm"` field instead of introducing a
+  separate route or EEPROM record.
 - Updated the PD/TPS runtime loop so pending config writes are saved, applied,
   reflected in diagnostics, and used for SW2303 profile application.
 - Added SW2303 path helpers for automatic control, force-close, and force-open.
+- Added TPS55288 `MODE` register light-load helpers so saved
+  `light_load_mode=fpwm` immediately forces PWM while preserving the board's
+  external-VCC and `0x74` semantics, and saved `light_load_mode=pfm`
+  immediately returns to strap-controlled behavior without disturbing `OE`,
+  `DISCHG`, or unrelated bits.
+- Increased the USB JSONL request frame buffer from `512` to `1024` bytes after
+  HIL proved that the whole-config `power.config_set` payload now exceeds the
+  old limit once capability, manual, and `light_load_mode` fields are all
+  present in one Local USB write.
+- Changed `power/config` rendering so `manual.path_policy` now prefers the live
+  SW2303 path snapshot and otherwise falls back to the current saved config's
+  derived policy, preventing transient `unknown` responses during immediate
+  `power.config_set` / `power.config_defaults` replies.
 - Refined manual `default` path control so sub-5 V manual output still keeps
   the SW2303 path in `auto` when no explicit protocol request exists, matching
   the Type-C 5 V fallback behavior for passive CC sinks.
@@ -44,16 +63,29 @@
   - `power.idle_bias_run`
   - `power.idle_bias_clear`
 - Added device bridge HTTP routes for `/power/idle-bias`, `/run`, and `/clear`.
+- Added `isolapurr power config show|set` so the owner-facing CLI can read the
+  whole saved power config, mutate only explicitly provided fields such as
+  `light_load_mode` / `tps_mode` / manual output / source capabilities, and
+  write the merged config back through the aligned `power.config_*` contract.
 - Added `isolapurr power idle-bias show|run|clear|set --enabled <bool>` with
   interactive confirmation and `--yes` bypass handling.
 - Updated human CLI output so the main USB-C reading stays corrected while
   `--json` preserves both corrected telemetry and the raw USB-C debug fields.
+- Updated the existing `power output ...` and `power source-capability set`
+  flows to reuse the same read-modify-write config mutation helper, keeping the
+  old entrypoints compatible while aligning them with the new `power config`
+  surface.
 
 ## Web
 
 - Added `DevicePowerPage` and `DevicePowerPanel`.
 - Extended `device-runtime` and `deviceApi` for HTTP, Web Serial, and Local USB
   power config calls.
+- Added runtime normalization so legacy responses that omit `light_load_mode`
+  still render as `pfm` across HTTP, Web Serial, and Local USB paths.
+- Split the Web power-config types into writable request fields and richer
+  readback fields so `setPowerConfig()` strips read-only response data such as
+  `manual.path_policy` before issuing `PUT /power/config`.
 - Added host-lock heartbeat handling with per-panel owner IDs.
 - Added a typed `/api/v1/pd-diagnostics` read path plus inline Dashboard
   USB-C card badges that render the shared firmware display contract directly:
@@ -69,6 +101,13 @@
   current non-PD protocol set renders `DPDM`.
 - Added card-level container-query behavior so negotiation badges show only on
   protocol cards that have enough local width to keep the layout readable.
+- Added a `TPS light-load mode` control to the existing Power settings panel so
+  operators can switch between persisted `PFM` and `FPWM` without leaving the
+  saved power-config surface.
+- Hardened `DevicePowerPanel` late-load behavior so a successful reload or lock
+  refresh no longer overwrites in-progress edits with a fresh `cloneConfig()`,
+  while initial retry paths can still hydrate an empty form after a transient
+  transport miss.
 - Added a constrained `MediumWideCards` Storybook regression state so the
   negotiation badges stay covered when the protocol grid becomes two columns
   without reverting to narrow-card hiding.
@@ -91,16 +130,18 @@
 
 ## Verification
 
+- `host=$(rustc +stable -vV | sed -n 's/^host: //p'); cargo +stable test --manifest-path crates/isolapurr-firmware-core/Cargo.toml --target "$host"`
 - `cargo check --features net_http`
-- `cd tools/isolapurr-host && cargo +stable-aarch64-apple-darwin test --no-run --target aarch64-apple-darwin --config 'build.target="aarch64-apple-darwin"'`
+- `host=$(rustc +stable -vV | sed -n 's/^host: //p'); cargo +stable test --manifest-path tools/isolapurr-host/Cargo.toml --target "$host"`
 - `cd web && bun run check`
 - `cd web && bun run build`
 - `cd web && bun run build-storybook`
-- `cd web && bun run test:unit`
-- `cd web && bun run test:storybook`
-- `PORT=/dev/cu.usbmodem21221401 just flash`
-- Local USB browser verification against `HIL-f293cc-USB`
-- `cd web && bun test ./src`
+- `cd web && bun test ./src/domain/deviceApi.test.ts`
+- `cd web && bunx playwright test e2e/light-load-hil.spec.ts --project=chromium`
+- Storybook capture: `Panels/DevicePowerPanel/ForcedPwmMode`
+- HIL on `tps-sw` device `856a141cdbd4` at `/dev/cu.usbmodem21221401`:
+  `pfm -> set fpwm -> reboot -> still fpwm -> power defaults -> pfm ->
+  settings reset other -> persisted=false,pfm`
 
 Root `cargo test power_config` is not a valid gate for this repository target
 as currently configured because the ESP `xtensa-esp32s3-none-elf` target lacks
@@ -108,7 +149,24 @@ the standard `test` crate. Migrated pure power-config and idle-bias logic now
 runs through the shared firmware core host tests:
 `cargo +stable test --manifest-path crates/isolapurr-firmware-core/Cargo.toml --target "$host"`.
 
-`cd web && bun run test:storybook` was not run in this pass.
+The first HIL attempt exposed a Local USB transport bug rather than a TPS/EERPOM
+bug: the saved whole-config `power.config_set` JSONL frame measured `622`
+bytes, overflowed the firmware's `512`-byte USB JSONL line buffer, and was
+dropped before `wait_power_config_result()` could ever complete. After raising
+that buffer to `1024` bytes, the same board accepted the write and completed
+the full persistence chain.
+
+The later live-page regression was on the Web write model rather than EEPROM
+or TPS state: the panel reused a response-shaped `manual` object and echoed the
+read-only `path_policy` field back into `PUT /power/config`, which the bridge
+correctly rejected. The request serializer now emits only writable power-config
+fields, and the new Bun regression test locks that contract down.
+
+The final live HIL pass used the built Web app plus `isolapurr-devd bridge-http`
+against the same `856a141cdbd4` board. The Playwright regression seeds desktop
+storage, opens `/devices/856a141cdbd4/power`, toggles `PFM -> FPWM -> PFM`
+through the rendered panel, and polls the bridge `power/config` readback until
+the persisted `light_load_mode` matches each saved state.
 
 ## HIL Verification
 

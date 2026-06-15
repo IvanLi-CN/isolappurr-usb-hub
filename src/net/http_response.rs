@@ -287,10 +287,11 @@ pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
     let cfg = power.config;
     let _ = core::write!(
         body,
-        "{{\"hardware\":\"{}\",\"persisted\":{},\"tps_mode\":\"{}\",\"capability\":{{\"profile\":\"full\",\"power_watts\":{},\"protocols\":{{\"pd\":{},\"qc20\":{},\"qc30\":{},\"fcp\":{},\"afc\":{},\"scp\":{},\"pe20\":{},\"bc12\":{},\"sfcp\":{}}},\"pd\":{{\"pps\":{},\"fixed_voltages_mv\":[",
+        "{{\"hardware\":\"{}\",\"persisted\":{},\"tps_mode\":\"{}\",\"light_load_mode\":\"{}\",\"capability\":{{\"profile\":\"full\",\"power_watts\":{},\"protocols\":{{\"pd\":{},\"qc20\":{},\"qc30\":{},\"fcp\":{},\"afc\":{},\"scp\":{},\"pe20\":{},\"bc12\":{},\"sfcp\":{}}},\"pd\":{{\"pps\":{},\"fixed_voltages_mv\":[",
         cfg.hardware.as_str(),
         if power.persisted { "true" } else { "false" },
         cfg.tps_mode.as_str(),
+        cfg.light_load_mode.as_str(),
         cfg.capability.power_watts,
         cfg.capability.pd_enabled,
         cfg.capability.qc20_enabled,
@@ -313,10 +314,7 @@ pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
         cfg.manual.voltage_mv,
         cfg.manual.current_limit_ma,
         cfg.manual.usb_c_path_mode.as_str(),
-        power
-            .last_path_control
-            .map(|control| control.as_str())
-            .unwrap_or("unknown"),
+        reported_manual_path_policy(power),
     );
     match power.lock {
         Some(lock) => {
@@ -332,6 +330,23 @@ pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
         }
     }
     let _ = body.push_str("}");
+}
+
+fn reported_manual_path_policy(power: &ApiPowerSnapshot) -> &'static str {
+    if let Some(control) = power.last_path_control {
+        return control.as_str();
+    }
+
+    if power.config.tps_mode != TpsMode::Manual {
+        return "auto";
+    }
+
+    isolapurr_usb_hub::power_config::resolve_manual_path_control(
+        power.config.manual.usb_c_path_mode,
+        isolapurr_usb_hub::power_config::quantize_manual_voltage_mv(power.config.manual.voltage_mv),
+        None,
+    )
+    .as_str()
 }
 
 fn write_fixed_voltage_json(body: &mut String, enabled: bool, mv: u32) {

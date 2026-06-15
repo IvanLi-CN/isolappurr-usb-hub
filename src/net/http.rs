@@ -965,6 +965,14 @@ pub fn parse_power_config_body(body: &str) -> Option<PowerConfig> {
         "manual" => TpsMode::Manual,
         _ => return None,
     };
+    let light_load_mode = match extract_body_string(body, "light_load_mode")
+        .unwrap_or_else(|| String::from("pfm"))
+        .as_str()
+    {
+        "pfm" => LightLoadMode::Pfm,
+        "fpwm" => LightLoadMode::Fpwm,
+        _ => return None,
+    };
     let manual_path = match extract_body_string(body, "usb_c_path_mode")
         .unwrap_or_else(|| String::from("default"))
         .as_str()
@@ -976,6 +984,7 @@ pub fn parse_power_config_body(body: &str) -> Option<PowerConfig> {
     };
     let mut config = PowerConfig::defaults();
     config.tps_mode = tps_mode;
+    config.light_load_mode = light_load_mode;
     config.manual = ManualTpsConfig {
         voltage_mv: extract_body_u16(body, "voltage_mv").unwrap_or(config.manual.voltage_mv),
         current_limit_ma: extract_body_u16(body, "current_limit_ma")

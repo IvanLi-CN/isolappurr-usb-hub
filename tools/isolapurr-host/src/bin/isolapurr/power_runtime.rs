@@ -459,6 +459,33 @@ async fn handle_power(
                 "ports": ports,
             }))
         }
+        PowerCommand::Config { command } => match command {
+            PowerConfigCommand::Show { selector } => {
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                Ok(serde_json::to_value(
+                    fetch_power_config(client, devd, &selector).await?,
+                )?)
+            }
+            PowerConfigCommand::Set { selector, args } => {
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                if !args.has_updates() {
+                    return Err(anyhow!(
+                        "power config set requires at least one update flag"
+                    ));
+                }
+                let owner = next_power_owner();
+                let mut config = fetch_power_config(client, devd, &selector).await?;
+                apply_power_config_set_args(&mut config, &args)?;
+                unwrap_device_success_result(
+                    save_power_config_with_timeout_recovery(
+                        client, devd, &selector, owner, &config,
+                    )
+                    .await?,
+                )
+            }
+        },
         PowerCommand::IdleBias { command } => match command {
             IdleBiasCommand::Show { selector } => {
                 let selector =

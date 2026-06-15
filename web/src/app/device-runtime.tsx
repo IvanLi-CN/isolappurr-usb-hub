@@ -686,6 +686,16 @@ export function DeviceRuntimeProvider({
           error: { kind: "offline", message: "device has no active transport" },
         };
       }
+      if (res.ok && method === "power.config_get") {
+        const config = res.value as PowerConfigResponse;
+        return {
+          ok: true,
+          value: {
+            ...config,
+            light_load_mode: config.light_load_mode === "fpwm" ? "fpwm" : "pfm",
+          } as T,
+        };
+      }
       return res;
     },
     [devices, markChannelResult, orderedTransports, requestTransport],

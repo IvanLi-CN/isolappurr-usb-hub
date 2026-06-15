@@ -53,6 +53,9 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST expose owner-facing power-config inspection, semantic USB-C source
   capability commands, and manual output mode controls through `isolapurr`
   over IPC without falling back to raw register editing UX.
+- MUST expose owner-facing saved power-config editing through
+  `isolapurr power config show|set`, where `set` reads the current whole config,
+  mutates only explicitly requested fields, and writes the full config back.
 - MUST expose owner-facing device settings reset through `isolapurr settings
   reset wifi|other`. Human mode must require explicit confirmation unless a
   confirmation bypass flag is supplied; `--json` must return structured
@@ -86,6 +89,8 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr ports replug --port <port_id>`
 - `isolapurr ports route --route <mcu|usb_c>`
 - `isolapurr power show`
+- `isolapurr power config show`
+- `isolapurr power config set [--light-load-mode <pfm|fpwm>] [--tps-mode <auto_follow|manual>] [--voltage-mv <3000..21000>] [--current-limit-ma <1..6350>] [--usb-c-path <automatic|disconnected|forced-on>] [--power-watts <1..100>] [--pd <true|false>] [--pps <true|false>] [--qc20 <true|false>] [--qc30 <true|false>] [--fcp <true|false>] [--afc <true|false>] [--scp <true|false>] [--pe20 <true|false>] [--bc12 <true|false>] [--sfcp <true|false>] [--fixed-pd-voltages <9000,12000,15000,20000|none>] [--pps3-limit-ma <3000|5000>] [--pd-pps-5a <true|false>] [--type-c-broadcast-ma <500|1500>] [--scp-limit-ma <2000|4000|5000>] [--fcp-afc-sfcp-limit-ma <2250|3250>]`
 - `isolapurr power defaults`
 - `isolapurr power output manual [--voltage-mv <3000..21000>] [--current-limit-ma <1..6350>] [--usb-c-path <automatic|disconnected|forced-on>]`
 - `isolapurr power output auto`
@@ -175,6 +180,11 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   then the CLI reads the current whole power config, updates only the requested
   source-capability fields, writes the full config back over IPC, and reports
   the resulting config without exposing raw controller registers.
+- Given the user runs `isolapurr power config set`, when one or more
+  `light_load_mode`, `tps_mode`, manual output, or source-capability flags are
+  supplied, then the CLI reads the current whole power config, updates only the
+  requested fields, writes the full config back over IPC, and reports the
+  resulting saved config.
 - Given the user runs `isolapurr power source-capability set` without any
   update flags in a terminal, when the CLI starts, then it first reads the
   current hardware config plus live USB-C status and opens an interactive

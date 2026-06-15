@@ -125,6 +125,7 @@
                 if power_cleared {
                     power_config = default_power_config;
                     power_config_persisted = false;
+                    tps_state.light_load_mode = None;
                     sw2303_profile_applied = false;
                     sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
                     sw2303_recontract_pending =
@@ -312,6 +313,7 @@
                     Ok(()) => {
                         power_config = next_config;
                         power_config_persisted = true;
+                        tps_state.light_load_mode = None;
                         sw2303_profile_applied = false;
                         sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
                         sw2303_recontract_pending =
@@ -326,12 +328,11 @@
                             let mut guard = api_state.lock().await;
                             guard.power.config = power_config;
                             guard.power.persisted = power_config_persisted;
-                            guard.power.last_path_control = last_sw2303_path_control;
                         }
-                        POWER_CONFIG_RESULT.signal(true);
+                        power_config_result_pending = Some(true);
                     }
                     Err(_) => {
-                        POWER_CONFIG_RESULT.signal(false);
+                        power_config_result_pending = Some(false);
                     }
                 }
             }
@@ -547,6 +548,7 @@
                                 last_fast_protocol = None;
                                 sw2303_stable_reads = 0;
                                 sw2303_recontract_pending = false;
+                                tps_state.light_load_mode = None;
                             }
                         } else {
                             defmt::warn!(
@@ -645,7 +647,38 @@
             }
         }
 
+        #[cfg(feature = "net_http")]
+        if let Some(result) = power_config_result_pending.take() {
+            if result {
+                let mut guard = api_state.lock().await;
+                guard.power.config = power_config;
+                guard.power.persisted = power_config_persisted;
+                guard.power.last_path_control = last_sw2303_path_control;
+            }
+            POWER_CONFIG_RESULT.signal(result);
+        }
+
         loop_delay_ms = SW2303_POLL_MS;
+
+        if let Err(err) = apply_light_load_mode(
+            telemetry_sampler.i2c_mut(),
+            &mut tps_state,
+            power_config.light_load_mode,
+        )
+        .await
+        {
+            if !tps_error_latched {
+                defmt::warn!(
+                    "tps55288 light-load apply error (keeping MODE as-is): {:?}",
+                    defmt::Debug2Format(&err)
+                );
+                tps_error_latched = true;
+            }
+            tps_consecutive_errors = tps_consecutive_errors.saturating_add(1);
+            tps_state.light_load_mode = None;
+            tps_state.last = None;
+            continue;
+        }
 
         let tps_apply_needed = tps_state.last != Some(setpoint);
         let tps_voltage_update_needed = setpoint.v_out_mv > boot_sp.v_out_mv;
@@ -674,6 +707,7 @@
             tps_consecutive_errors = tps_consecutive_errors.saturating_add(1);
 
             tps_state.last = None;
+            tps_state.light_load_mode = None;
             loop_delay_ms = SW2303_ERROR_RETRY_MS;
         } else {
             tps_error_latched = false;
@@ -714,6 +748,7 @@
                         defmt::Debug2Format(&err)
                     );
                     tps_state.last = None;
+                    tps_state.light_load_mode = None;
                 }
             }
             Timer::after_millis(BOOT_PD_DISCHARGE_SETTLE_MS).await;
@@ -809,6 +844,7 @@
                             pd_scl.is_high()
                         );
                         sw2303_i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
+                        tps_state.light_load_mode = None;
                         runtime_boot_ready = true;
                         break;
                     }

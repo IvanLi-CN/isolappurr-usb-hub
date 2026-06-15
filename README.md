@@ -156,6 +156,7 @@ Plan `#0003` 引入了默认启用的网络与 USB JSONL 能力（feature：`net
   - 推荐：使用 Desktop App（Plan `#0008`）做 mDNS/DNS‑SD 自动发现；
   - GitHub Pages / 浏览器：无法使用 mDNS；请使用 “+ Add → IP scan (advanced)” 手动输入 CIDR 扫描，或直接手动填写 Base URL 添加。
 - 设备页：Overview / Settings / Power；Settings 页用于 Wi-Fi、USB-C mode、firmware update 和分范围 settings reset，Power 页用于 SW2303 USB-C capability、manual TPS 输出和 host-lock 保护的高级设置。
+- released CLI 的 `isolapurr power` 面向保存态 power config：`power show` 汇总保存配置与实时 USB-C 状态，`power config show|set` 管理完整 saved power config，`power output ...` 与 `power source-capability set` 继续作为兼容入口复用同一配置写回路径。
 - 质量门槛：`cd web && bun run check`
 - 构建：`cd web && bun run build`
 - Unit tests：`cd web && bun run test:unit`

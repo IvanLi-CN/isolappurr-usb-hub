@@ -72,6 +72,7 @@ export type PowerConfigResponse = {
   hardware: "sw2303" | string;
   persisted: boolean;
   tps_mode: "auto_follow" | "manual";
+  light_load_mode: "pfm" | "fpwm";
   capability: {
     profile: "full" | string;
     power_watts: number;
@@ -100,12 +101,28 @@ export type PowerConfigResponse = {
   lock: { owner: number; expires_at_ms: number } | null;
 };
 
+export type PowerConfigManualInput = {
+  voltage_mv: number;
+  current_limit_ma: number;
+  usb_c_path_mode: "default" | "disconnect" | "force";
+};
+
 export type PowerConfigInput = {
   hardware: "sw2303";
   tps_mode: "auto_follow" | "manual";
+  light_load_mode: "pfm" | "fpwm";
   capability: PowerConfigResponse["capability"];
-  manual: PowerConfigResponse["manual"];
+  manual: PowerConfigManualInput;
 };
+
+function normalizePowerConfigResponse(
+  value: PowerConfigResponse,
+): PowerConfigResponse {
+  return {
+    ...value,
+    light_load_mode: value.light_load_mode === "fpwm" ? "fpwm" : "pfm",
+  };
+}
 
 export type PdDiagnosticsResponse = {
   usb_c_power_enabled: boolean;
@@ -242,6 +259,20 @@ function shouldUsePna(baseUrl: string): boolean {
     return false;
   }
   return url.hostname !== "localhost" && url.hostname !== "127.0.0.1";
+}
+
+function serializePowerConfigInput(config: PowerConfigInput): string {
+  return JSON.stringify({
+    hardware: config.hardware,
+    tps_mode: config.tps_mode,
+    light_load_mode: config.light_load_mode,
+    capability: config.capability,
+    manual: {
+      voltage_mv: config.manual.voltage_mv,
+      current_limit_ma: config.manual.current_limit_ma,
+      usb_c_path_mode: config.manual.usb_c_path_mode,
+    },
+  } satisfies PowerConfigInput);
 }
 
 async function fetchJson<T>(
@@ -395,9 +426,16 @@ export async function setUsbCDownstreamRoute(
 export async function getPowerConfig(
   baseUrl: string,
 ): Promise<Result<PowerConfigResponse>> {
-  return fetchJson<PowerConfigResponse>(baseUrl, "/api/v1/power/config", {
-    method: "GET",
-  });
+  const res = await fetchJson<PowerConfigResponse>(
+    baseUrl,
+    "/api/v1/power/config",
+    {
+      method: "GET",
+    },
+  );
+  return res.ok
+    ? { ok: true, value: normalizePowerConfigResponse(res.value) }
+    : res;
 }
 
 export async function getPdDiagnostics(
@@ -413,26 +451,32 @@ export async function setPowerConfig(
   config: PowerConfigInput,
   owner: number,
 ): Promise<Result<PowerConfigResponse>> {
-  return fetchJson<PowerConfigResponse>(
+  const res = await fetchJson<PowerConfigResponse>(
     baseUrl,
     `/api/v1/power/config?owner=${owner}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(config),
+      body: serializePowerConfigInput(config),
     },
   );
+  return res.ok
+    ? { ok: true, value: normalizePowerConfigResponse(res.value) }
+    : res;
 }
 
 export async function restorePowerDefaults(
   baseUrl: string,
   owner: number,
 ): Promise<Result<PowerConfigResponse>> {
-  return fetchJson<PowerConfigResponse>(
+  const res = await fetchJson<PowerConfigResponse>(
     baseUrl,
     `/api/v1/power/config/defaults?owner=${owner}`,
     { method: "POST" },
   );
+  return res.ok
+    ? { ok: true, value: normalizePowerConfigResponse(res.value) }
+    : res;
 }
 
 export async function setPowerLock(
@@ -440,11 +484,14 @@ export async function setPowerLock(
   owner: number,
   acquire: boolean,
 ): Promise<Result<PowerConfigResponse>> {
-  return fetchJson<PowerConfigResponse>(
+  const res = await fetchJson<PowerConfigResponse>(
     baseUrl,
     `/api/v1/power/config/${acquire ? "lock" : "release"}?owner=${owner}`,
     { method: "POST" },
   );
+  return res.ok
+    ? { ok: true, value: normalizePowerConfigResponse(res.value) }
+    : res;
 }
 
 export async function getIdleBias(

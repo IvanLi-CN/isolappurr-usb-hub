@@ -211,6 +211,11 @@ enum DiagnosticsCommand {
 enum PowerCommand {
     #[command(about = "Show saved power settings and live USB-C source status")]
     Show(PowerSelectorArgs),
+    #[command(name = "config", about = "Show or edit the full saved power config")]
+    Config {
+        #[command(subcommand)]
+        command: PowerConfigCommand,
+    },
     #[command(
         name = "idle-bias",
         about = "Inspect or calibrate USB-C empty-load idle-bias correction"
@@ -304,6 +309,37 @@ enum OutputCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum PowerConfigCommand {
+    #[command(about = "Show the saved power config")]
+    Show {
+        #[command(flatten)]
+        selector: PowerSelectorArgs,
+    },
+    #[command(
+        about = "Update the saved power config",
+        after_help = "When a flag is omitted, the existing saved value is kept."
+    )]
+    Set {
+        #[command(flatten)]
+        selector: PowerSelectorArgs,
+        #[command(flatten)]
+        args: PowerConfigSetArgs,
+    },
+}
+
+#[derive(Debug, clap::Args, Clone, Default)]
+struct PowerConfigSetArgs {
+    #[arg(long, value_enum)]
+    light_load_mode: Option<LightLoadModeArg>,
+    #[arg(long, value_enum)]
+    tps_mode: Option<TpsModeArg>,
+    #[command(flatten)]
+    manual: ManualOutputArgs,
+    #[command(flatten)]
+    source: SourceCapabilitySetArgs,
+}
+
 #[derive(Debug, clap::Args, Clone, Default)]
 struct ManualOutputArgs {
     #[arg(long, value_parser = clap::value_parser!(u16).range(3000..=21000))]
@@ -319,6 +355,36 @@ enum OutputUsbCPathArg {
     Automatic,
     Disconnected,
     ForcedOn,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum LightLoadModeArg {
+    Pfm,
+    Fpwm,
+}
+
+impl LightLoadModeArg {
+    const fn as_config_value(self) -> &'static str {
+        match self {
+            Self::Pfm => "pfm",
+            Self::Fpwm => "fpwm",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum TpsModeArg {
+    AutoFollow,
+    Manual,
+}
+
+impl TpsModeArg {
+    const fn as_config_value(self) -> &'static str {
+        match self {
+            Self::AutoFollow => "auto_follow",
+            Self::Manual => "manual",
+        }
+    }
 }
 
 #[derive(Debug, clap::Args, Clone, Default)]
@@ -364,6 +430,8 @@ struct CliPowerConfig {
     hardware: String,
     persisted: bool,
     tps_mode: String,
+    #[serde(default = "default_light_load_mode")]
+    light_load_mode: String,
     capability: CliPowerCapability,
     manual: CliPowerManual,
     lock: Option<CliPowerLock>,
@@ -648,6 +716,10 @@ struct CliPowerSetpoint {
 const MANUAL_OUTPUT_DEFAULT_VOLTAGE_MV: u16 = 5_000;
 const MANUAL_OUTPUT_DEFAULT_CURRENT_MA: u16 = 1_000;
 
+fn default_light_load_mode() -> String {
+    "pfm".to_string()
+}
+
 impl SourceCapabilitySetArgs {
     fn has_updates(&self) -> bool {
         self.power_watts.is_some()
@@ -667,6 +739,17 @@ impl SourceCapabilitySetArgs {
             || self.type_c_broadcast_ma.is_some()
             || self.scp_limit_ma.is_some()
             || self.fcp_afc_sfcp_limit_ma.is_some()
+    }
+}
+
+impl PowerConfigSetArgs {
+    fn has_updates(&self) -> bool {
+        self.light_load_mode.is_some()
+            || self.tps_mode.is_some()
+            || self.manual.voltage_mv.is_some()
+            || self.manual.current_limit_ma.is_some()
+            || self.manual.usb_c_path.is_some()
+            || self.source.has_updates()
     }
 }
 

@@ -612,8 +612,9 @@ mod power_output_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        CliPowerConfig, CliPowerDiagnostics, DeviceProfile, DiscoverFirmware, ManualOutputArgs,
-        OutputUsbCPathArg, apply_manual_output_args, discover_usb_match_keys,
+        CliPowerConfig, CliPowerDiagnostics, DeviceProfile, DiscoverFirmware, LightLoadModeArg,
+        ManualOutputArgs, OutputUsbCPathArg, PowerConfigSetArgs, SourceCapabilitySetArgs,
+        TpsModeArg, apply_manual_output_args, apply_power_config_set_args, discover_usb_match_keys,
         format_power_config_output, format_power_show_output, parse_device_identity_from_info,
         parse_discovered_http_info, saved_hardware_match_for_transport,
     };
@@ -625,6 +626,7 @@ mod tests {
             "hardware": "sw2303",
             "persisted": true,
             "tps_mode": "manual",
+            "light_load_mode": "fpwm",
             "capability": {
                 "profile": "full",
                 "power_watts": 65,
@@ -661,6 +663,7 @@ mod tests {
         }));
 
         assert!(rendered.contains("Output mode: Manual bench output"));
+        assert!(rendered.contains("Light-load mode: FPWM"));
         assert!(rendered.contains("Current profile: PPS3 5000 mA"));
         assert!(!rendered.to_ascii_lowercase().contains("sw2303"));
         assert!(!rendered.contains("TPS"));
@@ -673,6 +676,7 @@ mod tests {
                 "hardware": "sw2303",
                 "persisted": true,
                 "tps_mode": "auto_follow",
+                "light_load_mode": "pfm",
                 "capability": {
                     "profile": "full",
                     "power_watts": 100,
@@ -847,6 +851,7 @@ mod tests {
         }))
         .expect("legacy config without current profile should deserialize");
 
+        assert_eq!(parsed.light_load_mode, "pfm");
         assert_eq!(parsed.capability.current.pps3_limit_ma, 5000);
         assert!(!parsed.capability.current.pd_pps_5a);
         assert_eq!(parsed.capability.current.type_c_broadcast_ma, 500);
@@ -953,6 +958,7 @@ mod tests {
             "hardware": "legacy-hardware",
             "persisted": true,
             "tps_mode": "auto_follow",
+            "light_load_mode": "pfm",
             "capability": {
                 "profile": "full",
                 "power_watts": 65,
@@ -1001,10 +1007,73 @@ mod tests {
         );
 
         assert_eq!(updated.capability, capability_before);
+        assert_eq!(updated.light_load_mode, "pfm");
         assert_eq!(updated.manual.voltage_mv, 21_000);
         assert_eq!(updated.manual.current_limit_ma, 6_350);
         assert_eq!(updated.manual.usb_c_path_mode, "disconnect");
         assert!(updated.manual.voltage_mv >= 3_000);
+    }
+
+    #[test]
+    fn power_config_set_updates_only_requested_fields() {
+        let original: CliPowerConfig = serde_json::from_value(json!({
+            "hardware": "sw2303",
+            "persisted": true,
+            "tps_mode": "auto_follow",
+            "light_load_mode": "pfm",
+            "capability": {
+                "profile": "full",
+                "power_watts": 65,
+                "protocols": {
+                    "pd": true,
+                    "qc20": false,
+                    "qc30": true,
+                    "fcp": false,
+                    "afc": false,
+                    "scp": false,
+                    "pe20": false,
+                    "bc12": true,
+                    "sfcp": false
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 15000]
+                },
+                "current": {
+                    "pps3_limit_ma": 5000,
+                    "pd_pps_5a": false,
+                    "type_c_broadcast_ma": 1500,
+                    "scp_limit_ma": 5000,
+                    "fcp_afc_sfcp_limit_ma": 3250
+                }
+            },
+            "manual": {
+                "voltage_mv": 5000,
+                "current_limit_ma": 1000,
+                "usb_c_path_mode": "default",
+                "path_policy": "auto"
+            },
+            "lock": null
+        }))
+        .expect("power config should deserialize");
+        let capability_before = original.capability.clone();
+        let mut updated = original.clone();
+
+        apply_power_config_set_args(
+            &mut updated,
+            &PowerConfigSetArgs {
+                light_load_mode: Some(LightLoadModeArg::Fpwm),
+                tps_mode: Some(TpsModeArg::Manual),
+                manual: ManualOutputArgs::default(),
+                source: SourceCapabilitySetArgs::default(),
+            },
+        )
+        .expect("power config set args should apply");
+
+        assert_eq!(updated.light_load_mode, "fpwm");
+        assert_eq!(updated.tps_mode, "manual");
+        assert_eq!(updated.capability, capability_before);
+        assert_eq!(updated.manual, original.manual);
     }
 
     #[test]

@@ -134,10 +134,26 @@ fn apply_manual_output_args(config: &mut CliPowerConfig, args: &ManualOutputArgs
     }
 }
 
+fn apply_power_config_set_args(
+    config: &mut CliPowerConfig,
+    args: &PowerConfigSetArgs,
+) -> anyhow::Result<()> {
+    if let Some(light_load_mode) = args.light_load_mode {
+        config.light_load_mode = light_load_mode.as_config_value().to_string();
+    }
+    if let Some(tps_mode) = args.tps_mode {
+        config.tps_mode = tps_mode.as_config_value().to_string();
+    }
+    apply_manual_output_args(config, &args.manual);
+    apply_source_capability_args(config, &args.source)?;
+    Ok(())
+}
+
 fn power_config_update_payload(config: &CliPowerConfig) -> Value {
     json!({
         "hardware": config.hardware,
         "tps_mode": config.tps_mode,
+        "light_load_mode": config.light_load_mode,
         "voltage_mv": config.manual.voltage_mv,
         "current_limit_ma": config.manual.current_limit_ma,
         "usb_c_path_mode": config.manual.usb_c_path_mode,
@@ -164,6 +180,7 @@ fn power_config_update_payload(config: &CliPowerConfig) -> Value {
 fn same_power_config_contents(left: &CliPowerConfig, right: &CliPowerConfig) -> bool {
     left.hardware == right.hardware
         && left.tps_mode == right.tps_mode
+        && left.light_load_mode == right.light_load_mode
         && left.capability == right.capability
         && left.manual == right.manual
 }
@@ -194,6 +211,7 @@ fn full_power_capability_defaults() -> CliPowerCapability {
 fn expected_default_power_config(current: &CliPowerConfig) -> CliPowerConfig {
     let mut expected = current.clone();
     expected.tps_mode = "auto_follow".to_string();
+    expected.light_load_mode = "pfm".to_string();
     expected.capability = full_power_capability_defaults();
     expected.manual = CliPowerManual {
         voltage_mv: MANUAL_OUTPUT_DEFAULT_VOLTAGE_MV,

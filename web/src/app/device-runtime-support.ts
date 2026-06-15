@@ -118,6 +118,7 @@ export type DeviceRuntimeContextValue = {
 
 const TRANSPORTS: DeviceTransport[] = ["http", "web_serial", "local_usb"];
 const JSONL_POWER_IDLE_BIAS_RUN_TIMEOUT_MS = 178_000;
+const JSONL_POWER_CONFIG_TIMEOUT_MS = 20_000;
 
 export function httpBaseUrlForDevice(device: StoredDevice): string {
   return device.transports?.httpBaseUrl ?? device.baseUrl;
@@ -215,6 +216,14 @@ export function jsonlTimeoutMsForMethod(
   method: string,
   params?: Record<string, unknown>,
 ): number | undefined {
+  if (
+    method === "power.config_set" ||
+    method === "power.config_defaults" ||
+    method === "power.idle_bias_set" ||
+    method === "power.idle_bias_clear"
+  ) {
+    return JSONL_POWER_CONFIG_TIMEOUT_MS;
+  }
   if (method === "power.idle_bias_run") {
     return JSONL_POWER_IDLE_BIAS_RUN_TIMEOUT_MS;
   }
@@ -534,6 +543,7 @@ function defaultPowerConfigIsRestored(value: unknown): boolean {
     config.hardware === "sw2303" &&
     config.persisted === false &&
     config.tps_mode === "auto_follow" &&
+    config.light_load_mode === "pfm" &&
     capability.profile === "full" &&
     capability.power_watts === 100 &&
     protocols.pd === true &&

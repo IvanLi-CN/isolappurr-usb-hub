@@ -42,3 +42,31 @@
 - Changed each idle-bias sweep point to hold for about `1 s`, using the first
   `500 ms` as settle time and averaging multiple samples over the final
   `500 ms`.
+
+## 2026-06-15
+
+- Split TPS terminology so `tps_mode` now means only
+  `auto_follow|manual`, while the persisted light-load switching policy lives
+  in a new top-level `light_load_mode=pfm|fpwm`.
+- Reused the existing power EEPROM record reserved byte for
+  `light_load_mode`, keeping the saved power-config record length compatible
+  and decoding legacy records as `pfm` without a wipe.
+- Added immediate TPS55288 `MODE` register application for saved
+  `light_load_mode`, including `power defaults` and `settings.reset other`
+  fallback to `pfm`.
+- Added Web Power settings and released CLI `isolapurr power config show|set`
+  coverage for the unified saved power-config surface.
+- HIL on device `856a141cdbd4` exposed and then cleared a Local USB transport
+  regression: the whole-config `power.config_set` JSONL frame no longer fit the
+  old `512`-byte firmware line buffer once `light_load_mode` joined the saved
+  payload, so the firmware USB console buffer was raised to `1024` bytes.
+- Tightened `power.config_set` / `power.config_defaults` response consistency
+  so `manual.path_policy` no longer briefly falls back to `unknown` before the
+  runtime SW2303 path snapshot catches up.
+- Fixed the Web save path so `PUT /power/config` no longer echoes read-only
+  `manual.path_policy` back to the device, which had blocked live page saves
+  even though the persisted `light_load_mode` transport contract itself was
+  already correct.
+- Added a live Playwright HIL regression that drives the built Web power page
+  against `isolapurr-devd bridge-http`, saves `PFM -> FPWM -> PFM`, and proves
+  bridge readback stays aligned with what the operator sees after page reload.

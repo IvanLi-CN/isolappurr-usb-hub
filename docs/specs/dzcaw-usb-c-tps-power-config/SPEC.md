@@ -40,12 +40,30 @@ for diagnostics.
 ## Requirements
 
 - `hardware` MUST accept only `sw2303` in this release.
+- `tps_mode` MUST mean only the TPS output target source mode with values
+  `auto_follow|manual`.
+- `light_load_mode` MUST mean only the TPS55288 light-load switching mode
+  with values `pfm|fpwm`.
 - Defaults MUST restore the full SW2303 profile: PD, PPS, QC2, QC3, FCP, AFC,
   SCP, PE2.0, BC1.2, SFCP, fixed 9/12/15/20 V PDOs, and 100 W cap.
 - Manual TPS voltage MUST stay in the 3 V to 21 V range.
 - Manual TPS current MUST be capped by both TPS capability and the 100 W product
   ceiling.
 - Manual TPS output MUST target the banana / 2 mm output path by default.
+- The persisted power-config surface MUST store `light_load_mode` inside the
+  existing EEPROM power record without changing record length or forcing a
+  record wipe.
+- Missing or legacy power-config EEPROM bytes for `light_load_mode` MUST decode
+  as `pfm`.
+- Power config get/set/defaults/reset-other MUST expose `light_load_mode` at
+  the top level of the existing `power/config` payload instead of introducing a
+  dedicated route or EEPROM record.
+- Saving `light_load_mode=fpwm` MUST immediately force TPS55288 light-load
+  behavior through the `MODE` register while explicitly preserving the board's
+  external-VCC and `0x74` I2C-address semantics.
+- Saving `light_load_mode=pfm` MUST immediately return TPS55288 light-load
+  control to the board strap semantics without disturbing `OE`, `DISCHG`, or
+  unrelated MODE bits.
 - USB-C manual path mode MUST have three values:
   - `default`: force-close when no valid SW2303 request exists, or when manual
     VOUT exceeds the SW2303 request; otherwise clear force bits and return path
@@ -84,6 +102,8 @@ for diagnostics.
 - Local advanced controls MUST be blocked while a host lock is active, except
   existing USB-C power on/off behavior.
 - Web UI MUST show write/read errors instead of staying in a loading state.
+- Web UI Power settings MUST expose `light_load_mode` inside the existing power
+  settings panel and reflect the persisted value after reload or reconnect.
 - Web UI protocol cards MUST label `PD` and `PPS` with a `CC` negotiation
   badge, and label the current non-PD protocol cards with a `DPDM` negotiation
   badge.
@@ -123,11 +143,20 @@ for diagnostics.
 
 - Given a missing or invalid EEPROM power record, when firmware boots, then it
   uses the full SW2303 auto-follow defaults and reports `persisted=false`.
+- Given an old EEPROM power record that predates `light_load_mode`, when
+  firmware boots, then it keeps the saved power settings and resolves
+  `light_load_mode=pfm`.
 - Given a valid saved record, when firmware boots, then it loads the record and
   applies the selected SW2303 capability profile after the SW2303 read gate.
 - Given a whole power config write over HTTP, Web Serial, or Local USB, when the
   request validates and the lock allows it, then firmware stores the config to
   EEPROM, updates the API snapshot, and reapplies the SW2303 profile.
+- Given a whole power config write that sets `light_load_mode=fpwm`, when the
+  request succeeds, then TPS55288 immediately switches to forced PWM while
+  preserving external-VCC and `0x74` board semantics.
+- Given a whole power config write that sets `light_load_mode=pfm`, when the
+  request succeeds, then TPS55288 immediately returns to strap-controlled PFM
+  semantics without changing `OE` or `DISCHG`.
 - Given `manual.usb_c_path_mode=default`, when no explicit SW2303 protocol
   request exists and manual VOUT is less than or equal to 5 V, then firmware
   clears SW2303 force-open and force-close bits as the Type-C fallback path.
@@ -172,6 +201,8 @@ for diagnostics.
   `settings.reset scope=other`, then the power config record is erased, runtime
   power config returns to defaults, the API reports `persisted=false`, and Wi-Fi
   credentials remain configured.
+- Given `power defaults` or `settings.reset scope=other`, when the runtime power
+  config is restored, then `light_load_mode` becomes `pfm`.
 - Given a missing or invalid idle-bias EEPROM record, when firmware boots, then
   the API reports `dataset.status="missing"` and `correction_enabled=false`.
 - Given a successful USB-C idle-bias calibration run, when the MCU completes
@@ -238,6 +269,61 @@ PR: include
 
 PR: include
 ![Device power panel desktop](./assets/device-power-panel-default-desktop.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ForcedPwmMode`
+  state: saved `light_load_mode=fpwm`
+  requested_viewport: `1440x1400`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the Power settings panel exposes the persisted TPS
+  light-load mode toggle inside the existing saved power config surface, with
+  `FPWM` selected alongside the unchanged `tps_mode` and source-capability
+  controls.
+
+PR: include
+![Device power panel light-load mode](./assets/device-power-panel-light-load-mode.png)
+
+- source_type: live_hil_web_page
+  story_id_or_title: `device 856a141cdbd4 power page`
+  state: live page saved `light_load_mode=fpwm`
+  requested_viewport: `1440x1600`
+  viewport_strategy: `playwright-local-preview`
+  capture_scope: `browser-viewport`
+  target_program: `isolapurr-devd bridge-http + built web app`
+  evidence_note: proves the real power page can save `FPWM` through the current
+  bridge contract on hardware `656A14`, with the page showing `EEPROM saved`
+  after the write.
+
+PR: include
+![Device power panel fpwm saved live](./assets/device-power-panel-fpwm-saved-live.png)
+
+- source_type: live_hil_web_page
+  story_id_or_title: `device 856a141cdbd4 power page`
+  state: live page reloaded with persisted `light_load_mode=fpwm`
+  requested_viewport: `1440x1600`
+  viewport_strategy: `playwright-local-preview`
+  capture_scope: `browser-viewport`
+  target_program: `isolapurr-devd bridge-http + built web app`
+  evidence_note: proves a fresh page load still reflects the persisted light-
+  load state from EEPROM instead of only showing an optimistic local toggle.
+
+PR: include
+![Device power panel fpwm reloaded live](./assets/device-power-panel-fpwm-reloaded-live.png)
+
+- source_type: live_hil_web_page
+  story_id_or_title: `device 856a141cdbd4 power page`
+  state: live page returned to `light_load_mode=pfm`
+  requested_viewport: `1440x1600`
+  viewport_strategy: `playwright-local-preview`
+  capture_scope: `browser-viewport`
+  target_program: `isolapurr-devd bridge-http + built web app`
+  evidence_note: proves the same page can save back to `PFM`, leaving the final
+  persisted hardware state at the default light-load mode.
+
+PR: include
+![Device power panel current live](./assets/device-power-panel-current-live.png)
 
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/CalibrationApplied`

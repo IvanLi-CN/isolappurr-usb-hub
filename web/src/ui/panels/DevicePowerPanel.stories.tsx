@@ -12,6 +12,7 @@ const manualConfig: PowerConfigResponse = {
   hardware: "sw2303",
   persisted: true,
   tps_mode: "manual",
+  light_load_mode: "pfm",
   capability: {
     profile: "full",
     power_watts: 100,
@@ -62,6 +63,11 @@ const manualForceConfig: PowerConfigResponse = {
     ...manualConfig.manual,
     usb_c_path_mode: "force",
   },
+};
+
+const fpwmConfig: PowerConfigResponse = {
+  ...manualConfig,
+  light_load_mode: "fpwm",
 };
 
 const idleBiasMissing: IdleBiasResponse = {
@@ -241,6 +247,24 @@ export const AutoFollowDefaults: Story = {
     loadIdleBias: () => okIdle(idleBiasReadyOff),
     savePowerConfig: () => ok(autoConfig),
     setPowerLock: () => ok(autoConfig),
+  },
+};
+
+export const ForcedPwmMode: Story = {
+  args: {
+    ...defaultArgs,
+    loadPowerConfig: () => ok(fpwmConfig),
+    savePowerConfig: () => ok(fpwmConfig),
+    setPowerLock: () => ok(fpwmConfig),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole("button", { name: "FPWM" }),
+    ).toHaveTextContent("FPWM");
+    await expect(
+      await canvas.findByText(/PFM follows the board default/i),
+    ).toBeVisible();
   },
 };
 
