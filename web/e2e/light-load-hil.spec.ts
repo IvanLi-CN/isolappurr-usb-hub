@@ -3,8 +3,10 @@ import { expect, test } from "@playwright/test";
 const DEVICE_ID = "856a141cdbd4";
 const DEVICE_NAME = "656A14";
 const DEVD_DEVICE_ID = "usb--dev-cu-usbmodem21221401";
-const DEVD_BASE_URL = "http://127.0.0.1:51233";
+const DEVD_BASE_URL =
+  process.env.ISOLAPURR_HIL_DEVD_BASE_URL ?? "http://127.0.0.1:51233";
 const LOCAL_USB_PORT_PATH = "/dev/cu.usbmodem21221401";
+const HIL_ENABLED = process.env.ISOLAPURR_HIL === "1";
 
 type PowerConfigResponse = {
   result: {
@@ -121,6 +123,11 @@ async function bridgeSetLightLoadMode(
   }
   return ((await res.json()) as PowerConfigResponse).result;
 }
+
+test.skip(
+  !HIL_ENABLED,
+  "Set ISOLAPURR_HIL=1 and ISOLAPURR_HIL_DEVD_BASE_URL to run live hardware HIL.",
+);
 
 test("HIL: web power panel persists light-load mode", async ({ page }) => {
   await seedDesktopStorage();
