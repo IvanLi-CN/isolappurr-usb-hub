@@ -77,6 +77,10 @@ export const WithResults: Story = {
   },
 };
 
+export const WithAddedBadge: Story = {
+  args: WithResults.args,
+};
+
 export const ScanningIpScan: Story = {
   args: {
     snapshot: {

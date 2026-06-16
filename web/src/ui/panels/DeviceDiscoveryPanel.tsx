@@ -189,7 +189,7 @@ export function DeviceDiscoveryPanel({
                         {unknown(d.fqdn ?? d.hostname)}
                       </div>
                       {added ? (
-                        <div className="badge bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]">
+                        <div className="inline-flex h-7 shrink-0 items-center rounded-full bg-[var(--badge-success-bg)] px-3 text-[12px] font-semibold text-[var(--badge-success-text)]">
                           Added
                         </div>
                       ) : null}
