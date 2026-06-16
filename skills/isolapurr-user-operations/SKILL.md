@@ -1,6 +1,6 @@
 ---
 name: isolapurr-user-operations
-description: "Operate IsolaPurr USB Hub from a user machine through released host tools and official Web paths: install released isolapurr/isolapurr-devd, prefer CLI/devd for Agent-driven hardware operations, keep Web Serial as a formal user UI path, use user-level hardware memory, perform Wi-Fi provisioning, status, port control, firmware catalog flashing, reset/monitor, and diagnostics only when the installed CLI exposes the command."
+description: "Operate IsolaPurr USB Hub from a user machine through released host tools and official Web paths: install released isolapurr/isolapurr-devd, prefer released CLI/devd flows over browser automation or localhost HTTP, keep Web Serial as a formal human browser path, use user-level hardware memory, and perform Wi-Fi, port, power, flash, reset, monitor, and diagnostics workflows only when the installed CLI exposes the command."
 ---
 
 # IsolaPurr User Operations
@@ -10,8 +10,8 @@ Use this skill for owner-facing operation of released IsolaPurr USB Hub hardware
 ## Boundaries
 
 - Use released host tools from GitHub Releases: `isolapurr` and `isolapurr-devd`.
-- Agent-driven hardware operation defaults to CLI/devd over local IPC, not browser automation or localhost HTTP.
-- Web Serial is still an official user path. Use it when the user is operating the Web UI directly or explicitly asks for browser Web Serial.
+- Agent-driven hardware operation defaults to released CLI/devd over local IPC, not browser automation, project-local source commands, or localhost HTTP.
+- Web Serial is still an official human browser path. Use it when the owner explicitly wants browser Web Serial or is operating the Web UI directly.
 - Do not require a source checkout, Rust, Bun, Just, `espflash`, or project-local caches for ordinary user operation.
 - Treat the owner-visible hardware interfaces as `USB-A`, `USB-C`, and the `2 mm banana jack`.
 - The `2 mm banana jack` is a bench output on the same TPS/SW2303 power channel as `USB-C`; it is not an independent power rail.
@@ -74,17 +74,16 @@ isolapurr hardware available --scan
 - Use USB/devd IPC first for Agent-run hardware operations. Use `--url http://<host-or-ip>` only for direct device LAN HTTP, never as a way to connect the CLI to devd.
 - Start `isolapurr-devd bridge-http` only when a browser or debug UI explicitly needs a localhost HTTP bridge.
 - Do not auto-select a serial port. A hardware-changing operation must show target evidence first.
-- If devd reports non-IsolaPurr firmware, download mode/no `info` response, or incompatible firmware, do not run ordinary Wi-Fi/port/diagnostic operations. Use first-time flash only after explicit target confirmation, or upgrade firmware when prompted.
+- If devd reports non-IsolaPurr firmware, download mode/no `info` response, or incompatible firmware, do not run ordinary Wi-Fi/port/power/diagnostic operations. Use first-time flash only after explicit target confirmation, or upgrade firmware when prompted.
 
 ## User Workflows
 
-- Identity and status:
+- Discovery and status:
 
 ```bash
 isolapurr devices
 isolapurr discover
-isolapurr status --hardware <id>
-isolapurr status --device <device-id>
+isolapurr status --device-id <device-id>
 isolapurr status --url http://<host-or-ip>
 ```
 
@@ -92,15 +91,51 @@ isolapurr status --url http://<host-or-ip>
 
 ```bash
 isolapurr hardware path
-isolapurr hardware save --id <id> --name <name> --transport usb --device <device-id>
-isolapurr hardware save --id <id> --name <name> --transport http --url http://<host-or-ip>
-isolapurr hardware forget <id>
+isolapurr hardware save --device-id <device-id> --name <name> --port-path <port-path>
+isolapurr hardware save --device-id <device-id> --name <name> --url http://<host-or-ip>
+isolapurr hardware save --device-id <device-id> --name <name> --web-serial-label <label>
+isolapurr hardware forget <device-id>
 ```
 
-- Wi-Fi provisioning is allowed only when `isolapurr wifi --help` exposes it. Never echo PSKs or secrets in chat, logs, screenshots, traces, or PR text.
-- Port power/replug controls are allowed only when the installed CLI exposes the corresponding command. Verify status after writes.
+- Wi-Fi workflows are allowed only when `isolapurr wifi --help` exposes them:
+
+```bash
+isolapurr wifi show --device-id <device-id>
+isolapurr wifi set --device-id <device-id> --ssid <ssid> --psk <psk>
+isolapurr wifi clear --device-id <device-id>
+```
+
+- Port control is allowed only when the installed CLI exposes it. Verify status after writes:
+
+```bash
+isolapurr ports --device-id <device-id>
+isolapurr ports --device-id <device-id> power --port <port-id> --enabled <true|false>
+isolapurr ports --device-id <device-id> replug --port <port-id>
+isolapurr ports --device-id <device-id> route --route <mcu|usb_c>
+```
+
+- Power workflows use the same released CLI surface and saved config path:
+
+```bash
+isolapurr power show --device-id <device-id>
+isolapurr power config show --device-id <device-id>
+isolapurr power config set --device-id <device-id> --tps-mode manual --voltage-mv 9000 --current-limit-ma 3000
+isolapurr power output manual --device-id <device-id> --voltage-mv 9000 --current-limit-ma 3000 --usb-c-path disconnected
+isolapurr power output auto --device-id <device-id>
+isolapurr power source-capability set --device-id <device-id> --power-watts 65 --pd true --pps true
+```
+
+- Device settings reset and diagnostics export use the current released surface:
+
+```bash
+isolapurr settings reset other --device-id <device-id> --yes
+isolapurr settings reset wifi --device-id <device-id> --yes
+isolapurr diagnostics export --device-id <device-id>
+```
+
 - Firmware update must use release firmware catalog/assets. Run a dry-run or validation first when available, then flash only after target, artifact, hash, and identity evidence are clear.
 - First-time full flash is user-supported only through the released CLI's explicit gate: exact port selection, artifact evidence, typed confirmation, and post-flash identity capture.
+- Never echo PSKs or other secrets in chat, logs, screenshots, traces, or PR text.
 
 ## Stop Conditions
 

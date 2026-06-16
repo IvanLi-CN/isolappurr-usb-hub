@@ -64,7 +64,7 @@
 | 6xrna | 隔离侧 USB 状态指示 | 已完成 | `6xrna-ch318-ledd-upstream-link/SPEC.md` | 2026-05-16 | GPIO18/UP0_PG active-high fault sampling and GPIO6/LEDD active-low ready sampling; hub API exposes isolated status fields |
 | u5b2c | USB 通信、固件更新与 Wi-Fi provisioning | 已验证 | `u5b2c-usb-console-provisioning/SPEC.md` | 2026-06-07 | Web Serial, Local USB, EEPROM Wi-Fi config, firmware update, saved-device Hardware page flow, and equal-grade communication path matrix |
 | tvhca | USB-C 下行通道路由切换 | 已完成 | `tvhca-usb-c-downstream-route/SPEC.md` | 2026-05-18 | MCU / USB-C route switching, EEPROM persistence, HTTP/USB JSONL API, Web UI, and dual-button shortcut |
-| r7m2q | CLI/devd host-tools alignment | 已验证 | `r7m2q-cli-devd-alignment/SPEC.md` | 2026-05-31 | Split `isolapurr-devd` + `isolapurr`, shared device profiles, firmware catalog, skills, and desktop-as-client boundary |
+| r7m2q | CLI/devd host-tools alignment | 已验证 | `r7m2q-cli-devd-alignment/SPEC.md` | 2026-06-16 | Split `isolapurr-devd` + `isolapurr`, repo-managed workflow truth-source cleanup, maintainer doc routing, and released CLI command contract gates |
 | jdyh2 | PR label driven automatic release | 已完成 | `jdyh2-pr-label-release-automation/SPEC.md` | 2026-06-01 | Label Gate, centralized Release workflow, manifest-free version injection, and release failure notifier |
 | d8s4n | Source structure guard | 已完成 | `d8s4n-source-structure-guard/SPEC.md` | 2026-06-02 | Source length guard, generated-file exemption, and oversized source split |
 | k7p9x | Firmware Validation Contract | 已完成 | `k7p9x-firmware-validation-contract/SPEC.md` | 2026-06-13 | Shared no_std firmware core host tests plus firmware-check validation entrypoint |
