@@ -67,13 +67,9 @@ The current user-facing truth source is the released CLI surface, not stale docs
 - `isolapurr settings reset wifi|other`
 - `isolapurr flash`, `reset`, `monitor`
 
-### Banned legacy command fragments
+### Legacy-form boundary
 
-These are no longer part of the repo truth source and must not be reintroduced in repo-managed docs or skills:
-
-- Deprecated status selector variants that are no longer part of the released user contract
-- Deprecated hardware-save selector variants that are no longer part of the released user contract
-- Any workflow that treats temporary devd IDs as owner-facing selectors
+Do not reintroduce deprecated released selector variants or temporary devd IDs as owner-facing workflow truth. The exact banned forms belong in the owning spec and repo contract tests, not in this workflow document.
 
 ## Documentation Responsibilities
 
