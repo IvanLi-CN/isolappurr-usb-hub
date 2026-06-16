@@ -159,6 +159,9 @@ pub fn api_url(base: &str, path: &str) -> anyhow::Result<reqwest::Url> {
 
 pub(crate) fn normalize_http_base_url(base: &str) -> String {
     let trimmed = base.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
     if trimmed.contains("://") || trimmed.starts_with("http://") || trimmed.starts_with("https://")
     {
         return trimmed.to_string();
