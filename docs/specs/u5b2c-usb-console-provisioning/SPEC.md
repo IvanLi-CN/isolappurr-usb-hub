@@ -246,6 +246,14 @@ PR: include
 
 ![Device Hardware Wi-Fi configuration mobile](assets/wifi-config-narrow.png)
 
+Device Hardware long identity values desktop:
+
+![Device Hardware long identity values desktop](assets/device-info-long-identity-desktop.png)
+
+Device Hardware long identity values narrow:
+
+![Device Hardware long identity values narrow](assets/device-info-long-identity-narrow.png)
+
 Discovery verified IPv4 URL with mDNS URL reference:
 
 ![Discovery verified IPv4 URL with mDNS URL reference](assets/device-discovery-verified-ipv4-mdns.png)

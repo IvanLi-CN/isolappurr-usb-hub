@@ -37,6 +37,7 @@
 - Device Hardware page: implemented firmware update of a selected app `.bin` at `0x10000` through Local USB or Web Serial for the saved device, plus Wi-Fi configuration read/save/clear controls and saved-device deletion with confirmation. Wi-Fi configuration is read-only over Wi-Fi / LAN; credential changes require Web Serial or Local USB.
 - Product docs: the entry README, interaction spec, and this topic spec now explain why three communication schemes exist, which capabilities each one covers, and why default preference only matters when more than one path is immediately usable.
 - Storybook and visual evidence: implemented for disconnected, connected, flashing, Wi-Fi configured, Wi-Fi empty/error, immediate apply, mobile, offline failover, add-device connection log, and delete confirmation states.
+- Device info identity layout: saved-device Hardware page now uses a shared two-column info-row layout so long `device_id`, `hostname`, and `fqdn` values truncate predictably instead of drifting off-grid; Storybook covers wide and narrow long-identity regressions.
 
 ## Validation
 
@@ -57,3 +58,4 @@
 - Web reset hardware validation: served `web/dist` from `isolapurr-devd bridge-http`, opened the Device Hardware page against a Local USB-backed saved device, seeded saved Wi-Fi credentials plus non-default USB-C route and manual TPS state, then verified `Reset other settings` restored runtime defaults while preserving Wi-Fi and `Reset Wi-Fi` cleared credentials without re-persisting power or route settings.
 - Storybook visual evidence refreshed from `Dialogs/AddDeviceDialog / WebSerialSetup`, `Dialogs/AddDeviceDialog / LocalUsbSetup`, `Panels/DeviceInfoPanel / WebSerialFlashing`, and `Cards/DeviceCard / ConnectedAndHistory`.
 - Storybook visual evidence refreshed for `Cards/DeviceCard / SerialHistoryOnly` so the device list badge contract now proves that a historical Web Serial channel is rendered as history instead of a live connected Serial badge.
+- Storybook visual evidence refreshed for `Panels/DeviceInfoPanel / LongIdentityValues` and `Panels/DeviceInfoPanel / NarrowLongIdentityValues` so the Identity panel proves stable label/value alignment and predictable truncation for long identifiers and FQDNs on desktop and narrow layouts.
