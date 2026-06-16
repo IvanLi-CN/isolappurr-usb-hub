@@ -793,8 +793,6 @@
                 tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32);
 
             let (
-                idle_bias_run,
-                previous_reported_path_control,
                 previous_tps_setpoint_output_enabled,
                 previous_tps_setpoint_mv,
                 previous_tps_setpoint_iout_limit_ma,
@@ -803,8 +801,6 @@
             ) = {
                 let guard = api_state.lock().await;
                 (
-                    guard.idle_bias.run,
-                    guard.power.last_path_control,
                     guard.pd.tps_setpoint_output_enabled,
                     guard.pd.tps_setpoint_mv,
                     guard.pd.tps_setpoint_iout_limit_ma,
@@ -849,6 +845,8 @@
                 };
 
             let mut guard = api_state.lock().await;
+            let idle_bias_run = guard.idle_bias.run;
+            let previous_reported_path_control = guard.power.last_path_control;
             guard.hub = net::ApiHubSnapshot {
                 upstream_connected: api_isolated_usb_ready,
                 isolated_usb_fault: api_isolated_usb_fault,

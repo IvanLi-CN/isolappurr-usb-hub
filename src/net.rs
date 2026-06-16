@@ -939,6 +939,7 @@ mod tests {
         write_pd_diagnostics_json(&mut body, &pd, &idle_bias);
 
         assert!(body.contains("\"usb_c_actual\":{\"status\":\"ok\",\"voltage_mv\":8950,\"current_ma\":42,\"power_mw\":376,\"sample_uptime_ms\":1500},\"tps_setpoint\""));
+        assert!(body.contains("\"iout_limit_ma\":3000,\"ilim_ma\":3000"));
     }
 
     #[test]
