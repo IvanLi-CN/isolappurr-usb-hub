@@ -786,6 +786,16 @@
                 },
             };
 
+            let (tps_iout_limit_readback_ma, tps_iout_limit_readback_enabled) =
+                match isolapurr_usb_hub::pd_i2c::tps55288::read_iout_limit(
+                    telemetry_sampler.i2c_mut(),
+                )
+                .await
+                {
+                    Ok((ma, enabled)) => (Some(ma as u32), Some(enabled)),
+                    Err(_) => (None, None),
+                };
+
             let mut guard = api_state.lock().await;
             let idle_bias_run = guard.idle_bias.run;
             let previous_reported_path_control = guard.power.last_path_control;
@@ -824,7 +834,9 @@
                 ),
                 tps_setpoint_output_enabled: tps_state.last.map(|setpoint| setpoint.output_enabled),
                 tps_setpoint_mv: tps_state.last.map(|setpoint| setpoint.v_out_mv as u32),
-                tps_setpoint_ilim_ma: tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32),
+                tps_setpoint_iout_limit_ma: tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32),
+                tps_iout_limit_readback_ma,
+                tps_iout_limit_readback_enabled,
                 runtime_recovery_count: pd_runtime_recovery_count,
                 sample_uptime_ms: uptime_ms_from_instant(now),
             };

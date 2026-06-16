@@ -188,6 +188,26 @@ mod power_output_tests {
     }
 
     #[test]
+    fn api_selector_normalizes_bare_http_urls_for_power_commands() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "--json",
+            "power",
+            "show",
+            "--url",
+            "192.168.31.224",
+        ])
+        .expect("power show should parse with bare host");
+        let Command::Power {
+            command: PowerCommand::Show(selector),
+        } = cli.command
+        else {
+            panic!("expected power show command");
+        };
+        assert_eq!(selector.url.as_deref(), Some("192.168.31.224"));
+    }
+
+    #[test]
     fn settings_reset_cli_parses_scope_and_confirmation_flag() {
         let cli = Cli::try_parse_from([
             "isolapurr",
@@ -776,7 +796,11 @@ mod tests {
                 "tps_setpoint": {
                     "output_enabled": true,
                     "mv": 20000,
-                    "ilim_ma": 3250
+                    "iout_limit_ma": 3250
+                },
+                "tps_iout_limit_readback": {
+                    "enabled": true,
+                    "ma": 3250
                 },
                 "idle_bias": {
                     "correction_enabled": true,
@@ -808,12 +832,13 @@ mod tests {
         assert!(rendered.contains("Capability state: applied"));
         assert!(rendered.contains("Advertised source: 100 W"));
         assert!(rendered.contains("Negotiated request: 20000 mV @ 3250 mA"));
+        assert!(rendered.contains("TPS IOUT_LIMIT: 3250 mA"));
         assert!(
             rendered.contains("Idle-bias dataset: valid (3000..21000 mV, 37 points, step 500 mV)")
         );
         assert!(rendered.contains("Idle-bias correction: enabled"));
         assert!(!rendered.to_ascii_lowercase().contains("sw2303"));
-        assert!(!rendered.contains("TPS"));
+        assert!(!rendered.contains("TPS55288"));
     }
 
     #[test]
@@ -918,7 +943,11 @@ mod tests {
             "tps_setpoint": {
                 "output_enabled": true,
                 "mv": 12000,
-                "ilim_ma": 4950
+                "iout_limit_ma": 4950
+            },
+            "tps_iout_limit_readback": {
+                "enabled": true,
+                "ma": 4950
             },
             "runtime_recovery_count": 0,
             "sample_uptime_ms": 1500

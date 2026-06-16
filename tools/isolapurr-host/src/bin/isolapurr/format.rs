@@ -364,6 +364,9 @@ fn format_live_power_output(output: &Value) -> String {
         "Output target: {}",
         format_output_target(&diagnostics.tps_setpoint)
     ));
+    if let Some(tps_iout_limit) = format_tps_iout_limit_readback(&diagnostics) {
+        lines.push(tps_iout_limit);
+    }
     lines.push(format!(
         "Idle-bias dataset: {}",
         format_idle_bias_dataset(&diagnostics.idle_bias.dataset)
@@ -705,14 +708,26 @@ fn format_power_request(request: &CliPowerRequest) -> String {
 }
 
 fn format_output_target(setpoint: &CliPowerSetpoint) -> String {
-    match (setpoint.output_enabled, setpoint.mv, setpoint.ilim_ma) {
+    match (setpoint.output_enabled, setpoint.mv, setpoint.iout_limit_ma) {
         (Some(false), _, _) => "disabled".to_string(),
-        (Some(true), Some(mv), Some(ilim_ma)) => format!("{mv} mV @ {ilim_ma} mA"),
+        (Some(true), Some(mv), Some(iout_limit_ma)) => format!("{mv} mV @ {iout_limit_ma} mA"),
         (Some(true), Some(mv), None) => format!("{mv} mV"),
-        (Some(true), None, Some(ilim_ma)) => format!("{ilim_ma} mA current limit"),
+        (Some(true), None, Some(iout_limit_ma)) => format!("{iout_limit_ma} mA current limit"),
         (Some(true), None, None) => "enabled".to_string(),
         (None, _, _) => "unavailable".to_string(),
     }
+}
+
+fn format_tps_iout_limit_readback(diagnostics: &CliPowerDiagnostics) -> Option<String> {
+    let readback = diagnostics.tps_iout_limit_readback.as_ref()?;
+    Some(match (readback.enabled, readback.ma) {
+        (Some(true), Some(ma)) => format!("TPS IOUT_LIMIT: {ma} mA"),
+        (Some(true), None) => "TPS IOUT_LIMIT: enabled".to_string(),
+        (Some(false), Some(ma)) => format!("TPS IOUT_LIMIT: {ma} mA (disabled)"),
+        (Some(false), None) => "TPS IOUT_LIMIT: disabled".to_string(),
+        (None, Some(ma)) => format!("TPS IOUT_LIMIT: {ma} mA"),
+        (None, None) => "TPS IOUT_LIMIT: unavailable".to_string(),
+    })
 }
 
 fn format_faults(diagnostics: &CliPowerDiagnostics) -> String {

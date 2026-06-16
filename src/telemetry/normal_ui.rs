@@ -6,16 +6,13 @@ use ina226::{AVG, Config, INA226, MODE, VBUSCT, VSHCT};
 use super::contract::Field;
 use super::hardware::{
     INA226_U13_ADDR_7BIT, INA226_U13_FALLBACK_ADDR_7BIT, INA226_U17_ADDR_7BIT,
-    INA226_U17_FALLBACK_ADDR_7BIT,
+    INA226_U17_FALLBACK_ADDR_7BIT, U17_CALIBRATION, U17_CURRENT_LSB_UA_PER_BIT,
 };
 use super::i2c_allowlist::{TelemetryI2cAllowlist, TelemetryI2cError};
 
 // Spec: docs/specs/j9twf-gc9307-normal-ui/SPEC.md (INA226 calibration + power source rules).
 const U13_CURRENT_LSB_UA_PER_BIT: u32 = 62;
 const U13_CALIBRATION: u16 = 8258;
-
-const U17_CURRENT_LSB_UA_PER_BIT: u32 = 107;
-const U17_CALIBRATION: u16 = 4785;
 
 const POWER_LSB_MULTIPLIER: u32 = 25;
 

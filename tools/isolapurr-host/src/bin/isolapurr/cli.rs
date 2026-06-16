@@ -81,11 +81,17 @@ impl ApiSelectorArgs {
 struct PowerSelectorArgs {
     #[arg(long = "device-id")]
     device_id: Option<String>,
+    #[arg(long)]
+    url: Option<String>,
 }
 
 impl PowerSelectorArgs {
     fn is_empty(&self) -> bool {
-        self.device_id.is_none()
+        self.device_id.is_none() && self.url.is_none()
+    }
+
+    fn selection_count(&self) -> u8 {
+        self.device_id.is_some() as u8 + self.url.is_some() as u8
     }
 }
 
@@ -495,9 +501,17 @@ struct CliPowerDiagnostics {
     usb_c_actual: Option<CliPortTelemetry>,
     tps_setpoint: CliPowerSetpoint,
     #[serde(default)]
+    tps_iout_limit_readback: Option<CliTpsIoutLimitReadback>,
+    #[serde(default)]
     idle_bias: CliIdleBias,
     runtime_recovery_count: u32,
     sample_uptime_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliTpsIoutLimitReadback {
+    enabled: Option<bool>,
+    ma: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -710,7 +724,7 @@ struct CliPowerRequest {
 struct CliPowerSetpoint {
     output_enabled: Option<bool>,
     mv: Option<u32>,
-    ilim_ma: Option<u32>,
+    iout_limit_ma: Option<u32>,
 }
 
 const MANUAL_OUTPUT_DEFAULT_VOLTAGE_MV: u16 = 5_000;

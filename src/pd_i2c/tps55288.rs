@@ -77,6 +77,14 @@ where
     dev.write_reg(addr::MODE, mode.bits()).await
 }
 
+pub async fn read_iout_limit<I2C>(i2c: &mut I2C) -> Result<(u16, bool), tps55288::Error<I2C::Error>>
+where
+    I2C: embedded_hal_async::i2c::I2c,
+{
+    let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
+    dev.get_ilim_ma().await
+}
+
 pub async fn apply_setpoint_before_enable<I2C>(
     i2c: &mut I2C,
     state: &mut TpsApplyState,

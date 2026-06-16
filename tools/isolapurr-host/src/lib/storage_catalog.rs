@@ -153,8 +153,16 @@ fn now_unix_seconds() -> u64 {
 }
 
 pub fn api_url(base: &str, path: &str) -> anyhow::Result<reqwest::Url> {
-    let base = reqwest::Url::parse(base)?;
+    let base = reqwest::Url::parse(&normalize_http_base_url(base))?;
     Ok(base.join(path.trim_start_matches('/'))?)
+}
+
+fn normalize_http_base_url(base: &str) -> String {
+    let trimmed = base.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return trimmed.to_string();
+    }
+    format!("http://{trimmed}")
 }
 
 pub fn validate_catalog_shape(catalog: &FirmwareCatalog) -> Vec<String> {

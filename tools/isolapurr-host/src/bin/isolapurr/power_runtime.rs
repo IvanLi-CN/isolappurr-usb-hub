@@ -144,7 +144,7 @@ fn saved_hardware_target_label(device: &DeviceProfile) -> String {
 fn power_selector_to_api_selector(selector: PowerSelectorArgs) -> ApiSelectorArgs {
     ApiSelectorArgs {
         device_id: selector.device_id,
-        url: None,
+        url: selector.url,
     }
 }
 
@@ -645,6 +645,9 @@ async fn maybe_select_power_target(
     selector: PowerSelectorArgs,
     allow_interactive: bool,
 ) -> anyhow::Result<ApiSelectorArgs> {
+    if selector.selection_count() > 1 {
+        return Err(anyhow!("select exactly one of --device-id or --url"));
+    }
     if allow_interactive {
         select_saved_power_target_interactively(client, devd, selector).await
     } else {

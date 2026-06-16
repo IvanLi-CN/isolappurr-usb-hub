@@ -20,7 +20,7 @@
 - 显示三组信息（每组含电压与电流/限流字段）：
   1) `U17(meas)`：实测 `V/I`（来源：INA226，I2C 读取）
   2) `U14(meas)`：推导实测 `V/I`（U14 与 U17 共用检流电阻，见 §6.2）
-  3) `SET(applied)`：设定值 `V/Ilimit`（来源：固件实际应用的 `PowerSetpoint`，见 §6.3）
+  3) `SET(applied)`：设定值 `V/IOUT_LIMIT`（来源：固件实际应用的 `PowerSetpoint`，见 §6.3）
 - 错误显示：任一字段采样/计算失败，屏幕对应字段显示 **`ERR`**（不保留上一帧）。
 
 ### 1.3 冻结说明（作为实现基线）
@@ -32,7 +32,7 @@
 - 三行内容定义：
   - `U17(meas)`：真实测量值（INA226）
   - `U14(meas)`：推导测量值（共享检流电阻，`V_u14 = V_u17 + I*Rshunt`）
-  - `SET(applied)`：实际应用 setpoint（`PowerSetpoint.v_out_mv / i_lim_ma`）
+  - `SET(applied)`：实际应用 setpoint（`PowerSetpoint.v_out_mv / i_lim_ma`，对应 TPS55288 `IOUT_LIMIT` 输出电流限值）
 
 ---
 
@@ -162,7 +162,7 @@
 - 来源：固件**实际应用到 TPS** 的 `PowerSetpoint`（`v_out_mv / i_lim_ma`）
 - 显示字段：
   - `V_set = PowerSetpoint.v_out_mv`
-  - `I_lim = PowerSetpoint.i_lim_ma`
+  - `I_out_limit = PowerSetpoint.i_lim_ma`
 
 ---
 
@@ -225,7 +225,7 @@
 - [ ] 上电后 1s 内屏幕点亮，横屏显示三组字段框架。
 - [ ] U17 行每 100 ms 更新一次，显示电压/电流，单位正确。
 - [ ] U14 行按 `V_u14 = V_u17 + I*10mΩ` 推导显示，且电流与 U17 一致（允许测量噪声）。
-- [ ] SET 行显示 `PowerSetpoint.v_out_mv / i_lim_ma`（applied setpoint）。
+- [ ] SET 行显示 `PowerSetpoint.v_out_mv / i_lim_ma`（applied TPS `IOUT_LIMIT` setpoint）。
 
 ### 10.2 边界与异常
 

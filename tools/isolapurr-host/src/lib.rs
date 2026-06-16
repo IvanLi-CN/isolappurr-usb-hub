@@ -968,6 +968,12 @@ mod tests {
     }
 
     #[test]
+    fn api_url_accepts_bare_host_and_joins_paths() {
+        let url = api_url("192.168.31.224", "/api/v1/pd-diagnostics").expect("url should parse");
+        assert_eq!(url.as_str(), "http://192.168.31.224/api/v1/pd-diagnostics");
+    }
+
+    #[test]
     fn import_migrates_legacy_profile_transports() {
         let req: StorageImportRequest = serde_json::from_value(json!({
             "profiles": [

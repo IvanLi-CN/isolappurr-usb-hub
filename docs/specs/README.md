@@ -55,12 +55,12 @@
 
 | ID   | Title | Status | Spec | Last | Notes |
 |-----:|-------|--------|------|------|-------|
-| j9twf | GC9307 正常界面（USB-A + USB-C/PD 双口电参量） | 已完成 | `j9twf-gc9307-normal-ui/SPEC.md` | 2026-04-11 | White-background palette sync; migrated from legacy `docs/plan/0001:gc9307-normal-ui/PLAN.md` |
+| j9twf | GC9307 正常界面（USB-A + USB-C/PD 双口电参量） | 已完成 | `j9twf-gc9307-normal-ui/SPEC.md` | 2026-06-16 | White-background palette sync plus shared U17 5 A calibration constants and applied-setpoint wording alignment |
 | 3xckq | INA226 兼容地址 fallback | 已完成 | `3xckq-ina226-fallback-addresses/SPEC.md` | 2026-03-11 | Depends on `j9twf`; probe-stage Address/Data NAK fallback only |
 | 3j4df | GC9307 外壳联动 Dashboard UI | 已完成 | `3j4df-gc9307-shell-dashboard-ui/SPEC.md` | 2026-04-13 | Hardware-validated shell palette, larger header chips, and fixed rounded-chip renderer on GC9307 |
 | 8885f | GC9307 无闪屏 async 渲染与 PSRAM 双缓冲 | 已完成 | `8885f-gc9307-async-psram-render/SPEC.md` | 2026-04-14 | Async SPI/I2C + PSRAM front/back framebuffer + dirty-band flush |
 | jqapx | SW2303 高压 PPS PDO 缺失定位与修复 | 已完成 | `jqapx-sw2303-pps-high-voltage-pdo/SPEC.md` | 2026-04-15 | Structured PD/PPS capability readback, auto-mode PPS fix, and hardware validation completed |
-| dzcaw | USB-C TPS Power Config | 已完成 | `dzcaw-usb-c-tps-power-config/SPEC.md` | 2026-06-03 | SW2303-only persisted power config, host lock, manual TPS path policy, Web/USB APIs, and power settings UI |
+| dzcaw | USB-C TPS Power Config | 已完成 | `dzcaw-usb-c-tps-power-config/SPEC.md` | 2026-06-16 | SW2303-only persisted power config plus TPS `IOUT_LIMIT` diagnostics/readback semantics, raw U17 PD diagnostics telemetry, and LAN HIL proof |
 | 6xrna | 隔离侧 USB 状态指示 | 已完成 | `6xrna-ch318-ledd-upstream-link/SPEC.md` | 2026-05-16 | GPIO18/UP0_PG active-high fault sampling and GPIO6/LEDD active-low ready sampling; hub API exposes isolated status fields |
 | u5b2c | USB 通信、固件更新与 Wi-Fi provisioning | 已验证 | `u5b2c-usb-console-provisioning/SPEC.md` | 2026-06-07 | Web Serial, Local USB, EEPROM Wi-Fi config, firmware update, saved-device Hardware page flow, and equal-grade communication path matrix |
 | tvhca | USB-C 下行通道路由切换 | 已完成 | `tvhca-usb-c-downstream-route/SPEC.md` | 2026-05-18 | MCU / USB-C route switching, EEPROM persistence, HTTP/USB JSONL API, Web UI, and dual-button shortcut |
