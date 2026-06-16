@@ -128,11 +128,14 @@ describe("getDeviceInfo HTTP error classification", () => {
 describe("setPowerConfig", () => {
   test("omits read-only manual.path_policy from request payload", async () => {
     let bodyText = "";
-    (globalThis as unknown as { window: unknown }).window = {
-      isSecureContext: false,
-      setTimeout,
-      clearTimeout,
-    } as unknown as Window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        isSecureContext: false,
+        setTimeout,
+        clearTimeout,
+      },
+    });
 
     globalThis.fetch = async (_input, init) => {
       bodyText = String(init?.body ?? "");
