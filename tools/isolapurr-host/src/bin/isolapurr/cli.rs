@@ -720,12 +720,33 @@ struct CliPowerRequest {
     ma: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 struct CliPowerSetpoint {
     output_enabled: Option<bool>,
     mv: Option<u32>,
-    #[serde(alias = "ilim_ma")]
     iout_limit_ma: Option<u32>,
+}
+
+impl<'de> Deserialize<'de> for CliPowerSetpoint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawCliPowerSetpoint {
+            output_enabled: Option<bool>,
+            mv: Option<u32>,
+            iout_limit_ma: Option<u32>,
+            ilim_ma: Option<u32>,
+        }
+
+        let raw = RawCliPowerSetpoint::deserialize(deserializer)?;
+        Ok(Self {
+            output_enabled: raw.output_enabled,
+            mv: raw.mv,
+            iout_limit_ma: raw.iout_limit_ma.or(raw.ilim_ma),
+        })
+    }
 }
 
 const MANUAL_OUTPUT_DEFAULT_VOLTAGE_MV: u16 = 5_000;

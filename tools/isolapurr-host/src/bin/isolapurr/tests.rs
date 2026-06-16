@@ -1032,6 +1032,57 @@ mod tests {
     }
 
     #[test]
+    fn power_diagnostics_deserializes_when_both_current_limit_keys_are_present() {
+        let parsed: CliPowerDiagnostics = serde_json::from_value(json!({
+            "usb_c_power_enabled": true,
+            "sw2303_i2c_allowed": true,
+            "sw2303_profile_applied": true,
+            "sw2303_stable_reads": 3,
+            "sw2303_error_latched": false,
+            "tps_error_latched": false,
+            "sw2303_readback_config": {
+                "available": true,
+                "matches_config": true,
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": false,
+                    "qc30": false,
+                    "fcp": false,
+                    "afc": false,
+                    "scp": false,
+                    "pe20": false,
+                    "bc12": false,
+                    "sfcp": false
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                }
+            },
+            "sw2303_request": {
+                "mv": 20000,
+                "ma": 3250
+            },
+            "sw2303_last_valid_request": {
+                "mv": 20000,
+                "ma": 3250
+            },
+            "tps_setpoint": {
+                "output_enabled": true,
+                "mv": 20000,
+                "iout_limit_ma": 3300,
+                "ilim_ma": 3250
+            },
+            "runtime_recovery_count": 0,
+            "sample_uptime_ms": 1500
+        }))
+        .expect("dual-key diagnostics should deserialize");
+
+        assert_eq!(parsed.tps_setpoint.iout_limit_ma, Some(3300));
+    }
+
+    #[test]
     fn manual_output_updates_only_manual_section() {
         let original: CliPowerConfig = serde_json::from_value(json!({
             "hardware": "legacy-hardware",
