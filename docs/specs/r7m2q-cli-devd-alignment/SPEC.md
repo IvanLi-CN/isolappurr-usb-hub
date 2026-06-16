@@ -25,6 +25,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 
 - MUST publish two host-tools binaries: `isolapurr-devd` and `isolapurr`.
 - MUST publish official user installers for released host tools. The installers MUST download platform-matching host-tools archives from GitHub Releases, verify them against `SHA256SUMS`, install only `isolapurr` and `isolapurr-devd` into a user-owned directory, and avoid modifying shell profiles or system PATH automatically.
+- MUST keep repo-managed user workflow docs and skills aligned to the current released CLI surface instead of restoring deprecated command aliases for documentation compatibility.
 - MUST make `isolapurr-devd serve` expose only local IPC by default: Unix domain socket on macOS/Linux and named pipe on Windows.
 - MUST keep `isolapurr` CLI communication with devd on local IPC. The CLI must not connect to devd through HTTP.
 - MUST allow CLI and desktop clients to start `isolapurr-devd` on demand instead of requiring users to pre-start a daemon.
@@ -33,6 +34,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST keep Web Serial available in the Web app as a formal supported channel.
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
+- MUST keep maintainer-facing workflow truth in one detailed project doc, with `README.md` as human navigation and `AGENTS.md` as concise entry rules rather than parallel full workflow manuals.
 - MUST treat missing `isolapurr` or `isolapurr-devd` on a user machine as an install gate before any Agent-driven hardware listing, scan, status, provisioning, flash, reset, monitor, or diagnostics workflow. The user skill must not list system USB or serial ports as a substitute hardware result.
 - MUST report unavailable GitHub Release installer assets as a blocker for user-machine host-tool installation and stop instead of falling back to raw serial enumeration, localhost HTTP, browser automation, source checkout commands, or project-local tooling.
 - MUST store local program hardware memory in the user's config directory, while pure Web stores the same profile shape in browser storage.
@@ -67,6 +69,8 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST treat the full 12-character `device_id` as the only owner-facing device selector for ordinary
   device control commands, including `status`, `wifi`, `ports`, `diagnostics`,
   and all `power` commands.
+- MUST expose the current owner-facing status selector through the canonical device-id/url forms defined by the released CLI; repo-managed docs and skills MUST NOT present deprecated status selector variants as supported released forms.
+- MUST expose the current owner-facing hardware save selector through the canonical device-id/name form defined by the released CLI; repo-managed docs and skills MUST NOT present deprecated hardware-save selector variants as supported released forms.
 - MUST allow advanced Local USB maintenance flows to target hardware by
   `device_id`, `port_path`, or both together, with an explicit intersection
   check when both are supplied.
@@ -75,6 +79,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST redact PSKs, passwords, passphrases, secrets, and tokens in traces, diagnostics, and CLI output.
 - SHOULD expose bounded session logs/traces for Local USB operations.
 - SHOULD keep product docs and release workflows aligned with the shipped host-tools assets.
+- SHOULD keep automated repo contract tests for repo-managed skill/doc drift when the released CLI boundary changes.
 
 ## Public Interfaces
 
@@ -160,6 +165,8 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given a normal user machine does not have released host tools installed, when the user skill prepares hardware operation, then it must present the release source, version, install directory, and PATH impact, ask for confirmation, run the official installer, and verify `isolapurr --help` plus `isolapurr-devd --help`.
 - Given released host tools are missing, when the user asks the skill to list available hardware, then the skill stops at the install gate and does not enumerate system USB or serial ports as a substitute result.
 - Given the selected GitHub Release or installer asset is unavailable, when the user skill prepares host-tool installation, then it reports the release/asset blocker and stops without switching to source commands, raw serial tools, browser automation, or localhost HTTP.
+- Given repo-managed user docs or skills are updated, when CI validates repository contracts, then stale released command fragments such as `status --hardware`, `status --device`, `hardware save --id`, and `hardware save --transport` must fail the contract gate.
+- Given maintainer workflow truth changes, when project docs are updated, then `README.md`, `AGENTS.md`, and `docs/maintainer-workflow.md` must continue to link to the same workflow entrypoints instead of diverging into separate process narratives.
 - Given an installer downloads a host-tools archive, when the archive hash does not match `SHA256SUMS`, then installation fails before replacing any installed tools.
 - Given no IPC clients remain connected, when the configured idle timeout elapses, then `isolapurr-devd serve` exits and removes its Unix socket when applicable.
 - Given the desktop app needs native Local USB capabilities, when no devd is reachable, then the desktop app starts or connects to devd on demand instead of requiring a user-managed daemon.

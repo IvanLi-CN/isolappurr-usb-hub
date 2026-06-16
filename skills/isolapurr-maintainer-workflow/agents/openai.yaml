@@ -1,0 +1,4 @@
+interface:
+  display_name: "IsolaPurr Maintainer Workflow"
+  short_description: "Repo-private routing for maintainer, docs, skill, spec, and release-boundary work."
+  default_prompt: "Use $isolapurr-maintainer-workflow to route IsolaPurr repository work between released user workflows, source maintenance workflows, docs/spec sync, project-doc updates, and external follow-up handoff obligations."

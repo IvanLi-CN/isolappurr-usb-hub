@@ -62,12 +62,14 @@
 - Local USB operations verify project firmware metadata from `info` before ordinary control paths. Non-project firmware, download-mode/no-JSONL targets, and incompatible firmware versions are rejected with corrective guidance; first-time full flash requires explicit confirmation.
 - Web Local USB discovery/request/flash code now targets the new `/api/v1/devices/*` and lease APIs while leaving Web Serial intact. Device profiles can retain HTTP and Local USB transports for one hardware identity, and the runtime prefers successful Local USB operations for unsupported or unreachable Wi-Fi/HTTP paths.
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.
+- Repo-managed workflow truth is now split cleanly by responsibility: `isolapurr-user-operations` tracks the released CLI surface, `isolapurr-developer-operations` tracks source/developer flows, `isolapurr-maintainer-workflow` is the repo-private router, `docs/maintainer-workflow.md` is the detailed maintainer doc, `README.md` handles human navigation, and `AGENTS.md` stays as the concise entry contract.
 - `isolapurr-user-operations` treats missing released host tools and unavailable installer assets as hard stop conditions before hardware enumeration or operations.
 - CI/release workflows build and publish host-tools plus firmware catalog assets.
 - CI runs Python contract tests for release-intent and skill/install-gate consistency.
 - `host-tools.yml` builds/tests/packages host-tools archives for Linux, macOS, and Windows.
 - Official host-tools installers added for Unix and Windows. Tag builds publish the host-tools archives, `SHA256SUMS`, and installer scripts to the matching GitHub Release.
 - `firmware.yml` emits a firmware catalog artifact after firmware build.
+- Removed the repo-managed legacy command examples that still referenced old released forms such as `status --hardware`, `status --device`, and `hardware save --id/--transport`, and added contract tests plus CLI parser tests so that drift fails CI instead of silently reappearing.
 
 ## Remaining hardening
 

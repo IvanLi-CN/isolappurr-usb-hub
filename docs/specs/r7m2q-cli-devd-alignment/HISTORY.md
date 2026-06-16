@@ -24,3 +24,4 @@
 - Tightened the aligned write model so Web power-config saves only send
   writable fields, avoiding accidental echo of read-only `manual.path_policy`
   back into the bridge/device contract.
+- Re-aligned repo-managed workflow truth to the released CLI surface by removing stale user-skill command forms and introducing one maintainer workflow truth source plus a repo-private workflow router.

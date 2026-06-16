@@ -5,20 +5,30 @@ on:
     paths:
       - ".github/scripts/**"
       - ".github/workflows/repo-contracts.yml"
+      - "AGENTS.md"
       - "README.md"
+      - "docs/maintainer-workflow.md"
       - "docs/specs/r7m2q-cli-devd-alignment/**"
+      - "skills/isolapurr-developer-operations/**"
+      - "skills/isolapurr-maintainer-workflow/**"
       - "skills/isolapurr-user-operations/**"
       - "tools/isolapurr-host/install/**"
+      - "tools/isolapurr-host/src/bin/isolapurr/**"
   push:
     branches:
       - main
     paths:
       - ".github/scripts/**"
       - ".github/workflows/repo-contracts.yml"
+      - "AGENTS.md"
       - "README.md"
+      - "docs/maintainer-workflow.md"
       - "docs/specs/r7m2q-cli-devd-alignment/**"
+      - "skills/isolapurr-developer-operations/**"
+      - "skills/isolapurr-maintainer-workflow/**"
       - "skills/isolapurr-user-operations/**"
       - "tools/isolapurr-host/install/**"
+      - "tools/isolapurr-host/src/bin/isolapurr/**"
   workflow_dispatch:
 
 permissions:

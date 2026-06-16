@@ -208,6 +208,98 @@ mod power_output_tests {
     }
 
     #[test]
+    fn status_cli_parses_device_id_and_url_selectors() {
+        let by_id = Cli::try_parse_from(["isolapurr", "status", "--device-id", "aabbccddeeff"])
+            .expect("status by device-id should parse");
+        assert!(matches!(
+            by_id.command,
+            Command::Status(ApiSelectorArgs {
+                device_id: Some(_),
+                url: None
+            })
+        ));
+
+        let by_url = Cli::try_parse_from(["isolapurr", "status", "--url", "http://192.168.31.224"])
+            .expect("status by url should parse");
+        assert!(matches!(
+            by_url.command,
+            Command::Status(ApiSelectorArgs {
+                device_id: None,
+                url: Some(_)
+            })
+        ));
+
+        let err = Cli::try_parse_from(["isolapurr", "status", "--hardware", "abc"])
+            .expect_err("legacy status --hardware must fail");
+        assert!(err.to_string().contains("unexpected argument"));
+
+        let err = Cli::try_parse_from(["isolapurr", "status", "--device", "abc"])
+            .expect_err("legacy status --device must fail");
+        assert!(err.to_string().contains("unexpected argument"));
+    }
+
+    #[test]
+    fn hardware_save_uses_current_selector_shape() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "hardware",
+            "save",
+            "--device-id",
+            "aabbccddeeff",
+            "--name",
+            "Bench Hub",
+            "--port-path",
+            "/dev/cu.usbmodem101",
+        ])
+        .expect("hardware save should parse");
+
+        let Command::Hardware {
+            command:
+                HardwareCommand::Save {
+                    device_id,
+                    name,
+                    port_path,
+                    url,
+                    web_serial_label,
+                },
+        } = cli.command
+        else {
+            panic!("expected hardware save command");
+        };
+        assert_eq!(device_id, "aabbccddeeff");
+        assert_eq!(name, "Bench Hub");
+        assert_eq!(port_path.as_deref(), Some("/dev/cu.usbmodem101"));
+        assert!(url.is_none());
+        assert!(web_serial_label.is_none());
+
+        let err = Cli::try_parse_from([
+            "isolapurr",
+            "hardware",
+            "save",
+            "--id",
+            "legacy",
+            "--name",
+            "Bench Hub",
+        ])
+        .expect_err("legacy hardware save --id must fail");
+        assert!(err.to_string().contains("unexpected argument"));
+
+        let err = Cli::try_parse_from([
+            "isolapurr",
+            "hardware",
+            "save",
+            "--device-id",
+            "aabbccddeeff",
+            "--name",
+            "Bench Hub",
+            "--transport",
+            "local-usb",
+        ])
+        .expect_err("legacy hardware save --transport must fail");
+        assert!(err.to_string().contains("unexpected argument"));
+    }
+
+    #[test]
     fn settings_reset_cli_parses_scope_and_confirmation_flag() {
         let cli = Cli::try_parse_from([
             "isolapurr",
@@ -235,6 +327,13 @@ mod power_output_tests {
         assert!(matches!(scope, SettingsResetScopeArg::Other));
         assert!(yes);
         assert!(cli.json);
+    }
+
+    #[test]
+    fn power_show_rejects_temporary_device_selector_forms() {
+        let err = Cli::try_parse_from(["isolapurr", "power", "show", "--device", "temporary"])
+            .expect_err("legacy power selector must fail");
+        assert!(err.to_string().contains("unexpected argument"));
     }
 
     #[test]
