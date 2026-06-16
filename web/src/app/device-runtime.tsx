@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type DesktopAgent,
   tryBootstrapDesktopAgent,
@@ -47,6 +39,7 @@ import {
   subscribeWebSerialDeviceLinks,
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
+import { DeviceRuntimeContext } from "./device-runtime-context";
 import {
   createEmptyChannels,
   type DeviceRuntime,
@@ -72,14 +65,11 @@ import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
 import { useDevices } from "./devices-store";
 
+export { useDeviceRuntime } from "./device-runtime-context";
 export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
-
-const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
-  null,
-);
 
 function verifiedWifiHttpBaseUrl(
   info: DeviceInfoResponse,
@@ -1198,14 +1188,4 @@ export function DeviceRuntimeProvider({
       {children}
     </DeviceRuntimeContext.Provider>
   );
-}
-
-export function useDeviceRuntime(): DeviceRuntimeContextValue {
-  const ctx = useContext(DeviceRuntimeContext);
-  if (!ctx) {
-    throw new Error(
-      "useDeviceRuntime must be used within <DeviceRuntimeProvider>",
-    );
-  }
-  return ctx;
 }
