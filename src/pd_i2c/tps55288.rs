@@ -83,8 +83,13 @@ pub async fn read_iout_limit<I2C>(i2c: &mut I2C) -> Result<(u16, bool), tps55288
 where
     I2C: embedded_hal_async::i2c::I2c,
 {
+    use tps55288::registers::{IoutLimitBits, addr, code_to_ilim_ma};
+
     let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
-    dev.get_ilim_ma().await
+    let val = dev.read_reg(addr::IOUT_LIMIT).await?;
+    let enabled = (val & IoutLimitBits::EN.bits()) != 0;
+    let code = val & 0x7F;
+    Ok((code_to_ilim_ma(code), enabled))
 }
 
 pub fn should_refresh_iout_limit_readback(
