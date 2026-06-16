@@ -724,6 +724,7 @@ struct CliPowerRequest {
 struct CliPowerSetpoint {
     output_enabled: Option<bool>,
     mv: Option<u32>,
+    #[serde(alias = "ilim_ma")]
     iout_limit_ma: Option<u32>,
 }
 
