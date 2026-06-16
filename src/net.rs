@@ -250,7 +250,9 @@ pub struct ApiPdSnapshot {
     pub usb_c_actual: ApiPortTelemetry,
     pub tps_setpoint_output_enabled: Option<bool>,
     pub tps_setpoint_mv: Option<u32>,
-    pub tps_setpoint_ilim_ma: Option<u32>,
+    pub tps_setpoint_iout_limit_ma: Option<u32>,
+    pub tps_iout_limit_readback_ma: Option<u32>,
+    pub tps_iout_limit_readback_enabled: Option<bool>,
     pub runtime_recovery_count: u32,
     pub sample_uptime_ms: u64,
 }
@@ -277,7 +279,9 @@ impl ApiPdSnapshot {
             usb_c_actual: ApiPortTelemetry::unknown(),
             tps_setpoint_output_enabled: None,
             tps_setpoint_mv: None,
-            tps_setpoint_ilim_ma: None,
+            tps_setpoint_iout_limit_ma: None,
+            tps_iout_limit_readback_ma: None,
+            tps_iout_limit_readback_enabled: None,
             runtime_recovery_count: 0,
             sample_uptime_ms: 0,
         }
@@ -924,7 +928,9 @@ mod tests {
             },
             tps_setpoint_output_enabled: Some(true),
             tps_setpoint_mv: Some(9_000),
-            tps_setpoint_ilim_ma: Some(3_000),
+            tps_setpoint_iout_limit_ma: Some(3_000),
+            tps_iout_limit_readback_ma: Some(3_000),
+            tps_iout_limit_readback_enabled: Some(true),
             runtime_recovery_count: 0,
             sample_uptime_ms: 1_500,
         };
@@ -933,6 +939,7 @@ mod tests {
         write_pd_diagnostics_json(&mut body, &pd, &idle_bias);
 
         assert!(body.contains("\"usb_c_actual\":{\"status\":\"ok\",\"voltage_mv\":8950,\"current_ma\":42,\"power_mw\":376,\"sample_uptime_ms\":1500},\"tps_setpoint\""));
+        assert!(body.contains("\"iout_limit_ma\":3000,\"ilim_ma\":3000"));
     }
 
     #[test]

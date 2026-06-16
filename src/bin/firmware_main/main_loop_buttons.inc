@@ -786,6 +786,64 @@
                 },
             };
 
+            let current_tps_setpoint_output_enabled =
+                tps_state.last.map(|setpoint| setpoint.output_enabled);
+            let current_tps_setpoint_mv = tps_state.last.map(|setpoint| setpoint.v_out_mv as u32);
+            let current_tps_setpoint_iout_limit_ma =
+                tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32);
+
+            let (
+                previous_tps_setpoint_output_enabled,
+                previous_tps_setpoint_mv,
+                previous_tps_setpoint_iout_limit_ma,
+                previous_tps_iout_limit_readback_ma,
+                previous_tps_iout_limit_readback_enabled,
+            ) = {
+                let guard = api_state.lock().await;
+                (
+                    guard.pd.tps_setpoint_output_enabled,
+                    guard.pd.tps_setpoint_mv,
+                    guard.pd.tps_setpoint_iout_limit_ma,
+                    guard.pd.tps_iout_limit_readback_ma,
+                    guard.pd.tps_iout_limit_readback_enabled,
+                )
+            };
+
+            let tps_setpoint_changed =
+                previous_tps_setpoint_output_enabled != current_tps_setpoint_output_enabled
+                    || previous_tps_setpoint_mv != current_tps_setpoint_mv
+                    || previous_tps_setpoint_iout_limit_ma != current_tps_setpoint_iout_limit_ma;
+
+            let now_uptime_ms = uptime_ms_from_instant(now);
+            let refresh_tps_iout_limit_readback =
+                isolapurr_usb_hub::pd_i2c::tps55288::should_refresh_iout_limit_readback(
+                    current_tps_setpoint_output_enabled.is_some(),
+                    tps_setpoint_changed,
+                    previous_tps_iout_limit_readback_ma.is_some()
+                        && previous_tps_iout_limit_readback_enabled.is_some(),
+                    last_tps_iout_limit_readback_attempt_uptime_ms,
+                    now_uptime_ms,
+                );
+            let (tps_iout_limit_readback_ma, tps_iout_limit_readback_enabled) =
+                if current_tps_setpoint_output_enabled.is_none() {
+                    (None, None)
+                } else if refresh_tps_iout_limit_readback {
+                    last_tps_iout_limit_readback_attempt_uptime_ms = Some(now_uptime_ms);
+                    match isolapurr_usb_hub::pd_i2c::tps55288::read_iout_limit(
+                        telemetry_sampler.i2c_mut(),
+                    )
+                    .await
+                    {
+                        Ok((ma, enabled)) => (Some(ma as u32), Some(enabled)),
+                        Err(_) => (None, None),
+                    }
+                } else {
+                    (
+                        previous_tps_iout_limit_readback_ma,
+                        previous_tps_iout_limit_readback_enabled,
+                    )
+                };
+
             let mut guard = api_state.lock().await;
             let idle_bias_run = guard.idle_bias.run;
             let previous_reported_path_control = guard.power.last_path_control;
@@ -822,9 +880,11 @@
                     api_usb_c_metrics_raw,
                     api_sample_uptime_ms,
                 ),
-                tps_setpoint_output_enabled: tps_state.last.map(|setpoint| setpoint.output_enabled),
-                tps_setpoint_mv: tps_state.last.map(|setpoint| setpoint.v_out_mv as u32),
-                tps_setpoint_ilim_ma: tps_state.last.map(|setpoint| setpoint.i_lim_ma as u32),
+                tps_setpoint_output_enabled: current_tps_setpoint_output_enabled,
+                tps_setpoint_mv: current_tps_setpoint_mv,
+                tps_setpoint_iout_limit_ma: current_tps_setpoint_iout_limit_ma,
+                tps_iout_limit_readback_ma,
+                tps_iout_limit_readback_enabled,
                 runtime_recovery_count: pd_runtime_recovery_count,
                 sample_uptime_ms: uptime_ms_from_instant(now),
             };

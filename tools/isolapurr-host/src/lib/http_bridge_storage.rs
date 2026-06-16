@@ -320,7 +320,7 @@ fn parse_web_storage_device(value: &Value) -> anyhow::Result<DeviceProfile> {
         .get("baseUrl")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("device.baseUrl is required"))?;
-    Ok(DeviceProfile {
+    sanitize_profile(DeviceProfile {
         id,
         name,
         transports: Some(parse_storage_transports(device, base_url)),
@@ -328,6 +328,7 @@ fn parse_web_storage_device(value: &Value) -> anyhow::Result<DeviceProfile> {
         identity: None,
         last_seen_at: Some(now_unix_seconds()),
     })
+    .ok_or_else(|| anyhow!("device could not be normalized"))
 }
 
 pub(super) fn parse_import_profiles(

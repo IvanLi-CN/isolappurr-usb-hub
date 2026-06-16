@@ -153,8 +153,20 @@ fn now_unix_seconds() -> u64 {
 }
 
 pub fn api_url(base: &str, path: &str) -> anyhow::Result<reqwest::Url> {
-    let base = reqwest::Url::parse(base)?;
+    let base = reqwest::Url::parse(&normalize_http_base_url(base))?;
     Ok(base.join(path.trim_start_matches('/'))?)
+}
+
+pub(crate) fn normalize_http_base_url(base: &str) -> String {
+    let trimmed = base.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.contains("://") || trimmed.starts_with("http://") || trimmed.starts_with("https://")
+    {
+        return trimmed.to_string();
+    }
+    format!("http://{trimmed}")
 }
 
 pub fn validate_catalog_shape(catalog: &FirmwareCatalog) -> Vec<String> {
@@ -544,7 +556,7 @@ fn normalize_transports(
 ) -> Option<DeviceProfileTransports> {
     let transports = transports?;
     let http_base_url = transports.http_base_url.and_then(|value| {
-        let trimmed = value.trim().to_string();
+        let trimmed = normalize_http_base_url(&value);
         if trimmed.is_empty() {
             None
         } else {

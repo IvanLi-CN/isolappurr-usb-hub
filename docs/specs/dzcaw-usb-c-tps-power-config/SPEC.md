@@ -81,6 +81,12 @@ for diagnostics.
 - Firmware MUST expose USB-C raw INA226 telemetry and corrected telemetry at
   the same time; the main `/ports` telemetry surface MUST report corrected
   values while a sibling raw field preserves the original INA226 reading.
+- Firmware MUST expose `/api/v1/pd-diagnostics.tps_setpoint.iout_limit_ma` as
+  the applied TPS55288 `IOUT_LIMIT` output current limit setpoint, not as the
+  TPS55288 `ILIM` pin average-inductor-current limit.
+- Firmware MUST expose `/api/v1/pd-diagnostics.tps_iout_limit_readback` as the
+  raw TPS55288 `IOUT_LIMIT` register readback used for CLI/API/HIL write-path
+  verification.
 - Corrected USB-C current MUST clamp at `0 mA` after subtracting the
   interpolated idle-bias offset, and corrected USB-C power MUST be recomputed
   from raw voltage times corrected current.
@@ -132,6 +138,9 @@ for diagnostics.
   wide-screen optimized table view for exact point inspection.
 - Web UI and human CLI MUST show corrected USB-C telemetry by default and keep
   the raw INA226 reading on debug or JSON surfaces only.
+- `/api/v1/pd-diagnostics.usb_c_actual` MUST keep exposing the raw U17 INA226
+  reading used by the PD diagnostics surface so HIL can distinguish control
+  faults from idle-bias correction effects.
 - Storybook coverage MUST include normal, host-locked, failure, save, restore,
   and narrow states for the power panel; power-panel idle-bias uncalibrated,
   correction off, correction on, running, confirmation, and failure states;

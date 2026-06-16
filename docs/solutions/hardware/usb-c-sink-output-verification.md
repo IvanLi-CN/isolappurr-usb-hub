@@ -148,6 +148,16 @@ Observed passing pattern:
   `pd.diagnostics` method is the firmware side of the same proof: compare
   `sw2303_request`, `tps_setpoint`, `sw2303_stable_reads`, and latch flags
   against LoadLynx `/api/v1/pd` and `/api/v1/status`.
+- For current-limit HIL, force LoadLynx into `CV` mode so the DUT is pushed
+  into the TPS55288 constant-current region. Judge the limit primarily from
+  IsolaPurr PD diagnostics:
+  `tps_setpoint.iout_limit_ma`, `tps_iout_limit_readback.ma`,
+  `usb_c_actual.current_ma`, and fault latches. Treat LoadLynx current and
+  terminal voltage only as auxiliary cross-checks.
+- Under a high manual target such as `20 V`, a sink-side voltage drop toward
+  `12 V` during `CV` loading is not by itself a failure. If the IsolaPurr side
+  current stays near the requested `IOUT_LIMIT` and no latch is set, that drop
+  is expected evidence that the DUT entered CC regulation.
 - If the same USB-C route carries the local JSONL control channel, a controlled
   USB-C output-off test must keep the data route connected; otherwise the test
   can turn TPS output off but lose the only path that can turn it back on.
@@ -179,6 +189,9 @@ Observed diagnostic pattern:
 
 - Do not use `INA226 U17` as proof of USB-C connector voltage. It is a TPS
   front-end observation point only.
+- `pd-diagnostics.usb_c_actual` is still the raw U17 front-end reading. Use it
+  to prove TPS current-limit control and telemetry agreement, but not to claim
+  the sink connector voltage matches the DUT front-end voltage.
 - Do not use `INA226` readings for TPS/SW2303 gating decisions.
 - Do not read, model, log, display, or use the SW2303 connection-indicator field.
 - Do not force `SW2303` pass-path control to make a test pass. The only

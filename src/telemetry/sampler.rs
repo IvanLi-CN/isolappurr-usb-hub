@@ -5,18 +5,12 @@ use ina226::{AVG, Config, INA226, MODE, VBUSCT, VSHCT};
 use super::contract::{
     Field, SetApplied, TelemetrySnapshot, VoltageCurrent, derive_u14_meas_from_u17,
 };
-use super::hardware::{INA226_U17_ADDR_7BIT, U17_I_MAX_MA, U17_R29_SHUNT_RESISTANCE_UOHMS};
+use super::hardware::{
+    INA226_U17_ADDR_7BIT, U17_CALIBRATION, U17_CURRENT_LSB_UA_PER_BIT,
+    U17_R29_SHUNT_RESISTANCE_UOHMS,
+};
 use super::i2c_allowlist::{TelemetryI2cAllowlist, TelemetryI2cError};
 use crate::pd_i2c::PowerSetpoint;
-
-const INA226_SCALING_VALUE: u64 = 5_120_000_000; // 0.00512 * 1e12
-
-fn ceil_div_u32(n: u32, d: u32) -> u32 {
-    if d == 0 {
-        return 0;
-    }
-    n.div_ceil(d)
-}
 
 fn clamp_u32_to_u16(v: u32) -> u16 {
     v.min(u32::from(u16::MAX)) as u16
@@ -45,10 +39,9 @@ where
     /// Create a new sampler with an already-wrapped I2C allowlist bus.
     pub fn new_with_allowlist(i2c: TelemetryI2cAllowlist<I2C>) -> Self {
         let ina226 = INA226::new(i2c, INA226_U17_ADDR_7BIT);
-        let current_lsb_ua = ceil_div_u32(u32::from(U17_I_MAX_MA) * 1_000, 1 << 15);
         Self {
             ina226,
-            current_lsb_ua,
+            current_lsb_ua: U17_CURRENT_LSB_UA_PER_BIT,
         }
     }
 
@@ -64,14 +57,13 @@ where
 
         self.ina226.set_configuration(&config).await?;
 
-        let denom = (self.current_lsb_ua as u64) * (U17_R29_SHUNT_RESISTANCE_UOHMS as u64);
-        let cal = if denom == 0 {
-            0
-        } else {
-            (INA226_SCALING_VALUE / denom).min(u64::from(u16::MAX)) as u16
-        };
-
-        self.ina226.set_callibration_raw(cal).await?;
+        debug_assert_eq!(
+            U17_CALIBRATION,
+            ((5_120_000_000u64
+                / ((self.current_lsb_ua as u64) * (U17_R29_SHUNT_RESISTANCE_UOHMS as u64)))
+                .min(u64::from(u16::MAX))) as u16
+        );
+        self.ina226.set_callibration_raw(U17_CALIBRATION).await?;
         Ok(())
     }
 

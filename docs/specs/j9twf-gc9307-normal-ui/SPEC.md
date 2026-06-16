@@ -4,7 +4,7 @@
 
 - Status: 已完成
 - Created: 2026-01-07
-- Last: 2026-04-11
+- Last: 2026-06-16
 
 ## 背景 / 问题陈述
 
@@ -75,7 +75,7 @@
   - `VOUT_TPS` 通过 `Q7` 连接到 `VBUS_TPS`
 - INA226 固定校准参数：
   - U13：`Current_LSB=62µA/bit`，`Calibration=8258`（目标 `I_MAX=2.000A`）
-  - U17：`Current_LSB=107µA/bit`，`Calibration=4785`（目标 `I_MAX=3.500A`）
+  - U17：`Current_LSB=153µA/bit`，`Calibration=3346`（目标 `I_MAX=5.000A`）
 - 功率换算：`Power_LSB = 25 × Current_LSB`；读取失败视为 `ERROR`。
 - 颜色（RGB565）：背景 `0xFFFF`；电压 `0x9201`；电流 `0xB8E3`；功率 `0x1407`；未插入 `0x4AAC`；错误 `0x98C3`；超量程 `0xC201`
 

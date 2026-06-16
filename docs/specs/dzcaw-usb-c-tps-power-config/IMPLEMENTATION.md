@@ -28,6 +28,9 @@
   external-VCC and `0x74` semantics, and saved `light_load_mode=pfm`
   immediately returns to strap-controlled behavior without disturbing `OE`,
   `DISCHG`, or unrelated bits.
+- Added PD diagnostics readback for the applied TPS55288 `IOUT_LIMIT`
+  register so HIL can compare requested current limit, quantized setpoint, and
+  live register state without inferring the chain indirectly.
 - Increased the USB JSONL request frame buffer from `512` to `1024` bytes after
   HIL proved that the whole-config `power.config_set` payload now exceeds the
   old limit once capability, manual, and `light_load_mode` fields are all
@@ -75,6 +78,12 @@
   flows to reuse the same read-modify-write config mutation helper, keeping the
   old entrypoints compatible while aligning them with the new `power config`
   surface.
+- Normalized bare host `--url` values such as `192.168.31.224` into
+  `http://...` API bases so power commands can target LAN devices without
+  requiring an explicit scheme.
+- Renamed owner-facing diagnostics output from ambiguous `ilim_ma` wording to
+  explicit TPS `IOUT_LIMIT` terminology and exposed the raw register readback
+  in both JSON and human-readable output.
 
 ## Web
 
@@ -93,6 +102,9 @@
   manual setpoint `x.xxV` on the left badge and `FOCUS` / `ON` / `OFF` on the
   right badge, with the USB-C card header capped at exactly two badges while
   reusing the existing USB-C card V/A/W live telemetry.
+- Updated the Web diagnostics contract to consume
+  `tps_setpoint.iout_limit_ma` plus `tps_iout_limit_readback`, matching the
+  clarified TPS55288 `IOUT_LIMIT` semantics used by CLI and firmware.
 - Refined the Dashboard USB-C status-chip gate so inline live badges suppress
   the legacy status chip only after the USB-C port telemetry resolves cleanly;
   legacy no-diagnostics states and real USB-C telemetry errors keep the
@@ -167,6 +179,13 @@ against the same `856a141cdbd4` board. The Playwright regression seeds desktop
 storage, opens `/devices/856a141cdbd4/power`, toggles `PFM -> FPWM -> PFM`
 through the rendered panel, and polls the bridge `power/config` readback until
 the persisted `light_load_mode` matches each saved state.
+
+Later LAN HIL on `f293cc9c139e @ 192.168.31.224` used LoadLynx in `CV` mode as
+the load stimulus and treated IsolaPurr PD diagnostics as the primary verdict
+surface. At a `20 V / 3000 mA` manual target, both CLI/devd and Web/LAN control
+paths held `tps_setpoint.iout_limit_ma=3000`,
+`tps_iout_limit_readback.ma=3000`, and `usb_c_actual.current_ma≈3004` with no
+TPS or SW2303 fault latches.
 
 ## HIL Verification
 

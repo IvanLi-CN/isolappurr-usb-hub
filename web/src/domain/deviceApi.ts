@@ -187,7 +187,11 @@ export type PdDiagnosticsResponse = {
   tps_setpoint: {
     output_enabled: boolean | null;
     mv: number | null;
-    ilim_ma: number | null;
+    iout_limit_ma: number | null;
+  };
+  tps_iout_limit_readback: {
+    enabled: boolean | null;
+    ma: number | null;
   };
   runtime_recovery_count: number;
   sample_uptime_ms: number;

@@ -99,7 +99,11 @@ const autoPdDiagnostics: PdDiagnosticsResponse = {
   tps_setpoint: {
     output_enabled: false,
     mv: null,
-    ilim_ma: null,
+    iout_limit_ma: null,
+  },
+  tps_iout_limit_readback: {
+    enabled: null,
+    ma: null,
   },
   runtime_recovery_count: 0,
   sample_uptime_ms: 123_456,
@@ -122,7 +126,11 @@ const manualFocusDiagnostics: PdDiagnosticsResponse = {
   tps_setpoint: {
     output_enabled: true,
     mv: 3300,
-    ilim_ma: 3000,
+    iout_limit_ma: 3000,
+  },
+  tps_iout_limit_readback: {
+    enabled: true,
+    ma: 3000,
   },
 };
 
@@ -143,7 +151,11 @@ const manualOnDiagnostics: PdDiagnosticsResponse = {
   tps_setpoint: {
     output_enabled: true,
     mv: 9000,
-    ilim_ma: 3000,
+    iout_limit_ma: 3000,
+  },
+  tps_iout_limit_readback: {
+    enabled: true,
+    ma: 3000,
   },
 };
 
@@ -165,7 +177,11 @@ const manualOffDiagnostics: PdDiagnosticsResponse = {
   tps_setpoint: {
     output_enabled: true,
     mv: 9000,
-    ilim_ma: 3000,
+    iout_limit_ma: 3000,
+  },
+  tps_iout_limit_readback: {
+    enabled: true,
+    ma: 3000,
   },
 };
 

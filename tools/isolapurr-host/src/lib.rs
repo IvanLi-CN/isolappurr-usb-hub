@@ -968,6 +968,47 @@ mod tests {
     }
 
     #[test]
+    fn api_url_accepts_bare_host_and_joins_paths() {
+        let url = api_url("192.168.31.224", "/api/v1/pd-diagnostics").expect("url should parse");
+        assert_eq!(url.as_str(), "http://192.168.31.224/api/v1/pd-diagnostics");
+    }
+
+    #[test]
+    fn import_canonicalizes_bare_http_host_urls() {
+        let devices = parse_import_profiles(&StorageImportRequest {
+            devices: vec![json!({
+                "id": "f293cc9c139e",
+                "name": "Bare host",
+                "baseUrl": "192.168.31.224"
+            })],
+            profiles: vec![],
+            settings: None,
+        })
+        .expect("bare host import should normalize");
+
+        assert_eq!(devices[0].http_base_url(), Some("http://192.168.31.224"));
+    }
+
+    #[test]
+    fn import_blank_http_base_url_falls_back_to_default_local_target() {
+        let devices = parse_import_profiles(&StorageImportRequest {
+            devices: vec![json!({
+                "id": "f293cc9c139e",
+                "name": "Blank host",
+                "baseUrl": "   "
+            })],
+            profiles: vec![],
+            settings: None,
+        })
+        .expect("blank host import should still normalize");
+
+        assert_eq!(
+            devices[0].http_base_url(),
+            Some("http://isolapurr-usb-hub-f293cc9c139e.local")
+        );
+    }
+
+    #[test]
     fn import_migrates_legacy_profile_transports() {
         let req: StorageImportRequest = serde_json::from_value(json!({
             "profiles": [

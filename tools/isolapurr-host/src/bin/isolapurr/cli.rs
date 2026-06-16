@@ -81,11 +81,17 @@ impl ApiSelectorArgs {
 struct PowerSelectorArgs {
     #[arg(long = "device-id")]
     device_id: Option<String>,
+    #[arg(long)]
+    url: Option<String>,
 }
 
 impl PowerSelectorArgs {
     fn is_empty(&self) -> bool {
-        self.device_id.is_none()
+        self.device_id.is_none() && self.url.is_none()
+    }
+
+    fn selection_count(&self) -> u8 {
+        self.device_id.is_some() as u8 + self.url.is_some() as u8
     }
 }
 
@@ -495,9 +501,17 @@ struct CliPowerDiagnostics {
     usb_c_actual: Option<CliPortTelemetry>,
     tps_setpoint: CliPowerSetpoint,
     #[serde(default)]
+    tps_iout_limit_readback: Option<CliTpsIoutLimitReadback>,
+    #[serde(default)]
     idle_bias: CliIdleBias,
     runtime_recovery_count: u32,
     sample_uptime_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliTpsIoutLimitReadback {
+    enabled: Option<bool>,
+    ma: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -706,11 +720,49 @@ struct CliPowerRequest {
     ma: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 struct CliPowerSetpoint {
     output_enabled: Option<bool>,
     mv: Option<u32>,
-    ilim_ma: Option<u32>,
+    iout_limit_ma: Option<u32>,
+}
+
+impl Serialize for CliPowerSetpoint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(Some(4))?;
+        map.serialize_entry("output_enabled", &self.output_enabled)?;
+        map.serialize_entry("mv", &self.mv)?;
+        map.serialize_entry("iout_limit_ma", &self.iout_limit_ma)?;
+        map.serialize_entry("ilim_ma", &self.iout_limit_ma)?;
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CliPowerSetpoint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawCliPowerSetpoint {
+            output_enabled: Option<bool>,
+            mv: Option<u32>,
+            iout_limit_ma: Option<u32>,
+            ilim_ma: Option<u32>,
+        }
+
+        let raw = RawCliPowerSetpoint::deserialize(deserializer)?;
+        Ok(Self {
+            output_enabled: raw.output_enabled,
+            mv: raw.mv,
+            iout_limit_ma: raw.iout_limit_ma.or(raw.ilim_ma),
+        })
+    }
 }
 
 const MANUAL_OUTPUT_DEFAULT_VOLTAGE_MV: u16 = 5_000;

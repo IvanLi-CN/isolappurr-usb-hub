@@ -70,3 +70,16 @@
 - Added a live Playwright HIL regression that drives the built Web power page
   against `isolapurr-devd bridge-http`, saves `PFM -> FPWM -> PFM`, and proves
   bridge readback stays aligned with what the operator sees after page reload.
+
+## 2026-06-16
+
+- Clarified that PD diagnostics `tps_setpoint.iout_limit_ma` means the applied
+  TPS55288 `IOUT_LIMIT` output current limit, not the `ILIM` pin's average
+  inductor-current limit.
+- Added `tps_iout_limit_readback` so HIL can verify CLI/Web write-paths
+  against the live TPS register state.
+- Aligned LAN CLI power commands with owner-facing bare-host URLs by
+  normalizing them to `http://...` API bases.
+- Reconfirmed current-limit behavior on `f293cc9c139e @ 192.168.31.224` with
+  LoadLynx CV loading: both CLI/devd and Web/LAN paths held the 3 A limit
+  correctly under real load once the extra external supply was removed.

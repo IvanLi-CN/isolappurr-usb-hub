@@ -200,6 +200,7 @@
     let mut last_pd_runtime_recovery: Option<Instant> = None;
     let mut pd_runtime_recovery_count: u32 = 0;
     let mut tps_5v_setpoint_since: Option<Instant> = None;
+    let mut last_tps_iout_limit_readback_attempt_uptime_ms: Option<u64> = None;
     let mut last_tps_status: Option<(
         tps55288::data_types::OperatingStatus,
         tps55288::data_types::FaultStatus,

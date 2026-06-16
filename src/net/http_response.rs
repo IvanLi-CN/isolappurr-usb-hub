@@ -111,8 +111,14 @@ pub fn write_pd_diagnostics_json(
     write_json_bool_or_null(body, pd.tps_setpoint_output_enabled);
     let _ = body.push_str(",\"mv\":");
     write_json_u32_or_null(body, pd.tps_setpoint_mv);
+    let _ = body.push_str(",\"iout_limit_ma\":");
+    write_json_u32_or_null(body, pd.tps_setpoint_iout_limit_ma);
     let _ = body.push_str(",\"ilim_ma\":");
-    write_json_u32_or_null(body, pd.tps_setpoint_ilim_ma);
+    write_json_u32_or_null(body, pd.tps_setpoint_iout_limit_ma);
+    let _ = body.push_str("},\"tps_iout_limit_readback\":{\"enabled\":");
+    write_json_bool_or_null(body, pd.tps_iout_limit_readback_enabled);
+    let _ = body.push_str(",\"ma\":");
+    write_json_u32_or_null(body, pd.tps_iout_limit_readback_ma);
     let _ = body.push_str("},\"idle_bias\":");
     write_idle_bias_json(body, idle_bias);
     let _ = core::write!(
