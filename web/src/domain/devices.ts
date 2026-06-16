@@ -143,6 +143,47 @@ export function mergeStoredDeviceTransports(
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
+function hostnameLooksLikeMdns(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname.endsWith(".local");
+  } catch {
+    return false;
+  }
+}
+
+export function preferVerifiedHttpBaseUrl(
+  device: StoredDevice,
+  verifiedHttpBaseUrl: string,
+): StoredDevice {
+  const normalized = normalizeBaseUrl(verifiedHttpBaseUrl);
+  if (!normalized.ok) {
+    return device;
+  }
+
+  const currentHttp = device.transports?.httpBaseUrl ?? device.baseUrl;
+  const currentNormalized = normalizeBaseUrl(currentHttp);
+  const currentBaseUrl = currentNormalized.ok ? currentNormalized.baseUrl : "";
+  if (
+    currentBaseUrl === normalized.baseUrl &&
+    device.baseUrl === normalized.baseUrl
+  ) {
+    return device;
+  }
+
+  const shouldRebindBaseUrl =
+    device.baseUrl !== normalized.baseUrl &&
+    (device.baseUrl === currentBaseUrl ||
+      hostnameLooksLikeMdns(device.baseUrl));
+
+  return {
+    ...device,
+    baseUrl: shouldRebindBaseUrl ? normalized.baseUrl : device.baseUrl,
+    transports: mergeStoredDeviceTransports(device.transports, {
+      httpBaseUrl: normalized.baseUrl,
+    }),
+  };
+}
+
 export function normalizeBaseUrl(
   raw: string,
 ): { ok: true; baseUrl: string } | { ok: false; error: string } {

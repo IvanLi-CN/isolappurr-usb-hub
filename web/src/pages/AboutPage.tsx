@@ -186,8 +186,13 @@ export function AboutPage() {
           1) Add a device: baseUrl examples
         </div>
         <div className="mt-[10px] space-y-[6px] font-mono text-[12px] font-semibold text-[var(--muted)] leading-4">
-          <div>http://&lt;hostname&gt;.local</div>
           <div>http://192.168.1.42</div>
+          <div>http://&lt;hostname&gt;.local</div>
+        </div>
+        <div className="mt-2 text-[12px] font-semibold text-[var(--muted)] leading-5">
+          Save a verified IPv4 when possible. The mDNS URL is still accepted,
+          but it depends on local name resolution and can be less stable across
+          environments.
         </div>
 
         <div className="mt-6 text-[14px] font-medium">

@@ -22,6 +22,7 @@ import {
   loadStoredDevices,
   mergeStoredDeviceTransports,
   normalizeBaseUrl,
+  preferVerifiedHttpBaseUrl,
   saveStoredDevices,
   validateAddDeviceInput,
 } from "../domain/devices";
@@ -35,6 +36,7 @@ type DevicesContextValue = {
   devices: StoredDevice[];
   addDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   upsertDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
+  rebindHttpBaseUrl: (deviceId: string, httpBaseUrl: string) => Promise<void>;
   removeDevice: (deviceId: string) => Promise<void>;
   getDevice: (deviceId: string) => StoredDevice | undefined;
 };
@@ -224,6 +226,20 @@ export function DevicesProvider({
             input.transports,
           ),
         });
+      },
+      rebindHttpBaseUrl: async (deviceId, httpBaseUrl) => {
+        const existing = devices.find((device) => device.id === deviceId);
+        if (!existing) {
+          return;
+        }
+        const next = preferVerifiedHttpBaseUrl(existing, httpBaseUrl);
+        if (
+          next.baseUrl === existing.baseUrl &&
+          next.transports?.httpBaseUrl === existing.transports?.httpBaseUrl
+        ) {
+          return;
+        }
+        await persistDevice(next);
       },
       removeDevice: async (deviceId) => {
         if (agent) {

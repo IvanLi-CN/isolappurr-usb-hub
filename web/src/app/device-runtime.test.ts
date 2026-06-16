@@ -7,6 +7,8 @@ import {
   orderedDeviceTransports,
   resolveActiveDeviceTransport,
   resolveTransportBadgeState,
+  runQueuedDeviceRequest,
+  shortApiError,
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
 } from "./device-runtime-support";
@@ -249,5 +251,88 @@ describe("jsonlTimeoutMsForMethod", () => {
 
   test("leaves ordinary requests on the default transport timeout", () => {
     expect(jsonlTimeoutMsForMethod("power.config_get")).toBeUndefined();
+  });
+});
+
+describe("runQueuedDeviceRequest", () => {
+  test("serializes requests for the same device", async () => {
+    const queues: Record<string, Promise<void>> = {};
+    const events: string[] = [];
+    let releaseFirst: (() => void) | null = null;
+    let notifyFirstStarted: (() => void) | null = null;
+    const firstStarted = new Promise<void>((resolve) => {
+      notifyFirstStarted = resolve;
+    });
+
+    const first = runQueuedDeviceRequest(queues, "f293cc9c139e", async () => {
+      events.push("first:start");
+      notifyFirstStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      events.push("first:end");
+      return "first";
+    });
+
+    const second = runQueuedDeviceRequest(queues, "f293cc9c139e", async () => {
+      events.push("second:start");
+      events.push("second:end");
+      return "second";
+    });
+
+    await firstStarted;
+    expect(events).toEqual(["first:start"]);
+
+    releaseFirst?.();
+    const results = await Promise.all([first, second]);
+    expect(results).toEqual(["first", "second"]);
+    expect(events).toEqual([
+      "first:start",
+      "first:end",
+      "second:start",
+      "second:end",
+    ]);
+  });
+
+  test("keeps different devices independent", async () => {
+    const queues: Record<string, Promise<void>> = {};
+    const events: string[] = [];
+
+    await Promise.all([
+      runQueuedDeviceRequest(queues, "f293cc9c139e", async () => {
+        events.push("f293:start");
+        await Promise.resolve();
+        events.push("f293:end");
+      }),
+      runQueuedDeviceRequest(queues, "856a141cdbd4", async () => {
+        events.push("856a:start");
+        await Promise.resolve();
+        events.push("856a:end");
+      }),
+    ]);
+
+    expect(events).toContain("f293:start");
+    expect(events).toContain("856a:start");
+    expect(events).toContain("f293:end");
+    expect(events).toContain("856a:end");
+  });
+});
+
+describe("shortApiError", () => {
+  test("maps browser-blocked and name-resolution failures to actionable labels", () => {
+    expect(
+      shortApiError({
+        kind: "browser_blocked",
+        actionable: "Browser blocked",
+        message: "blocked",
+      }),
+    ).toBe("Browser blocked: private-network access");
+    expect(
+      shortApiError({
+        kind: "name_resolution",
+        actionable: "Name/Reachability",
+        message: "not resolved",
+      }),
+    ).toBe("Name/Reachability: use verified IPv4");
   });
 });

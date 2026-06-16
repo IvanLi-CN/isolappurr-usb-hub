@@ -549,9 +549,7 @@ pub fn spawn_wifi_mdns_http(
         ))
         .ok()?;
 
-    spawner
-        .spawn(http_task(stack, device_names, wifi_state, api_state))
-        .ok()?;
+    crate::net::spawn_http_tasks(&spawner, stack, device_names, wifi_state, api_state)?;
 
     let mdns_cfg = MdnsConfig {
         hostname: device_names.hostname.clone(),

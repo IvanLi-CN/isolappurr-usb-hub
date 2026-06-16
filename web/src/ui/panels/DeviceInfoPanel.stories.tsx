@@ -82,6 +82,23 @@ type Story = StoryObj<typeof DeviceInfoPanel>;
 
 export const Default: Story = {};
 
+export const LongIdentityValues: Story = {
+  args: {
+    loadInfo: async () => ({
+      ok: true,
+      value: {
+        device: {
+          ...mockInfo.device,
+          device_id: "isolapurr-hub-aabbccddeeff00112233445566778899",
+          hostname: "isolapurr-usb-hub-aabbcc001122-bench-south-east",
+          fqdn: "hub-a.local/this/is/a/very/long/fqdn/to/ensure/truncate/works/in/narrow/layouts/without/pushing/other/fields/off-grid",
+          variant: "tps-sw-rev-b-lab-build",
+        },
+      },
+    }),
+  },
+};
+
 export const EmptyWifiConfig: Story = {
   args: {
     transport: "web_serial",
@@ -222,6 +239,13 @@ export const NarrowWifiConfig: Story = {
     wifiManagementTransport: "web_serial",
     loadWifiConfig: async () => ({ ok: true, value: mockWifiConfigured }),
   },
+};
+
+export const NarrowLongIdentityValues: Story = {
+  parameters: {
+    viewport: { defaultViewport: "isolapurrNarrow" },
+  },
+  args: LongIdentityValues.args,
 };
 
 export const ResetSettingsHttpOnly: Story = {

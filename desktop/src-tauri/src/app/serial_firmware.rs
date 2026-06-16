@@ -446,9 +446,20 @@ fn validate_flash_identity(
     if expected.device_id.is_none() && expected.mac.is_none() {
         return Err("firmware flash requires an expected device_id or mac".to_string());
     }
-    let actual = identify_port(port_path)?;
+    let actual = identify_port_for_confirmed_flash(port_path)?;
     ensure_identity_matches(&actual, expected)?;
     Ok(actual)
+}
+
+fn identify_port_for_confirmed_flash(port_path: &str) -> Result<PortIdentityCache, String> {
+    match identify_port_with_retries(port_path, 2, StdDuration::from_millis(400)) {
+        Ok(identity) => Ok(identity),
+        Err(first_err) if first_err.contains("serial response timed out") => {
+            let _ = run_firmware_reset(port_path);
+            identify_port_with_retries(port_path, 3, StdDuration::from_secs(1))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn ensure_identity_matches(

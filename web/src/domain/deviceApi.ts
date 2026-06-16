@@ -19,7 +19,16 @@ export type DeviceInfoResponse = {
 
 export type DeviceApiError =
   | { kind: "offline"; message: string }
-  | { kind: "preflight_blocked"; message: string }
+  | {
+      kind: "name_resolution";
+      message: string;
+      actionable: "Name/Reachability";
+    }
+  | {
+      kind: "browser_blocked";
+      message: string;
+      actionable: "Browser blocked";
+    }
   | { kind: "busy"; message: string; retryable: true }
   | {
       kind: "api_error";
@@ -67,6 +76,9 @@ export type SettingsResetResponse = {
 export type RebootResponse = {
   accepted: true;
 };
+
+const DEFAULT_HTTP_TIMEOUT_MS = 4000;
+const MDNS_HTTP_TIMEOUT_MS = 6500;
 
 export type PowerConfigResponse = {
   hardware: "sw2303" | string;
@@ -275,6 +287,122 @@ function serializePowerConfigInput(config: PowerConfigInput): string {
   } satisfies PowerConfigInput);
 }
 
+function requestTimeoutMs(baseUrl: string): number {
+  try {
+    const hostname = new URL(baseUrl).hostname;
+    if (hostname.endsWith(".local")) {
+      return MDNS_HTTP_TIMEOUT_MS;
+    }
+  } catch {
+    // Fall back to the default timeout when the base URL is malformed.
+  }
+  return DEFAULT_HTTP_TIMEOUT_MS;
+}
+
+function classifyFetchFailure(
+  baseUrl: string,
+  pnaEnabled: boolean,
+  err: unknown,
+): DeviceApiError {
+  let hostname = "";
+  try {
+    hostname = new URL(baseUrl).hostname;
+  } catch {
+    hostname = "";
+  }
+
+  if (err instanceof DOMException && err.name === "AbortError") {
+    if (hostname.endsWith(".local")) {
+      return {
+        kind: "name_resolution",
+        actionable: "Name/Reachability",
+        message:
+          "The mDNS hostname did not resolve quickly enough. Try the verified IPv4 address or re-check local network name resolution.",
+      };
+    }
+    return {
+      kind: "offline",
+      message: "Device did not respond before the request timed out.",
+    };
+  }
+
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  const normalized = message.toLowerCase();
+  const isLocalHostname = hostname.endsWith(".local");
+  const explicitBrowserBlockedSignals = [
+    "private network access",
+    "cors",
+    "access-control",
+    "blocked by client",
+  ];
+  const explicitNameReachabilitySignals = [
+    "err_name_not_resolved",
+    "name not resolved",
+    "dns",
+  ];
+  const genericFetchFailureSignals = [
+    "failed to fetch",
+    "networkerror",
+    "network error",
+    "load failed",
+    "network request failed",
+    "fetch failed",
+  ];
+
+  if (
+    explicitBrowserBlockedSignals.some((signal) => normalized.includes(signal))
+  ) {
+    return {
+      kind: "browser_blocked",
+      actionable: "Browser blocked",
+      message:
+        "Browser blocked private-network access. Allow the request or retry from a browser context that can access LAN devices.",
+    };
+  }
+
+  if (
+    explicitNameReachabilitySignals.some((signal) =>
+      normalized.includes(signal),
+    )
+  ) {
+    return {
+      kind: "name_resolution",
+      actionable: "Name/Reachability",
+      message:
+        "Hostname could not be reached. Try the verified IPv4 address or re-check local network name resolution.",
+    };
+  }
+
+  if (
+    isLocalHostname &&
+    genericFetchFailureSignals.some((signal) => normalized.includes(signal))
+  ) {
+    return {
+      kind: "name_resolution",
+      actionable: "Name/Reachability",
+      message:
+        "Hostname could not be reached. If you are using the HTTPS web app, browser private-network policy may also be involved. Try the verified IPv4 address first.",
+    };
+  }
+
+  if (
+    pnaEnabled &&
+    genericFetchFailureSignals.some((signal) => normalized.includes(signal))
+  ) {
+    return {
+      kind: "browser_blocked",
+      actionable: "Browser blocked",
+      message:
+        "Browser blocked private-network access. Allow the request or retry from a browser context that can access LAN devices.",
+    };
+  }
+
+  return {
+    kind: "offline",
+    message: "Device is unreachable on the current network path.",
+  };
+}
+
 async function fetchJson<T>(
   baseUrl: string,
   path: string,
@@ -283,7 +411,10 @@ async function fetchJson<T>(
   const url = new URL(path, baseUrl).toString();
 
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 4000);
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    requestTimeoutMs(baseUrl),
+  );
 
   const pnaEnabled = shouldUsePna(baseUrl);
   const requestInit = {
@@ -343,22 +474,9 @@ async function fetchJson<T>(
       },
     };
   } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      return {
-        ok: false,
-        error: { kind: "offline", message: "request timed out" },
-      };
-    }
-    const kind = pnaEnabled ? "preflight_blocked" : "offline";
     return {
       ok: false,
-      error: {
-        kind,
-        message:
-          kind === "offline"
-            ? "device unreachable"
-            : "CORS/PNA preflight blocked",
-      },
+      error: classifyFetchFailure(baseUrl, pnaEnabled, err),
     };
   } finally {
     window.clearTimeout(timeout);

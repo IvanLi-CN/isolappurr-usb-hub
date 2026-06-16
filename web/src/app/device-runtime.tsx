@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type DesktopAgent,
   tryBootstrapDesktopAgent,
@@ -47,6 +39,7 @@ import {
   subscribeWebSerialDeviceLinks,
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
+import { DeviceRuntimeContext } from "./device-runtime-context";
 import {
   createEmptyChannels,
   type DeviceRuntime,
@@ -64,6 +57,7 @@ import {
   recoverWifiClearLikeTimeout,
   resolveActiveDeviceTransport,
   resolveOrderedDeviceTransports,
+  runQueuedDeviceRequest,
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
 } from "./device-runtime-support";
@@ -71,20 +65,30 @@ import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
 import { useDevices } from "./devices-store";
 
+export { useDeviceRuntime } from "./device-runtime-context";
 export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
 
-const DeviceRuntimeContext = createContext<DeviceRuntimeContextValue | null>(
-  null,
-);
+function verifiedWifiHttpBaseUrl(
+  info: DeviceInfoResponse,
+  deviceId: string,
+): string | null {
+  const infoDeviceId = info.device.device_id?.trim().toLowerCase();
+  const wifiIpv4 = info.device.wifi?.ipv4?.trim();
+  if (!infoDeviceId || infoDeviceId !== deviceId || !wifiIpv4) {
+    return null;
+  }
+  return `http://${wifiIpv4}`;
+}
+
 export function DeviceRuntimeProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { devices } = useDevices();
+  const { devices, rebindHttpBaseUrl } = useDevices();
   const { pushToast } = useToast();
   const [now, setNow] = useState(() => Date.now());
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(
@@ -94,6 +98,7 @@ export function DeviceRuntimeProvider({
   const localUsbAgent = useRef<DesktopAgent | null>(null);
   const localUsbPortByDevice = useRef<Record<string, string>>({});
   const localUsbRequestQueues = useRef<Record<string, Promise<void>>>({});
+  const httpRequestQueues = useRef<Record<string, Promise<void>>>({});
   const preferredTransportByDevice = useRef<Record<string, DeviceTransport>>(
     {},
   );
@@ -107,6 +112,7 @@ export function DeviceRuntimeProvider({
           delete next[id];
           delete localUsbPortByDevice.current[id];
           delete localUsbRequestQueues.current[id];
+          delete httpRequestQueues.current[id];
           delete preferredTransportByDevice.current[id];
         }
       }
@@ -190,78 +196,76 @@ export function DeviceRuntimeProvider({
         };
       }
       const timeoutMs = jsonlTimeoutMsForMethod(method, params);
-      const previous =
-        localUsbRequestQueues.current[deviceId] ?? Promise.resolve();
-      let releaseQueue: () => void = () => undefined;
-      const current = new Promise<void>((resolve) => {
-        releaseQueue = resolve;
-      });
-      const queued = previous.catch(() => undefined).then(() => current);
-      localUsbRequestQueues.current[deviceId] = queued;
-      await previous.catch(() => undefined);
-      try {
-        let caughtError: unknown = null;
-        try {
-          const request = {
-            id: nextJsonlRequestId(),
+      return runQueuedDeviceRequest(
+        localUsbRequestQueues.current,
+        deviceId,
+        async () => {
+          let caughtError: unknown = null;
+          try {
+            const request = {
+              id: nextJsonlRequestId(),
+              method,
+              params,
+              timeoutMs,
+            };
+            const response =
+              target.kind === "devd_device"
+                ? await sendDevdLocalUsbJsonlRequest(
+                    agent,
+                    target.deviceId,
+                    request,
+                  )
+                : await sendLocalUsbJsonlRequest(
+                    agent,
+                    target.portPath,
+                    request,
+                  );
+            const envelope = response as JsonlEnvelope<T>;
+            if (envelope?.ok && envelope.result !== undefined) {
+              return { ok: true, value: envelope.result };
+            }
+            return {
+              ok: false,
+              error: {
+                kind: "api_error",
+                status: 500,
+                code: envelope?.error?.code ?? "local_usb_error",
+                message: envelope?.error?.message ?? "Local USB request failed",
+                retryable: envelope?.error?.retryable ?? false,
+              },
+            };
+          } catch (err) {
+            caughtError = err;
+          }
+          const recovered = await recoverWifiClearLikeTimeout<T>(
+            async (request) =>
+              target.kind === "devd_device"
+                ? await sendDevdLocalUsbJsonlRequest(
+                    agent,
+                    target.deviceId,
+                    request,
+                  )
+                : await sendLocalUsbJsonlRequest(
+                    agent,
+                    target.portPath,
+                    request,
+                  ),
             method,
             params,
-            timeoutMs,
-          };
-          const response =
-            target.kind === "devd_device"
-              ? await sendDevdLocalUsbJsonlRequest(
-                  agent,
-                  target.deviceId,
-                  request,
-                )
-              : await sendLocalUsbJsonlRequest(agent, target.portPath, request);
-          const envelope = response as JsonlEnvelope<T>;
-          if (envelope?.ok && envelope.result !== undefined) {
-            return { ok: true, value: envelope.result };
+          );
+          if (recovered) {
+            return recovered;
+          }
+          if (shouldResetLocalUsbConnectionCache(caughtError)) {
+            localUsbAgent.current = null;
+            delete localUsbPortByDevice.current[deviceId];
           }
           return {
             ok: false,
-            error: {
-              kind: "api_error",
-              status: 500,
-              code: envelope?.error?.code ?? "local_usb_error",
-              message: envelope?.error?.message ?? "Local USB request failed",
-              retryable: envelope?.error?.retryable ?? false,
-            },
+            error: localUsbErrorToDeviceApiError(caughtError),
           };
-        } catch (err) {
-          caughtError = err;
-        }
-        const recovered = await recoverWifiClearLikeTimeout<T>(
-          async (request) =>
-            target.kind === "devd_device"
-              ? await sendDevdLocalUsbJsonlRequest(
-                  agent,
-                  target.deviceId,
-                  request,
-                )
-              : await sendLocalUsbJsonlRequest(agent, target.portPath, request),
-          method,
-          params,
-        );
-        if (recovered) {
-          return recovered;
-        }
-        if (shouldResetLocalUsbConnectionCache(caughtError)) {
-          localUsbAgent.current = null;
-          delete localUsbPortByDevice.current[deviceId];
-        }
-        return {
-          ok: false,
-          error: localUsbErrorToDeviceApiError(caughtError),
-        };
-      } finally {
-        releaseQueue();
-        if (localUsbRequestQueues.current[deviceId] === queued) {
-          delete localUsbRequestQueues.current[deviceId];
-        }
-      }
+        },
+      );
     },
     [findLocalUsbTarget, getLocalUsbAgent],
   );
@@ -335,7 +339,9 @@ export function DeviceRuntimeProvider({
       params?: Record<string, unknown>,
     ): Promise<Result<T>> => {
       if (transport === "http") {
-        return requestHttpTransport<T>(baseUrl, method, params);
+        return runQueuedDeviceRequest(httpRequestQueues.current, deviceId, () =>
+          requestHttpTransport<T>(baseUrl, method, params),
+        );
       }
       if (transport === "web_serial") {
         return requestWebSerial<T>(deviceId, method, params);
@@ -629,10 +635,22 @@ export function DeviceRuntimeProvider({
       markChannelResult(deviceId, activeTransport, checked);
       if (checked.ok) {
         preferredTransportByDevice.current[deviceId] = activeTransport;
+        if (activeTransport === "http") {
+          const rebound = verifiedWifiHttpBaseUrl(checked.value, deviceId);
+          if (rebound) {
+            void rebindHttpBaseUrl(deviceId, rebound);
+          }
+        }
       }
       return checked;
     },
-    [devices, markChannelResult, requestTransport, runtimeById],
+    [
+      devices,
+      markChannelResult,
+      rebindHttpBaseUrl,
+      requestTransport,
+      runtimeById,
+    ],
   );
 
   const runDeviceCommand = useCallback(
@@ -1170,14 +1188,4 @@ export function DeviceRuntimeProvider({
       {children}
     </DeviceRuntimeContext.Provider>
   );
-}
-
-export function useDeviceRuntime(): DeviceRuntimeContextValue {
-  const ctx = useContext(DeviceRuntimeContext);
-  if (!ctx) {
-    throw new Error(
-      "useDeviceRuntime must be used within <DeviceRuntimeProvider>",
-    );
-  }
-  return ctx;
 }

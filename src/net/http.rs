@@ -1,22 +1,30 @@
 const HTTP_PORT: u16 = 80;
+const HTTP_CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
+const HTTP_LISTENER_POOL_SIZE: usize = 3;
 
-#[embassy_executor::task]
+#[embassy_executor::task(pool_size = 3)]
 async fn http_task(
     stack: Stack<'static>,
     device_names: &'static DeviceNames,
     wifi_state: &'static WifiStateMutex,
     api_state: &'static ApiSharedMutex,
+    listener_slot: u8,
 ) {
     let mut rx_buf = [0u8; 1024];
     let mut tx_buf = [0u8; 1024];
 
-    info!("HTTP server starting (port={})", HTTP_PORT);
+    info!(
+        "HTTP server listener starting (port={}, slot={})",
+        HTTP_PORT, listener_slot
+    );
 
     loop {
         stack.wait_config_up().await;
 
         let mut socket = TcpSocket::new(stack, &mut rx_buf, &mut tx_buf);
-        socket.set_timeout(Some(Duration::from_secs(10)));
+        // Each listener owns one TCP socket. Keep the idle connection timeout short so
+        // speculative browser sockets or half-open clients cannot monopolize one slot.
+        socket.set_timeout(Some(HTTP_CONNECTION_TIMEOUT));
 
         match socket.accept(HTTP_PORT).await {
             Ok(()) => {
@@ -29,11 +37,32 @@ async fn http_task(
                 let _ = socket.flush().await;
             }
             Err(err) => {
-                warn!("HTTP accept error: {:?}", err);
+                warn!("HTTP accept error (slot={}): {:?}", listener_slot, err);
                 Timer::after(Duration::from_millis(200)).await;
             }
         }
     }
+}
+
+pub fn spawn_http_tasks(
+    spawner: &embassy_executor::Spawner,
+    stack: Stack<'static>,
+    device_names: &'static DeviceNames,
+    wifi_state: &'static WifiStateMutex,
+    api_state: &'static ApiSharedMutex,
+) -> Option<()> {
+    for slot in 0..HTTP_LISTENER_POOL_SIZE {
+        spawner
+            .spawn(http_task(
+                stack,
+                device_names,
+                wifi_state,
+                api_state,
+                slot as u8,
+            ))
+            .ok()?;
+    }
+    Some(())
 }
 
 async fn handle_http_connection(

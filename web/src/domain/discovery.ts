@@ -271,12 +271,8 @@ export function parseDiscoveredDeviceFromApiInfo(
       ? (wifiRaw.ipv4 ?? undefined)
       : undefined;
 
-  const preferredBaseUrl = fqdn?.endsWith(".local")
-    ? `http://${fqdn}`
-    : baseUrlByIp;
-
   return {
-    baseUrl: preferredBaseUrl,
+    baseUrl: baseUrlByIp,
     device_id: deviceId ?? undefined,
     hostname,
     fqdn,

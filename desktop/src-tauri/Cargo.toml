@@ -39,3 +39,5 @@ url = "2.5.4"
 
 [dev-dependencies]
 http-body-util = "0.1.2"
+
+[workspace]

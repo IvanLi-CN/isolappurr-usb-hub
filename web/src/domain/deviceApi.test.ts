@@ -1,23 +1,141 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { setPowerConfig } from "./deviceApi";
+import { getDeviceInfo, setPowerConfig } from "./deviceApi";
 
 const originalFetch = globalThis.fetch;
 const originalWindow = globalThis.window;
 
+function installWindow(origin = "https://isolapurr.ivanli.cc") {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      isSecureContext: true,
+      location: { origin },
+      setTimeout,
+      clearTimeout,
+    },
+  });
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  (globalThis as unknown as { window?: Window }).window = originalWindow;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: originalWindow,
+  });
+});
+
+describe("getDeviceInfo HTTP error classification", () => {
+  test("classifies mDNS URL fetch failures as name/reachability", async () => {
+    installWindow();
+    globalThis.fetch = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+
+    const res = await getDeviceInfo(
+      "http://isolapurr-usb-hub-aabbcc001122.local",
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      throw new Error("expected error");
+    }
+    expect(res.error.kind).toBe("name_resolution");
+  });
+
+  test("classifies secure-origin LAN fetch failures as browser blocked for IPv4", async () => {
+    installWindow();
+    globalThis.fetch = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+
+    const res = await getDeviceInfo("http://192.168.1.42");
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      throw new Error("expected error");
+    }
+    expect(res.error.kind).toBe("browser_blocked");
+  });
+
+  test("keeps timeout failures as offline", async () => {
+    installWindow();
+    globalThis.fetch = async (_input, init) => {
+      const signal = init?.signal;
+      await new Promise((_, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+      throw new Error("unreachable");
+    };
+
+    const res = await getDeviceInfo("http://192.168.1.42");
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      throw new Error("expected error");
+    }
+    expect(res.error.kind).toBe("offline");
+  });
+
+  test("classifies mDNS timeout failures as name/reachability", async () => {
+    installWindow();
+    globalThis.fetch = async (_input, init) => {
+      const signal = init?.signal;
+      await new Promise((_, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+      throw new Error("unreachable");
+    };
+
+    const res = await getDeviceInfo(
+      "http://isolapurr-usb-hub-aabbcc001122.local",
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      throw new Error("expected error");
+    }
+    expect(res.error.kind).toBe("name_resolution");
+  }, 8000);
+
+  test("uses a longer timeout budget for mDNS URLs", async () => {
+    installWindow();
+    let abortDelayMs = 0;
+    globalThis.fetch = async (_input, init) => {
+      const signal = init?.signal;
+      const startedAt = Date.now();
+      await new Promise((_, reject) => {
+        signal?.addEventListener("abort", () => {
+          abortDelayMs = Date.now() - startedAt;
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+      throw new Error("unreachable");
+    };
+
+    const res = await getDeviceInfo(
+      "http://isolapurr-usb-hub-aabbcc001122.local",
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      throw new Error("expected error");
+    }
+    expect(res.error.kind).toBe("name_resolution");
+    expect(abortDelayMs).toBeGreaterThanOrEqual(6400);
+  }, 8000);
 });
 
 describe("setPowerConfig", () => {
   test("omits read-only manual.path_policy from request payload", async () => {
     let bodyText = "";
-    (globalThis as unknown as { window: unknown }).window = {
-      isSecureContext: false,
-      setTimeout,
-      clearTimeout,
-    } as unknown as Window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        isSecureContext: false,
+        setTimeout,
+        clearTimeout,
+      },
+    });
 
     globalThis.fetch = async (_input, init) => {
       bodyText = String(init?.body ?? "");

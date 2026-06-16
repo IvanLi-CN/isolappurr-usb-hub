@@ -77,10 +77,7 @@ function longDevices(count: number): DiscoveredDevice[] {
       hostname: `isolapurr-usb-hub-${suffix}`,
       fqdn: `isolapurr-usb-hub-${suffix}.local`,
       ipv4: `192.168.1.${40 + n}`,
-      baseUrl:
-        n % 3 === 0
-          ? `http://isolapurr-usb-hub-${suffix}.local/this/is/a/very/long/path/to/trigger/truncation/in/narrow/layouts`
-          : `http://isolapurr-usb-hub-${suffix}.local`,
+      baseUrl: `http://192.168.1.${40 + n}`,
       firmware: { name: "isolapurr-usb-hub", version: `0.1.${n}` },
       variant: "tps-sw",
       last_seen_at: new Date(Date.now() - n * 60_000).toISOString(),
@@ -97,7 +94,7 @@ const meta: Meta<typeof AddDeviceDialog> = {
   args: {
     open: true,
     existingDeviceIds: ["aabbcc001101"],
-    existingDeviceBaseUrls: ["http://isolapurr-usb-hub-aabbcc001101.local"],
+    existingDeviceBaseUrls: ["http://192.168.1.41"],
     onClose: () => {},
     onCreate: async () => ({
       ok: true,
@@ -224,7 +221,7 @@ export const AddFailure: Story = {
             hostname: "isolapurr-usb-hub-aabbcc001102",
             fqdn: "isolapurr-usb-hub-aabbcc001102.local",
             ipv4: "192.168.1.42",
-            baseUrl: "http://isolapurr-usb-hub-aabbcc001102.local",
+            baseUrl: "http://192.168.1.42",
             firmware: { name: "isolapurr-usb-hub", version: "0.1.2" },
             variant: "tps-sw",
           },
