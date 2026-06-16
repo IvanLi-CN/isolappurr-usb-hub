@@ -157,9 +157,10 @@ pub fn api_url(base: &str, path: &str) -> anyhow::Result<reqwest::Url> {
     Ok(base.join(path.trim_start_matches('/'))?)
 }
 
-fn normalize_http_base_url(base: &str) -> String {
+pub(crate) fn normalize_http_base_url(base: &str) -> String {
     let trimmed = base.trim();
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+    if trimmed.contains("://") || trimmed.starts_with("http://") || trimmed.starts_with("https://")
+    {
         return trimmed.to_string();
     }
     format!("http://{trimmed}")
@@ -552,7 +553,7 @@ fn normalize_transports(
 ) -> Option<DeviceProfileTransports> {
     let transports = transports?;
     let http_base_url = transports.http_base_url.and_then(|value| {
-        let trimmed = value.trim().to_string();
+        let trimmed = normalize_http_base_url(&value);
         if trimmed.is_empty() {
             None
         } else {

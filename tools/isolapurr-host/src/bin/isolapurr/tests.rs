@@ -632,11 +632,12 @@ mod power_output_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        CliPowerConfig, CliPowerDiagnostics, DeviceProfile, DiscoverFirmware, LightLoadModeArg,
-        ManualOutputArgs, OutputUsbCPathArg, PowerConfigSetArgs, SourceCapabilitySetArgs,
-        TpsModeArg, apply_manual_output_args, apply_power_config_set_args, discover_usb_match_keys,
-        format_power_config_output, format_power_show_output, parse_device_identity_from_info,
-        parse_discovered_http_info, saved_hardware_match_for_transport,
+        CliPowerConfig, CliPowerDiagnostics, CliPowerSetpoint, DeviceProfile, DiscoverFirmware,
+        LightLoadModeArg, ManualOutputArgs, OutputUsbCPathArg, PowerConfigSetArgs,
+        SourceCapabilitySetArgs, TpsModeArg, apply_manual_output_args, apply_power_config_set_args,
+        discover_usb_match_keys, format_power_config_output, format_power_show_output,
+        parse_device_identity_from_info, parse_discovered_http_info,
+        saved_hardware_match_for_transport,
     };
     use serde_json::json;
 
@@ -1080,6 +1081,19 @@ mod tests {
         .expect("dual-key diagnostics should deserialize");
 
         assert_eq!(parsed.tps_setpoint.iout_limit_ma, Some(3300));
+    }
+
+    #[test]
+    fn power_setpoint_serialization_keeps_legacy_ilim_field() {
+        let value = serde_json::to_value(CliPowerSetpoint {
+            output_enabled: Some(true),
+            mv: Some(20_000),
+            iout_limit_ma: Some(3_250),
+        })
+        .expect("serialize setpoint");
+
+        assert_eq!(value["iout_limit_ma"], 3250);
+        assert_eq!(value["ilim_ma"], 3250);
     }
 
     #[test]

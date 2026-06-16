@@ -720,11 +720,27 @@ struct CliPowerRequest {
     ma: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Clone)]
 struct CliPowerSetpoint {
     output_enabled: Option<bool>,
     mv: Option<u32>,
     iout_limit_ma: Option<u32>,
+}
+
+impl Serialize for CliPowerSetpoint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(Some(4))?;
+        map.serialize_entry("output_enabled", &self.output_enabled)?;
+        map.serialize_entry("mv", &self.mv)?;
+        map.serialize_entry("iout_limit_ma", &self.iout_limit_ma)?;
+        map.serialize_entry("ilim_ma", &self.iout_limit_ma)?;
+        map.end()
+    }
 }
 
 impl<'de> Deserialize<'de> for CliPowerSetpoint {
