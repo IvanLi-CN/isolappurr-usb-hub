@@ -11,12 +11,15 @@ import {
 describe("theme preference", () => {
   test("defaults to system when missing/invalid", () => {
     const store = new Map<string, string>();
-    (globalThis as unknown as { window: unknown }).window = {
-      localStorage: {
-        getItem: (k: string) => store.get(k) ?? null,
-        setItem: (k: string, v: string) => void store.set(k, v),
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        localStorage: {
+          getItem: (k: string) => store.get(k) ?? null,
+          setItem: (k: string, v: string) => void store.set(k, v),
+        },
       },
-    } as unknown as Window;
+    });
 
     store.set(THEME_STORAGE_KEY, "not-json");
     expect(loadThemePreference()).toBe("isolapurr");
@@ -27,12 +30,15 @@ describe("theme preference", () => {
 
   test("round-trips theme id as JSON string", () => {
     const store = new Map<string, string>();
-    (globalThis as unknown as { window: unknown }).window = {
-      localStorage: {
-        getItem: (k: string) => store.get(k) ?? null,
-        setItem: (k: string, v: string) => void store.set(k, v),
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        localStorage: {
+          getItem: (k: string) => store.get(k) ?? null,
+          setItem: (k: string, v: string) => void store.set(k, v),
+        },
       },
-    } as unknown as Window;
+    });
 
     const value: ThemeId = "isolapurr-dark";
     saveThemePreference(value);

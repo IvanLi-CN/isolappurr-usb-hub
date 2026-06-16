@@ -11,12 +11,15 @@ describe("readMigrationPayload", () => {
   });
 
   test("preserves saved device transports from localStorage", () => {
-    (globalThis as unknown as { window: unknown }).window = {
-      localStorage: {
-        getItem: (key: string) => store.get(key) ?? null,
-        setItem: (key: string, value: string) => void store.set(key, value),
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        localStorage: {
+          getItem: (key: string) => store.get(key) ?? null,
+          setItem: (key: string, value: string) => void store.set(key, value),
+        },
       },
-    } as unknown as Window;
+    });
 
     store.set(
       DEVICES_STORAGE_KEY,
