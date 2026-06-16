@@ -256,6 +256,8 @@ Device Hardware long identity values narrow:
 
 Discovery verified IPv4 URL with mDNS URL reference:
 
+PR: include
+
 ![Discovery verified IPv4 URL with mDNS URL reference](assets/device-discovery-verified-ipv4-mdns.png)
 
 Discovery browser-blocked LAN guidance:
