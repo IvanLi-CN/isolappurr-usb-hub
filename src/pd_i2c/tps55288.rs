@@ -7,6 +7,8 @@ use crate::power_config::LightLoadMode;
 pub const TPS_BOOT_VOUT_MV: u16 = 5_000;
 /// Conservative current limit for the boot setpoint (mA).
 pub const TPS_BOOT_ILIM_MA: u16 = 6_350;
+pub const TPS_IOUT_LIMIT_READBACK_RETRY_MS: u64 = 100;
+pub const TPS_IOUT_LIMIT_READBACK_REFRESH_MS: u64 = 1_000;
 pub const fn boot_supply_setpoint() -> PowerSetpoint {
     PowerSetpoint {
         output_enabled: true,
@@ -83,6 +85,30 @@ where
 {
     let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
     dev.get_ilim_ma().await
+}
+
+pub fn should_refresh_iout_limit_readback(
+    setpoint_available: bool,
+    setpoint_changed: bool,
+    has_cached_readback: bool,
+    last_attempt_uptime_ms: Option<u64>,
+    now_uptime_ms: u64,
+) -> bool {
+    if !setpoint_available {
+        return false;
+    }
+    if setpoint_changed {
+        return true;
+    }
+    let Some(last_attempt_uptime_ms) = last_attempt_uptime_ms else {
+        return true;
+    };
+    let refresh_interval_ms = if has_cached_readback {
+        TPS_IOUT_LIMIT_READBACK_REFRESH_MS
+    } else {
+        TPS_IOUT_LIMIT_READBACK_RETRY_MS
+    };
+    now_uptime_ms.saturating_sub(last_attempt_uptime_ms) >= refresh_interval_ms
 }
 
 pub async fn apply_setpoint_before_enable<I2C>(
@@ -198,4 +224,63 @@ where
 
     state.last = Some(setpoint);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readback_refreshes_immediately_on_setpoint_change() {
+        assert!(should_refresh_iout_limit_readback(
+            true,
+            true,
+            true,
+            Some(500),
+            550,
+        ));
+    }
+
+    #[test]
+    fn readback_does_not_refresh_without_a_setpoint() {
+        assert!(!should_refresh_iout_limit_readback(
+            false, false, false, None, 0,
+        ));
+    }
+
+    #[test]
+    fn readback_retries_missing_cache_after_short_backoff() {
+        assert!(!should_refresh_iout_limit_readback(
+            true,
+            false,
+            false,
+            Some(1_000),
+            1_050,
+        ));
+        assert!(should_refresh_iout_limit_readback(
+            true,
+            false,
+            false,
+            Some(1_000),
+            1_100,
+        ));
+    }
+
+    #[test]
+    fn readback_refreshes_cached_value_after_longer_interval() {
+        assert!(!should_refresh_iout_limit_readback(
+            true,
+            false,
+            true,
+            Some(2_000),
+            2_900,
+        ));
+        assert!(should_refresh_iout_limit_readback(
+            true,
+            false,
+            true,
+            Some(2_000),
+            3_000,
+        ));
+    }
 }

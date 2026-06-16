@@ -818,10 +818,21 @@
                     || previous_tps_setpoint_mv != current_tps_setpoint_mv
                     || previous_tps_setpoint_iout_limit_ma != current_tps_setpoint_iout_limit_ma;
 
+            let now_uptime_ms = uptime_ms_from_instant(now);
+            let refresh_tps_iout_limit_readback =
+                isolapurr_usb_hub::pd_i2c::tps55288::should_refresh_iout_limit_readback(
+                    current_tps_setpoint_output_enabled.is_some(),
+                    tps_setpoint_changed,
+                    previous_tps_iout_limit_readback_ma.is_some()
+                        && previous_tps_iout_limit_readback_enabled.is_some(),
+                    last_tps_iout_limit_readback_attempt_uptime_ms,
+                    now_uptime_ms,
+                );
             let (tps_iout_limit_readback_ma, tps_iout_limit_readback_enabled) =
                 if current_tps_setpoint_output_enabled.is_none() {
                     (None, None)
-                } else if tps_setpoint_changed {
+                } else if refresh_tps_iout_limit_readback {
+                    last_tps_iout_limit_readback_attempt_uptime_ms = Some(now_uptime_ms);
                     match isolapurr_usb_hub::pd_i2c::tps55288::read_iout_limit(
                         telemetry_sampler.i2c_mut(),
                     )
