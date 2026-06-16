@@ -47,3 +47,7 @@
   `pfm` means the board-default PFM behavior.
   `fpwm` means force-PWM behavior through the TPS55288 `MODE` register override.
   It is independent from `tps_mode`.
+
+- `output current limit`
+  The applied TPS55288 `IOUT_LIMIT` output-current setpoint exposed by PD diagnostics.
+  It is a configured limit value, not the live measured USB-C current.

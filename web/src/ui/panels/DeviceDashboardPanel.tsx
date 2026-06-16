@@ -201,6 +201,15 @@ function liveBadgeTone(
   return "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]";
 }
 
+function formatOutputCurrentLimitBadge(
+  value: number | null | undefined,
+): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return `${(value / 1000).toFixed(2)} A`;
+}
+
 export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const runtime = useDeviceRuntime();
   const [pdDiagnostics, setPdDiagnostics] =
@@ -310,12 +319,25 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   }, [connectionState, device.id, runtime]);
 
   const liveDisplay = pdDiagnostics?.display ?? null;
+  const outputCurrentLimitBadge = formatOutputCurrentLimitBadge(
+    pdDiagnostics?.tps_setpoint?.iout_limit_ma,
+  );
   const hasResolvedUsbCPort =
     connectionState === "online"
       ? runtime.port(device.id, "port_c") !== null
       : false;
   const usbCHeaderBadges = liveDisplay
     ? [
+        ...(outputCurrentLimitBadge
+          ? [
+              {
+                label: outputCurrentLimitBadge,
+                toneClassName:
+                  "border-[var(--border)] bg-[var(--panel-2)] text-[var(--text)]",
+                testId: "dashboard-usb-c-iout-limit",
+              },
+            ]
+          : []),
         {
           label: liveDisplay.mode.label,
           toneClassName: liveModeTone(liveDisplay.mode.kind),

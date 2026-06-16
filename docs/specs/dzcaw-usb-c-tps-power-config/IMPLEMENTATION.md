@@ -100,8 +100,9 @@
   USB-C card badges that render the shared firmware display contract directly:
   auto-follow keeps `PD` / `PPS` / `DC`, while manual output renders the
   manual setpoint `x.xxV` on the left badge and `FOCUS` / `ON` / `OFF` on the
-  right badge, with the USB-C card header capped at exactly two badges while
-  reusing the existing USB-C card V/A/W live telemetry.
+  right badge. When live PD diagnostics also expose
+  `tps_setpoint.iout_limit_ma`, the header prepends an `x.xx A` output-current
+  limit badge while still reusing the existing USB-C card V/A/W live telemetry.
 - Updated the Web diagnostics contract to consume
   `tps_setpoint.iout_limit_ma` plus `tps_iout_limit_readback`, matching the
   clarified TPS55288 `IOUT_LIMIT` semantics used by CLI and firmware.

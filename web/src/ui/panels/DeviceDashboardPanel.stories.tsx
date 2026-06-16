@@ -54,6 +54,18 @@ const telemetryErrorDevice: StoredDevice = {
   baseUrl: "http://isolapurr-usb-hub-aa1166778899.local",
 };
 
+const missingLimitDevice: StoredDevice = {
+  id: "bb2277889900",
+  name: "Missing Limit Hub",
+  baseUrl: "http://isolapurr-usb-hub-bb2277889900.local",
+};
+
+const missingSetpointDevice: StoredDevice = {
+  id: "cc3388990011",
+  name: "Missing Setpoint Hub",
+  baseUrl: "http://isolapurr-usb-hub-cc3388990011.local",
+};
+
 const autoPdDiagnostics: PdDiagnosticsResponse = {
   usb_c_power_enabled: true,
   sw2303_i2c_allowed: true,
@@ -97,13 +109,13 @@ const autoPdDiagnostics: PdDiagnosticsResponse = {
     sample_uptime_ms: 123_456,
   },
   tps_setpoint: {
-    output_enabled: false,
-    mv: null,
-    iout_limit_ma: null,
+    output_enabled: true,
+    mv: 9000,
+    iout_limit_ma: 500,
   },
   tps_iout_limit_readback: {
-    enabled: null,
-    ma: null,
+    enabled: true,
+    ma: 500,
   },
   runtime_recovery_count: 0,
   sample_uptime_ms: 123_456,
@@ -126,11 +138,11 @@ const manualFocusDiagnostics: PdDiagnosticsResponse = {
   tps_setpoint: {
     output_enabled: true,
     mv: 3300,
-    iout_limit_ma: 3000,
+    iout_limit_ma: 500,
   },
   tps_iout_limit_readback: {
     enabled: true,
-    ma: 3000,
+    ma: 500,
   },
 };
 
@@ -151,11 +163,11 @@ const manualOnDiagnostics: PdDiagnosticsResponse = {
   tps_setpoint: {
     output_enabled: true,
     mv: 9000,
-    iout_limit_ma: 3000,
+    iout_limit_ma: 500,
   },
   tps_iout_limit_readback: {
     enabled: true,
-    ma: 3000,
+    ma: 500,
   },
 };
 
@@ -177,11 +189,11 @@ const manualOffDiagnostics: PdDiagnosticsResponse = {
   tps_setpoint: {
     output_enabled: true,
     mv: 9000,
-    iout_limit_ma: 3000,
+    iout_limit_ma: 500,
   },
   tps_iout_limit_readback: {
     enabled: true,
-    ma: 3000,
+    ma: 500,
   },
 };
 
@@ -257,6 +269,26 @@ function mockUsbCDiagnostics(hostname: string): PdDiagnosticsResponse {
   if (hostname === "isolapurr-usb-hub-ff0055667788.local") {
     return manualOffDiagnostics;
   }
+  if (hostname === "isolapurr-usb-hub-bb2277889900.local") {
+    return {
+      ...autoPdDiagnostics,
+      tps_setpoint: {
+        output_enabled: false,
+        mv: null,
+        iout_limit_ma: null,
+      },
+      tps_iout_limit_readback: {
+        enabled: null,
+        ma: null,
+      },
+    };
+  }
+  if (hostname === "isolapurr-usb-hub-cc3388990011.local") {
+    return {
+      ...autoPdDiagnostics,
+      tps_setpoint: undefined,
+    } as PdDiagnosticsResponse;
+  }
   return autoPdDiagnostics;
 }
 
@@ -281,6 +313,8 @@ const mockDeviceApi = async (
     "isolapurr-usb-hub-eeff44556677.local",
     "isolapurr-usb-hub-ff0055667788.local",
     "isolapurr-usb-hub-aa1166778899.local",
+    "isolapurr-usb-hub-bb2277889900.local",
+    "isolapurr-usb-hub-cc3388990011.local",
   ]);
 
   if (!knownHosts.has(url.hostname)) {
@@ -399,6 +433,9 @@ export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
+      await canvas.findByTestId("dashboard-usb-c-iout-limit"),
+    ).toHaveTextContent("0.50 A");
+    await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
     ).toHaveTextContent(/pd/i);
     await expect(
@@ -421,6 +458,9 @@ export const LegacyFirmwareUnknownIsolation: Story = {
         /ok/i,
       ),
     );
+    await expect(
+      canvas.queryByTestId("dashboard-usb-c-iout-limit"),
+    ).not.toBeInTheDocument();
     await expect(
       canvas.queryByTestId("dashboard-usb-c-live-mode"),
     ).not.toBeInTheDocument();
@@ -465,6 +505,9 @@ export const ManualForceLive: Story = {
       ).not.toBeInTheDocument(),
     );
     await expect(
+      await canvas.findByTestId("dashboard-usb-c-iout-limit"),
+    ).toHaveTextContent("0.50 A");
+    await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
     ).toHaveTextContent("3.30V");
     await expect(
@@ -488,6 +531,9 @@ export const ManualPathOnLive: Story = {
         within(usbCCard).queryByTestId("port-card-status-port_c"),
       ).not.toBeInTheDocument(),
     );
+    await expect(
+      await canvas.findByTestId("dashboard-usb-c-iout-limit"),
+    ).toHaveTextContent("0.50 A");
     await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
     ).toHaveTextContent("9.00V");
@@ -513,6 +559,9 @@ export const ManualPathOffLive: Story = {
       ).not.toBeInTheDocument(),
     );
     await expect(
+      await canvas.findByTestId("dashboard-usb-c-iout-limit"),
+    ).toHaveTextContent("0.50 A");
+    await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
     ).toHaveTextContent("9.00V");
     await expect(
@@ -532,6 +581,9 @@ export const LiveBadgesKeepErrorStatus: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
+      await canvas.findByTestId("dashboard-usb-c-iout-limit"),
+    ).toHaveTextContent("0.50 A");
+    await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
     ).toHaveTextContent(/pd/i);
     await expect(
@@ -540,5 +592,45 @@ export const LiveBadgesKeepErrorStatus: Story = {
     await expect(
       canvas.getByTestId("port-card-status-port_c"),
     ).toHaveTextContent(/error/i);
+  },
+};
+
+export const MissingOutputCurrentLimit: Story = {
+  args: {
+    device: missingLimitDevice,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("dashboard-usb-c-iout-limit"),
+      ).not.toBeInTheDocument(),
+    );
+    await expect(
+      await canvas.findByTestId("dashboard-usb-c-live-mode"),
+    ).toHaveTextContent(/pd/i);
+    await expect(
+      canvas.getByTestId("dashboard-usb-c-live-badge"),
+    ).toHaveTextContent("9V");
+  },
+};
+
+export const MissingTpsSetpointObject: Story = {
+  args: {
+    device: missingSetpointDevice,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() =>
+      expect(
+        canvas.queryByTestId("dashboard-usb-c-iout-limit"),
+      ).not.toBeInTheDocument(),
+    );
+    await expect(
+      await canvas.findByTestId("dashboard-usb-c-live-mode"),
+    ).toHaveTextContent(/pd/i);
+    await expect(
+      canvas.getByTestId("dashboard-usb-c-live-badge"),
+    ).toHaveTextContent("9V");
   },
 };
