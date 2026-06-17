@@ -333,7 +333,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
               {
                 label: outputCurrentLimitBadge,
                 toneClassName:
-                  "border-[var(--border)] bg-[var(--panel-2)] text-[var(--text)]",
+                  "border-[var(--primary)]/20 bg-[var(--primary)]/12 text-[var(--primary)]",
                 testId: "dashboard-usb-c-iout-limit",
               },
             ]
