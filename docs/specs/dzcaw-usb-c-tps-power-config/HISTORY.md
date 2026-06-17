@@ -83,3 +83,13 @@
 - Reconfirmed current-limit behavior on `f293cc9c139e @ 192.168.31.224` with
   LoadLynx CV loading: both CLI/devd and Web/LAN paths held the 3 A limit
   correctly under real load once the extra external supply was removed.
+
+## 2026-06-17
+
+- Extended the Dashboard USB-C card header to show the live TPS
+  `IOUT_LIMIT` output current limit as a dedicated `x.xx A` badge when
+  diagnostics provide `tps_setpoint.iout_limit_ma`.
+- Kept the existing mode/setpoint and `FOCUS` / `ON` / `OFF` live badges,
+  but stopped treating the header as a strict two-badge contract.
+- Added Storybook regression coverage for both the rendered current-limit
+  badge and the hidden-when-missing fallback.

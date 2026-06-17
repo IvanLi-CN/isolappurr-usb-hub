@@ -121,10 +121,15 @@ for diagnostics.
   TPS setpoint formatted as `x.xxV`; `force` fixes the right badge to `FOCUS`;
   other manual path modes show `ON/OFF` from the actual SW2303 VBUS path
   state.
+- When `/api/v1/pd-diagnostics.tps_setpoint.iout_limit_ma` resolves to a live
+  value, the Web Dashboard USB-C card header MUST also show an output current
+  limit badge formatted as `x.xx A`, using that applied TPS55288
+  `IOUT_LIMIT` setpoint rather than live measured current.
 - When live USB-C display badges are present and USB-C telemetry resolves
-  cleanly, the Web Dashboard USB-C card header MUST render exactly two badges
-  and no third status chip: left badge = shared display mode/setpoint label,
-  right badge = shared live state badge.
+  cleanly, the Web Dashboard USB-C card header MUST render the shared
+  mode/setpoint label plus the shared live state badge, and MAY prepend the
+  output current limit badge when `iout_limit_ma` is present. In this live
+  badge mode, no separate legacy status chip may replace those inline badges.
 - When live USB-C display badges are absent, or USB-C telemetry is not `ok`,
   the Dashboard MUST preserve the existing USB-C status chip instead of hiding
   fault/legacy state behind the live badges.
@@ -183,15 +188,20 @@ for diagnostics.
   protocol cards show `DPDM`.
 - Given manual TPS output with `usb_c_path_mode=force`, when the Dashboard
   USB-C card refreshes, then the left inline badge shows the manual setpoint
-  (for example `3.30V`), the right inline badge shows `FOCUS`, there is no
-  third status badge on that card header, and the USB-C V/A/W on that card
-  continue to come from the live U17 telemetry.
+  (for example `3.30V`), the right inline badge shows `FOCUS`, the output
+  current limit badge shows the applied `iout_limit_ma` when available, and
+  the USB-C V/A/W on that card continue to come from the live U17 telemetry.
 - Given manual TPS output with `usb_c_path_mode!=force`, when the Dashboard
   USB-C card refreshes, then the left inline badge shows the manual setpoint
   (for example `9.00V`), the right inline badge shows `ON` or `OFF` from the
-  real VBUS path state, there is no third status badge on that card header,
-  and the USB-C V/A/W on that card continue to come from the live U17
+  real VBUS path state, the output current limit badge shows the applied
+  `iout_limit_ma` when available, and the USB-C V/A/W on that card continue
+  to come from the live U17
   telemetry.
+- Given PD diagnostics without `tps_setpoint.iout_limit_ma`, when the
+  Dashboard USB-C card refreshes, then the output current limit badge stays
+  hidden while the shared mode/setpoint and live state badges continue to
+  render normally.
 - Given legacy firmware without PD diagnostics, when the Dashboard USB-C card
   refreshes, then inline live badges stay absent and the existing USB-C status
   chip remains visible.
@@ -521,6 +531,34 @@ PR: include
 
 PR: include
 ![Device dashboard panel live badges keep error status](./assets/device-dashboard-panel-live-badges-keep-error-status.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/Default`
+  state: Dashboard USB-C live output current limit shown
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the USB-C header prepends the live applied
+  `IOUT_LIMIT` badge as `0.50 A` while keeping the existing `PD` and `9V`
+  badges on the same row.
+
+PR: include
+![Device dashboard panel output current limit live](./assets/device-dashboard-panel-output-current-limit-live.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/MissingOutputCurrentLimit`
+  state: Dashboard USB-C live output current limit missing
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the USB-C header hides the output current limit badge
+  when live diagnostics omit `iout_limit_ma`, while the existing `PD` and `9V`
+  badges still render.
+
+PR: include
+![Device dashboard panel output current limit missing](./assets/device-dashboard-panel-output-current-limit-missing.png)
 
 - source_type: live_hardware_browser
   story_id_or_title: `Local USB HIL overview`
