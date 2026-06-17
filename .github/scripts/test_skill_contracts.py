@@ -19,6 +19,15 @@ BANNED_LEGACY_PATTERNS = [
     ),
 ]
 
+AD_HOC_DEMO_ROUTE_PATTERNS = [
+    re.compile(r"/demo/"),
+    re.compile(r'path\s*=\s*"demo"'),
+    re.compile(r'path\s*=\s*"/demo"'),
+    re.compile(r"path\s*=\s*\{[^}]*demo[^}]*\}"),
+    re.compile(r"demo="),
+    re.compile(r'searchParams\.(get|has)\(\s*["\']demo["\']\s*\)'),
+]
+
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
@@ -95,12 +104,16 @@ class SkillContractTest(unittest.TestCase):
         required_paths = [
             "AGENTS.md",
             "README.md",
+            "web/README.md",
             "docs/maintainer-workflow.md",
+            "docs/specs/kvbq9-web-demo-surface-policy/**",
             "docs/specs/r7m2q-cli-devd-alignment/**",
             "skills/isolapurr-user-operations/**",
             "skills/isolapurr-developer-operations/**",
             "skills/isolapurr-maintainer-workflow/**",
             "tools/isolapurr-host/src/bin/isolapurr/**",
+            "web/src/App.tsx",
+            "web/src/pages/**",
         ]
         for path in required_paths:
             self.assertIn(path, workflow)
@@ -117,6 +130,30 @@ class SkillContractTest(unittest.TestCase):
         ]
         for fragment in required_fragments:
             self.assertIn(fragment, skill)
+
+    def test_web_demo_surface_policy_links_are_present(self) -> None:
+        readme = read("README.md")
+        web_readme = read("web/README.md")
+        agents = read("AGENTS.md")
+        workflow = read(WORKFLOW_DOC)
+        policy_path = "docs/specs/kvbq9-web-demo-surface-policy/SPEC.md"
+
+        self.assertIn(policy_path, readme)
+        self.assertIn("kvbq9-web-demo-surface-policy/SPEC.md", web_readme)
+        self.assertIn(policy_path, agents)
+        self.assertIn(policy_path, workflow)
+
+    def test_page_level_storybook_stories_are_not_present(self) -> None:
+        for path in ROOT.glob("web/src/pages/*.stories.*"):
+            self.fail(f"page-level Storybook story is forbidden: {path}")
+
+    def test_app_router_does_not_add_ad_hoc_demo_entrypoints(self) -> None:
+        app = read("web/src/App.tsx")
+        for pattern in AD_HOC_DEMO_ROUTE_PATTERNS:
+            self.assertIsNone(
+                pattern.search(app),
+                msg=f"web/src/App.tsx reintroduced ad hoc demo entrypoint: {pattern.pattern}",
+            )
 
 
 if __name__ == "__main__":

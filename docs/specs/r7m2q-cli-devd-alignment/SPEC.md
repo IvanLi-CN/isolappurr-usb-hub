@@ -35,6 +35,11 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
 - MUST keep maintainer-facing workflow truth in one detailed project doc, with `README.md` as human navigation and `AGENTS.md` as concise entry rules rather than parallel full workflow manuals.
+- MUST keep repo-managed Web verification guidance aligned with the repository
+  Web demo-surface policy: production SPA routes stay as app-level pages,
+  Storybook remains the mock-only component/composite surface, and page-level
+  Storybook stories or ad hoc demo routes require an explicit spec-approved
+  exception before landing.
 - MUST treat missing `isolapurr` or `isolapurr-devd` on a user machine as an install gate before any Agent-driven hardware listing, scan, status, provisioning, flash, reset, monitor, or diagnostics workflow. The user skill must not list system USB or serial ports as a substitute hardware result.
 - MUST report unavailable GitHub Release installer assets as a blocker for user-machine host-tool installation and stop instead of falling back to raw serial enumeration, localhost HTTP, browser automation, source checkout commands, or project-local tooling.
 - MUST store local program hardware memory in the user's config directory, while pure Web stores the same profile shape in browser storage.
@@ -167,6 +172,11 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given the selected GitHub Release or installer asset is unavailable, when the user skill prepares host-tool installation, then it reports the release/asset blocker and stops without switching to source commands, raw serial tools, browser automation, or localhost HTTP.
 - Given repo-managed user docs or skills are updated, when CI validates repository contracts, then stale released command fragments such as `status --hardware`, `status --device`, `hardware save --id`, and `hardware save --transport` must fail the contract gate.
 - Given maintainer workflow truth changes, when project docs are updated, then `README.md`, `AGENTS.md`, and `docs/maintainer-workflow.md` must continue to link to the same workflow entrypoints instead of diverging into separate process narratives.
+- Given repo-managed Web verification guidance changes, when repository
+  contract tests run, then `README.md`, `web/README.md`, `AGENTS.md`,
+  `docs/maintainer-workflow.md`, and the repo-contract workflow remain aligned
+  to the same Web demo-surface policy and reject page-level stories plus ad hoc
+  demo routes.
 - Given an installer downloads a host-tools archive, when the archive hash does not match `SHA256SUMS`, then installation fails before replacing any installed tools.
 - Given no IPC clients remain connected, when the configured idle timeout elapses, then `isolapurr-devd serve` exits and removes its Unix socket when applicable.
 - Given the desktop app needs native Local USB capabilities, when no devd is reachable, then the desktop app starts or connects to devd on demand instead of requiring a user-managed daemon.

@@ -29,6 +29,11 @@ Icon regeneration requires `rsvg-convert` from librsvg and Python Pillow (`pytho
 - Storybook includes viewport presets for quick layout checks:
   - `Isolapurr Mobile (390×844)`
   - `Isolapurr Desktop (1440×900)`
+- Storybook is reserved for reusable components and composite surfaces. Route-
+  level verification stays on the real SPA pages, and `web/src/pages/*.stories.*`
+  is not an allowed pattern in this repository. See
+  [`docs/specs/kvbq9-web-demo-surface-policy/SPEC.md`](../docs/specs/kvbq9-web-demo-surface-policy/SPEC.md)
+  for the repository policy.
 
 ## Quality gates
 

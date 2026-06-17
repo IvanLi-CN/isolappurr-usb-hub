@@ -63,6 +63,11 @@
 - Web Local USB discovery/request/flash code now targets the new `/api/v1/devices/*` and lease APIs while leaving Web Serial intact. Device profiles can retain HTTP and Local USB transports for one hardware identity, and the runtime prefers successful Local USB operations for unsupported or unreachable Wi-Fi/HTTP paths.
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.
 - Repo-managed workflow truth is now split cleanly by responsibility: `isolapurr-user-operations` tracks the released CLI surface, `isolapurr-developer-operations` tracks source/developer flows, `isolapurr-maintainer-workflow` is the repo-private router, `docs/maintainer-workflow.md` is the detailed maintainer doc, `README.md` handles human navigation, and `AGENTS.md` stays as the concise entry contract.
+- Repo-managed Web verification guidance now also points to the dedicated
+  `kvbq9` policy spec, and repo-contract tests watch `README.md`,
+  `web/README.md`, `AGENTS.md`, `docs/maintainer-workflow.md`, `web/src/App.tsx`,
+  and `web/src/pages/**` so page-level stories and ad hoc demo routes cannot
+  drift back in silently.
 - `isolapurr-user-operations` treats missing released host tools and unavailable installer assets as hard stop conditions before hardware enumeration or operations.
 - CI/release workflows build and publish host-tools plus firmware catalog assets.
 - CI runs Python contract tests for release-intent and skill/install-gate consistency.

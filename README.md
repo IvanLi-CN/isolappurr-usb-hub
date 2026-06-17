@@ -172,6 +172,11 @@ Plan `#0003` 引入了默认启用的网络与 USB JSONL 能力（feature：`net
 - Storybook：`cd web && bun run storybook`
 - Storybook（CI）：`cd web && bun run build-storybook && bun run test:storybook`
 - E2E（Playwright）：`cd web && bun run build && bun run test:e2e`
+- Web verification surfaces follow
+  [`docs/specs/kvbq9-web-demo-surface-policy/SPEC.md`](docs/specs/kvbq9-web-demo-surface-policy/SPEC.md):
+  production route proof stays on the real SPA pages, Storybook is reserved for
+  reusable components and composite surfaces, and ad hoc demo routes or
+  page-level Storybook stories are not part of the allowed workflow.
 
 ### Desktop（Tauri / macOS 首发）
 
