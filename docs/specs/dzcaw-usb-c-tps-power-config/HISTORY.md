@@ -93,3 +93,7 @@
   but stopped treating the header as a strict two-badge contract.
 - Added Storybook regression coverage for both the rendered current-limit
   badge and the hidden-when-missing fallback.
+- Bound the power surface to the new repository Web demo-surface policy so the
+  topic now explicitly relies on production `/devices/:deviceId/power` proof,
+  composite Storybook stories, and spec-owned visual evidence instead of any
+  dedicated power demo page.

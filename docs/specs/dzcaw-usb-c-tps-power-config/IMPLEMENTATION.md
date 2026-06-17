@@ -130,6 +130,10 @@
 - Added a config-only manual `Force` Storybook proof so visual evidence can
   directly show the settings page no longer renders the live USB-C state after
   that state moved into inline badges on Dashboard.
+- Aligned the power topic with the repository Web demo-surface policy so power
+  verification now explicitly treats `/devices/:deviceId/power` as the real
+  route-level page, reserves Storybook for composite `Panels/*` proofs, and
+  forbids future dedicated power demo routes or page-level stories.
 - Added Dashboard regression coverage for the legacy no-diagnostics fallback
   and for the case where live badges remain visible alongside a real USB-C
   telemetry error status chip.

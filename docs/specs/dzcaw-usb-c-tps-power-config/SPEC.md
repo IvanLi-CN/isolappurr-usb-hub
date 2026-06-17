@@ -137,6 +137,12 @@ for diagnostics.
   correction, and run-state summaries, confirmation flows for destructive or
   calibration actions, and explicit copy telling the operator to disconnect
   USB-C before calibration.
+- The power surface MUST follow the repository Web demo-surface policy:
+  production route validation happens on `/devices/:deviceId/power`, mock-only
+  verification happens through composite Storybook stories such as
+  `Panels/DevicePowerPanel` and `Panels/DeviceDashboardPanel`, and owner-facing
+  screenshots bind through this spec's `## Visual Evidence`. It MUST NOT
+  introduce a dedicated Web demo page, route, or `?demo=*` toggle for power.
 - When a saved idle-bias dataset exists, the Web UI MUST keep the dataset
   detail surface collapsed by default, open into a chart-first review mode,
   and allow switching between a single-series voltage-to-offset chart and a
@@ -152,6 +158,9 @@ for diagnostics.
   plus Dashboard USB-C card inline live-badge states for auto-follow, `FOCUS`,
   `ON`, and `OFF`, the legacy no-diagnostics fallback, and the telemetry-error
   regression where a real error status chip must remain visible.
+- Power visual verification MUST NOT rely on page-level Storybook route stories.
+  Route-level proof belongs to the production `/devices/:deviceId/power` page
+  and this spec's live or mock-only evidence entries.
 
 ## Acceptance
 

@@ -26,6 +26,12 @@
 - `README.md` is for human navigation, `AGENTS.md` is the concise entry contract, and `docs/maintainer-workflow.md` is the detailed maintainer process source.
 - When released CLI/devd behavior, repo-managed skills, or maintainer workflow truth changes, update the owning spec companion docs under `docs/specs/`.
 - When a process or doc drift could recur, add or update automated repo contract tests.
+- Web verification surfaces follow
+  [`docs/specs/kvbq9-web-demo-surface-policy/SPEC.md`](docs/specs/kvbq9-web-demo-surface-policy/SPEC.md):
+  production SPA routes are the only app-level Web pages, Storybook is for
+  reusable components and composite surfaces, and ad hoc demo routes plus
+  `web/src/pages/*.stories.*` are forbidden unless a spec explicitly approves
+  an exception first.
 
 ## Core Commands
 
