@@ -355,7 +355,9 @@
             if let Some(command) = pending_power_runtime {
                 match command {
                     net::ApiPowerRuntimeCommand::SetOutputEnabled { enabled } => {
-                        if runtime_tps_output_enabled != enabled {
+                        let output_runtime_applied =
+                            runtime_tps_output_enabled_reported == enabled;
+                        if runtime_tps_output_enabled != enabled || !output_runtime_applied {
                             runtime_tps_output_enabled = enabled;
                             tps_state.last = None;
                             tps_5v_setpoint_since = None;
@@ -375,14 +377,35 @@
                             last_request = None;
                             last_fast_protocol = None;
                             last_tps_status = None;
+                            power_runtime_result_inflight = true;
+                        } else {
+                            let mut guard = api_state.lock().await;
+                            guard.power.runtime_output_enabled =
+                                runtime_tps_output_enabled_reported;
+                            guard.power.runtime_discharge_enabled =
+                                runtime_tps_discharge_enabled_reported;
+                            POWER_RUNTIME_RESULT.signal(true);
                         }
                     }
                     net::ApiPowerRuntimeCommand::SetDischargeEnabled { enabled } => {
-                        runtime_tps_discharge_enabled = enabled;
-                        tps_state.last = None;
+                        let discharge_runtime_applied =
+                            runtime_tps_discharge_enabled_reported == enabled;
+                        if runtime_tps_discharge_enabled != enabled
+                            || !discharge_runtime_applied
+                        {
+                            runtime_tps_discharge_enabled = enabled;
+                            tps_state.last = None;
+                            power_runtime_result_inflight = true;
+                        } else {
+                            let mut guard = api_state.lock().await;
+                            guard.power.runtime_output_enabled =
+                                runtime_tps_output_enabled_reported;
+                            guard.power.runtime_discharge_enabled =
+                                runtime_tps_discharge_enabled_reported;
+                            POWER_RUNTIME_RESULT.signal(true);
+                        }
                     }
                 }
-                power_runtime_result_inflight = true;
             }
         }
         #[cfg(feature = "net_http")]
