@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { expect, within } from "@storybook/test";
 import { MemoryRouter } from "react-router";
 
-import { NotFoundPage } from "./NotFoundPage";
+import { NotFoundPage } from "../../pages/NotFoundPage";
 
 const meta = {
   title: "Pages/NotFoundPage",
