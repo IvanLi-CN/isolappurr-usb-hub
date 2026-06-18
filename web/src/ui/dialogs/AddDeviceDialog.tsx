@@ -12,7 +12,7 @@ import type {
   AddDeviceValidationResult,
 } from "../../domain/devices";
 import { loadStoredDevices } from "../../domain/devices";
-import type { DiscoveredDevice, LanCandidate } from "../../domain/discovery";
+import type { DiscoveredDevice } from "../../domain/discovery";
 import {
   createInitialDiscoverySnapshot,
   mergeDiscoveredDevice,
@@ -36,6 +36,7 @@ import {
   hydrateInitialUsbLog,
   InlineAddError,
   isIsolaPurrDeviceInfo,
+  parseDesktopDiscoverySnapshot,
   parseOwnerFacingUsbDeviceId,
   parseUsbInfoEnvelope,
   readLocalUsbInfo,
@@ -228,134 +229,25 @@ export function AddDeviceDialog({
             return;
           }
           const value = (await res.json()) as unknown;
-          if (!value || typeof value !== "object") {
+          const parsed = parseDesktopDiscoverySnapshot(value);
+          if (!parsed) {
             return;
           }
-          const obj = value as Record<string, unknown>;
-          const devices = Array.isArray(obj.devices) ? obj.devices : null;
-          const mode =
-            obj.mode === "service" || obj.mode === "scan"
-              ? obj.mode
-              : "service";
-          const status =
-            obj.status === "idle" ||
-            obj.status === "scanning" ||
-            obj.status === "ready" ||
-            obj.status === "unavailable"
-              ? obj.status
-              : "unavailable";
-          const error = typeof obj.error === "string" ? obj.error : undefined;
-          const scan =
-            obj.scan && typeof obj.scan === "object"
-              ? (obj.scan as Record<string, unknown>)
-              : undefined;
-          const ipScan =
-            obj.ipScan && typeof obj.ipScan === "object"
-              ? (obj.ipScan as Record<string, unknown>)
-              : undefined;
-
-          const scanShape =
-            scan &&
-            typeof scan.cidr === "string" &&
-            typeof scan.done === "number" &&
-            typeof scan.total === "number"
-              ? { cidr: scan.cidr, done: scan.done, total: scan.total }
-              : undefined;
-
-          const defaultCidr =
-            ipScan && typeof ipScan.defaultCidr === "string"
-              ? ipScan.defaultCidr
-              : undefined;
-          const candidatesRaw =
-            ipScan && Array.isArray(ipScan.candidates)
-              ? ipScan.candidates
-              : null;
-          const candidates = candidatesRaw
-            ? candidatesRaw.reduce<LanCandidate[]>((acc, item) => {
-                if (!item || typeof item !== "object") {
-                  return acc;
-                }
-                const c = item as Record<string, unknown>;
-                if (typeof c.cidr !== "string") {
-                  return acc;
-                }
-
-                const parsed: LanCandidate = { cidr: c.cidr };
-                if (typeof c.label === "string") {
-                  parsed.label = c.label;
-                }
-                if (typeof c.interface === "string") {
-                  parsed.interface = c.interface;
-                }
-                if (typeof c.ipv4 === "string") {
-                  parsed.ipv4 = c.ipv4;
-                }
-                if (typeof c.primary === "boolean") {
-                  parsed.primary = c.primary;
-                }
-                acc.push(parsed);
-                return acc;
-              }, [])
-            : undefined;
-
-          const parsedDevices: DiscoveredDevice[] = [];
-          if (devices) {
-            for (const item of devices) {
-              if (!item || typeof item !== "object") {
-                continue;
-              }
-              const d = item as Record<string, unknown>;
-              if (typeof d.baseUrl !== "string") {
-                continue;
-              }
-              parsedDevices.push({
-                baseUrl: d.baseUrl,
-                device_id:
-                  typeof d.device_id === "string" ? d.device_id : undefined,
-                hostname:
-                  typeof d.hostname === "string" ? d.hostname : undefined,
-                fqdn: typeof d.fqdn === "string" ? d.fqdn : undefined,
-                ipv4: typeof d.ipv4 === "string" ? d.ipv4 : undefined,
-                variant: typeof d.variant === "string" ? d.variant : undefined,
-                firmware:
-                  d.firmware &&
-                  typeof d.firmware === "object" &&
-                  typeof (d.firmware as Record<string, unknown>).name ===
-                    "string" &&
-                  typeof (d.firmware as Record<string, unknown>).version ===
-                    "string"
-                    ? {
-                        name: (d.firmware as Record<string, unknown>)
-                          .name as string,
-                        version: (d.firmware as Record<string, unknown>)
-                          .version as string,
-                      }
-                    : undefined,
-                last_seen_at:
-                  typeof d.last_seen_at === "string"
-                    ? d.last_seen_at
-                    : undefined,
-              });
-            }
-          }
-
           // Preserve local reducer dedup semantics (device_id preferred).
           let merged: DiscoveredDevice[] = [];
-          for (const d of parsedDevices) {
+          for (const d of parsed.devices) {
             merged = mergeDiscoveredDevice(merged, d);
           }
 
           dispatch({
             type: "set_snapshot",
             snapshot: {
-              mode,
-              status,
+              mode: parsed.mode,
+              status: parsed.status,
               devices: merged,
-              error,
-              scan: scanShape,
-              ipScan: ipScan
-                ? { expanded: false, defaultCidr, candidates }
-                : undefined,
+              error: parsed.error,
+              scan: parsed.scan,
+              ipScan: parsed.ipScan,
             },
           });
         })();

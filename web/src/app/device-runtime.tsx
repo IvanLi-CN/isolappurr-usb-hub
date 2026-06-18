@@ -53,17 +53,18 @@ import {
   isLinkedTransportActive,
   type JsonlEnvelope,
   jsonlTimeoutMsForMethod,
-  localUsbDeviceIdForDevice,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
   recoverWifiClearLikeTimeout,
   resetLocalUsbRuntimeState,
   resolveActiveDeviceTransport,
+  resolveLocalUsbTarget,
   resolveOrderedDeviceTransports,
   runQueuedDeviceRequest,
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
+  verifiedWifiHttpBaseUrl,
 } from "./device-runtime-support";
 import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
@@ -74,18 +75,6 @@ export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
-
-function verifiedWifiHttpBaseUrl(
-  info: DeviceInfoResponse,
-  deviceId: string,
-): string | null {
-  const infoDeviceId = info.device.device_id?.trim().toLowerCase();
-  const wifiIpv4 = info.device.wifi?.ipv4?.trim();
-  if (!infoDeviceId || infoDeviceId !== deviceId || !wifiIpv4) {
-    return null;
-  }
-  return `http://${wifiIpv4}`;
-}
 
 export function DeviceRuntimeProvider({
   children,
@@ -171,38 +160,6 @@ export function DeviceRuntimeProvider({
     setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
   }, [demoEnabled]);
 
-  const findLocalUsbTarget = useCallback(
-    async (
-      deviceId: string,
-    ): Promise<
-      | { kind: "port_path"; portPath: string }
-      | { kind: "devd_device"; deviceId: string }
-      | null
-    > => {
-      const cached = localUsbPortByDevice.current[deviceId];
-      if (cached) {
-        return { kind: "port_path", portPath: cached };
-      }
-      const linked = getLocalUsbDeviceLink(deviceId);
-      if (linked) {
-        localUsbPortByDevice.current[deviceId] = linked;
-        return { kind: "port_path", portPath: linked };
-      }
-      const stored = devices.find((device) => device.id === deviceId);
-      const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
-      if (devdDeviceId) {
-        return { kind: "devd_device", deviceId: devdDeviceId };
-      }
-      const storedPortPath = stored ? localUsbPortPathForDevice(stored) : null;
-      if (storedPortPath) {
-        localUsbPortByDevice.current[deviceId] = storedPortPath;
-        return { kind: "port_path", portPath: storedPortPath };
-      }
-      return null;
-    },
-    [devices],
-  );
-
   const requestLocalUsb = useCallback(
     async <T,>(
       deviceId: string,
@@ -216,7 +173,15 @@ export function DeviceRuntimeProvider({
           error: { kind: "offline", message: "Local USB service unavailable" },
         };
       }
-      const target = await findLocalUsbTarget(deviceId);
+      const target = resolveLocalUsbTarget({
+        deviceId,
+        devices,
+        cachedPortPath: localUsbPortByDevice.current[deviceId],
+        linkedPortPath: getLocalUsbDeviceLink(deviceId),
+      });
+      if (target?.kind === "port_path") {
+        localUsbPortByDevice.current[deviceId] = target.portPath;
+      }
       if (!target) {
         return {
           ok: false,
@@ -295,7 +260,7 @@ export function DeviceRuntimeProvider({
         },
       );
     },
-    [findLocalUsbTarget, getLocalUsbAgent],
+    [devices, getLocalUsbAgent],
   );
 
   const requestWebSerial = useCallback(

@@ -125,6 +125,18 @@ export function httpBaseUrlForDevice(device: StoredDevice): string {
   return device.transports?.httpBaseUrl ?? device.baseUrl;
 }
 
+export function verifiedWifiHttpBaseUrl(
+  info: DeviceInfoResponse,
+  deviceId: string,
+): string | null {
+  const infoDeviceId = info.device.device_id?.trim().toLowerCase();
+  const wifiIpv4 = info.device.wifi?.ipv4?.trim();
+  if (!infoDeviceId || infoDeviceId !== deviceId || !wifiIpv4) {
+    return null;
+  }
+  return `http://${wifiIpv4}`;
+}
+
 export function localUsbPortPathForDevice(device: StoredDevice): string | null {
   const portPath = device.transports?.localUsbPortPath?.trim();
   return portPath ? portPath : null;
@@ -132,6 +144,38 @@ export function localUsbPortPathForDevice(device: StoredDevice): string | null {
 
 export function localUsbDeviceIdForDevice(device: StoredDevice): string | null {
   return devdLocalUsbDeviceIdFromBaseUrl(device.baseUrl);
+}
+
+export function resolveLocalUsbTarget({
+  deviceId,
+  devices,
+  cachedPortPath,
+  linkedPortPath,
+}: {
+  deviceId: string;
+  devices: StoredDevice[];
+  cachedPortPath: string | null | undefined;
+  linkedPortPath: string | null;
+}):
+  | { kind: "port_path"; portPath: string }
+  | { kind: "devd_device"; deviceId: string }
+  | null {
+  if (cachedPortPath) {
+    return { kind: "port_path", portPath: cachedPortPath };
+  }
+  if (linkedPortPath) {
+    return { kind: "port_path", portPath: linkedPortPath };
+  }
+  const stored = devices.find((device) => device.id === deviceId);
+  const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
+  if (devdDeviceId) {
+    return { kind: "devd_device", deviceId: devdDeviceId };
+  }
+  const storedPortPath = stored ? localUsbPortPathForDevice(stored) : null;
+  if (storedPortPath) {
+    return { kind: "port_path", portPath: storedPortPath };
+  }
+  return null;
 }
 
 export function shortApiError(err: DeviceApiError): string {
