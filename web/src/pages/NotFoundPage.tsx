@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { DemoLink } from "../app/demo-navigation";
 
 export function NotFoundPage() {
   return (
@@ -8,9 +8,9 @@ export function NotFoundPage() {
         The page you are looking for does not exist.
       </div>
       <div>
-        <Link className="link" to="/">
+        <DemoLink className="link" to="/">
           Back to dashboard
-        </Link>
+        </DemoLink>
       </div>
     </div>
   );

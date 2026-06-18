@@ -24,8 +24,12 @@ AD_HOC_DEMO_ROUTE_PATTERNS = [
     re.compile(r'path\s*=\s*"demo"'),
     re.compile(r'path\s*=\s*"/demo"'),
     re.compile(r"path\s*=\s*\{[^}]*demo[^}]*\}"),
-    re.compile(r"demo="),
-    re.compile(r'searchParams\.(get|has)\(\s*["\']demo["\']\s*\)'),
+]
+
+CONTROLLED_DEMO_PATTERNS = [
+    re.compile(r"\?demo=true"),
+    re.compile(r"\?demo=false"),
+    re.compile(r'isolapurr\.demo\.enabled'),
 ]
 
 
@@ -147,12 +151,19 @@ class SkillContractTest(unittest.TestCase):
         for path in ROOT.glob("web/src/pages/*.stories.*"):
             self.fail(f"page-level Storybook story is forbidden: {path}")
 
-    def test_app_router_does_not_add_ad_hoc_demo_entrypoints(self) -> None:
+    def test_app_router_only_uses_controlled_demo_entrypoints(self) -> None:
         app = read("web/src/App.tsx")
         for pattern in AD_HOC_DEMO_ROUTE_PATTERNS:
             self.assertIsNone(
                 pattern.search(app),
                 msg=f"web/src/App.tsx reintroduced ad hoc demo entrypoint: {pattern.pattern}",
+            )
+        demo_mode = read("web/src/app/demo-mode.tsx")
+        combined = f"{app}\n{demo_mode}"
+        for pattern in CONTROLLED_DEMO_PATTERNS:
+            self.assertIsNotNone(
+                pattern.search(combined),
+                msg=f"controlled demo contract missing: {pattern.pattern}",
             )
 
 

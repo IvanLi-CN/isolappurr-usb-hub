@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { useNavigate } from "react-router";
 
 import { useAddDeviceUi } from "../app/add-device-ui";
+import { useDemoNavigate } from "../app/demo-navigation";
 import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
 import type { PortId, PortState, PortTelemetry } from "../domain/ports";
@@ -35,7 +35,7 @@ function mergedPortState(
 }
 
 export function DashboardPage() {
-  const navigate = useNavigate();
+  const navigate = useDemoNavigate();
   const { openAddDevice } = useAddDeviceUi();
   const { devices } = useDevices();
   const runtime = useDeviceRuntime();

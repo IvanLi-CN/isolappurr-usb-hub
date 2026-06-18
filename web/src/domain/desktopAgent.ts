@@ -12,7 +12,24 @@ export type DesktopAgent = {
 const LOCAL_USB_PORT_START = 51200;
 const LOCAL_USB_PORT_END = 51299;
 
+function isDemoModeEnabled(): boolean {
+  if (typeof window === "undefined" || !window.sessionStorage) {
+    return false;
+  }
+  return window.sessionStorage.getItem("isolapurr.demo.enabled") === "true";
+}
+
+function demoDesktopAgent(): DesktopAgent {
+  return {
+    token: "demo-session",
+    agentBaseUrl: "https://demo-agent.invalid",
+  };
+}
+
 export async function tryBootstrapDesktopAgent(): Promise<DesktopAgent | null> {
+  if (isDemoModeEnabled()) {
+    return demoDesktopAgent();
+  }
   const sameOrigin = await fetchDesktopAgentBootstrap("/api/v1/bootstrap");
   if (sameOrigin) {
     return sameOrigin;

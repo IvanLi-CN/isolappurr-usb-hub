@@ -29,6 +29,7 @@ import {
 import { forgetLocalUsbDeviceLink } from "../domain/localUsbLinks";
 import { forgetWebSerialDeviceTransport } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
+import { isDemoDesktopAgent, useDemoMode } from "./demo-mode";
 import { useDesktopAgent } from "./desktop-agent-ui";
 import { readMigrationPayload } from "./storage-migration";
 
@@ -51,6 +52,7 @@ export function DevicesProvider({
   initialDevices?: StoredDevice[];
 }) {
   const { agent, status } = useDesktopAgent();
+  useDemoMode();
   const { pushToast } = useToast();
   const warnedRef = useRef(false);
   const [devices, setDevices] = useState<StoredDevice[]>(() =>
@@ -98,7 +100,7 @@ export function DevicesProvider({
   }, [agent, status, pushToast, initialDevices]);
 
   useEffect(() => {
-    if (status !== "ready" || !agent) {
+    if (status !== "ready" || !agent || isDemoDesktopAgent(agent)) {
       return;
     }
     void (async () => {
@@ -125,7 +127,12 @@ export function DevicesProvider({
   }, [agent, status, pushToast]);
 
   useEffect(() => {
-    if (status !== "ready" || !agent || warnedRef.current) {
+    if (
+      status !== "ready" ||
+      !agent ||
+      warnedRef.current ||
+      isDemoDesktopAgent(agent)
+    ) {
       return;
     }
     void (async () => {

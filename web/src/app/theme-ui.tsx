@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { fetchStoredTheme, updateStoredTheme } from "../domain/desktopStorage";
+import { isDemoDesktopAgent } from "./demo-mode";
 import { useDesktopAgent } from "./desktop-agent-ui";
 import {
   applyThemePreference,
@@ -26,7 +27,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
     let cancelled = false;
     const loadTheme = async () => {
-      if (agent) {
+      if (agent && !isDemoDesktopAgent(agent)) {
         const res = await fetchStoredTheme(agent);
         if (!cancelled && res.ok) {
           setTheme(res.value);
@@ -45,7 +46,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [agent, status]);
 
   useEffect(() => {
-    if (!agent) {
+    if (!agent || isDemoDesktopAgent(agent)) {
       return;
     }
     const onMigrated = () => {
@@ -67,7 +68,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (!ready) {
       return;
     }
-    if (agent) {
+    if (agent && !isDemoDesktopAgent(agent)) {
       void updateStoredTheme(agent, theme);
       return;
     }
