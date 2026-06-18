@@ -59,7 +59,7 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
         )
         .route(
             "/api/v1/devices/{id}/power/runtime",
-            post(device_power_runtime_set),
+            post(device_power_runtime_set).put(device_power_runtime_set),
         )
         .route(
             "/api/v1/devices/{id}/power/idle-bias",

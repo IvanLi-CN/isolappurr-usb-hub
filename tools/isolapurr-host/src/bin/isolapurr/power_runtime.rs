@@ -80,7 +80,7 @@ async fn set_power_runtime_command(
             client,
             devd,
             selector.clone(),
-            Method::POST,
+            Method::PUT,
             &format!("/power/runtime?owner={owner}"),
             Some(json!({
                 "action": action,

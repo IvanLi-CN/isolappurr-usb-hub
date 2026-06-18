@@ -635,7 +635,7 @@ export async function setPowerRuntime(
     baseUrl,
     `/api/v1/power/runtime?owner=${owner}`,
     {
-      method: "PUT",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, enabled }),
     },

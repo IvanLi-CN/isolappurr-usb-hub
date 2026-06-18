@@ -645,10 +645,9 @@
         if usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual {
             let manual_vout_mv = quantize_manual_voltage_mv(power_config.manual.voltage_mv);
             setpoint = PowerSetpoint {
-                output_enabled: runtime_tps_output_enabled,
-                discharge_enabled: runtime_tps_discharge_enabled,
                 v_out_mv: manual_vout_mv,
                 i_lim_ma: power_config.manual.current_limit_ma,
+                ..setpoint
             };
 
             let explicit_request_mv = request
@@ -728,6 +727,12 @@
             tps_state.light_load_mode = None;
             tps_state.last = None;
             continue;
+        }
+
+        if usb_c_pd_power_on {
+            setpoint.output_enabled = runtime_tps_output_enabled;
+            setpoint.discharge_enabled =
+                runtime_tps_discharge_enabled && !runtime_tps_output_enabled;
         }
 
         let tps_apply_needed = tps_state.last != Some(setpoint);

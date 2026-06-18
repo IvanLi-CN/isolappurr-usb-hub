@@ -100,6 +100,24 @@ mod power_output_tests {
             .expect("idle-bias run endpoint should map");
         assert_eq!(path, "/api/v1/power/idle-bias/run?owner=9");
         assert!(body.is_none());
+
+        let (_, path, body) = map_http_endpoint(
+            Method::POST,
+            "/power/runtime?owner=9",
+            Some(json!({"action": "output", "enabled": false})),
+        )
+        .expect("runtime endpoint should map");
+        assert_eq!(path, "/api/v1/power/runtime?owner=9");
+        assert_eq!(body, Some(json!({"action": "output", "enabled": false})));
+
+        let (_, path, body) = map_http_endpoint(
+            Method::PUT,
+            "/power/runtime?owner=9",
+            Some(json!({"action": "discharge", "enabled": true})),
+        )
+        .expect("runtime put endpoint should map");
+        assert_eq!(path, "/api/v1/power/runtime?owner=9");
+        assert_eq!(body, Some(json!({"action": "discharge", "enabled": true})));
     }
 
     #[test]

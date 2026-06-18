@@ -290,7 +290,7 @@ describe("setPowerRuntime", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(method).toBe("PUT");
+    expect(method).toBe("POST");
     expect(url).toContain("/api/v1/power/runtime?owner=7");
     expect(bodyText).toBe(JSON.stringify({ action: "output", enabled: false }));
   });
