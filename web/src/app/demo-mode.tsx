@@ -149,6 +149,26 @@ function apiError(status: number, code: string, message: string): Response {
   );
 }
 
+function applyRuntimePowerMutation(
+  power: PowerConfigResponse,
+  action: "output" | "discharge",
+  enabled: boolean,
+): PowerConfigResponse {
+  const nextRuntime = {
+    output_enabled: power.runtime?.output_enabled ?? true,
+    discharge_enabled: power.runtime?.discharge_enabled ?? false,
+  };
+  if (action === "output") {
+    nextRuntime.output_enabled = enabled;
+  } else {
+    nextRuntime.discharge_enabled = enabled;
+  }
+  return {
+    ...power,
+    runtime: nextRuntime,
+  };
+}
+
 function parseRequestUrl(input: RequestInfo | URL): URL {
   if (input instanceof URL) {
     return input;
@@ -596,6 +616,37 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
       response: findByDeviceId(next, deviceId)?.power ?? defaults,
     } as unknown as DemoApiResponse);
   }
+  if (suffix === "power/runtime" && (method === "POST" || method === "PUT")) {
+    const body = readJsonBody(init) as {
+      action?: "output" | "discharge";
+      enabled?: boolean;
+    } | null;
+    if (
+      (body?.action !== "output" && body?.action !== "discharge") ||
+      typeof body?.enabled !== "boolean"
+    ) {
+      return apiError(
+        400,
+        "bad_request",
+        "missing or invalid power runtime command",
+      );
+    }
+    const next = updateWorld((current) => {
+      const mutated = cloneWorld(current);
+      const target = findByDeviceId(mutated, deviceId);
+      if (target) {
+        target.power = applyRuntimePowerMutation(
+          target.power,
+          body.action,
+          body.enabled,
+        );
+      }
+      return mutated;
+    });
+    return jsonResponse({
+      response: findByDeviceId(next, deviceId)?.power ?? record.power,
+    } as unknown as DemoApiResponse);
+  }
   if (
     (suffix === "power/config/lock" || suffix === "power/config/release") &&
     method === "POST"
@@ -878,6 +929,40 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
     });
     return jsonResponse(
       findByDeviceId(next, record.stored.id)?.power ?? defaults,
+    );
+  }
+  if (
+    url.pathname === "/api/v1/power/runtime" &&
+    (method === "POST" || method === "PUT")
+  ) {
+    const body = readJsonBody(init) as {
+      action?: "output" | "discharge";
+      enabled?: boolean;
+    } | null;
+    if (
+      (body?.action !== "output" && body?.action !== "discharge") ||
+      typeof body?.enabled !== "boolean"
+    ) {
+      return apiError(
+        400,
+        "bad_request",
+        "missing or invalid power runtime command",
+      );
+    }
+    const next = updateWorld((current) => {
+      const mutated = cloneWorld(current);
+      const target = findByDeviceId(mutated, record.stored.id);
+      if (target) {
+        target.power = applyRuntimePowerMutation(
+          target.power,
+          body.action,
+          body.enabled,
+        );
+      }
+      return mutated;
+    });
+    return jsonResponse(
+      findByDeviceId(next, record.stored.id)?.power ?? record.power,
     );
   }
   if (

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { createDemoDesktopAgent } from "../domain/desktopAgent";
 import { LocalUsbAgentHttpError } from "../domain/hardwareConsole";
+import { ensureDemoFetchInterceptor, resetDemoModeSession } from "./demo-mode";
 import {
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
@@ -15,6 +16,28 @@ import {
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
 } from "./device-runtime-support";
+
+function mockDemoSessionStorage() {
+  const store = new Map<string, string>();
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      location: { origin: "http://127.0.0.1:45173" },
+      sessionStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => void store.set(key, value),
+        removeItem: (key: string) => void store.delete(key),
+      },
+      dispatchEvent: () => true,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      setInterval,
+      clearInterval,
+      setTimeout,
+      clearTimeout,
+    },
+  });
+}
 
 describe("localUsbErrorToDeviceApiError", () => {
   test("preserves structured devd busy errors", () => {
@@ -377,6 +400,32 @@ describe("runQueuedDeviceRequest", () => {
     expect(events).toContain("856a:start");
     expect(events).toContain("f293:end");
     expect(events).toContain("856a:end");
+  });
+});
+
+describe("demo local usb runtime power", () => {
+  test("routes runtime power toggles through the demo local-usb device endpoint", async () => {
+    mockDemoSessionStorage();
+    const originalFetch = globalThis.fetch;
+    ensureDemoFetchInterceptor();
+    resetDemoModeSession();
+
+    const response = await fetch(
+      "https://demo-agent.invalid/api/v1/devices/ddeecc003344/power/runtime?owner=7",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "output", enabled: false }),
+      },
+    );
+
+    const json = (await response.json()) as {
+      response?: { runtime?: { output_enabled?: boolean } };
+    };
+    expect(response.ok).toBe(true);
+    expect(json.response?.runtime?.output_enabled).toBe(false);
+
+    globalThis.fetch = originalFetch;
   });
 });
 
