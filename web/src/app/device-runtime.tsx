@@ -938,52 +938,49 @@ export function DeviceRuntimeProvider({
     [pushToast],
   );
 
-  const setPower = useCallback(
-    async (deviceId: string, portId: PortId, enabled: boolean) => {
+  const runPendingMutation = useCallback(
+    async <T,>({
+      deviceId,
+      pendingPortId,
+      method,
+      params,
+      errorLabel,
+      successMessage,
+      allowedTransports,
+    }: {
+      deviceId: string;
+      pendingPortId: PortId;
+      method: string;
+      params?: Record<string, unknown>;
+      errorLabel: string;
+      successMessage: (deviceName: string, result: T) => string;
+      allowedTransports?: DeviceTransport[];
+    }): Promise<Result<T> | null> => {
       const device = devices.find((d) => d.id === deviceId);
       if (!device) {
-        return;
+        return null;
       }
 
-      const label = portId === "port_a" ? "USB-A" : "USB-C";
-      setPending(deviceId, portId, true);
+      setPending(deviceId, pendingPortId, true);
       try {
-        let res: Result<{ accepted: true }> | null = null;
-        for (const transport of orderedTransports(deviceId)) {
-          const candidate = await requestTransport<{ accepted: true }>(
-            deviceId,
-            transport === "http"
-              ? httpBaseUrlForDevice(device)
-              : device.baseUrl,
-            transport,
-            "port.power_set",
-            {
-              port: portId,
-              enabled,
-            },
-          );
-          markChannelResult(deviceId, transport, candidate);
-          if (candidate.ok) {
-            preferredTransportByDevice.current[deviceId] = transport;
-            res = candidate;
-            break;
-          }
-          res = candidate;
-        }
-        if (!res) {
-          return;
-        }
-        if (res.ok) {
+        const result = await runDeviceCommand<T>(
+          deviceId,
+          method,
+          params,
+          allowedTransports,
+        );
+        if (result.ok) {
           pushToast({
-            message: `${device.name}: ${label} power set`,
+            message: successMessage(device.name, result.value),
             variant: "success",
           });
           await refreshDevice(deviceId);
-          return;
+        } else {
+          handleApiErrorToast(device.name, errorLabel, result.error);
         }
-        handleApiErrorToast(device.name, label, res.error);
+        return result;
       } finally {
-        setPending(deviceId, portId, false);
+        setPending(deviceId, pendingPortId, false);
       }
     },
     [
@@ -991,11 +988,27 @@ export function DeviceRuntimeProvider({
       handleApiErrorToast,
       pushToast,
       refreshDevice,
-      markChannelResult,
-      orderedTransports,
-      requestTransport,
+      runDeviceCommand,
       setPending,
     ],
+  );
+
+  const setPower = useCallback(
+    async (deviceId: string, portId: PortId, enabled: boolean) => {
+      const label = portId === "port_a" ? "USB-A" : "USB-C";
+      await runPendingMutation<{ accepted: true }>({
+        deviceId,
+        pendingPortId: portId,
+        method: "port.power_set",
+        params: {
+          port: portId,
+          enabled,
+        },
+        errorLabel: label,
+        successMessage: (deviceName) => `${deviceName}: ${label} power set`,
+      });
+    },
+    [runPendingMutation],
   );
 
   const setPowerRuntime = useCallback(
@@ -1005,8 +1018,20 @@ export function DeviceRuntimeProvider({
       action: "output" | "discharge",
       enabled: boolean,
     ): Promise<Result<PowerConfigResponse>> => {
-      const device = devices.find((d) => d.id === deviceId);
-      if (!device) {
+      const label = action === "output" ? "Power" : "TPS discharge";
+      const result = await runPendingMutation<PowerConfigResponse>({
+        deviceId,
+        pendingPortId: "port_c",
+        method: "power.runtime_set",
+        params: {
+          action,
+          enabled,
+          owner,
+        },
+        errorLabel: label,
+        successMessage: (deviceName) => `${deviceName}: ${label} updated`,
+      });
+      if (!result) {
         return {
           ok: false,
           error: {
@@ -1015,196 +1040,51 @@ export function DeviceRuntimeProvider({
           },
         };
       }
-
-      setPending(deviceId, "port_c", true);
-      try {
-        let res: Result<PowerConfigResponse> | null = null;
-        for (const transport of orderedTransports(deviceId)) {
-          const candidate = await requestTransport<PowerConfigResponse>(
-            deviceId,
-            transport === "http"
-              ? httpBaseUrlForDevice(device)
-              : device.baseUrl,
-            transport,
-            "power.runtime_set",
-            {
-              action,
-              enabled,
-              owner,
-            },
-          );
-          markChannelResult(deviceId, transport, candidate);
-          if (candidate.ok) {
-            preferredTransportByDevice.current[deviceId] = transport;
-            res = candidate;
-            break;
-          }
-          res = candidate;
-        }
-        if (!res) {
-          return {
-            ok: false,
-            error: {
-              kind: "offline",
-              message: "No transport responded",
-            },
-          };
-        }
-        if (res.ok) {
-          pushToast({
-            message: `${device.name}: ${action === "output" ? "Power" : "TPS discharge"} updated`,
-            variant: "success",
-          });
-          await refreshDevice(deviceId);
-          return res;
-        }
-        handleApiErrorToast(
-          device.name,
-          action === "output" ? "Power" : "TPS discharge",
-          res.error,
-        );
-        return res;
-      } finally {
-        setPending(deviceId, "port_c", false);
-      }
+      return result;
     },
-    [
-      devices,
-      handleApiErrorToast,
-      markChannelResult,
-      orderedTransports,
-      pushToast,
-      refreshDevice,
-      requestTransport,
-      setPending,
-    ],
+    [runPendingMutation],
   );
 
   const replug = useCallback(
     async (deviceId: string, portId: PortId) => {
-      const device = devices.find((d) => d.id === deviceId);
-      if (!device) {
-        return;
-      }
-
       const label = portId === "port_a" ? "USB-A" : "USB-C";
-      setPending(deviceId, portId, true);
-      try {
-        let res: Result<{ accepted: true }> | null = null;
-        for (const transport of orderedTransports(deviceId)) {
-          const candidate = await requestTransport<{ accepted: true }>(
-            deviceId,
-            transport === "http"
-              ? httpBaseUrlForDevice(device)
-              : device.baseUrl,
-            transport,
-            "port.replug",
-            {
-              port: portId,
-            },
-          );
-          markChannelResult(deviceId, transport, candidate);
-          if (candidate.ok) {
-            preferredTransportByDevice.current[deviceId] = transport;
-            res = candidate;
-            break;
-          }
-          res = candidate;
-        }
-        if (!res) {
-          return;
-        }
-        if (res.ok) {
-          pushToast({
-            message: `${device.name}: ${label} replug accepted`,
-            variant: "success",
-          });
-          await refreshDevice(deviceId);
-          return;
-        }
-        handleApiErrorToast(device.name, label, res.error);
-      } finally {
-        setPending(deviceId, portId, false);
-      }
+      await runPendingMutation<{ accepted: true }>({
+        deviceId,
+        pendingPortId: portId,
+        method: "port.replug",
+        params: {
+          port: portId,
+        },
+        errorLabel: label,
+        successMessage: (deviceName) =>
+          `${deviceName}: ${label} replug accepted`,
+      });
     },
-    [
-      devices,
-      handleApiErrorToast,
-      pushToast,
-      refreshDevice,
-      markChannelResult,
-      orderedTransports,
-      requestTransport,
-      setPending,
-    ],
+    [runPendingMutation],
   );
 
   const setRoute = useCallback(
     async (deviceId: string, route: UsbCDownstreamRoute) => {
-      const device = devices.find((d) => d.id === deviceId);
-      if (!device) {
-        return;
-      }
-
-      setPending(deviceId, "port_c", true);
-      try {
-        let res: Result<{
-          accepted: true;
-          usb_c_downstream_route: UsbCDownstreamRoute;
-          persisted: boolean;
-        }> | null = null;
-        for (const transport of orderedTransports(deviceId)) {
-          const candidate = await requestTransport<{
-            accepted: true;
-            usb_c_downstream_route: UsbCDownstreamRoute;
-            persisted: boolean;
-          }>(
-            deviceId,
-            transport === "http"
-              ? httpBaseUrlForDevice(device)
-              : device.baseUrl,
-            transport,
-            "hub.route_set",
-            {
-              route,
-            },
-          );
-          markChannelResult(deviceId, transport, candidate);
-          if (candidate.ok) {
-            preferredTransportByDevice.current[deviceId] = transport;
-            res = candidate;
-            break;
-          }
-          res = candidate;
-        }
-        if (!res) {
-          return;
-        }
-        if (res.ok) {
+      await runPendingMutation<{
+        accepted: true;
+        usb_c_downstream_route: UsbCDownstreamRoute;
+        persisted: boolean;
+      }>({
+        deviceId,
+        pendingPortId: "port_c",
+        method: "hub.route_set",
+        params: {
+          route,
+        },
+        errorLabel: "USB-C route",
+        successMessage: (deviceName, result) => {
           const label =
-            res.value.usb_c_downstream_route === "mcu" ? "Upgrade" : "Normal";
-          pushToast({
-            message: `${device.name}: USB-C mode set to ${label}`,
-            variant: "success",
-          });
-          await refreshDevice(deviceId);
-          return;
-        }
-        handleApiErrorToast(device.name, "USB-C route", res.error);
-      } finally {
-        setPending(deviceId, "port_c", false);
-      }
+            result.usb_c_downstream_route === "mcu" ? "Upgrade" : "Normal";
+          return `${deviceName}: USB-C mode set to ${label}`;
+        },
+      });
     },
-    [
-      devices,
-      handleApiErrorToast,
-      markChannelResult,
-      orderedTransports,
-      pushToast,
-      refreshDevice,
-      requestTransport,
-      setPending,
-    ],
+    [runPendingMutation],
   );
 
   const value = useMemo<DeviceRuntimeContextValue>(() => {
