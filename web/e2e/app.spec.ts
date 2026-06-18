@@ -48,7 +48,9 @@ test("publishes PWA metadata and offline app shell", async ({
     page.locator('link[rel="icon"][type="image/svg+xml"]'),
   ).toHaveAttribute("href", /isolapurr-mark\.svg/);
 
-  await page.waitForFunction(() => navigator.serviceWorker.controller);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
 
   await context.setOffline(true);
   await page.goto("/");
@@ -102,4 +104,29 @@ test("opens add device modal with supported connection methods (web)", async ({
       { exact: true },
     ),
   ).toBeVisible();
+});
+
+test("renders standalone 404 fallback for unknown routes", async ({ page }) => {
+  await page.goto("/missing-route");
+
+  await expect(page.getByTestId("not-found")).toBeVisible();
+  await expect(page.getByTestId("error-state-full-page")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Page not found" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("not-found-path")).toContainText(
+    "Missing path:",
+  );
+  await expect(page.getByTestId("not-found-path")).toContainText(
+    "/missing-route",
+  );
+  await expect(page.getByTestId("device-list")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+    "href",
+    "/",
+  );
+  await expect(page.getByRole("link", { name: "About" })).toHaveAttribute(
+    "href",
+    "/about",
+  );
 });

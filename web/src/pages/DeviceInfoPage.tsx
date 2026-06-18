@@ -1,7 +1,8 @@
 import { useParams } from "react-router";
-import { DemoLink, useDemoNavigate } from "../app/demo-navigation";
+import { useDemoNavigate } from "../app/demo-navigation";
 import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
+import { MissingDeviceState } from "../ui/errors/MissingDeviceState";
 import { DevicePageTabs } from "../ui/nav/DevicePageTabs";
 import { DeviceInfoPanel } from "../ui/panels/DeviceInfoPanel";
 
@@ -17,19 +18,7 @@ export function DeviceInfoPage() {
 
   const device = getDevice(deviceId);
   if (!device) {
-    return (
-      <div className="flex flex-col gap-3" data-testid="device-not-found">
-        <div className="text-lg font-semibold">Device not found</div>
-        <div className="text-sm opacity-80">
-          Choose an existing device or add a new one.
-        </div>
-        <div>
-          <DemoLink className="link" to="/">
-            Back to dashboard
-          </DemoLink>
-        </div>
-      </div>
-    );
+    return <MissingDeviceState />;
   }
 
   const shortId = device.id.length > 6 ? device.id.slice(0, 6) : device.id;
