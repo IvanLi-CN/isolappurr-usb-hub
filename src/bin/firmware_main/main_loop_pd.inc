@@ -761,6 +761,7 @@
             tps_consecutive_errors = tps_consecutive_errors.saturating_add(1);
             tps_state.light_load_mode = None;
             tps_state.last = None;
+            #[cfg(feature = "net_http")]
             if power_runtime_result_inflight {
                 let mut guard = api_state.lock().await;
                 guard.pending.power_runtime = None;

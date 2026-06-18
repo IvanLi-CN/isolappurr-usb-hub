@@ -421,7 +421,6 @@
     let mut runtime_tps_discharge_enabled = false;
     let mut runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
     let mut runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
-    #[cfg(feature = "net_http")]
     let mut power_runtime_result_inflight = false;
     #[cfg(feature = "net_http")]
     let mut settings_reset_inflight: Option<net::ApiSettingsResetScope> = None;
@@ -575,7 +574,6 @@
         let ui_was_in_error = ui_error_latched;
         #[cfg(feature = "net_http")]
         let mut power_config_result_pending: Option<bool> = None;
-        #[cfg(feature = "net_http")]
         let mut power_runtime_result_pending: Option<bool> = None;
         let usb_c_pd_power_on: bool;
         let usb_c_power_off_setpoint: PowerSetpoint;

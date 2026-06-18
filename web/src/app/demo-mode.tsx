@@ -631,15 +631,13 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
         "missing or invalid power runtime command",
       );
     }
+    const action = body.action;
+    const enabled = body.enabled;
     const next = updateWorld((current) => {
       const mutated = cloneWorld(current);
       const target = findByDeviceId(mutated, deviceId);
       if (target) {
-        target.power = applyRuntimePowerMutation(
-          target.power,
-          body.action,
-          body.enabled,
-        );
+        target.power = applyRuntimePowerMutation(target.power, action, enabled);
       }
       return mutated;
     });
@@ -949,15 +947,13 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
         "missing or invalid power runtime command",
       );
     }
+    const action = body.action;
+    const enabled = body.enabled;
     const next = updateWorld((current) => {
       const mutated = cloneWorld(current);
       const target = findByDeviceId(mutated, record.stored.id);
       if (target) {
-        target.power = applyRuntimePowerMutation(
-          target.power,
-          body.action,
-          body.enabled,
-        );
+        target.power = applyRuntimePowerMutation(target.power, action, enabled);
       }
       return mutated;
     });
