@@ -794,6 +794,11 @@
             && !tps_boot_restore_needed)
             || (!tps_voltage_update_needed && !tps_apply_needed)
         {
+            if power_runtime_result_inflight && !tps_apply_needed {
+                runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
+                runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
+                power_runtime_result_pending = Some(true);
+            }
             loop_delay_ms = SW2303_POLL_MS;
         } else if let Err(err) =
             apply_setpoint(telemetry_sampler.i2c_mut(), &mut tps_state, setpoint).await
