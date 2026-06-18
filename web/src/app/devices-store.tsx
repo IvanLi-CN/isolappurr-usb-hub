@@ -7,6 +7,10 @@ import {
   useState,
 } from "react";
 import {
+  createDemoDesktopAgent,
+  isDemoDesktopAgent,
+} from "../domain/desktopAgent";
+import {
   deleteStoredDevice,
   exportStorage,
   fetchStoredDevices,
@@ -24,11 +28,13 @@ import {
   normalizeBaseUrl,
   preferVerifiedHttpBaseUrl,
   saveStoredDevices,
+  validateAddDeviceDraftInput,
   validateAddDeviceInput,
 } from "../domain/devices";
 import { forgetLocalUsbDeviceLink } from "../domain/localUsbLinks";
 import { forgetWebSerialDeviceTransport } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
+import { DEMO_RESET_EVENT, useDemoMode } from "./demo-mode";
 import { useDesktopAgent } from "./desktop-agent-ui";
 import { readMigrationPayload } from "./storage-migration";
 
@@ -43,6 +49,8 @@ type DevicesContextValue = {
 
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
+type DeviceStateSource = "provided" | "browser" | "desktop" | "demo";
+
 export function DevicesProvider({
   children,
   initialDevices,
@@ -51,22 +59,26 @@ export function DevicesProvider({
   initialDevices?: StoredDevice[];
 }) {
   const { agent, status } = useDesktopAgent();
+  const { enabled: demoEnabled } = useDemoMode();
   const { pushToast } = useToast();
   const warnedRef = useRef(false);
   const [devices, setDevices] = useState<StoredDevice[]>(() =>
     initialDevices ? initialDevices : loadStoredDevices(),
   );
+  const [source, setSource] = useState<DeviceStateSource>(() =>
+    initialDevices ? "provided" : "browser",
+  );
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!ready) {
+    if (!ready || status !== "ready" || source !== "browser") {
       return;
     }
     if (agent) {
       return;
     }
     saveStoredDevices(devices);
-  }, [devices, agent, ready]);
+  }, [devices, agent, ready, source, status]);
 
   useEffect(() => {
     if (status !== "ready") {
@@ -86,9 +98,13 @@ export function DevicesProvider({
           });
         } else {
           setDevices(res.value);
+          setSource(isDemoDesktopAgent(agent) ? "demo" : "desktop");
         }
       } else if (!initialDevices) {
         setDevices(loadStoredDevices());
+        setSource("browser");
+      } else {
+        setSource("provided");
       }
       setReady(true);
     })();
@@ -98,7 +114,31 @@ export function DevicesProvider({
   }, [agent, status, pushToast, initialDevices]);
 
   useEffect(() => {
-    if (status !== "ready" || !agent) {
+    if (!demoEnabled) {
+      return;
+    }
+
+    const syncDemoDevices = () => {
+      const demoAgent =
+        agent && isDemoDesktopAgent(agent) ? agent : createDemoDesktopAgent();
+      void (async () => {
+        const res = await fetchStoredDevices(demoAgent);
+        if (!res.ok) {
+          return;
+        }
+        setDevices(res.value);
+        setSource("demo");
+      })();
+    };
+
+    window.addEventListener(DEMO_RESET_EVENT, syncDemoDevices);
+    return () => {
+      window.removeEventListener(DEMO_RESET_EVENT, syncDemoDevices);
+    };
+  }, [agent, demoEnabled]);
+
+  useEffect(() => {
+    if (status !== "ready" || !agent || isDemoDesktopAgent(agent)) {
       return;
     }
     void (async () => {
@@ -125,7 +165,12 @@ export function DevicesProvider({
   }, [agent, status, pushToast]);
 
   useEffect(() => {
-    if (status !== "ready" || !agent || warnedRef.current) {
+    if (
+      status !== "ready" ||
+      !agent ||
+      warnedRef.current ||
+      isDemoDesktopAgent(agent)
+    ) {
       return;
     }
     void (async () => {
@@ -189,6 +234,47 @@ export function DevicesProvider({
     return {
       devices,
       addDevice: async (input) => {
+        if (demoEnabled) {
+          const prepared = validateAddDeviceDraftInput(
+            input,
+            existingIds,
+            existingBaseUrls,
+            { allowMissingId: true },
+          );
+          if (!prepared.ok) {
+            return prepared;
+          }
+          const res = await upsertStoredDevice(
+            createDemoDesktopAgent(),
+            prepared.input,
+          );
+          if (!res.ok) {
+            if (res.error.code === "conflict") {
+              return {
+                ok: false,
+                errors: { baseUrl: res.error.message },
+              };
+            }
+            pushToast({
+              variant: "error",
+              message: `Desktop storage error: ${res.error.message}`,
+            });
+            return {
+              ok: false,
+              errors: { baseUrl: "Desktop storage unavailable" },
+            };
+          }
+          setDevices((prev) => {
+            const next = prev.filter(
+              (device) =>
+                device.id !== res.value.id &&
+                device.baseUrl !== res.value.baseUrl,
+            );
+            return [...next, res.value];
+          });
+          return { ok: true, device: res.value };
+        }
+
         const result = validateAddDeviceInput(
           input,
           existingIds,
@@ -258,7 +344,7 @@ export function DevicesProvider({
       },
       getDevice: (deviceId) => devices.find((d) => d.id === deviceId),
     };
-  }, [devices, agent, pushToast]);
+  }, [devices, agent, demoEnabled, pushToast]);
 
   return (
     <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>

@@ -28,10 +28,11 @@
 - When a process or doc drift could recur, add or update automated repo contract tests.
 - Web verification surfaces follow
   [`docs/specs/kvbq9-web-demo-surface-policy/SPEC.md`](docs/specs/kvbq9-web-demo-surface-policy/SPEC.md):
-  production SPA routes are the only app-level Web pages, Storybook is for
-  reusable components and composite surfaces, and ad hoc demo routes plus
-  `web/src/pages/*.stories.*` are forbidden unless a spec explicitly approves
-  an exception first.
+  production SPA routes are the only app-level Web pages, the formal
+  owner-facing demo contract is `?demo=true|false` on those same routes,
+  Storybook is for reusable components and composite surfaces, and extra
+  `/demo/*` pages plus `web/src/pages/*.stories.*` are forbidden unless a spec
+  explicitly approves an exception first.
 
 ## Core Commands
 

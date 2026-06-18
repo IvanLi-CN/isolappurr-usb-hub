@@ -37,9 +37,10 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST keep maintainer-facing workflow truth in one detailed project doc, with `README.md` as human navigation and `AGENTS.md` as concise entry rules rather than parallel full workflow manuals.
 - MUST keep repo-managed Web verification guidance aligned with the repository
   Web demo-surface policy: production SPA routes stay as app-level pages,
-  Storybook remains the mock-only component/composite surface, and page-level
-  Storybook stories or ad hoc demo routes require an explicit spec-approved
-  exception before landing.
+  the formal owner-facing demo contract is `?demo=true|false` on those same
+  routes, Storybook remains the mock-only component/composite surface, and
+  page-level Storybook stories or extra ad hoc demo routes require an explicit
+  spec-approved exception before landing.
 - MUST treat missing `isolapurr` or `isolapurr-devd` on a user machine as an install gate before any Agent-driven hardware listing, scan, status, provisioning, flash, reset, monitor, or diagnostics workflow. The user skill must not list system USB or serial ports as a substitute hardware result.
 - MUST report unavailable GitHub Release installer assets as a blocker for user-machine host-tool installation and stop instead of falling back to raw serial enumeration, localhost HTTP, browser automation, source checkout commands, or project-local tooling.
 - MUST store local program hardware memory in the user's config directory, while pure Web stores the same profile shape in browser storage.

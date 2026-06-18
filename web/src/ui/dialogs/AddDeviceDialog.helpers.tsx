@@ -4,6 +4,7 @@ import {
   isLegacyDeviceId,
   normalizeStoredDeviceId,
 } from "../../domain/devices";
+import type { DiscoveredDevice, LanCandidate } from "../../domain/discovery";
 import {
   nextJsonlRequestId,
   type SerialPortInfo,
@@ -34,6 +35,19 @@ export type UsbLogEntry = {
   id: number;
   tone: "info" | "success" | "warning" | "error";
   message: string;
+};
+
+export type DiscoverySnapshotShape = {
+  mode: "service" | "scan";
+  status: "idle" | "scanning" | "ready" | "unavailable";
+  devices: DiscoveredDevice[];
+  error?: string;
+  scan?: { cidr: string; done: number; total: number };
+  ipScan?: {
+    expanded: false;
+    defaultCidr?: string;
+    candidates?: LanCandidate[];
+  };
 };
 
 function extractUsbDevice(value: unknown): UsbDeviceInfo | null {
@@ -135,6 +149,126 @@ export function parseOwnerFacingUsbDeviceId(
 export function normalizeMac(value: string | null | undefined): string | null {
   const hex = value?.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
   return hex && hex.length >= 6 ? hex : null;
+}
+
+export function parseDesktopDiscoverySnapshot(
+  value: unknown,
+): DiscoverySnapshotShape | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const obj = value as Record<string, unknown>;
+  const devices = Array.isArray(obj.devices) ? obj.devices : null;
+  const mode =
+    obj.mode === "service" || obj.mode === "scan" ? obj.mode : "service";
+  const status =
+    obj.status === "idle" ||
+    obj.status === "scanning" ||
+    obj.status === "ready" ||
+    obj.status === "unavailable"
+      ? obj.status
+      : "unavailable";
+  const error = typeof obj.error === "string" ? obj.error : undefined;
+  const scan =
+    obj.scan && typeof obj.scan === "object"
+      ? (obj.scan as Record<string, unknown>)
+      : undefined;
+  const ipScan =
+    obj.ipScan && typeof obj.ipScan === "object"
+      ? (obj.ipScan as Record<string, unknown>)
+      : undefined;
+
+  const scanShape =
+    scan &&
+    typeof scan.cidr === "string" &&
+    typeof scan.done === "number" &&
+    typeof scan.total === "number"
+      ? { cidr: scan.cidr, done: scan.done, total: scan.total }
+      : undefined;
+
+  const defaultCidr =
+    ipScan && typeof ipScan.defaultCidr === "string"
+      ? ipScan.defaultCidr
+      : undefined;
+  const candidatesRaw =
+    ipScan && Array.isArray(ipScan.candidates) ? ipScan.candidates : null;
+  const candidates = candidatesRaw
+    ? candidatesRaw.reduce<LanCandidate[]>((acc, item) => {
+        if (!item || typeof item !== "object") {
+          return acc;
+        }
+        const candidate = item as Record<string, unknown>;
+        if (typeof candidate.cidr !== "string") {
+          return acc;
+        }
+        const parsed: LanCandidate = { cidr: candidate.cidr };
+        if (typeof candidate.label === "string") {
+          parsed.label = candidate.label;
+        }
+        if (typeof candidate.interface === "string") {
+          parsed.interface = candidate.interface;
+        }
+        if (typeof candidate.ipv4 === "string") {
+          parsed.ipv4 = candidate.ipv4;
+        }
+        if (typeof candidate.primary === "boolean") {
+          parsed.primary = candidate.primary;
+        }
+        acc.push(parsed);
+        return acc;
+      }, [])
+    : undefined;
+
+  const parsedDevices: DiscoveredDevice[] = [];
+  if (devices) {
+    for (const item of devices) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const device = item as Record<string, unknown>;
+      if (typeof device.baseUrl !== "string") {
+        continue;
+      }
+      parsedDevices.push({
+        baseUrl: device.baseUrl,
+        device_id:
+          typeof device.device_id === "string" ? device.device_id : undefined,
+        hostname:
+          typeof device.hostname === "string" ? device.hostname : undefined,
+        fqdn: typeof device.fqdn === "string" ? device.fqdn : undefined,
+        ipv4: typeof device.ipv4 === "string" ? device.ipv4 : undefined,
+        variant:
+          typeof device.variant === "string" ? device.variant : undefined,
+        firmware:
+          device.firmware &&
+          typeof device.firmware === "object" &&
+          typeof (device.firmware as Record<string, unknown>).name ===
+            "string" &&
+          typeof (device.firmware as Record<string, unknown>).version ===
+            "string"
+            ? {
+                name: (device.firmware as Record<string, unknown>)
+                  .name as string,
+                version: (device.firmware as Record<string, unknown>)
+                  .version as string,
+              }
+            : undefined,
+        last_seen_at:
+          typeof device.last_seen_at === "string"
+            ? device.last_seen_at
+            : undefined,
+      });
+    }
+  }
+
+  return {
+    mode,
+    status,
+    devices: parsedDevices,
+    error,
+    scan: scanShape,
+    ipScan: ipScan ? { expanded: false, defaultCidr, candidates } : undefined,
+  };
 }
 
 export function delay(ms: number): Promise<void> {

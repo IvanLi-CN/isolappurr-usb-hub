@@ -9,6 +9,7 @@ import {
   normalizeDeviceIdPrefix,
   normalizeStoredDeviceId,
   preferVerifiedHttpBaseUrl,
+  validateAddDeviceDraftInput,
   validateAddDeviceInput,
 } from "./devices";
 
@@ -99,6 +100,29 @@ describe("validateAddDeviceInput", () => {
       throw new Error("expected errors");
     }
     expect(res.errors.id).toBe("device_id is required");
+  });
+
+  test("allows demo-mode drafts to omit device_id", () => {
+    const res = validateAddDeviceDraftInput(
+      {
+        name: "A",
+        baseUrl: "http://example.com/path",
+        id: "   ",
+      },
+      [],
+      [],
+      { allowMissingId: true },
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) {
+      throw new Error("expected ok");
+    }
+    expect(res.input).toEqual({
+      name: "A",
+      baseUrl: "http://example.com",
+      id: undefined,
+      transports: undefined,
+    });
   });
 
   test("accepts canonical 12-char lowercase hex device_id", () => {

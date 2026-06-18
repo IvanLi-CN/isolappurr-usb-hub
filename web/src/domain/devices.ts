@@ -33,6 +33,17 @@ export type AddDeviceValidationResult =
   | { ok: true; device: StoredDevice }
   | { ok: false; errors: AddDeviceValidationErrors };
 
+export type PreparedAddDeviceInput = {
+  name: string;
+  baseUrl: string;
+  id?: string;
+  transports?: StoredDevice["transports"];
+};
+
+export type AddDeviceDraftValidationResult =
+  | { ok: true; input: PreparedAddDeviceInput }
+  | { ok: false; errors: AddDeviceValidationErrors };
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -211,6 +222,41 @@ export function validateAddDeviceInput(
   existingDeviceIds: Iterable<string> = [],
   existingBaseUrls: Iterable<string> = [],
 ): AddDeviceValidationResult {
+  const result = validateAddDeviceDraftInput(
+    input,
+    existingDeviceIds,
+    existingBaseUrls,
+  );
+  if (!result.ok) {
+    return result;
+  }
+
+  if (!result.input.id) {
+    return {
+      ok: false,
+      errors: {
+        id: "device_id is required",
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    device: {
+      id: result.input.id,
+      name: result.input.name,
+      baseUrl: result.input.baseUrl,
+      transports: result.input.transports,
+    },
+  };
+}
+
+export function validateAddDeviceDraftInput(
+  input: AddDeviceInput,
+  existingDeviceIds: Iterable<string> = [],
+  existingBaseUrls: Iterable<string> = [],
+  options?: { allowMissingId?: boolean },
+): AddDeviceDraftValidationResult {
   const errors: AddDeviceValidationErrors = {};
 
   const name = input.name.trim();
@@ -232,9 +278,16 @@ export function validateAddDeviceInput(
     }
   }
 
-  const idRaw = input.id;
+  const idRaw =
+    input.id !== undefined && input.id.trim().length > 0
+      ? input.id.trim()
+      : undefined;
   const id = idRaw === undefined ? undefined : normalizeStoredDeviceId(idRaw);
-  if (idRaw !== undefined && idRaw.trim().length === 0) {
+  if (
+    input.id !== undefined &&
+    input.id.trim().length === 0 &&
+    !options?.allowMissingId
+  ) {
     errors.id = "ID cannot be blank";
   }
 
@@ -259,19 +312,10 @@ export function validateAddDeviceInput(
     return { ok: false, errors };
   }
 
-  if (!id) {
-    return {
-      ok: false,
-      errors: {
-        id: "device_id is required",
-      },
-    };
-  }
-
   return {
     ok: true,
-    device: {
-      id,
+    input: {
+      id: id ?? undefined,
       name,
       baseUrl: baseUrlResult.ok ? baseUrlResult.baseUrl : input.baseUrl,
       transports: normalizeAddDeviceTransports(input.transports),

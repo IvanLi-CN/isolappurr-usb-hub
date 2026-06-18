@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { MemoryRouter } from "react-router";
 
 import { AddDeviceUiProvider } from "../../app/add-device-ui";
+import { DemoModeProvider } from "../../app/demo-mode";
 import { DesktopAgentProvider } from "../../app/desktop-agent-ui";
 import { DeviceRuntimeProvider } from "../../app/device-runtime";
 import { DevicesProvider } from "../../app/devices-store";
@@ -25,33 +26,35 @@ const meta: Meta<typeof AppLayout> = {
   decorators: [
     (Story, context) => (
       <MemoryRouter>
-        <DesktopAgentProvider>
-          <ThemeProvider>
-            <ToastProvider>
-              <DevicesProvider initialDevices={devices}>
-                <DeviceRuntimeProvider>
-                  <AddDeviceUiProvider
-                    existingDeviceIds={devices.map((d) => d.id)}
-                    existingDeviceBaseUrls={devices.map((d) => d.baseUrl)}
-                    onCreate={async () => ({
-                      ok: true,
-                      device: devices[0],
-                    })}
-                  >
-                    <div
-                      className="min-h-screen"
-                      data-theme={
-                        context.parameters.isolapurrTheme ?? "isolapurr"
-                      }
+        <DemoModeProvider>
+          <DesktopAgentProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <DevicesProvider initialDevices={devices}>
+                  <DeviceRuntimeProvider>
+                    <AddDeviceUiProvider
+                      existingDeviceIds={devices.map((d) => d.id)}
+                      existingDeviceBaseUrls={devices.map((d) => d.baseUrl)}
+                      onCreate={async () => ({
+                        ok: true,
+                        device: devices[0],
+                      })}
                     >
-                      <Story />
-                    </div>
-                  </AddDeviceUiProvider>
-                </DeviceRuntimeProvider>
-              </DevicesProvider>
-            </ToastProvider>
-          </ThemeProvider>
-        </DesktopAgentProvider>
+                      <div
+                        className="min-h-screen"
+                        data-theme={
+                          context.parameters.isolapurrTheme ?? "isolapurr"
+                        }
+                      >
+                        <Story />
+                      </div>
+                    </AddDeviceUiProvider>
+                  </DeviceRuntimeProvider>
+                </DevicesProvider>
+              </ToastProvider>
+            </ThemeProvider>
+          </DesktopAgentProvider>
+        </DemoModeProvider>
       </MemoryRouter>
     ),
   ],

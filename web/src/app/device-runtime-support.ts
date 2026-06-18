@@ -1,3 +1,4 @@
+import { type DesktopAgent, isDemoDesktopAgent } from "../domain/desktopAgent";
 import type {
   DeviceApiError,
   DeviceInfoResponse,
@@ -124,6 +125,18 @@ export function httpBaseUrlForDevice(device: StoredDevice): string {
   return device.transports?.httpBaseUrl ?? device.baseUrl;
 }
 
+export function verifiedWifiHttpBaseUrl(
+  info: DeviceInfoResponse,
+  deviceId: string,
+): string | null {
+  const infoDeviceId = info.device.device_id?.trim().toLowerCase();
+  const wifiIpv4 = info.device.wifi?.ipv4?.trim();
+  if (!infoDeviceId || infoDeviceId !== deviceId || !wifiIpv4) {
+    return null;
+  }
+  return `http://${wifiIpv4}`;
+}
+
 export function localUsbPortPathForDevice(device: StoredDevice): string | null {
   const portPath = device.transports?.localUsbPortPath?.trim();
   return portPath ? portPath : null;
@@ -131,6 +144,38 @@ export function localUsbPortPathForDevice(device: StoredDevice): string | null {
 
 export function localUsbDeviceIdForDevice(device: StoredDevice): string | null {
   return devdLocalUsbDeviceIdFromBaseUrl(device.baseUrl);
+}
+
+export function resolveLocalUsbTarget({
+  deviceId,
+  devices,
+  cachedPortPath,
+  linkedPortPath,
+}: {
+  deviceId: string;
+  devices: StoredDevice[];
+  cachedPortPath: string | null | undefined;
+  linkedPortPath: string | null;
+}):
+  | { kind: "port_path"; portPath: string }
+  | { kind: "devd_device"; deviceId: string }
+  | null {
+  if (cachedPortPath) {
+    return { kind: "port_path", portPath: cachedPortPath };
+  }
+  if (linkedPortPath) {
+    return { kind: "port_path", portPath: linkedPortPath };
+  }
+  const stored = devices.find((device) => device.id === deviceId);
+  const devdDeviceId = stored ? localUsbDeviceIdForDevice(stored) : null;
+  if (devdDeviceId) {
+    return { kind: "devd_device", deviceId: devdDeviceId };
+  }
+  const storedPortPath = stored ? localUsbPortPathForDevice(stored) : null;
+  if (storedPortPath) {
+    return { kind: "port_path", portPath: storedPortPath };
+  }
+  return null;
 }
 
 export function shortApiError(err: DeviceApiError): string {
@@ -182,6 +227,47 @@ export function shouldResetLocalUsbConnectionCache(err: unknown): boolean {
   }
   const message = err instanceof Error ? err.message : String(err);
   return !message.includes("serial port is busy");
+}
+
+export function shouldReuseLocalUsbAgentForDemoMode(
+  agent: DesktopAgent | null | undefined,
+  demoEnabled: boolean,
+): agent is DesktopAgent {
+  if (!agent) {
+    return false;
+  }
+  return isDemoDesktopAgent(agent) === demoEnabled;
+}
+
+export function resetLocalUsbRuntimeState(
+  runtimeById: Record<string, DeviceRuntime>,
+): Record<string, DeviceRuntime> {
+  let changed = false;
+  const next: Record<string, DeviceRuntime> = {};
+  for (const [deviceId, runtime] of Object.entries(runtimeById)) {
+    const transport =
+      runtime.transport === "local_usb" ? null : runtime.transport;
+    const localUsbChannel =
+      runtime.channels.local_usb.lastOkAt === null &&
+      runtime.channels.local_usb.lastError === null
+        ? runtime.channels.local_usb
+        : { lastOkAt: null, lastError: null };
+    if (
+      transport !== runtime.transport ||
+      localUsbChannel !== runtime.channels.local_usb
+    ) {
+      changed = true;
+    }
+    next[deviceId] = {
+      ...runtime,
+      transport,
+      channels: {
+        ...runtime.channels,
+        local_usb: localUsbChannel,
+      },
+    };
+  }
+  return changed ? next : runtimeById;
 }
 
 export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {

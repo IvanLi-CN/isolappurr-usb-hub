@@ -1,4 +1,5 @@
-import { Link, useParams } from "react-router";
+import { useParams } from "react-router";
+import { DemoLink } from "../app/demo-navigation";
 import { useDevices } from "../app/devices-store";
 import { DevicePageTabs } from "../ui/nav/DevicePageTabs";
 import { DeviceDashboardPanel } from "../ui/panels/DeviceDashboardPanel";
@@ -20,9 +21,9 @@ export function DeviceDashboardPage() {
           Choose an existing device or add a new one.
         </div>
         <div>
-          <Link className="link" to="/">
+          <DemoLink className="link" to="/">
             Back to dashboard
-          </Link>
+          </DemoLink>
         </div>
       </div>
     );

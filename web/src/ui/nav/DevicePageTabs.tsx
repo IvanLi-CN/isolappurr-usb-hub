@@ -1,4 +1,4 @@
-import { NavLink } from "react-router";
+import { DemoNavLink } from "../../app/demo-navigation";
 
 export function DevicePageTabs({ deviceId }: { deviceId: string }) {
   return (
@@ -7,7 +7,7 @@ export function DevicePageTabs({ deviceId }: { deviceId: string }) {
       role="tablist"
       data-testid="device-tabs"
     >
-      <NavLink
+      <DemoNavLink
         className={({ isActive }) =>
           [
             "flex h-[38px] w-[132px] items-center justify-center rounded-[14px] border border-[var(--border)]",
@@ -22,8 +22,8 @@ export function DevicePageTabs({ deviceId }: { deviceId: string }) {
         end
       >
         Overview
-      </NavLink>
-      <NavLink
+      </DemoNavLink>
+      <DemoNavLink
         className={({ isActive }) =>
           [
             "flex h-[38px] w-[132px] items-center justify-center rounded-[14px] border border-[var(--border)]",
@@ -37,8 +37,8 @@ export function DevicePageTabs({ deviceId }: { deviceId: string }) {
         role="tab"
       >
         Settings
-      </NavLink>
-      <NavLink
+      </DemoNavLink>
+      <DemoNavLink
         className={({ isActive }) =>
           [
             "flex h-[38px] w-[132px] items-center justify-center rounded-[14px] border border-[var(--border)]",
@@ -52,7 +52,7 @@ export function DevicePageTabs({ deviceId }: { deviceId: string }) {
         role="tab"
       >
         Power
-      </NavLink>
+      </DemoNavLink>
     </div>
   );
 }

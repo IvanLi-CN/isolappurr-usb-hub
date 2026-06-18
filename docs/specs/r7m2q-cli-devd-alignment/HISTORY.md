@@ -26,5 +26,6 @@
   back into the bridge/device contract.
 - Re-aligned repo-managed workflow truth to the released CLI surface by removing stale user-skill command forms and introducing one maintainer workflow truth source plus a repo-private workflow router.
 - Bound repo-managed Web verification guidance to the dedicated `kvbq9` policy
-  spec and extended repo-contract coverage so page-level Storybook drift and ad
-  hoc demo-route drift are caught automatically.
+  spec and extended repo-contract coverage so page-level Storybook drift,
+  extra `/demo/*` pages, and uncontrolled demo-route drift are caught
+  automatically.

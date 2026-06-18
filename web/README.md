@@ -30,8 +30,9 @@ Icon regeneration requires `rsvg-convert` from librsvg and Python Pillow (`pytho
   - `Isolapurr Mobile (390×844)`
   - `Isolapurr Desktop (1440×900)`
 - Storybook is reserved for reusable components and composite surfaces. Route-
-  level verification stays on the real SPA pages, and `web/src/pages/*.stories.*`
-  is not an allowed pattern in this repository. See
+  level verification stays on the real SPA pages, the only formal owner-facing
+  demo route contract is `?demo=true|false` on those same SPA pages, and
+  `web/src/pages/*.stories.*` is not an allowed pattern in this repository. See
   [`docs/specs/kvbq9-web-demo-surface-policy/SPEC.md`](../docs/specs/kvbq9-web-demo-surface-policy/SPEC.md)
   for the repository policy.
 
