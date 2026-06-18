@@ -9,6 +9,9 @@ export type DesktopAgent = {
   agentBaseUrl: string;
 };
 
+export const DEMO_AGENT_TOKEN = "demo-session";
+export const DEMO_AGENT_BASE_URL = "https://demo-agent.invalid";
+
 const LOCAL_USB_PORT_START = 51200;
 const LOCAL_USB_PORT_END = 51299;
 
@@ -19,16 +22,26 @@ function isDemoModeEnabled(): boolean {
   return window.sessionStorage.getItem("isolapurr.demo.enabled") === "true";
 }
 
-function demoDesktopAgent(): DesktopAgent {
+export function createDemoDesktopAgent(): DesktopAgent {
   return {
-    token: "demo-session",
-    agentBaseUrl: "https://demo-agent.invalid",
+    token: DEMO_AGENT_TOKEN,
+    agentBaseUrl: DEMO_AGENT_BASE_URL,
   };
+}
+
+export function isDemoDesktopAgent(
+  agent: DesktopAgent | null | undefined,
+): boolean {
+  return (
+    Boolean(agent) &&
+    agent?.agentBaseUrl === DEMO_AGENT_BASE_URL &&
+    agent.token === DEMO_AGENT_TOKEN
+  );
 }
 
 export async function tryBootstrapDesktopAgent(): Promise<DesktopAgent | null> {
   if (isDemoModeEnabled()) {
-    return demoDesktopAgent();
+    return createDemoDesktopAgent();
   }
   const sameOrigin = await fetchDesktopAgentBootstrap("/api/v1/bootstrap");
   if (sameOrigin) {

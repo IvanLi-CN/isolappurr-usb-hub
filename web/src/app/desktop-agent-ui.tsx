@@ -1,8 +1,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import {
+  createDemoDesktopAgent,
   type DesktopAgent,
+  isDemoDesktopAgent,
   tryBootstrapDesktopAgent,
 } from "../domain/desktopAgent";
+import { useDemoMode } from "./demo-mode";
 
 type DesktopAgentStatus = "loading" | "ready";
 
@@ -20,11 +23,26 @@ export function DesktopAgentProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [agent, setAgent] = useState<DesktopAgent | null>(null);
-  const [status, setStatus] = useState<DesktopAgentStatus>("loading");
+  const { enabled: demoEnabled } = useDemoMode();
+  const [agent, setAgent] = useState<DesktopAgent | null>(() =>
+    demoEnabled ? createDemoDesktopAgent() : null,
+  );
+  const [status, setStatus] = useState<DesktopAgentStatus>(() =>
+    demoEnabled ? "ready" : "loading",
+  );
 
   useEffect(() => {
+    if (demoEnabled) {
+      setAgent((current) =>
+        isDemoDesktopAgent(current) ? current : createDemoDesktopAgent(),
+      );
+      setStatus("ready");
+      return () => undefined;
+    }
+
     let cancelled = false;
+    setAgent(null);
+    setStatus("loading");
     void (async () => {
       const next = await tryBootstrapDesktopAgent();
       if (cancelled) {
@@ -36,7 +54,7 @@ export function DesktopAgentProvider({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [demoEnabled]);
 
   return (
     <DesktopAgentContext.Provider value={{ agent, status }}>

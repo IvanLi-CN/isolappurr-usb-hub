@@ -3,9 +3,11 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
 } from "react";
+import { DEMO_AGENT_BASE_URL, DEMO_AGENT_TOKEN } from "../domain/desktopAgent";
 import type {
   DeviceInfoResponse,
   IdleBiasResponse,
@@ -25,8 +27,7 @@ import type { ThemeId } from "./theme";
 
 const DEMO_FLAG_KEY = "isolapurr.demo.enabled";
 const DEMO_WORLD_KEY = "isolapurr.demo.world";
-const DEMO_AGENT_BASE_URL = "https://demo-agent.invalid";
-const DEMO_AGENT_TOKEN = "demo-session";
+export const DEMO_RESET_EVENT = "isolapurr-demo-reset";
 const DEMO_OWNER = 4242;
 const DEMO_ENTER_QUERY = "?demo=true";
 const DEMO_EXIT_QUERY = "?demo=false";
@@ -487,6 +488,9 @@ export type DemoWorldSummary = {
 export function resetDemoModeSession(): void {
   writeDemoEnabled(true);
   writeDemoWorld(createCanonicalDemoWorld());
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(DEMO_RESET_EVENT));
+  }
 }
 
 export function readDemoWorldSummary(): DemoWorldSummary {
@@ -1447,16 +1451,6 @@ export function isDemoModeEnabled(): boolean {
   return readDemoEnabled();
 }
 
-export function isDemoDesktopAgent(
-  agent: { agentBaseUrl: string; token: string } | null | undefined,
-): boolean {
-  return (
-    Boolean(agent) &&
-    agent?.agentBaseUrl === DEMO_AGENT_BASE_URL &&
-    agent.token === DEMO_AGENT_TOKEN
-  );
-}
-
 export function initDemoMode(pathname: string, search: string): boolean {
   const params = new URLSearchParams(search);
   const flag = params.get("demo");
@@ -1551,19 +1545,25 @@ export function ensureDemoFetchInterceptor(): void {
   demoFetchRestore = installDemoFetchInterceptor();
 }
 
-export function DemoModeProvider({ children }: { children: ReactNode }) {
-  const [enabled, setEnabled] = useState(() =>
-    initDemoMode(
-      typeof window !== "undefined" ? window.location.pathname : "/",
-      typeof window !== "undefined" ? window.location.search : "",
-    ),
+function resolveInitialDemoEnabled(): boolean {
+  const enabled = initDemoMode(
+    typeof window !== "undefined" ? window.location.pathname : "/",
+    typeof window !== "undefined" ? window.location.search : "",
   );
+  if (enabled) {
+    ensureDemoFetchInterceptor();
+  }
+  return enabled;
+}
+
+export function DemoModeProvider({ children }: { children: ReactNode }) {
+  const [enabled, setEnabled] = useState(resolveInitialDemoEnabled);
 
   useEffect(() => {
     setEnabled(readDemoEnabled());
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     ensureDemoFetchInterceptor();
     return () => undefined;
   }, []);
@@ -1576,7 +1576,11 @@ export function DemoModeProvider({ children }: { children: ReactNode }) {
       withDemoSearch: (to) => withDemoSearch(to, enabled),
       exitHref: `/${DEMO_EXIT_QUERY}`,
       bootstrap: (pathname, search) => {
-        setEnabled(initDemoMode("/", search));
+        const nextEnabled = initDemoMode("/", search);
+        if (nextEnabled) {
+          ensureDemoFetchInterceptor();
+        }
+        setEnabled(nextEnabled);
         void pathname;
       },
       clear: () => {

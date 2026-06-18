@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { fetchStoredTheme, updateStoredTheme } from "../domain/desktopStorage";
-import { isDemoDesktopAgent } from "./demo-mode";
+import { DEMO_RESET_EVENT } from "./demo-mode";
 import { useDesktopAgent } from "./desktop-agent-ui";
 import {
   applyThemePreference,
@@ -27,7 +27,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
     let cancelled = false;
     const loadTheme = async () => {
-      if (agent && !isDemoDesktopAgent(agent)) {
+      if (agent) {
         const res = await fetchStoredTheme(agent);
         if (!cancelled && res.ok) {
           setTheme(res.value);
@@ -46,7 +46,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [agent, status]);
 
   useEffect(() => {
-    if (!agent || isDemoDesktopAgent(agent)) {
+    if (!agent) {
       return;
     }
     const onMigrated = () => {
@@ -64,11 +64,34 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [agent]);
 
   useEffect(() => {
+    const reloadTheme = () => {
+      if (status !== "ready") {
+        return;
+      }
+      void (async () => {
+        if (agent) {
+          const res = await fetchStoredTheme(agent);
+          if (res.ok) {
+            setTheme(res.value);
+          }
+          return;
+        }
+        setTheme(loadThemePreference());
+      })();
+    };
+
+    window.addEventListener(DEMO_RESET_EVENT, reloadTheme);
+    return () => {
+      window.removeEventListener(DEMO_RESET_EVENT, reloadTheme);
+    };
+  }, [agent, status]);
+
+  useEffect(() => {
     applyThemePreference(theme);
     if (!ready) {
       return;
     }
-    if (agent && !isDemoDesktopAgent(agent)) {
+    if (agent) {
       void updateStoredTheme(agent, theme);
       return;
     }

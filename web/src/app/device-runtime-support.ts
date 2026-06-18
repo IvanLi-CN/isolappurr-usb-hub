@@ -1,3 +1,4 @@
+import { type DesktopAgent, isDemoDesktopAgent } from "../domain/desktopAgent";
 import type {
   DeviceApiError,
   DeviceInfoResponse,
@@ -182,6 +183,47 @@ export function shouldResetLocalUsbConnectionCache(err: unknown): boolean {
   }
   const message = err instanceof Error ? err.message : String(err);
   return !message.includes("serial port is busy");
+}
+
+export function shouldReuseLocalUsbAgentForDemoMode(
+  agent: DesktopAgent | null | undefined,
+  demoEnabled: boolean,
+): agent is DesktopAgent {
+  if (!agent) {
+    return false;
+  }
+  return isDemoDesktopAgent(agent) === demoEnabled;
+}
+
+export function resetLocalUsbRuntimeState(
+  runtimeById: Record<string, DeviceRuntime>,
+): Record<string, DeviceRuntime> {
+  let changed = false;
+  const next: Record<string, DeviceRuntime> = {};
+  for (const [deviceId, runtime] of Object.entries(runtimeById)) {
+    const transport =
+      runtime.transport === "local_usb" ? null : runtime.transport;
+    const localUsbChannel =
+      runtime.channels.local_usb.lastOkAt === null &&
+      runtime.channels.local_usb.lastError === null
+        ? runtime.channels.local_usb
+        : { lastOkAt: null, lastError: null };
+    if (
+      transport !== runtime.transport ||
+      localUsbChannel !== runtime.channels.local_usb
+    ) {
+      changed = true;
+    }
+    next[deviceId] = {
+      ...runtime,
+      transport,
+      channels: {
+        ...runtime.channels,
+        local_usb: localUsbChannel,
+      },
+    };
+  }
+  return changed ? next : runtimeById;
 }
 
 export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {

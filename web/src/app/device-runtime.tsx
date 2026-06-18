@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  createDemoDesktopAgent,
   type DesktopAgent,
   tryBootstrapDesktopAgent,
 } from "../domain/desktopAgent";
@@ -39,6 +40,7 @@ import {
   subscribeWebSerialDeviceLinks,
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
+import { useDemoMode } from "./demo-mode";
 import { DeviceRuntimeContext } from "./device-runtime-context";
 import {
   createEmptyChannels,
@@ -55,11 +57,13 @@ import {
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
   recoverWifiClearLikeTimeout,
+  resetLocalUsbRuntimeState,
   resolveActiveDeviceTransport,
   resolveOrderedDeviceTransports,
   runQueuedDeviceRequest,
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
+  shouldReuseLocalUsbAgentForDemoMode,
 } from "./device-runtime-support";
 import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
@@ -89,6 +93,7 @@ export function DeviceRuntimeProvider({
   children: React.ReactNode;
 }) {
   const { devices, rebindHttpBaseUrl } = useDevices();
+  const { enabled: demoEnabled } = useDemoMode();
   const { pushToast } = useToast();
   const [now, setNow] = useState(() => Date.now());
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(
@@ -96,6 +101,7 @@ export function DeviceRuntimeProvider({
   );
   const inflight = useRef<Set<string>>(new Set());
   const localUsbAgent = useRef<DesktopAgent | null>(null);
+  const lastDemoEnabled = useRef(demoEnabled);
   const localUsbPortByDevice = useRef<Record<string, string>>({});
   const localUsbRequestQueues = useRef<Record<string, Promise<void>>>({});
   const httpRequestQueues = useRef<Record<string, Promise<void>>>({});
@@ -135,13 +141,35 @@ export function DeviceRuntimeProvider({
 
   const getLocalUsbAgent =
     useCallback(async (): Promise<DesktopAgent | null> => {
-      if (localUsbAgent.current) {
+      if (
+        shouldReuseLocalUsbAgentForDemoMode(localUsbAgent.current, demoEnabled)
+      ) {
         return localUsbAgent.current;
       }
-      const agent = await tryBootstrapDesktopAgent();
+      localUsbAgent.current = null;
+      const agent = demoEnabled
+        ? createDemoDesktopAgent()
+        : await tryBootstrapDesktopAgent();
       localUsbAgent.current = agent;
       return agent;
-    }, []);
+    }, [demoEnabled]);
+
+  useEffect(() => {
+    if (lastDemoEnabled.current === demoEnabled) {
+      return;
+    }
+    lastDemoEnabled.current = demoEnabled;
+    localUsbAgent.current = null;
+    localUsbPortByDevice.current = {};
+    for (const [deviceId, transport] of Object.entries(
+      preferredTransportByDevice.current,
+    )) {
+      if (transport === "local_usb") {
+        delete preferredTransportByDevice.current[deviceId];
+      }
+    }
+    setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
+  }, [demoEnabled]);
 
   const findLocalUsbTarget = useCallback(
     async (
