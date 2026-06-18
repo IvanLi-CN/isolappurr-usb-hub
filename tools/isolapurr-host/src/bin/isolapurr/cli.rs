@@ -468,12 +468,21 @@ struct CliPowerConfig {
     lock: Option<CliPowerLock>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 struct CliPowerRuntime {
     #[serde(default = "default_runtime_output_enabled")]
     output_enabled: bool,
     #[serde(default)]
     discharge_enabled: bool,
+}
+
+impl Default for CliPowerRuntime {
+    fn default() -> Self {
+        Self {
+            output_enabled: default_runtime_output_enabled(),
+            discharge_enabled: false,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

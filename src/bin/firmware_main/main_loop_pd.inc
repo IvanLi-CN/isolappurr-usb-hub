@@ -158,8 +158,10 @@
                         guard.power.config = power_config;
                         guard.power.persisted = power_config_persisted;
                         guard.power.last_path_control = last_sw2303_path_control;
-                        guard.power.runtime_output_enabled = runtime_tps_output_enabled;
-                        guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled;
+                        guard.power.runtime_output_enabled =
+                            runtime_tps_output_enabled_reported;
+                        guard.power.runtime_discharge_enabled =
+                            runtime_tps_discharge_enabled_reported;
                         if idle_bias_cleared {
                             guard.idle_bias = idle_bias_api_snapshot(
                                 idle_bias_calibration,
@@ -343,7 +345,9 @@
         }
         #[cfg(feature = "net_http")]
         {
-            let pending_power_runtime = {
+            let pending_power_runtime = if power_runtime_result_inflight {
+                None
+            } else {
                 let mut guard = api_state.lock().await;
                 guard.pending.power_runtime.take()
             };
@@ -378,11 +382,7 @@
                         tps_state.last = None;
                     }
                 }
-
-                let mut guard = api_state.lock().await;
-                guard.power.runtime_output_enabled = runtime_tps_output_enabled;
-                guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled;
-                POWER_RUNTIME_RESULT.signal(true);
+                power_runtime_result_inflight = true;
             }
         }
         #[cfg(feature = "net_http")]
@@ -707,6 +707,11 @@
             POWER_CONFIG_RESULT.signal(result);
         }
 
+        #[cfg(feature = "net_http")]
+        if power_runtime_result_inflight {
+            power_runtime_result_pending = Some(false);
+        }
+
         loop_delay_ms = SW2303_POLL_MS;
 
         if let Err(err) = apply_light_load_mode(
@@ -768,6 +773,22 @@
             tps_error_latched = false;
             tps_consecutive_errors = 0;
             tps_5v_setpoint_since.get_or_insert_with(Instant::now);
+            runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
+            runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
+            if power_runtime_result_inflight {
+                power_runtime_result_pending = Some(true);
+            }
+        }
+
+        #[cfg(feature = "net_http")]
+        if let Some(result) = power_runtime_result_pending.take() {
+            if result {
+                let mut guard = api_state.lock().await;
+                guard.power.runtime_output_enabled = runtime_tps_output_enabled_reported;
+                guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled_reported;
+            }
+            power_runtime_result_inflight = false;
+            POWER_RUNTIME_RESULT.signal(result);
         }
 
         if !tps_was_in_error && tps_error_latched {

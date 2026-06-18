@@ -903,8 +903,9 @@
             }
             guard.power.config = power_config;
             guard.power.persisted = power_config_persisted;
-            guard.power.runtime_output_enabled = runtime_tps_output_enabled;
-            guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled;
+            guard.power.runtime_output_enabled = runtime_tps_output_enabled_reported;
+            guard.power.runtime_discharge_enabled =
+                runtime_tps_discharge_enabled_reported;
             guard.power.last_path_control = last_sw2303_path_control.or({
                 if idle_bias_run.state == net::ApiIdleBiasRunState::Failed {
                     previous_reported_path_control

@@ -635,6 +635,53 @@ fn power_config_runtime_deserializes() {
 }
 
 #[test]
+fn power_config_runtime_defaults_enabled_when_missing() {
+    let parsed: CliPowerConfig = serde_json::from_value(json!({
+        "hardware": "legacy-hardware",
+        "persisted": true,
+        "tps_mode": "auto_follow",
+        "light_load_mode": "pfm",
+        "capability": {
+            "profile": "full",
+            "power_watts": 100,
+            "protocols": {
+                "pd": true,
+                "qc20": true,
+                "qc30": true,
+                "fcp": true,
+                "afc": true,
+                "scp": true,
+                "pe20": true,
+                "bc12": true,
+                "sfcp": true
+            },
+            "pd": {
+                "pps": true,
+                "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+            },
+            "current": {
+                "pps3_limit_ma": 5000,
+                "pd_pps_5a": false,
+                "type_c_broadcast_ma": 500,
+                "scp_limit_ma": 5000,
+                "fcp_afc_sfcp_limit_ma": 3250
+            }
+        },
+        "manual": {
+            "voltage_mv": 5000,
+            "current_limit_ma": 3000,
+            "usb_c_path_mode": "default",
+            "path_policy": "auto"
+        },
+        "lock": null
+    }))
+    .expect("legacy runtime should deserialize");
+
+    assert!(parsed.runtime.output_enabled);
+    assert!(!parsed.runtime.discharge_enabled);
+}
+
+#[test]
 fn manual_output_updates_only_manual_section() {
     let original: CliPowerConfig = serde_json::from_value(json!({
         "hardware": "legacy-hardware",
