@@ -119,7 +119,7 @@ allowed and how future exceptions are approved.
 
 ## Visual Evidence
 
-- Evidence SHA: `ecafbb7b025f1ede4ba5ebd4a8f9499a6e34e8ef`
+- Evidence SHA: `195c6378d2cb40a6e4fd90503a469bc707d62b08`
 - Formal SPA dashboard in canonical demo mode on `/?demo=true`, showing the
   unified header demo affordance and the canonical session-backed device world:
   ![Formal SPA demo dashboard](assets/demo-dashboard.png)
