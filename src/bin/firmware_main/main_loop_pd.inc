@@ -391,7 +391,17 @@
                     net::ApiPowerRuntimeCommand::SetDischargeEnabled { enabled } => {
                         let discharge_runtime_applied =
                             runtime_tps_discharge_enabled_reported == enabled;
-                        if runtime_tps_discharge_enabled != enabled
+                        if runtime_tps_output_enabled {
+                            runtime_tps_discharge_enabled = enabled;
+                            runtime_tps_discharge_enabled_reported = enabled;
+                            let mut guard = api_state.lock().await;
+                            guard.pending.power_runtime = None;
+                            guard.power.runtime_output_enabled =
+                                runtime_tps_output_enabled_reported;
+                            guard.power.runtime_discharge_enabled =
+                                runtime_tps_discharge_enabled_reported;
+                            POWER_RUNTIME_RESULT.signal(true);
+                        } else if runtime_tps_discharge_enabled != enabled
                             || !discharge_runtime_applied
                         {
                             runtime_tps_discharge_enabled = enabled;
