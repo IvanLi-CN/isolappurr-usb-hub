@@ -340,6 +340,7 @@ PR: include
   voltage above `5 V` shows the explicit SW2303 heating warning and `Auto
   follow` recommendation.
 
+PR: include
 ![Device power panel output off manual high voltage](./assets/power-output-off-manual-high-voltage.png)
 
 - source_type: live_hil_web_page
