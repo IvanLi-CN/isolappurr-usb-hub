@@ -348,8 +348,8 @@
             let pending_power_runtime = if power_runtime_result_inflight {
                 None
             } else {
-                let mut guard = api_state.lock().await;
-                guard.pending.power_runtime.take()
+                let guard = api_state.lock().await;
+                guard.pending.power_runtime
             };
 
             if let Some(command) = pending_power_runtime {
@@ -380,6 +380,7 @@
                             power_runtime_result_inflight = true;
                         } else {
                             let mut guard = api_state.lock().await;
+                            guard.pending.power_runtime = None;
                             guard.power.runtime_output_enabled =
                                 runtime_tps_output_enabled_reported;
                             guard.power.runtime_discharge_enabled =
@@ -398,6 +399,7 @@
                             power_runtime_result_inflight = true;
                         } else {
                             let mut guard = api_state.lock().await;
+                            guard.pending.power_runtime = None;
                             guard.power.runtime_output_enabled =
                                 runtime_tps_output_enabled_reported;
                             guard.power.runtime_discharge_enabled =
@@ -754,6 +756,12 @@
             tps_consecutive_errors = tps_consecutive_errors.saturating_add(1);
             tps_state.light_load_mode = None;
             tps_state.last = None;
+            if power_runtime_result_inflight {
+                let mut guard = api_state.lock().await;
+                guard.pending.power_runtime = None;
+                power_runtime_result_inflight = false;
+                POWER_RUNTIME_RESULT.signal(false);
+            }
             continue;
         }
 
@@ -772,6 +780,7 @@
         let manual_tps_active = usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual;
         if (!manual_tps_active
             && usb_c_pd_power_on
+            && runtime_tps_output_enabled
             && sw2303_stable_reads < SW2303_STABLE_READS_BEFORE_TPS
             && !tps_boot_restore_needed)
             || (!tps_voltage_update_needed && !tps_apply_needed)
@@ -805,8 +814,9 @@
 
         #[cfg(feature = "net_http")]
         if let Some(result) = power_runtime_result_pending.take() {
+            let mut guard = api_state.lock().await;
+            guard.pending.power_runtime = None;
             if result {
-                let mut guard = api_state.lock().await;
                 guard.power.runtime_output_enabled = runtime_tps_output_enabled_reported;
                 guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled_reported;
             }
