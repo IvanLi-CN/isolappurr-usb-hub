@@ -23,8 +23,6 @@ import {
   clearDemoWorld,
   cloneWorld,
   createCanonicalDemoWorld,
-  DEMO_ENTER_QUERY,
-  DEMO_EXIT_QUERY,
   DEMO_OWNER,
   type DemoDeviceRecord,
   type DemoWorld,
@@ -42,6 +40,11 @@ import {
 import type { ThemeId } from "./theme";
 
 let demoFetchRestore: (() => void) | null = null;
+
+const DEMO_ENABLED_STORAGE_KEY = "isolapurr.demo.enabled";
+export const DEMO_ENTER_QUERY = "?demo=true";
+export const DEMO_EXIT_QUERY = "?demo=false";
+void DEMO_ENABLED_STORAGE_KEY;
 
 export {
   DEMO_RESET_EVENT,
