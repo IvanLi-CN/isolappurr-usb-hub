@@ -646,7 +646,7 @@
             let manual_vout_mv = quantize_manual_voltage_mv(power_config.manual.voltage_mv);
             setpoint = PowerSetpoint {
                 output_enabled: runtime_tps_output_enabled,
-                discharge_enabled: false,
+                discharge_enabled: runtime_tps_discharge_enabled,
                 v_out_mv: manual_vout_mv,
                 i_lim_ma: power_config.manual.current_limit_ma,
             };
