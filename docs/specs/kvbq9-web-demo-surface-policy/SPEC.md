@@ -57,8 +57,12 @@ allowed and how future exceptions are approved.
   It MUST NOT overwrite real saved devices, desktop storage, Web Serial state,
   Local USB state, or other real owner data.
 - The formal SPA demo mode MUST keep one canonical demo world in v1. It MUST
-  NOT expose a scenario switcher, control panel, or page-level Storybook route
-  replacement as the default owner-facing demo surface.
+  NOT expose a scenario switcher or page-level Storybook route replacement as
+  the default owner-facing demo surface.
+- The formal SPA demo mode MAY expose one header-level demo control panel for
+  the canonical world, provided it remains inside the production app shell,
+  keeps `?demo=true|false` as the only demo route contract, and does not turn
+  into a scenario switcher.
 - Storybook MUST remain the formal mock-only verification surface for reusable
   components and composite surfaces, including `Panels/*`, `Layouts/*`,
   `Dialogs/*`, and `Cards/*`.
@@ -95,6 +99,9 @@ allowed and how future exceptions are approved.
 - Given the production SPA is opened with `?demo=true`, when the owner navigates
   across formal routes, then the app stays on those same production routes
   while preserving demo mode in the current browser session.
+- Given demo mode is active, when the owner uses the header demo affordance,
+  then the SPA opens a single demo control panel instead of separate badge and
+  exit controls, using a desktop modal and a mobile drawer/sheet.
 - Given the production SPA is opened with `?demo=false` or the demo exit
   affordance is used, when the owner leaves demo mode, then the current browser
   session clears the canonical demo world and returns to ordinary non-demo
@@ -112,10 +119,16 @@ allowed and how future exceptions are approved.
 
 ## Visual Evidence
 
-- Evidence SHA: `7d2038888cf7066d450190fecc00e5a5ac06390d`
+- Evidence SHA: `ecafbb7b025f1ede4ba5ebd4a8f9499a6e34e8ef`
 - Formal SPA dashboard in canonical demo mode on `/?demo=true`, showing the
-  header demo affordance and the canonical session-backed device world:
+  unified header demo affordance and the canonical session-backed device world:
   ![Formal SPA demo dashboard](assets/demo-dashboard.png)
+- Formal SPA demo control panel on desktop, using a modal inside the
+  production app shell:
+  ![Formal SPA demo control panel](assets/demo-control-panel-desktop.png)
+- Formal SPA demo control panel on mobile, using a drawer/sheet inside the
+  production app shell:
+  ![Formal SPA mobile demo control panel](assets/demo-control-panel-mobile.png)
 - Formal SPA detail flow after demo-only discovery success and manual add
   success, both staying on production routes with `?demo=true` preserved:
   ![Formal SPA demo add-device flow](assets/demo-add-device.png)

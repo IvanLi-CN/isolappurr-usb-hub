@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { useLocation } from "react-router";
 import { useDemoMode } from "../../app/demo-mode";
-import { DemoLink, useDemoNavigate } from "../../app/demo-navigation";
+import { DemoLink } from "../../app/demo-navigation";
 import { useTheme } from "../../app/theme-ui";
 import { BrandMark } from "../brand/BrandMark";
 import { ThemeMenu } from "../nav/ThemeMenu";
+import { DemoControlPanel } from "./DemoControlPanel";
 
 export function AppLayout({
   sidebar,
@@ -14,8 +15,7 @@ export function AppLayout({
   children: ReactNode;
 }) {
   const { theme, setTheme } = useTheme();
-  const navigate = useDemoNavigate();
-  const { enabled: demoEnabled, clear, exitHref } = useDemoMode();
+  const { enabled: demoEnabled } = useDemoMode();
   const location = useLocation();
 
   const showTheme = location.pathname === "/" || location.pathname === "/about";
@@ -35,23 +35,7 @@ export function AppLayout({
             <span className="min-w-0 truncate">IsolaPurr USB Hub</span>
           </DemoLink>
           <div className="flex items-center gap-3">
-            {demoEnabled ? (
-              <>
-                <div className="inline-flex h-9 items-center rounded-full border border-[var(--border)] bg-[var(--panel)] px-3 text-[12px] font-bold text-[var(--warning)]">
-                  Demo mode
-                </div>
-                <button
-                  className="flex h-9 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent px-3 text-[12px] font-bold text-[var(--text)] sm:px-4"
-                  type="button"
-                  onClick={() => {
-                    clear();
-                    navigate(exitHref, { replace: true });
-                  }}
-                >
-                  Exit demo
-                </button>
-              </>
-            ) : null}
+            {demoEnabled ? <DemoControlPanel /> : null}
             {showTheme ? (
               <div className="hidden sm:block">
                 <ThemeMenu value={theme} onChange={setTheme} />

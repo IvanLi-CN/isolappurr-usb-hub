@@ -5,6 +5,8 @@
 - The production SPA routes remain limited to the real console pages declared
   in `web/src/App.tsx`, and the same route tree now also supports the formal
   `?demo=true|false` session-scoped demo mode.
+- The demo affordance is now one header-level control that opens a responsive
+  panel: desktop uses a modal dialog, while mobile uses a bottom drawer/sheet.
 - Composite Storybook surfaces remain under non-page namespaces such as
   `Panels/*`, `Layouts/*`, `Dialogs/*`, and `Cards/*`.
 - The formal demo mode reuses the production page/provider tree, mocks only the
@@ -26,8 +28,9 @@
 
 ## Follow-up Candidates
 
-- If future Web specs need extra scenario controls, richer error-state matrices,
-  or a demo control panel, document that new surface in the owning spec before
-  implementation and add a targeted contract test for the approved boundary.
+- If future Web specs need extra scenario controls or richer error-state
+  matrices beyond the canonical control panel, document that new surface in the
+  owning spec before implementation and add a targeted contract test for the
+  approved boundary.
 - If additional route-level drift patterns appear outside `web/src/App.tsx`,
   expand the contract guard to cover the owning router module set explicitly.

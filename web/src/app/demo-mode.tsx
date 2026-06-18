@@ -479,6 +479,24 @@ function clearDemoWorld(): void {
   window.sessionStorage.removeItem(DEMO_WORLD_KEY);
 }
 
+export type DemoWorldSummary = {
+  savedDeviceCount: number;
+  discoveryDeviceCount: number;
+};
+
+export function resetDemoModeSession(): void {
+  writeDemoEnabled(true);
+  writeDemoWorld(createCanonicalDemoWorld());
+}
+
+export function readDemoWorldSummary(): DemoWorldSummary {
+  const world = readDemoWorld();
+  return {
+    savedDeviceCount: world.devices.length,
+    discoveryDeviceCount: world.discoveryDevices.length,
+  };
+}
+
 function jsonResponse(body: DemoApiResponse, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     status: init?.status ?? 200,
