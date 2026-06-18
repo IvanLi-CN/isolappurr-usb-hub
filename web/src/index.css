@@ -20,9 +20,10 @@ body {
   --border: #e5e7eb;
   --text: #111827;
   --muted: #6b7280;
-  --primary: #6f9886;
-  --primary-2: #7fae9a;
+  --primary: #587a69;
+  --primary-2: #6a8f7c;
   --primary-text: #ffffff;
+  --focus: #2f5243;
   --success: #16a34a;
   --warning: #d97706;
   --error: #dc2626;
@@ -60,6 +61,7 @@ body {
   --primary: #a6c9bd;
   --primary-2: #bddbcf;
   --primary-text: #0b1220;
+  --focus: #bddbcf;
   --success: #22c55e;
   --warning: #f59e0b;
   --error: #f87171;
@@ -97,6 +99,7 @@ body {
     --primary: #a6c9bd;
     --primary-2: #bddbcf;
     --primary-text: #0b1220;
+    --focus: #bddbcf;
     --success: #22c55e;
     --warning: #f59e0b;
     --error: #f87171;

@@ -9,19 +9,22 @@ export function NotFoundPage() {
     <ErrorState
       code="404"
       title="Page not found"
-      description="This route does not exist in the IsolaPurr control console. Use a known entry point to return to the current workspace."
+      description="The page you opened is not available in this workspace. Return to a known screen to keep working."
       context={
-        <span data-testid="not-found-path">
-          Missing path: {location.pathname}
-          {location.search}
-          {location.hash}
-        </span>
+        <div className="flex min-w-0 flex-col gap-1 overflow-hidden sm:flex-row sm:items-start sm:gap-2">
+          <span className="shrink-0 text-[var(--text)]">Missing path:</span>
+          <code className="block min-w-0 max-w-full overflow-hidden font-mono text-[12px] break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {location.pathname}
+            {location.search}
+            {location.hash}
+          </code>
+        </div>
       }
-      eyebrow="Route fallback"
+      pathTestId="not-found-path"
       testId="not-found"
       fullPage
       actions={[
-        { label: "Back to Dashboard", to: "/", variant: "primary" },
+        { label: "Dashboard", to: "/", variant: "primary" },
         { label: "About", to: "/about", variant: "secondary" },
       ]}
     />

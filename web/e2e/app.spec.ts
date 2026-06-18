@@ -114,13 +114,17 @@ test("renders standalone 404 fallback for unknown routes", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Page not found" }),
   ).toBeVisible();
-  await expect(page.getByTestId("not-found-path")).toHaveText(
-    "Missing path: /missing-route",
+  await expect(page.getByTestId("not-found-path")).toContainText(
+    "Missing path:",
+  );
+  await expect(page.getByTestId("not-found-path")).toContainText(
+    "/missing-route",
   );
   await expect(page.getByTestId("device-list")).toHaveCount(0);
-  await expect(
-    page.getByRole("link", { name: "Back to Dashboard" }),
-  ).toHaveAttribute("href", "/");
+  await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+    "href",
+    "/",
+  );
   await expect(page.getByRole("link", { name: "About" })).toHaveAttribute(
     "href",
     "/about",

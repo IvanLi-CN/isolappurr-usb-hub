@@ -5,11 +5,11 @@ export function MissingDeviceState() {
     <ErrorState
       code="404"
       title="Device entry not found"
-      description="The selected device is no longer in local storage. Return to Dashboard to pick another saved hub or add a new one."
-      eyebrow="Saved device state"
+      description="This saved device is no longer available in local storage. Return to a known screen to pick another hub or add it again."
+      pathTestId="device-not-found-path"
       testId="device-not-found"
       actions={[
-        { label: "Back to Dashboard", to: "/", variant: "primary" },
+        { label: "Dashboard", to: "/", variant: "primary" },
         { label: "About", to: "/about", variant: "secondary" },
       ]}
     />

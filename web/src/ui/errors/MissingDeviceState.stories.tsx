@@ -2,24 +2,26 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { expect, within } from "@storybook/test";
 import { MemoryRouter } from "react-router";
 
-import { NotFoundPage } from "../../pages/NotFoundPage";
+import { MissingDeviceState } from "./MissingDeviceState";
 
 const meta = {
-  title: "Pages/NotFoundPage",
-  component: NotFoundPage,
-  parameters: {
-    layout: "fullscreen",
-  },
+  title: "Errors/MissingDeviceState",
+  component: MissingDeviceState,
   decorators: [
     (Story) => (
-      <MemoryRouter initialEntries={["/missing-route"]}>
-        <div className="min-h-screen" data-theme="isolapurr">
-          <Story />
+      <MemoryRouter>
+        <div
+          className="min-h-[420px] bg-[var(--bg)] p-6"
+          data-theme="isolapurr"
+        >
+          <div className="mx-auto max-w-[920px]">
+            <Story />
+          </div>
         </div>
       </MemoryRouter>
     ),
   ],
-} satisfies Meta<typeof NotFoundPage>;
+} satisfies Meta<typeof MissingDeviceState>;
 
 export default meta;
 
@@ -31,11 +33,15 @@ export const Desktop: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId("error-state-full-page")).toBeVisible();
+    await expect(canvas.getByTestId("device-not-found")).toBeVisible();
     await expect(
-      canvas.getByRole("heading", { name: "Page not found" }),
+      canvas.getByRole("heading", { name: "Device entry not found" }),
     ).toBeVisible();
-    await expect(canvas.getByTestId("not-found-path")).toBeVisible();
+    await expect(
+      canvas.getByText(
+        "This saved device is no longer available in local storage. Return to a known screen to pick another hub or add it again.",
+      ),
+    ).toBeVisible();
     await expect(
       canvas.getByRole("link", { name: "Dashboard" }),
     ).toHaveAttribute("href", "/");
