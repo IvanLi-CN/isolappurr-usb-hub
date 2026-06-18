@@ -19,6 +19,7 @@ import {
   setPortPower,
   setPowerConfig,
   setPowerLock,
+  setPowerRuntime,
   setUsbCDownstreamRoute,
   setWifiConfig,
   type WifiConfigInput,
@@ -66,6 +67,14 @@ export async function requestHttpTransport<T>(
     return restorePowerDefaults(baseUrl, Number(params?.owner ?? 0)) as Promise<
       Result<T>
     >;
+  }
+  if (method === "power.runtime_set") {
+    return setPowerRuntime(
+      baseUrl,
+      Number(params?.owner ?? 0),
+      params?.action as "output" | "discharge",
+      Boolean(params?.enabled),
+    ) as Promise<Result<T>>;
   }
   if (method === "power.idle_bias_run") {
     return runIdleBiasCalibration(

@@ -417,6 +417,8 @@
     #[cfg(not(feature = "net_http"))]
     let mut power_config = PowerConfig::defaults();
     let mut last_sw2303_path_control: Option<Sw2303PathControl> = None;
+    let mut runtime_tps_output_enabled = true;
+    let mut runtime_tps_discharge_enabled = false;
     #[cfg(feature = "net_http")]
     let mut settings_reset_inflight: Option<net::ApiSettingsResetScope> = None;
     #[cfg(feature = "net_http")]
@@ -427,6 +429,8 @@
             net::ApiIdleBiasRunSnapshot::idle(),
             None,
         );
+        guard.power.runtime_output_enabled = runtime_tps_output_enabled;
+        guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled;
     }
     #[cfg(feature = "net_http")]
     let net_handles =

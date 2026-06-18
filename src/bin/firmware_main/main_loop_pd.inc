@@ -125,6 +125,8 @@
                 if power_cleared {
                     power_config = default_power_config;
                     power_config_persisted = false;
+                    runtime_tps_output_enabled = true;
+                    runtime_tps_discharge_enabled = false;
                     tps_state.light_load_mode = None;
                     sw2303_profile_applied = false;
                     sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
@@ -156,6 +158,8 @@
                         guard.power.config = power_config;
                         guard.power.persisted = power_config_persisted;
                         guard.power.last_path_control = last_sw2303_path_control;
+                        guard.power.runtime_output_enabled = runtime_tps_output_enabled;
+                        guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled;
                         if idle_bias_cleared {
                             guard.idle_bias = idle_bias_api_snapshot(
                                 idle_bias_calibration,
@@ -338,6 +342,50 @@
             }
         }
         #[cfg(feature = "net_http")]
+        {
+            let pending_power_runtime = {
+                let mut guard = api_state.lock().await;
+                guard.pending.power_runtime.take()
+            };
+
+            if let Some(command) = pending_power_runtime {
+                match command {
+                    net::ApiPowerRuntimeCommand::SetOutputEnabled { enabled } => {
+                        if runtime_tps_output_enabled != enabled {
+                            runtime_tps_output_enabled = enabled;
+                            tps_state.last = None;
+                            tps_5v_setpoint_since = None;
+                            sw2303_i2c_allowed = false;
+                            sw2303_profile_applied = false;
+                            sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
+                            sw2303_recontract_pending = false;
+                            last_sw2303_profile_attempt = None;
+                            last_sw2303_path_control = None;
+                            sw2303_stable_reads = 0;
+                            sw2303_consecutive_errors = 0;
+                            tps_consecutive_errors = 0;
+                            sw2303_error_latched = false;
+                            tps_error_latched = false;
+                            last_sw2303_read_attempt = None;
+                            last_valid_sw2303_request = None;
+                            last_request = None;
+                            last_fast_protocol = None;
+                            last_tps_status = None;
+                        }
+                    }
+                    net::ApiPowerRuntimeCommand::SetDischargeEnabled { enabled } => {
+                        runtime_tps_discharge_enabled = enabled;
+                        tps_state.last = None;
+                    }
+                }
+
+                let mut guard = api_state.lock().await;
+                guard.power.runtime_output_enabled = runtime_tps_output_enabled;
+                guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled;
+                POWER_RUNTIME_RESULT.signal(true);
+            }
+        }
+        #[cfg(feature = "net_http")]
         include!("main_loop_pd_idle_bias.inc");
         #[cfg(feature = "net_http")]
         if REBOOT_PENDING.load(Ordering::Acquire) && !has_wifi_provisioning_pending() {
@@ -377,6 +425,7 @@
         usb_c_pd_power_on = matches!(port_usb_c.power, PowerState::On);
         usb_c_power_off_setpoint = PowerSetpoint {
             output_enabled: false,
+            discharge_enabled: runtime_tps_discharge_enabled,
             ..boot_sp
         };
 
@@ -596,7 +645,8 @@
         if usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual {
             let manual_vout_mv = quantize_manual_voltage_mv(power_config.manual.voltage_mv);
             setpoint = PowerSetpoint {
-                output_enabled: true,
+                output_enabled: runtime_tps_output_enabled,
+                discharge_enabled: false,
                 v_out_mv: manual_vout_mv,
                 i_lim_ma: power_config.manual.current_limit_ma,
             };

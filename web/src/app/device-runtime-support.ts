@@ -91,6 +91,12 @@ export type DeviceRuntimeContextValue = {
     owner: number,
     acquire: boolean,
   ) => Promise<Result<PowerConfigResponse>>;
+  setPowerRuntime: (
+    deviceId: string,
+    owner: number,
+    action: "output" | "discharge",
+    enabled: boolean,
+  ) => Promise<Result<PowerConfigResponse>>;
   setIdleBiasCorrection: (
     deviceId: string,
     correctionEnabled: boolean,

@@ -384,6 +384,53 @@ async fn handle_api_request(
             }
             return Ok(());
         }
+        ("POST", "/api/v1/power/runtime") | ("PUT", "/api/v1/power/runtime") => {
+            let Some(command) = parse_power_runtime_body(body) else {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "missing or invalid power runtime command",
+                    false,
+                )
+                .await?;
+                return Ok(());
+            };
+            let owner = parse_owner_query(query);
+            match try_set_power_runtime(api_state, command, owner).await {
+                Ok(()) => {
+                    if crate::wait_power_runtime_result().await {
+                        let state = { *api_state.lock().await };
+                        let mut body = String::new();
+                        write_power_config_json(&mut body, &state.power);
+                        write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
+                    } else {
+                        write_api_error(
+                            socket,
+                            "500 Internal Server Error",
+                            allow_origin,
+                            "runtime_apply_failed",
+                            "Power runtime command could not be applied",
+                            true,
+                        )
+                        .await?;
+                    }
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "power runtime control is busy or locked",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
         ("PUT", "/api/v1/power/idle-bias") => {
             let Some(enabled) = parse_idle_bias_body(body) else {
                 write_api_error(
@@ -1039,6 +1086,16 @@ pub fn parse_power_config_body(body: &str) -> Option<PowerConfig> {
 
 pub fn parse_idle_bias_body(body: &str) -> Option<bool> {
     extract_body_bool(body, "correction_enabled")
+}
+
+pub fn parse_power_runtime_body(body: &str) -> Option<ApiPowerRuntimeCommand> {
+    let action = extract_body_string(body, "action")?;
+    let enabled = extract_body_bool(body, "enabled")?;
+    match action.as_str() {
+        "output" => Some(ApiPowerRuntimeCommand::SetOutputEnabled { enabled }),
+        "discharge" => Some(ApiPowerRuntimeCommand::SetDischargeEnabled { enabled }),
+        _ => None,
+    }
 }
 
 include!("http_body_parse.inc");

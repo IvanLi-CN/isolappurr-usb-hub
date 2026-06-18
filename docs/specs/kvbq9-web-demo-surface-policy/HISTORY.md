@@ -10,3 +10,12 @@
   `web/src/pages/AboutPage.stories.tsx`.
 - Added repo contract coverage so page-level stories and ad hoc demo routes do
   not quietly return.
+
+## 2026-06-18
+
+- Tightened the no-demo-page rule so dedicated `web/src/pages/*DemoPage.tsx`
+  components are treated as the same policy violation as ad hoc `/demo/*`
+  routes or `?demo=*` toggles.
+- Removed the transient Power preview demo implementation and its mock server
+  so the power topic again relies only on the production route, composite
+  Storybook stories, and spec-owned visual evidence.

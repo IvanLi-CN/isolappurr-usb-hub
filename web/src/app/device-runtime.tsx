@@ -1005,6 +1005,88 @@ export function DeviceRuntimeProvider({
     ],
   );
 
+  const setPowerRuntime = useCallback(
+    async (
+      deviceId: string,
+      owner: number,
+      action: "output" | "discharge",
+      enabled: boolean,
+    ): Promise<Result<PowerConfigResponse>> => {
+      const device = devices.find((d) => d.id === deviceId);
+      if (!device) {
+        return {
+          ok: false,
+          error: {
+            kind: "invalid_response",
+            message: `Unknown device: ${deviceId}`,
+          },
+        };
+      }
+
+      setPending(deviceId, "port_c", true);
+      try {
+        let res: Result<PowerConfigResponse> | null = null;
+        for (const transport of orderedTransports(deviceId)) {
+          const candidate = await requestTransport<PowerConfigResponse>(
+            deviceId,
+            transport === "http"
+              ? httpBaseUrlForDevice(device)
+              : device.baseUrl,
+            transport,
+            "power.runtime_set",
+            {
+              action,
+              enabled,
+              owner,
+            },
+          );
+          markChannelResult(deviceId, transport, candidate);
+          if (candidate.ok) {
+            preferredTransportByDevice.current[deviceId] = transport;
+            res = candidate;
+            break;
+          }
+          res = candidate;
+        }
+        if (!res) {
+          return {
+            ok: false,
+            error: {
+              kind: "offline",
+              message: "No transport responded",
+            },
+          };
+        }
+        if (res.ok) {
+          pushToast({
+            message: `${device.name}: ${action === "output" ? "Power" : "TPS discharge"} updated`,
+            variant: "success",
+          });
+          await refreshDevice(deviceId);
+          return res;
+        }
+        handleApiErrorToast(
+          device.name,
+          action === "output" ? "Power" : "TPS discharge",
+          res.error,
+        );
+        return res;
+      } finally {
+        setPending(deviceId, "port_c", false);
+      }
+    },
+    [
+      devices,
+      handleApiErrorToast,
+      markChannelResult,
+      orderedTransports,
+      pushToast,
+      refreshDevice,
+      requestTransport,
+      setPending,
+    ],
+  );
+
   const replug = useCallback(
     async (deviceId: string, portId: PortId) => {
       const device = devices.find((d) => d.id === deviceId);
@@ -1151,6 +1233,7 @@ export function DeviceRuntimeProvider({
       savePowerConfig,
       restorePowerDefaults: restoreDefaults,
       setPowerLock: setLock,
+      setPowerRuntime,
       setIdleBiasCorrection: setIdleBias,
       runIdleBiasCalibration: runIdleBias,
       clearIdleBiasCalibration: clearIdleBias,
@@ -1174,6 +1257,7 @@ export function DeviceRuntimeProvider({
     runtimeById,
     savePowerConfig,
     saveWifiConfig,
+    setPowerRuntime,
     clearIdleBias,
     setLock,
     setIdleBias,

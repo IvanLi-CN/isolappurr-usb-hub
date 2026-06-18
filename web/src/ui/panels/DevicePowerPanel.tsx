@@ -8,6 +8,7 @@ import type {
   PowerConfigResponse,
   Result,
 } from "../../domain/deviceApi";
+import type { PortState, PortTelemetry } from "../../domain/ports";
 import { DevicePowerPanelIdleBiasSection } from "./DevicePowerPanelIdleBiasSection";
 
 const HEARTBEAT_MS = 8_000;
@@ -28,6 +29,11 @@ type DevicePowerPanelProps = {
     owner: number,
     acquire: boolean,
   ) => Promise<Result<PowerConfigResponse>>;
+  setPowerRuntime: (
+    owner: number,
+    action: "output" | "discharge",
+    enabled: boolean,
+  ) => Promise<Result<PowerConfigResponse>>;
   setIdleBiasCorrection: (
     enabled: boolean,
     owner: number,
@@ -36,6 +42,10 @@ type DevicePowerPanelProps = {
   clearIdleBiasCalibration: (
     owner: number,
   ) => Promise<Result<IdleBiasResponse>>;
+  usbCTelemetry: PortTelemetry | null;
+  usbCState: PortState | null;
+  usbCPending: boolean;
+  replugUsbC: () => Promise<void>;
 };
 
 type FormState = PowerConfigInput;
@@ -149,6 +159,16 @@ function formatPowerInput(watts: number): string {
   return `${watts} W`;
 }
 
+function formatTelemetryValue(
+  value: number | null,
+  unit: "V" | "A" | "W",
+): string {
+  if (value === null) {
+    return `--.-${unit}`;
+  }
+  return `${(value / 1000).toFixed(2)}${unit}`;
+}
+
 type UnitSliderFieldProps = {
   disabled?: boolean;
   label: string;
@@ -227,6 +247,62 @@ function UnitSliderField({
   );
 }
 
+function InlineHelpPopover({
+  title,
+  lines,
+}: {
+  title: string;
+  lines: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!ref.current) {
+        return;
+      }
+      if (ref.current.contains(event.target as Node)) {
+        return;
+      }
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        aria-expanded={open}
+        aria-label={`${title} help`}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel)] text-[11px] font-bold text-[var(--muted)] transition hover:text-[var(--text)]"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        ?
+      </button>
+      {open ? (
+        <div className="iso-popover absolute left-0 top-full z-20 mt-2 w-[min(320px,calc(100vw-3rem))]">
+          <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] p-3">
+            <div className="text-[12px] font-semibold text-[var(--text)]">
+              {title}
+            </div>
+            <div className="mt-2 grid gap-2 text-[12px] leading-5 text-[var(--muted)]">
+              {lines.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function DevicePowerPanel({
   deviceKey,
   deviceName,
@@ -237,9 +313,14 @@ export function DevicePowerPanel({
   savePowerConfig,
   restorePowerDefaults,
   setPowerLock,
+  setPowerRuntime,
   setIdleBiasCorrection,
   runIdleBiasCalibration,
   clearIdleBiasCalibration,
+  usbCTelemetry,
+  usbCState,
+  usbCPending,
+  replugUsbC,
 }: DevicePowerPanelProps) {
   const [config, setConfig] = useState<PowerConfigResponse | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -255,6 +336,7 @@ export function DevicePowerPanel({
   const loadPowerConfigRef = useRef(loadPowerConfig);
   const loadIdleBiasRef = useRef(loadIdleBias);
   const setPowerLockRef = useRef(setPowerLock);
+  const setPowerRuntimeRef = useRef(setPowerRuntime);
   const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
 
   const initializeLoadedConfig = useCallback(
@@ -277,6 +359,10 @@ export function DevicePowerPanel({
   useEffect(() => {
     setPowerLockRef.current = setPowerLock;
   }, [setPowerLock]);
+
+  useEffect(() => {
+    setPowerRuntimeRef.current = setPowerRuntime;
+  }, [setPowerRuntime]);
 
   useEffect(() => {
     let cancelled = false;
@@ -596,6 +682,49 @@ export function DevicePowerPanel({
     }
   };
 
+  const toggleRuntime = async (
+    action: "output" | "discharge",
+    enabled: boolean,
+  ) => {
+    setBusy(true);
+    setStatus(
+      action === "output"
+        ? `${enabled ? "Enabling" : "Disabling"} Power...`
+        : `${enabled ? "Enabling" : "Disabling"} TPS discharge...`,
+    );
+    setError(null);
+    const res = await setPowerRuntimeRef.current(
+      ownerRef.current,
+      action,
+      enabled,
+    );
+    setBusy(false);
+    if (res.ok) {
+      setConfig(res.value);
+      setStatus(
+        action === "output"
+          ? `Power ${enabled ? "enabled" : "disabled"}`
+          : `TPS discharge ${enabled ? "enabled" : "disabled"}`,
+      );
+    } else {
+      setError(res.error.message);
+      setStatus(null);
+    }
+  };
+
+  const runtimeOutputEnabled = config?.runtime?.output_enabled ?? true;
+  const runtimeDischargeEnabled = config?.runtime?.discharge_enabled ?? false;
+  const manualHighVoltageWarning =
+    form.tps_mode === "manual" && form.manual.voltage_mv > 5000;
+  const usbCPowerActionDisabled = powerControlsDisabled || usbCPending;
+  const usbCPowerEnabled = usbCState?.power_enabled ?? runtimeOutputEnabled;
+  const usbCDataLinked =
+    usbCState?.replugging === true
+      ? "Replugging"
+      : usbCState?.data_connected
+        ? "Data linked"
+        : "Data off";
+
   return (
     <section
       className="flex flex-col gap-5 rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-5 py-5"
@@ -721,34 +850,6 @@ export function DevicePowerPanel({
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <div className="text-[13px] font-medium text-[var(--muted)]">
-                TPS light-load mode
-              </div>
-              <div className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-1 sm:w-auto">
-                <button
-                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.light_load_mode === "pfm" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
-                  disabled={powerControlsDisabled}
-                  onClick={() => setLightLoadMode("pfm")}
-                  type="button"
-                >
-                  PFM
-                </button>
-                <button
-                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.light_load_mode === "fpwm" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
-                  disabled={powerControlsDisabled}
-                  onClick={() => setLightLoadMode("fpwm")}
-                  type="button"
-                >
-                  FPWM
-                </button>
-              </div>
-              <div className="text-[12px] text-[var(--muted)]">
-                PFM follows the board default. FPWM forces TPS55288 PWM at light
-                load and is saved with the same power config.
-              </div>
-            </div>
-
             <div className="grid gap-4">
               <UnitSliderField
                 disabled={powerControlsDisabled || form.tps_mode !== "manual"}
@@ -775,26 +876,28 @@ export function DevicePowerPanel({
             </div>
 
             <div className="grid gap-2">
-              <div className="text-[13px] font-medium text-[var(--muted)]">
-                USB-C path
+              <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--muted)]">
+                <span>USB-C path</span>
+                <InlineHelpPopover
+                  lines={[
+                    "Default disconnects only while manual voltage exceeds the negotiated SW2303 request.",
+                    "Disconnect forces the SW2303 VBUS path off.",
+                    "Force keeps USB-C VBUS connected to TPS VOUT.",
+                    "Manual voltage above 5 V can still run hot, prefer Auto follow for sustained high-voltage use.",
+                  ]}
+                  title="USB-C path"
+                />
+                {manualHighVoltageWarning ? (
+                  <span className="rounded-full bg-[var(--badge-warning-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--badge-warning-text)]">
+                    High voltage
+                  </span>
+                ) : null}
               </div>
               <div className="grid gap-2 lg:grid-cols-3">
                 {[
-                  [
-                    "default",
-                    "Default",
-                    "Disconnect only while manual voltage exceeds negotiated SW2303 request.",
-                  ],
-                  [
-                    "disconnect",
-                    "Disconnect",
-                    "Force SW2303 path off regardless of negotiated voltage.",
-                  ],
-                  [
-                    "force",
-                    "Force",
-                    "Keep USB-C VBUS connected to TPS VOUT unconditionally.",
-                  ],
+                  ["default", "Default", "Above request"],
+                  ["disconnect", "Disconnect", "VBUS off"],
+                  ["force", "Force", "VBUS on"],
                 ].map(([value, label, detail]) => (
                   <button
                     key={value}
@@ -816,15 +919,52 @@ export function DevicePowerPanel({
                   </button>
                 ))}
               </div>
+              {form.tps_mode === "manual" ? (
+                <div className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="text-[13px] font-semibold">
+                        TPS discharge on output-off
+                      </div>
+                      <InlineHelpPopover
+                        lines={[
+                          "Advanced control for TPS55288 `DISCHG`.",
+                          "Only affects the TPS output shutdown state, not SW2303 internal discharge behavior.",
+                        ]}
+                        title="TPS discharge"
+                      />
+                    </div>
+                    <button
+                      className={`inline-flex h-9 min-w-[104px] items-center justify-center rounded-[8px] px-3 text-[12px] font-semibold ${
+                        runtimeDischargeEnabled
+                          ? "bg-[var(--primary)] text-[var(--primary-text)]"
+                          : "border border-[var(--border)] bg-[var(--panel-2)] text-[var(--muted)]"
+                      } ${
+                        powerControlsDisabled || !runtimeOutputEnabled
+                          ? "opacity-60"
+                          : ""
+                      }`}
+                      data-testid="runtime-discharge-toggle"
+                      disabled={powerControlsDisabled}
+                      onClick={() =>
+                        void toggleRuntime(
+                          "discharge",
+                          !runtimeDischargeEnabled,
+                        )
+                      }
+                      type="button"
+                    >
+                      {runtimeDischargeEnabled ? "Enabled" : "Disabled"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
-          </section>
 
-          <aside className="grid gap-5">
-            <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-              <div className="text-[14px] font-semibold">Actions</div>
-              <div className="mt-4 flex flex-col gap-3">
+            <div className="grid gap-3 border-t border-[var(--border)] pt-4">
+              <div className="flex flex-wrap justify-end gap-3">
                 <button
-                  className="flex h-11 items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-11 min-w-[176px] items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={powerControlsDisabled || !dirty}
                   onClick={() => void submit()}
                   type="button"
@@ -832,7 +972,7 @@ export function DevicePowerPanel({
                   Save and apply
                 </button>
                 <button
-                  className="flex h-11 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-11 min-w-[176px] items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={powerControlsDisabled}
                   onClick={() => void restore()}
                   type="button"
@@ -841,15 +981,156 @@ export function DevicePowerPanel({
                 </button>
               </div>
               {status ? (
-                <div className="mt-3 text-[12px] text-[var(--badge-success-text)]">
+                <div className="text-[12px] text-[var(--badge-success-text)]">
                   {status}
                 </div>
               ) : null}
               {error ? (
-                <div className="mt-3 text-[12px] text-[var(--badge-error-text)]">
+                <div className="text-[12px] text-[var(--badge-error-text)]">
                   {error}
                 </div>
               ) : null}
+            </div>
+          </section>
+
+          <aside className="grid gap-5">
+            <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="text-[14px] font-semibold">USB-C</div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="flex h-6 items-center justify-center rounded-full bg-[var(--btn-disabled-fill-soft)] px-3 text-[12px] font-semibold text-[var(--muted)]">
+                    {formatTelemetryValue(
+                      usbCTelemetry?.current_ma ?? null,
+                      "A",
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid h-7 grid-cols-2 gap-2">
+                <div
+                  className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
+                    usbCPowerEnabled
+                      ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
+                      : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
+                  }`}
+                >
+                  <span className="truncate">
+                    {usbCPowerEnabled ? "Power on" : "Power off"}
+                  </span>
+                </div>
+                <div
+                  className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
+                    usbCState?.data_connected && usbCState?.replugging !== true
+                      ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
+                      : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
+                  }`}
+                >
+                  <span className="truncate">{usbCDataLinked}</span>
+                </div>
+              </div>
+              <div className="mt-5 grid grid-cols-3 gap-4">
+                <div>
+                  <div className="text-[12px] font-semibold text-[var(--muted)]">
+                    Voltage
+                  </div>
+                  <div
+                    className="mt-2 font-mono text-[24px] font-bold"
+                    data-testid="usb-c-voltage"
+                  >
+                    {formatTelemetryValue(
+                      usbCTelemetry?.voltage_mv ?? null,
+                      "V",
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[12px] font-semibold text-[var(--muted)]">
+                    Current
+                  </div>
+                  <div
+                    className="mt-2 font-mono text-[24px] font-bold"
+                    data-testid="usb-c-current"
+                  >
+                    {formatTelemetryValue(
+                      usbCTelemetry?.current_ma ?? null,
+                      "A",
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[12px] font-semibold text-[var(--muted)]">
+                    Power
+                  </div>
+                  <div
+                    className="mt-2 font-mono text-[24px] font-bold"
+                    data-testid="usb-c-power"
+                  >
+                    {formatTelemetryValue(usbCTelemetry?.power_mw ?? null, "W")}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <button
+                  className={`flex h-10 items-center justify-center rounded-[10px] text-[12px] font-bold sm:w-[132px] ${
+                    usbCPowerActionDisabled
+                      ? "bg-[var(--btn-disabled-fill)] text-[var(--btn-disabled-text)]"
+                      : "bg-[var(--primary)] text-[var(--primary-text)]"
+                  }`}
+                  data-testid="runtime-output-toggle"
+                  disabled={usbCPowerActionDisabled}
+                  onClick={() =>
+                    void toggleRuntime("output", !runtimeOutputEnabled)
+                  }
+                  type="button"
+                >
+                  Power
+                </button>
+                <button
+                  className={`flex h-10 items-center justify-center rounded-[10px] border border-[var(--border)] text-[12px] font-bold sm:w-[140px] ${
+                    usbCPowerActionDisabled
+                      ? "bg-[var(--btn-disabled-fill-soft)] text-[var(--btn-disabled-text)]"
+                      : "bg-transparent text-[var(--text)]"
+                  }`}
+                  disabled={usbCPowerActionDisabled}
+                  onClick={() => void replugUsbC()}
+                  type="button"
+                >
+                  Replug
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+              <div className="flex items-center gap-2">
+                <div className="text-[14px] font-semibold">
+                  TPS light-load mode
+                </div>
+                <InlineHelpPopover
+                  lines={[
+                    "PFM follows the board default.",
+                    "FPWM forces TPS55288 PWM at light load and is saved with the same power config.",
+                  ]}
+                  title="TPS light-load mode"
+                />
+              </div>
+              <div className="mt-3 inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-1">
+                <button
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold ${form.light_load_mode === "pfm" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  disabled={powerControlsDisabled}
+                  onClick={() => setLightLoadMode("pfm")}
+                  type="button"
+                >
+                  PFM
+                </button>
+                <button
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold ${form.light_load_mode === "fpwm" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  disabled={powerControlsDisabled}
+                  onClick={() => setLightLoadMode("fpwm")}
+                  type="button"
+                >
+                  FPWM
+                </button>
+              </div>
             </section>
           </aside>
         </div>

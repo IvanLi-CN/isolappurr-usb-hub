@@ -67,6 +67,30 @@ async fn fetch_ports_snapshot(
     )?)?)
 }
 
+async fn set_power_runtime_command(
+    client: &Client,
+    devd: &DevdClient,
+    selector: &ApiSelectorArgs,
+    owner: u32,
+    action: &str,
+    enabled: bool,
+) -> anyhow::Result<Value> {
+    unwrap_device_success_result(
+        request_selected(
+            client,
+            devd,
+            selector.clone(),
+            Method::POST,
+            &format!("/power/runtime?owner={owner}"),
+            Some(json!({
+                "action": action,
+                "enabled": enabled,
+            })),
+        )
+        .await?,
+    )
+}
+
 async fn wait_for_idle_bias_completion(
     client: &Client,
     devd: &DevdClient,
@@ -584,6 +608,21 @@ async fn handle_power(
                     .await?,
             )
         }
+        PowerCommand::Runtime { command } => match command {
+            RuntimeCommand::Output { selector, enabled } => {
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                let owner = next_power_owner();
+                set_power_runtime_command(client, devd, &selector, owner, "output", enabled).await
+            }
+            RuntimeCommand::Discharge { selector, enabled } => {
+                let selector =
+                    maybe_select_power_target(client, devd, selector, allow_interactive).await?;
+                let owner = next_power_owner();
+                set_power_runtime_command(client, devd, &selector, owner, "discharge", enabled)
+                    .await
+            }
+        },
         PowerCommand::Output { command } => match command {
             OutputCommand::Manual { selector, args } => {
                 let selector =

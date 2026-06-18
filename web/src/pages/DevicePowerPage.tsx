@@ -31,6 +31,8 @@ export function DevicePowerPage() {
     );
   }
 
+  const usbCPort = runtime.port(deviceId, "port_c");
+
   return (
     <div className="flex flex-col gap-4" data-testid="device-power-page">
       <div>
@@ -61,6 +63,10 @@ export function DevicePowerPage() {
         savePowerConfig={(input, owner) =>
           runtime.savePowerConfig(deviceId, input, owner)
         }
+        replugUsbC={() => runtime.replug(deviceId, "port_c")}
+        setPowerRuntime={(owner, action, enabled) =>
+          runtime.setPowerRuntime(deviceId, owner, action, enabled)
+        }
         setIdleBiasCorrection={(enabled, owner) =>
           runtime.setIdleBiasCorrection(deviceId, enabled, owner)
         }
@@ -68,6 +74,9 @@ export function DevicePowerPage() {
           runtime.setPowerLock(deviceId, owner, acquire)
         }
         transportLabel={runtime.transport(deviceId) ?? "unknown"}
+        usbCPending={runtime.pending(deviceId, "port_c")}
+        usbCState={usbCPort?.state ?? null}
+        usbCTelemetry={usbCPort?.telemetry ?? null}
       />
     </div>
   );

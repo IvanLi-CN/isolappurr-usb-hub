@@ -6,8 +6,11 @@
   in `web/src/App.tsx`.
 - Composite Storybook surfaces remain under non-page namespaces such as
   `Panels/*`, `Layouts/*`, `Dialogs/*`, and `Cards/*`.
+- The dedicated power preview demo page and its mock server were removed so the
+  repo now only exposes the production SPA plus composite Storybook coverage.
 - Repository contract tests guard against two regressions:
   - reintroducing `web/src/pages/*.stories.*`
+  - reintroducing `web/src/pages/*DemoPage.tsx`
   - adding `/demo/` or `demo=` style ad hoc demo entrypoints to
     `web/src/App.tsx`
 - The existing page-level Storybook drift (`web/src/pages/AboutPage.stories.tsx`)

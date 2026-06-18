@@ -147,6 +147,10 @@ class SkillContractTest(unittest.TestCase):
         for path in ROOT.glob("web/src/pages/*.stories.*"):
             self.fail(f"page-level Storybook story is forbidden: {path}")
 
+    def test_page_level_demo_pages_are_not_present(self) -> None:
+        for path in ROOT.glob("web/src/pages/*DemoPage.tsx"):
+            self.fail(f"page-level demo page is forbidden: {path}")
+
     def test_app_router_does_not_add_ad_hoc_demo_entrypoints(self) -> None:
         app = read("web/src/App.tsx")
         for pattern in AD_HOC_DEMO_ROUTE_PATTERNS:

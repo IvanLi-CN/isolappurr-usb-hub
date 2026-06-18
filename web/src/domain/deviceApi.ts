@@ -85,6 +85,10 @@ export type PowerConfigResponse = {
   persisted: boolean;
   tps_mode: "auto_follow" | "manual";
   light_load_mode: "pfm" | "fpwm";
+  runtime?: {
+    output_enabled: boolean;
+    discharge_enabled: boolean;
+  };
   capability: {
     profile: "full" | string;
     power_watts: number;
@@ -133,6 +137,10 @@ function normalizePowerConfigResponse(
   return {
     ...value,
     light_load_mode: value.light_load_mode === "fpwm" ? "fpwm" : "pfm",
+    runtime: {
+      output_enabled: value.runtime?.output_enabled ?? true,
+      discharge_enabled: value.runtime?.discharge_enabled ?? false,
+    },
   };
 }
 
@@ -186,6 +194,7 @@ export type PdDiagnosticsResponse = {
   };
   tps_setpoint: {
     output_enabled: boolean | null;
+    discharge_enabled?: boolean | null;
     mv: number | null;
     iout_limit_ma: number | null;
   };
@@ -610,6 +619,26 @@ export async function setPowerLock(
     baseUrl,
     `/api/v1/power/config/${acquire ? "lock" : "release"}?owner=${owner}`,
     { method: "POST" },
+  );
+  return res.ok
+    ? { ok: true, value: normalizePowerConfigResponse(res.value) }
+    : res;
+}
+
+export async function setPowerRuntime(
+  baseUrl: string,
+  owner: number,
+  action: "output" | "discharge",
+  enabled: boolean,
+): Promise<Result<PowerConfigResponse>> {
+  const res = await fetchJson<PowerConfigResponse>(
+    baseUrl,
+    `/api/v1/power/runtime?owner=${owner}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, enabled }),
+    },
   );
   return res.ok
     ? { ok: true, value: normalizePowerConfigResponse(res.value) }

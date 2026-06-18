@@ -97,3 +97,13 @@
   topic now explicitly relies on production `/devices/:deviceId/power` proof,
   composite Storybook stories, and spec-owned visual evidence instead of any
   dedicated power demo page.
+- Split the Power surface into a runtime-only output gate backed by TPS55288
+  `OE` plus an advanced `DISCHG` control for the TPS output-off state.
+- Added a manual high-voltage warning that explicitly says SW2303 can still
+  heat under manual high-voltage operation and recommends `auto_follow` for
+  sustained use.
+- Kept the new runtime controls non-persistent and wired them through the Web,
+  owner CLI, and firmware runtime snapshots.
+- Reworked the owner-facing Web wording and layout so the live USB-C
+  telemetry plus `Power` / `Replug` actions now sit in the right rail, and the
+  old `2mm Output` page label is no longer presented as a standalone setting.

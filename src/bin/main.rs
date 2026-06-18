@@ -127,6 +127,9 @@ static USB_C_ROUTE_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new()
 static POWER_CONFIG_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
 #[cfg(feature = "net_http")]
+static POWER_RUNTIME_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+
+#[cfg(feature = "net_http")]
 static IDLE_BIAS_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
 #[cfg(feature = "net_http")]

@@ -179,6 +179,7 @@
 
                     let point_setpoint = PowerSetpoint {
                         output_enabled: true,
+                        discharge_enabled: false,
                         v_out_mv: point_voltage_mv,
                         i_lim_ma: clamp_manual_current_ma(
                             point_voltage_mv,
@@ -319,6 +320,7 @@
             } else if power_config.tps_mode == TpsMode::Manual {
                 PowerSetpoint {
                     output_enabled: true,
+                    discharge_enabled: false,
                     v_out_mv: manual_vout_mv,
                     i_lim_ma: power_config.manual.current_limit_ma,
                 }

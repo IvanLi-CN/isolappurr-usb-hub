@@ -711,6 +711,60 @@ mod power_output_tests {
     }
 
     #[test]
+    fn power_runtime_output_parses() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "runtime",
+            "output",
+            "--device-id",
+            "f293cc9c139e",
+            "--enabled",
+            "false",
+        ])
+        .expect("power runtime output command should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::Runtime {
+                    command: RuntimeCommand::Output { enabled, .. },
+                },
+        } = cli.command
+        else {
+            panic!("expected power runtime output command");
+        };
+
+        assert!(!enabled);
+    }
+
+    #[test]
+    fn power_runtime_discharge_parses() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "runtime",
+            "discharge",
+            "--device-id",
+            "f293cc9c139e",
+            "--enabled",
+            "true",
+        ])
+        .expect("power runtime discharge command should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::Runtime {
+                    command: RuntimeCommand::Discharge { enabled, .. },
+                },
+        } = cli.command
+        else {
+            panic!("expected power runtime discharge command");
+        };
+
+        assert!(enabled);
+    }
+
+    #[test]
     fn power_commands_reject_temporary_device_selector() {
         let err = Cli::try_parse_from([
             "isolapurr",

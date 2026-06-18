@@ -109,6 +109,8 @@ pub fn write_pd_diagnostics_json(
     write_port_telemetry_json(body, &pd.usb_c_actual);
     let _ = body.push_str(",\"tps_setpoint\":{\"output_enabled\":");
     write_json_bool_or_null(body, pd.tps_setpoint_output_enabled);
+    let _ = body.push_str(",\"discharge_enabled\":");
+    write_json_bool_or_null(body, pd.tps_setpoint_discharge_enabled);
     let _ = body.push_str(",\"mv\":");
     write_json_u32_or_null(body, pd.tps_setpoint_mv);
     let _ = body.push_str(",\"iout_limit_ma\":");
@@ -293,11 +295,21 @@ pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
     let cfg = power.config;
     let _ = core::write!(
         body,
-        "{{\"hardware\":\"{}\",\"persisted\":{},\"tps_mode\":\"{}\",\"light_load_mode\":\"{}\",\"capability\":{{\"profile\":\"full\",\"power_watts\":{},\"protocols\":{{\"pd\":{},\"qc20\":{},\"qc30\":{},\"fcp\":{},\"afc\":{},\"scp\":{},\"pe20\":{},\"bc12\":{},\"sfcp\":{}}},\"pd\":{{\"pps\":{},\"fixed_voltages_mv\":[",
+        "{{\"hardware\":\"{}\",\"persisted\":{},\"tps_mode\":\"{}\",\"light_load_mode\":\"{}\",\"runtime\":{{\"output_enabled\":{},\"discharge_enabled\":{}}},\"capability\":{{\"profile\":\"full\",\"power_watts\":{},\"protocols\":{{\"pd\":{},\"qc20\":{},\"qc30\":{},\"fcp\":{},\"afc\":{},\"scp\":{},\"pe20\":{},\"bc12\":{},\"sfcp\":{}}},\"pd\":{{\"pps\":{},\"fixed_voltages_mv\":[",
         cfg.hardware.as_str(),
         if power.persisted { "true" } else { "false" },
         cfg.tps_mode.as_str(),
         cfg.light_load_mode.as_str(),
+        if power.runtime_output_enabled {
+            "true"
+        } else {
+            "false"
+        },
+        if power.runtime_discharge_enabled {
+            "true"
+        } else {
+            "false"
+        },
         cfg.capability.power_watts,
         cfg.capability.pd_enabled,
         cfg.capability.qc20_enabled,
@@ -478,6 +490,7 @@ pub async fn try_set_power_config(
         }
     }
     if guard.pending.power_config.is_some()
+        || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
@@ -486,6 +499,36 @@ pub async fn try_set_power_config(
     }
     crate::reset_power_config_result();
     guard.pending.power_config = Some(command);
+    Ok(())
+}
+
+pub async fn try_set_power_runtime(
+    api_state: &'static ApiSharedMutex,
+    command: ApiPowerRuntimeCommand,
+    owner: Option<u32>,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    let now = uptime_ms();
+    if let Some(lock) = guard.power.lock {
+        if lock.expires_at_ms <= now {
+            guard.power.lock = None;
+        } else if owner != Some(lock.owner) {
+            return Err(ApiActionError::Busy);
+        }
+    }
+    if guard.ports.port_c.state.busy
+        || guard.pending.port_c.is_some()
+        || guard.pending.usb_c_downstream_route.is_some()
+        || guard.pending.power_config.is_some()
+        || guard.pending.power_runtime.is_some()
+        || guard.pending.idle_bias.is_some()
+        || guard.pending.settings_reset.is_some()
+        || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
+    {
+        return Err(ApiActionError::Busy);
+    }
+    crate::reset_power_runtime_result();
+    guard.pending.power_runtime = Some(command);
     Ok(())
 }
 
@@ -507,6 +550,7 @@ pub async fn try_reset_settings(
         || guard.pending.port_c.is_some()
         || guard.pending.usb_c_downstream_route.is_some()
         || guard.pending.power_config.is_some()
+        || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
@@ -532,6 +576,7 @@ pub async fn try_set_action(
     if port.state.busy
         || (port_id == ApiPortId::PortC
             && (guard.pending.usb_c_downstream_route.is_some()
+                || guard.pending.power_runtime.is_some()
                 || guard.pending.settings_reset.is_some()
                 || guard.pending.idle_bias.is_some()
                 || guard.idle_bias.run.state == ApiIdleBiasRunState::Running))
@@ -558,6 +603,7 @@ pub async fn try_set_usb_c_downstream_route(
     let mut guard = api_state.lock().await;
     if guard.ports.port_c.state.busy
         || guard.pending.usb_c_downstream_route.is_some()
+        || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
@@ -592,6 +638,7 @@ pub async fn try_set_idle_bias(
         || guard.pending.port_c.is_some()
         || guard.pending.usb_c_downstream_route.is_some()
         || guard.pending.power_config.is_some()
+        || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
@@ -620,6 +667,7 @@ pub async fn try_run_idle_bias(
         || guard.pending.port_c.is_some()
         || guard.pending.usb_c_downstream_route.is_some()
         || guard.pending.power_config.is_some()
+        || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running

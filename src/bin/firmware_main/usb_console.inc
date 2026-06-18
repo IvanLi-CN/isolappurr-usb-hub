@@ -170,6 +170,50 @@ async fn handle_usb_jsonl_request(
         return body;
     }
 
+    if request.contains("\"method\":\"power.runtime_set\"")
+        || request.contains("\"method\": \"power.runtime_set\"")
+    {
+        let Some(command) = net::parse_power_runtime_body(request) else {
+            write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "bad_request",
+                "missing or invalid power runtime command",
+                false,
+            );
+            return body;
+        };
+        let owner = extract_json_u32(request, "owner");
+        match net::try_set_power_runtime(api_state, command, owner).await {
+            Ok(()) => {
+                if wait_power_runtime_result().await {
+                    let state = { *api_state.lock().await };
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":", id.as_str());
+                    net::write_power_config_json(&mut body, &state.power);
+                    let _ = body.push('}');
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "runtime_apply_failed",
+                        "Power runtime command could not be applied",
+                        true,
+                    );
+                }
+            }
+            Err(net::ApiActionError::Busy) => {
+                write_jsonl_error(
+                    &mut body,
+                    id.as_str(),
+                    "busy",
+                    "power runtime control is busy or locked",
+                    true,
+                );
+            }
+        }
+        return body;
+    }
+
     if request.contains("\"method\":\"power.config_defaults\"")
         || request.contains("\"method\": \"power.config_defaults\"")
     {
@@ -761,6 +805,16 @@ pub(crate) async fn wait_power_config_result() -> bool {
 #[cfg(feature = "net_http")]
 pub(crate) fn reset_power_config_result() {
     POWER_CONFIG_RESULT.reset();
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) async fn wait_power_runtime_result() -> bool {
+    POWER_RUNTIME_RESULT.wait().await
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) fn reset_power_runtime_result() {
+    POWER_RUNTIME_RESULT.reset();
 }
 
 #[cfg(feature = "net_http")]

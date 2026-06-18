@@ -49,6 +49,8 @@ exceptions are approved.
   `Dialogs/*`, and `Cards/*`.
 - Storybook MUST NOT host page-level stories under `web/src/pages/*.stories.*`
   as the normal verification path for production routes.
+- The production Web app MUST NOT add dedicated demo page components under
+  `web/src/pages/*DemoPage.tsx`.
 - Owner-facing screenshot evidence for Web UI changes MUST continue to bind to
   stable states through spec `## Visual Evidence` sections instead of informal
   chat-only route references.
@@ -71,7 +73,8 @@ exceptions are approved.
 ## Acceptance Criteria
 
 - Given the repository after this policy lands, when the Web source tree is
-  scanned, then no `web/src/pages/*.stories.*` files exist.
+  scanned, then no `web/src/pages/*.stories.*` files exist and no
+  `web/src/pages/*DemoPage.tsx` files exist.
 - Given the production Web router, when `web/src/App.tsx` is checked, then it
   contains no `/demo/` routes, `demo=` query toggles, or equivalent ad hoc
   demo entrypoints.

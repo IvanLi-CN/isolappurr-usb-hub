@@ -50,6 +50,12 @@ for diagnostics.
 - Manual TPS current MUST be capped by both TPS capability and the 100 W product
   ceiling.
 - Manual TPS output MUST target the banana / 2 mm output path by default.
+- The Power surface MUST expose a runtime-only `Power` action for the USB-C /
+  banana output stage that maps directly to TPS55288 `OE` and does not persist
+  to EEPROM.
+- The Power surface MAY expose TPS55288 `DISCHG` only as an advanced runtime
+  control for the TPS output-off state, and MUST NOT present it as a fix for
+  SW2303 high-voltage heating.
 - The persisted power-config surface MUST store `light_load_mode` inside the
   existing EEPROM power record without changing record length or forcing a
   record wipe.
@@ -110,6 +116,9 @@ for diagnostics.
 - Web UI MUST show write/read errors instead of staying in a loading state.
 - Web UI Power settings MUST expose `light_load_mode` inside the existing power
   settings panel and reflect the persisted value after reload or reconnect.
+- Web UI and owner-facing CLI MUST warn that manual output above 5 V can still
+  heat SW2303, that USB-C path options do not guarantee cooler operation, and
+  that `auto_follow` is the preferred mode for sustained high-voltage use.
 - Web UI protocol cards MUST label `PD` and `PPS` with a `CC` negotiation
   badge, and label the current non-PD protocol cards with a `DPDM` negotiation
   badge.
@@ -192,6 +201,12 @@ for diagnostics.
   force-open and force-close bits.
 - Given a remote host lock, when another host attempts a config write, then the
   write is rejected as busy and the UI presents the locked state.
+- Given the runtime `Power` action turns output off, when the request
+  succeeds, then TPS55288 clears `OE`, the API reports
+  `runtime.output_enabled=false`, and the saved power config remains unchanged.
+- Given the runtime `Power` action turns output on again, when the request
+  succeeds, then the PD/TPS coordinator restarts from its boot setpoint path
+  before resuming follow or manual behavior.
 - Given the default desktop power panel story, when the safe-profile protocol
   cards are wide enough, then `PD` and `PPS` show `CC`, and the current non-PD
   protocol cards show `DPDM`.
@@ -312,6 +327,20 @@ PR: include
 
 PR: include
 ![Device power panel light-load mode](./assets/device-power-panel-light-load-mode.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/OutputOffManualHighVoltage`
+  state: runtime `Power` off with manual high-voltage warning
+  requested_viewport: `1440x1400`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the runtime-only `Power` action can show the
+  output-off state together with advanced TPS `DISCHG` enabled, while manual
+  voltage above `5 V` shows the explicit SW2303 heating warning and `Auto
+  follow` recommendation.
+
+![Device power panel output off manual high voltage](./assets/power-output-off-manual-high-voltage.png)
 
 - source_type: live_hil_web_page
   story_id_or_title: `device 856a141cdbd4 power page`
