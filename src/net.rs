@@ -249,6 +249,7 @@ pub struct ApiPdSnapshot {
     pub usb_c_display_measurements_visible: bool,
     pub usb_c_actual: ApiPortTelemetry,
     pub tps_setpoint_output_enabled: Option<bool>,
+    pub tps_setpoint_discharge_enabled: Option<bool>,
     pub tps_setpoint_mv: Option<u32>,
     pub tps_setpoint_iout_limit_ma: Option<u32>,
     pub tps_iout_limit_readback_ma: Option<u32>,
@@ -278,6 +279,7 @@ impl ApiPdSnapshot {
             usb_c_display_measurements_visible: false,
             usb_c_actual: ApiPortTelemetry::unknown(),
             tps_setpoint_output_enabled: None,
+            tps_setpoint_discharge_enabled: None,
             tps_setpoint_mv: None,
             tps_setpoint_iout_limit_ma: None,
             tps_iout_limit_readback_ma: None,
@@ -391,6 +393,8 @@ pub struct ApiPowerSnapshot {
     pub persisted: bool,
     pub lock: Option<ApiPowerLock>,
     pub last_path_control: Option<isolapurr_usb_hub::power_config::Sw2303PathControl>,
+    pub runtime_output_enabled: bool,
+    pub runtime_discharge_enabled: bool,
 }
 
 impl ApiPowerSnapshot {
@@ -400,6 +404,8 @@ impl ApiPowerSnapshot {
             persisted: false,
             lock: None,
             last_path_control: None,
+            runtime_output_enabled: true,
+            runtime_discharge_enabled: false,
         }
     }
 }
@@ -414,6 +420,12 @@ pub enum ApiPortAction {
 pub enum ApiPowerConfigCommand {
     Set { config: PowerConfig },
     Defaults,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiPowerRuntimeCommand {
+    SetOutputEnabled { enabled: bool },
+    SetDischargeEnabled { enabled: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -442,6 +454,7 @@ pub struct ApiPendingActions {
     pub port_c: Option<ApiPortAction>,
     pub usb_c_downstream_route: Option<UsbCDownstreamRoute>,
     pub power_config: Option<ApiPowerConfigCommand>,
+    pub power_runtime: Option<ApiPowerRuntimeCommand>,
     pub idle_bias: Option<ApiIdleBiasCommand>,
     pub settings_reset: Option<ApiSettingsResetScope>,
 }
@@ -453,6 +466,7 @@ impl ApiPendingActions {
             port_c: None,
             usb_c_downstream_route: None,
             power_config: None,
+            power_runtime: None,
             idle_bias: None,
             settings_reset: None,
         }

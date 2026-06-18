@@ -60,7 +60,7 @@
 | 3j4df | GC9307 外壳联动 Dashboard UI | 已完成 | `3j4df-gc9307-shell-dashboard-ui/SPEC.md` | 2026-04-13 | Hardware-validated shell palette, larger header chips, and fixed rounded-chip renderer on GC9307 |
 | 8885f | GC9307 无闪屏 async 渲染与 PSRAM 双缓冲 | 已完成 | `8885f-gc9307-async-psram-render/SPEC.md` | 2026-04-14 | Async SPI/I2C + PSRAM front/back framebuffer + dirty-band flush |
 | jqapx | SW2303 高压 PPS PDO 缺失定位与修复 | 已完成 | `jqapx-sw2303-pps-high-voltage-pdo/SPEC.md` | 2026-04-15 | Structured PD/PPS capability readback, auto-mode PPS fix, and hardware validation completed |
-| dzcaw | USB-C TPS Power Config | 已完成 | `dzcaw-usb-c-tps-power-config/SPEC.md` | 2026-06-16 | SW2303-only persisted power config plus TPS `IOUT_LIMIT` diagnostics/readback semantics, raw U17 PD diagnostics telemetry, and LAN HIL proof |
+| dzcaw | USB-C TPS Power Config | 已完成 | `dzcaw-usb-c-tps-power-config/SPEC.md` | 2026-06-17 | SW2303-only persisted power config plus runtime `Power`/TPS `DISCHG` controls, manual high-voltage heating warning, and TPS `IOUT_LIMIT` diagnostics/readback semantics |
 | 6xrna | 隔离侧 USB 状态指示 | 已完成 | `6xrna-ch318-ledd-upstream-link/SPEC.md` | 2026-05-16 | GPIO18/UP0_PG active-high fault sampling and GPIO6/LEDD active-low ready sampling; hub API exposes isolated status fields |
 | u5b2c | USB 通信、固件更新与 Wi-Fi provisioning | 已验证 | `u5b2c-usb-console-provisioning/SPEC.md` | 2026-06-07 | Web Serial, Local USB, EEPROM Wi-Fi config, firmware update, saved-device Hardware page flow, and equal-grade communication path matrix |
 | tvhca | USB-C 下行通道路由切换 | 已完成 | `tvhca-usb-c-downstream-route/SPEC.md` | 2026-05-18 | MCU / USB-C route switching, EEPROM persistence, HTTP/USB JSONL API, Web UI, and dual-button shortcut |

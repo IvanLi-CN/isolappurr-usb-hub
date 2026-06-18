@@ -125,6 +125,10 @@
                 if power_cleared {
                     power_config = default_power_config;
                     power_config_persisted = false;
+                    runtime_tps_output_enabled = true;
+                    runtime_tps_discharge_enabled = false;
+                    runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
+                    runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
                     tps_state.light_load_mode = None;
                     sw2303_profile_applied = false;
                     sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
@@ -156,6 +160,10 @@
                         guard.power.config = power_config;
                         guard.power.persisted = power_config_persisted;
                         guard.power.last_path_control = last_sw2303_path_control;
+                        guard.power.runtime_output_enabled =
+                            runtime_tps_output_enabled_reported;
+                        guard.power.runtime_discharge_enabled =
+                            runtime_tps_discharge_enabled_reported;
                         if idle_bias_cleared {
                             guard.idle_bias = idle_bias_api_snapshot(
                                 idle_bias_calibration,
@@ -338,6 +346,83 @@
             }
         }
         #[cfg(feature = "net_http")]
+        {
+            let pending_power_runtime = if power_runtime_result_inflight {
+                None
+            } else {
+                let guard = api_state.lock().await;
+                guard.pending.power_runtime
+            };
+
+            if let Some(command) = pending_power_runtime {
+                match command {
+                    net::ApiPowerRuntimeCommand::SetOutputEnabled { enabled } => {
+                        let output_runtime_applied =
+                            runtime_tps_output_enabled_reported == enabled;
+                        if runtime_tps_output_enabled != enabled || !output_runtime_applied {
+                            runtime_tps_output_enabled = enabled;
+                            tps_state.last = None;
+                            tps_5v_setpoint_since = None;
+                            sw2303_i2c_allowed = false;
+                            sw2303_profile_applied = false;
+                            sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
+                            sw2303_recontract_pending = false;
+                            last_sw2303_profile_attempt = None;
+                            last_sw2303_path_control = None;
+                            sw2303_stable_reads = 0;
+                            sw2303_consecutive_errors = 0;
+                            tps_consecutive_errors = 0;
+                            sw2303_error_latched = false;
+                            tps_error_latched = false;
+                            last_sw2303_read_attempt = None;
+                            last_valid_sw2303_request = None;
+                            last_request = None;
+                            last_fast_protocol = None;
+                            last_tps_status = None;
+                            power_runtime_result_inflight = true;
+                        } else {
+                            let mut guard = api_state.lock().await;
+                            guard.pending.power_runtime = None;
+                            guard.power.runtime_output_enabled =
+                                runtime_tps_output_enabled_reported;
+                            guard.power.runtime_discharge_enabled =
+                                runtime_tps_discharge_enabled_reported;
+                            POWER_RUNTIME_RESULT.signal(true);
+                        }
+                    }
+                    net::ApiPowerRuntimeCommand::SetDischargeEnabled { enabled } => {
+                        let discharge_runtime_applied =
+                            runtime_tps_discharge_enabled_reported == enabled;
+                        if runtime_tps_output_enabled {
+                            runtime_tps_discharge_enabled = enabled;
+                            runtime_tps_discharge_enabled_reported = enabled;
+                            let mut guard = api_state.lock().await;
+                            guard.pending.power_runtime = None;
+                            guard.power.runtime_output_enabled =
+                                runtime_tps_output_enabled_reported;
+                            guard.power.runtime_discharge_enabled =
+                                runtime_tps_discharge_enabled_reported;
+                            POWER_RUNTIME_RESULT.signal(true);
+                        } else if runtime_tps_discharge_enabled != enabled
+                            || !discharge_runtime_applied
+                        {
+                            runtime_tps_discharge_enabled = enabled;
+                            tps_state.last = None;
+                            power_runtime_result_inflight = true;
+                        } else {
+                            let mut guard = api_state.lock().await;
+                            guard.pending.power_runtime = None;
+                            guard.power.runtime_output_enabled =
+                                runtime_tps_output_enabled_reported;
+                            guard.power.runtime_discharge_enabled =
+                                runtime_tps_discharge_enabled_reported;
+                            POWER_RUNTIME_RESULT.signal(true);
+                        }
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "net_http")]
         include!("main_loop_pd_idle_bias.inc");
         #[cfg(feature = "net_http")]
         if REBOOT_PENDING.load(Ordering::Acquire) && !has_wifi_provisioning_pending() {
@@ -377,6 +462,7 @@
         usb_c_pd_power_on = matches!(port_usb_c.power, PowerState::On);
         usb_c_power_off_setpoint = PowerSetpoint {
             output_enabled: false,
+            discharge_enabled: runtime_tps_discharge_enabled,
             ..boot_sp
         };
 
@@ -596,9 +682,9 @@
         if usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual {
             let manual_vout_mv = quantize_manual_voltage_mv(power_config.manual.voltage_mv);
             setpoint = PowerSetpoint {
-                output_enabled: true,
                 v_out_mv: manual_vout_mv,
                 i_lim_ma: power_config.manual.current_limit_ma,
+                ..setpoint
             };
 
             let explicit_request_mv = request
@@ -677,7 +763,20 @@
             tps_consecutive_errors = tps_consecutive_errors.saturating_add(1);
             tps_state.light_load_mode = None;
             tps_state.last = None;
+            #[cfg(feature = "net_http")]
+            if power_runtime_result_inflight {
+                let mut guard = api_state.lock().await;
+                guard.pending.power_runtime = None;
+                power_runtime_result_inflight = false;
+                POWER_RUNTIME_RESULT.signal(false);
+            }
             continue;
+        }
+
+        if usb_c_pd_power_on {
+            setpoint.output_enabled = runtime_tps_output_enabled;
+            setpoint.discharge_enabled =
+                runtime_tps_discharge_enabled && !runtime_tps_output_enabled;
         }
 
         let tps_apply_needed = tps_state.last != Some(setpoint);
@@ -689,10 +788,17 @@
         let manual_tps_active = usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual;
         if (!manual_tps_active
             && usb_c_pd_power_on
+            && !power_runtime_result_inflight
+            && runtime_tps_output_enabled
             && sw2303_stable_reads < SW2303_STABLE_READS_BEFORE_TPS
             && !tps_boot_restore_needed)
             || (!tps_voltage_update_needed && !tps_apply_needed)
         {
+            if power_runtime_result_inflight && !tps_apply_needed {
+                runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
+                runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
+                power_runtime_result_pending = Some(true);
+            }
             loop_delay_ms = SW2303_POLL_MS;
         } else if let Err(err) =
             apply_setpoint(telemetry_sampler.i2c_mut(), &mut tps_state, setpoint).await
@@ -708,11 +814,31 @@
 
             tps_state.last = None;
             tps_state.light_load_mode = None;
+            if power_runtime_result_inflight {
+                power_runtime_result_pending = Some(false);
+            }
             loop_delay_ms = SW2303_ERROR_RETRY_MS;
         } else {
             tps_error_latched = false;
             tps_consecutive_errors = 0;
             tps_5v_setpoint_since.get_or_insert_with(Instant::now);
+            runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
+            runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
+            if power_runtime_result_inflight {
+                power_runtime_result_pending = Some(true);
+            }
+        }
+
+        #[cfg(feature = "net_http")]
+        if let Some(result) = power_runtime_result_pending.take() {
+            let mut guard = api_state.lock().await;
+            guard.pending.power_runtime = None;
+            if result {
+                guard.power.runtime_output_enabled = runtime_tps_output_enabled_reported;
+                guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled_reported;
+            }
+            power_runtime_result_inflight = false;
+            POWER_RUNTIME_RESULT.signal(result);
         }
 
         if !tps_was_in_error && tps_error_latched {

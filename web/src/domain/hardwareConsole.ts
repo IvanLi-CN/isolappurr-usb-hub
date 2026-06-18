@@ -552,6 +552,12 @@ function localUsbMethodEndpoint(
         method: "POST",
         path: `/api/v1/devices/${deviceId}/power/config/defaults?owner=${Number(params.owner ?? 0)}`,
       };
+    case "power.runtime_set":
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/power/runtime?owner=${Number(params.owner ?? 0)}`,
+        body: params,
+      };
     case "power.lock":
       return {
         method: "POST",

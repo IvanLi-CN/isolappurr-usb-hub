@@ -180,6 +180,10 @@ function buildDemoDevice({
       persisted: true,
       tps_mode: "auto_follow",
       light_load_mode: "pfm",
+      runtime: {
+        output_enabled: true,
+        discharge_enabled: false,
+      },
       capability: {
         profile: "full",
         power_watts: 100,
@@ -250,6 +254,7 @@ function buildDemoDevice({
       },
       tps_setpoint: {
         output_enabled: true,
+        discharge_enabled: false,
         mv: 9000,
         iout_limit_ma: 2100,
       },

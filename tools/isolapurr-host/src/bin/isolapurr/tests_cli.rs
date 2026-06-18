@@ -15,6 +15,10 @@ fn power_config_human_output_avoids_chip_names() {
         "persisted": true,
         "tps_mode": "manual",
         "light_load_mode": "fpwm",
+        "runtime": {
+            "output_enabled": true,
+            "discharge_enabled": false
+        },
         "capability": {
             "profile": "full",
             "power_watts": 65,
@@ -52,6 +56,7 @@ fn power_config_human_output_avoids_chip_names() {
 
     assert!(rendered.contains("Output mode: Manual bench output"));
     assert!(rendered.contains("Light-load mode: FPWM"));
+    assert!(rendered.contains("Runtime 2mm output: enabled"));
     assert!(rendered.contains("Current profile: PPS3 5000 mA"));
     assert!(!rendered.to_ascii_lowercase().contains("sw2303"));
     assert!(!rendered.contains("TPS"));
@@ -65,6 +70,10 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
             "persisted": true,
             "tps_mode": "auto_follow",
             "light_load_mode": "pfm",
+            "runtime": {
+                "output_enabled": true,
+                "discharge_enabled": false
+            },
             "capability": {
                 "profile": "full",
                 "power_watts": 100,
@@ -163,6 +172,7 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
             },
             "tps_setpoint": {
                 "output_enabled": true,
+                "discharge_enabled": false,
                 "mv": 20000,
                 "iout_limit_ma": 3250
             },
@@ -208,11 +218,125 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
 }
 
 #[test]
+fn power_show_human_output_warns_for_manual_high_voltage_and_output_off() {
+    let rendered = format_power_show_output(&json!({
+        "config": {
+            "hardware": "sw2303",
+            "persisted": true,
+            "tps_mode": "manual",
+            "light_load_mode": "pfm",
+            "runtime": {
+                "output_enabled": false,
+                "discharge_enabled": true
+            },
+            "capability": {
+                "profile": "full",
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": true,
+                    "qc30": true,
+                    "fcp": true,
+                    "afc": true,
+                    "scp": true,
+                    "pe20": true,
+                    "bc12": true,
+                    "sfcp": true
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                },
+                "current": {
+                    "pps3_limit_ma": 5000,
+                    "pd_pps_5a": false,
+                    "type_c_broadcast_ma": 500,
+                    "scp_limit_ma": 5000,
+                    "fcp_afc_sfcp_limit_ma": 3250
+                }
+            },
+            "manual": {
+                "voltage_mv": 9000,
+                "current_limit_ma": 3000,
+                "usb_c_path_mode": "force",
+                "path_policy": "force"
+            },
+            "lock": null
+        },
+        "diagnostics": {
+            "usb_c_power_enabled": true,
+            "sw2303_i2c_allowed": true,
+            "sw2303_profile_applied": true,
+            "sw2303_stable_reads": 3,
+            "sw2303_error_latched": false,
+            "tps_error_latched": false,
+            "sw2303_readback_config": {
+                "available": true,
+                "matches_config": true,
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": true,
+                    "qc30": true,
+                    "fcp": true,
+                    "afc": true,
+                    "scp": true,
+                    "pe20": true,
+                    "bc12": true,
+                    "sfcp": true
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                },
+                "current": {
+                    "pps3_current_limit_ma": 5000,
+                    "pd_pps_5a": false,
+                    "type_c_broadcast_ma": 500,
+                    "scp_current_limit_ma": 5000,
+                    "fcp_afc_sfcp_limit_ma": 3250
+                }
+            },
+            "sw2303_request": {
+                "mv": 5000,
+                "ma": 3000
+            },
+            "sw2303_last_valid_request": {
+                "mv": 5000,
+                "ma": 3000
+            },
+            "tps_setpoint": {
+                "output_enabled": false,
+                "discharge_enabled": true,
+                "mv": 9000,
+                "iout_limit_ma": 3000
+            },
+            "tps_iout_limit_readback": {
+                "enabled": true,
+                "ma": 3000
+            },
+            "runtime_recovery_count": 0,
+            "sample_uptime_ms": 1500
+        }
+    }));
+
+    assert!(rendered.contains("Runtime 2mm output: disabled"));
+    assert!(rendered.contains("Runtime TPS discharge: enabled"));
+    assert!(rendered.contains("TPS discharge: enabled"));
+    assert!(rendered.contains("Warning: manual voltage above 5 V can still heat SW2303"));
+    assert!(rendered.contains("Prefer auto follow for sustained high-voltage use."));
+}
+
+#[test]
 fn power_config_deserializes_when_current_profile_is_missing() {
     let parsed: CliPowerConfig = serde_json::from_value(json!({
         "hardware": "legacy-hardware",
         "persisted": true,
         "tps_mode": "auto_follow",
+        "runtime": {
+            "output_enabled": true,
+            "discharge_enabled": false
+        },
         "capability": {
             "profile": "full",
             "power_watts": 100,
@@ -308,6 +432,7 @@ fn power_diagnostics_deserializes_when_readback_current_is_missing() {
         },
         "tps_setpoint": {
             "output_enabled": true,
+            "discharge_enabled": false,
             "mv": 12000,
             "iout_limit_ma": 4950
         },
@@ -386,6 +511,7 @@ fn power_diagnostics_deserializes_legacy_ilim_field() {
         },
         "tps_setpoint": {
             "output_enabled": true,
+            "discharge_enabled": false,
             "mv": 20000,
             "ilim_ma": 3250
         },
@@ -436,6 +562,7 @@ fn power_diagnostics_deserializes_when_both_current_limit_keys_are_present() {
         },
         "tps_setpoint": {
             "output_enabled": true,
+            "discharge_enabled": false,
             "mv": 20000,
             "iout_limit_ma": 3300,
             "ilim_ma": 3250
@@ -452,6 +579,7 @@ fn power_diagnostics_deserializes_when_both_current_limit_keys_are_present() {
 fn power_setpoint_serialization_keeps_legacy_ilim_field() {
     let value = serde_json::to_value(CliPowerSetpoint {
         output_enabled: Some(true),
+        discharge_enabled: Some(false),
         mv: Some(20_000),
         iout_limit_ma: Some(3_250),
     })
@@ -459,6 +587,98 @@ fn power_setpoint_serialization_keeps_legacy_ilim_field() {
 
     assert_eq!(value["iout_limit_ma"], 3250);
     assert_eq!(value["ilim_ma"], 3250);
+    assert_eq!(value["discharge_enabled"], false);
+}
+
+#[test]
+fn power_config_runtime_deserializes() {
+    let parsed: CliPowerConfig = serde_json::from_value(json!({
+        "hardware": "sw2303",
+        "persisted": true,
+        "tps_mode": "manual",
+        "light_load_mode": "fpwm",
+        "runtime": {
+            "output_enabled": false,
+            "discharge_enabled": true
+        },
+        "capability": {
+            "profile": "full",
+            "power_watts": 65,
+            "protocols": {
+                "pd": true,
+                "qc20": false,
+                "qc30": true,
+                "fcp": false,
+                "afc": false,
+                "scp": false,
+                "pe20": false,
+                "bc12": true,
+                "sfcp": false
+            },
+            "pd": {
+                "pps": true,
+                "fixed_voltages_mv": [9000, 15000]
+            }
+        },
+        "manual": {
+            "voltage_mv": 9000,
+            "current_limit_ma": 3000,
+            "usb_c_path_mode": "default",
+            "path_policy": "auto"
+        },
+        "lock": null
+    }))
+    .expect("runtime should deserialize");
+
+    assert!(!parsed.runtime.output_enabled);
+    assert!(parsed.runtime.discharge_enabled);
+}
+
+#[test]
+fn power_config_runtime_defaults_enabled_when_missing() {
+    let parsed: CliPowerConfig = serde_json::from_value(json!({
+        "hardware": "legacy-hardware",
+        "persisted": true,
+        "tps_mode": "auto_follow",
+        "light_load_mode": "pfm",
+        "capability": {
+            "profile": "full",
+            "power_watts": 100,
+            "protocols": {
+                "pd": true,
+                "qc20": true,
+                "qc30": true,
+                "fcp": true,
+                "afc": true,
+                "scp": true,
+                "pe20": true,
+                "bc12": true,
+                "sfcp": true
+            },
+            "pd": {
+                "pps": true,
+                "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+            },
+            "current": {
+                "pps3_limit_ma": 5000,
+                "pd_pps_5a": false,
+                "type_c_broadcast_ma": 500,
+                "scp_limit_ma": 5000,
+                "fcp_afc_sfcp_limit_ma": 3250
+            }
+        },
+        "manual": {
+            "voltage_mv": 5000,
+            "current_limit_ma": 3000,
+            "usb_c_path_mode": "default",
+            "path_policy": "auto"
+        },
+        "lock": null
+    }))
+    .expect("legacy runtime should deserialize");
+
+    assert!(parsed.runtime.output_enabled);
+    assert!(!parsed.runtime.discharge_enabled);
 }
 
 #[test]

@@ -238,7 +238,12 @@ fn format_hardware_available(output: &Value) -> String {
 
 fn format_power_show_output(output: &Value) -> String {
     let mut rendered = String::new();
+    let mut manual_high_voltage_warning = false;
     if let Some(config) = output.get("config") {
+        if let Ok(config) = serde_json::from_value::<CliPowerConfig>(config.clone()) {
+            manual_high_voltage_warning =
+                config.tps_mode == "manual" && config.manual.voltage_mv > 5000;
+        }
         rendered.push_str("Power config\n");
         rendered.push_str(&format_power_config_output(config));
     }
@@ -262,6 +267,12 @@ fn format_power_show_output(output: &Value) -> String {
         rendered.push('\n');
         rendered.push_str("Live USB-C status\n");
         rendered.push_str(&format_live_power_output(diagnostics));
+    }
+    if manual_high_voltage_warning {
+        rendered.push('\n');
+        rendered.push_str(
+            "Warning: manual voltage above 5 V can still heat SW2303, and USB-C path options do not guarantee cooler operation. Prefer auto follow for sustained high-voltage use.\n",
+        );
     }
     rendered
 }
@@ -287,6 +298,17 @@ fn format_power_config_output(output: &Value) -> String {
         "Light-load mode: {}",
         format_light_load_mode(&config.light_load_mode)
     ));
+    lines.push(format!(
+        "Runtime 2mm output: {}",
+        if config.runtime.output_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    ));
+    if config.runtime.discharge_enabled {
+        lines.push("Runtime TPS discharge: enabled".to_string());
+    }
     lines.push(format!("Power cap: {} W", config.capability.power_watts));
     lines.push(format!(
         "Advertised protocols: {}",
@@ -364,6 +386,16 @@ fn format_live_power_output(output: &Value) -> String {
         "Output target: {}",
         format_output_target(&diagnostics.tps_setpoint)
     ));
+    if diagnostics.tps_setpoint.output_enabled == Some(false) {
+        lines.push(format!(
+            "TPS discharge: {}",
+            if diagnostics.tps_setpoint.discharge_enabled.unwrap_or(false) {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        ));
+    }
     if let Some(tps_iout_limit) = format_tps_iout_limit_readback(&diagnostics) {
         lines.push(tps_iout_limit);
     }

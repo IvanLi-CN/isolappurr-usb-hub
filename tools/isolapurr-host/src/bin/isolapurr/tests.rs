@@ -100,6 +100,24 @@ mod power_output_tests {
             .expect("idle-bias run endpoint should map");
         assert_eq!(path, "/api/v1/power/idle-bias/run?owner=9");
         assert!(body.is_none());
+
+        let (_, path, body) = map_http_endpoint(
+            Method::POST,
+            "/power/runtime?owner=9",
+            Some(json!({"action": "output", "enabled": false})),
+        )
+        .expect("runtime endpoint should map");
+        assert_eq!(path, "/api/v1/power/runtime?owner=9");
+        assert_eq!(body, Some(json!({"action": "output", "enabled": false})));
+
+        let (_, path, body) = map_http_endpoint(
+            Method::PUT,
+            "/power/runtime?owner=9",
+            Some(json!({"action": "discharge", "enabled": true})),
+        )
+        .expect("runtime put endpoint should map");
+        assert_eq!(path, "/api/v1/power/runtime?owner=9");
+        assert_eq!(body, Some(json!({"action": "discharge", "enabled": true})));
     }
 
     #[test]
@@ -708,6 +726,60 @@ mod power_output_tests {
         else {
             panic!("expected power output auto command");
         };
+    }
+
+    #[test]
+    fn power_runtime_output_parses() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "runtime",
+            "output",
+            "--device-id",
+            "f293cc9c139e",
+            "--enabled",
+            "false",
+        ])
+        .expect("power runtime output command should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::Runtime {
+                    command: RuntimeCommand::Output { enabled, .. },
+                },
+        } = cli.command
+        else {
+            panic!("expected power runtime output command");
+        };
+
+        assert!(!enabled);
+    }
+
+    #[test]
+    fn power_runtime_discharge_parses() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "runtime",
+            "discharge",
+            "--device-id",
+            "f293cc9c139e",
+            "--enabled",
+            "true",
+        ])
+        .expect("power runtime discharge command should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::Runtime {
+                    command: RuntimeCommand::Discharge { enabled, .. },
+                },
+        } = cli.command
+        else {
+            panic!("expected power runtime discharge command");
+        };
+
+        assert!(enabled);
     }
 
     #[test]

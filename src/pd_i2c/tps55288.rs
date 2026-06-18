@@ -12,6 +12,7 @@ pub const TPS_IOUT_LIMIT_READBACK_REFRESH_MS: u64 = 1_000;
 pub const fn boot_supply_setpoint() -> PowerSetpoint {
     PowerSetpoint {
         output_enabled: true,
+        discharge_enabled: false,
         v_out_mv: TPS_BOOT_VOUT_MV,
         i_lim_ma: TPS_BOOT_ILIM_MA,
     }
@@ -76,6 +77,25 @@ where
     let mut mode = ModeBits::from_bits_truncate(dev.read_reg(addr::MODE).await?);
     mode.remove(ModeBits::OE);
     mode.insert(ModeBits::DISCHG);
+    dev.write_reg(addr::MODE, mode.bits()).await
+}
+
+pub async fn set_output_discharge_enabled<I2C>(
+    i2c: &mut I2C,
+    enabled: bool,
+) -> Result<(), tps55288::Error<I2C::Error>>
+where
+    I2C: embedded_hal_async::i2c::I2c,
+{
+    use tps55288::registers::{ModeBits, addr};
+
+    let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
+    let mut mode = ModeBits::from_bits_truncate(dev.read_reg(addr::MODE).await?);
+    if enabled {
+        mode.insert(ModeBits::DISCHG);
+    } else {
+        mode.remove(ModeBits::DISCHG);
+    }
     dev.write_reg(addr::MODE, mode.bits()).await
 }
 
@@ -166,6 +186,7 @@ impl TpsApplyState {
 pub fn power_request_to_setpoint(request: PowerRequest) -> PowerSetpoint {
     PowerSetpoint {
         output_enabled: true,
+        discharge_enabled: false,
         v_out_mv: quantize_vout_mv_floor(request.v_req_mv),
         i_lim_ma: quantize_ilim_ma_floor_with_margin(request.i_req_ma),
     }
@@ -215,8 +236,12 @@ where
         let mut mode = tps55288::registers::ModeBits::from_bits_truncate(
             dev.read_reg(tps55288::registers::addr::MODE).await?,
         );
-        if mode.contains(tps55288::registers::ModeBits::DISCHG) {
-            mode.remove(tps55288::registers::ModeBits::DISCHG);
+        if mode.contains(tps55288::registers::ModeBits::DISCHG) != setpoint.discharge_enabled {
+            if setpoint.discharge_enabled {
+                mode.insert(tps55288::registers::ModeBits::DISCHG);
+            } else {
+                mode.remove(tps55288::registers::ModeBits::DISCHG);
+            }
             dev.write_reg(tps55288::registers::addr::MODE, mode.bits())
                 .await?;
         }
@@ -224,7 +249,17 @@ where
         dev.set_vout_mv(setpoint.v_out_mv).await?;
         dev.enable_output().await?;
     } else {
-        dev.disable_output().await?;
+        let mut mode = tps55288::registers::ModeBits::from_bits_truncate(
+            dev.read_reg(tps55288::registers::addr::MODE).await?,
+        );
+        if setpoint.discharge_enabled {
+            mode.insert(tps55288::registers::ModeBits::DISCHG);
+        } else {
+            mode.remove(tps55288::registers::ModeBits::DISCHG);
+        }
+        mode.remove(tps55288::registers::ModeBits::OE);
+        dev.write_reg(tps55288::registers::addr::MODE, mode.bits())
+            .await?;
     }
 
     state.last = Some(setpoint);

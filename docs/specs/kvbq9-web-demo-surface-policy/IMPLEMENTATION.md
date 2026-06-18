@@ -9,13 +9,18 @@
   panel: desktop uses a modal dialog, while mobile uses a bottom drawer/sheet.
 - Composite Storybook surfaces remain under non-page namespaces such as
   `Panels/*`, `Layouts/*`, `Dialogs/*`, and `Cards/*`.
+- The dedicated power preview demo page and its mock server were removed so the
+  repo now only exposes the production SPA plus composite Storybook coverage.
 - The formal demo mode reuses the production page/provider tree, mocks only the
   front-end API boundary for bootstrap/storage/discovery/device APIs, and keeps
   its canonical demo world in `sessionStorage`.
-- Repository contract tests guard against three regressions:
+- Repository contract tests guard against these regressions:
   - reintroducing `web/src/pages/*.stories.*`
-  - adding `/demo/*` style dedicated pages
-  - adding uncontrolled `demo` entrypoints to `web/src/App.tsx`
+  - reintroducing `web/src/pages/*DemoPage.tsx`
+  - adding `/demo/` or `demo=` style ad hoc demo entrypoints to
+    `web/src/App.tsx`
+- The existing page-level Storybook drift (`web/src/pages/AboutPage.stories.tsx`)
+  is removed so the policy and the tree match immediately.
 - README and maintainer workflow docs describe Storybook as a formal component /
   composite verification surface, while the production SPA demo mode is
   documented as the only owner-facing route-level demo surface.

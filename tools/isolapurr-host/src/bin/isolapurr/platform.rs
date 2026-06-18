@@ -206,6 +206,27 @@ fn map_devd_ipc_endpoint(
         }
         ("GET", "ports") => "device.ports.get",
         ("GET", "power/config") => "device.power.config_get",
+        ("POST" | "PUT", "power/runtime") => {
+            let body = body.ok_or_else(|| anyhow!("power runtime body is required"))?;
+            let action = body
+                .get("action")
+                .cloned()
+                .ok_or_else(|| anyhow!("action is required"))?;
+            let enabled = body
+                .get("enabled")
+                .cloned()
+                .ok_or_else(|| anyhow!("enabled is required"))?;
+            params_map.insert("action".to_string(), action);
+            params_map.insert("enabled".to_string(), enabled);
+            if let Some(owner) = query
+                .split('&')
+                .find_map(|part| part.strip_prefix("owner="))
+                .and_then(|owner| owner.parse::<u32>().ok())
+            {
+                params_map.insert("owner".to_string(), json!(owner));
+            }
+            "device.power.runtime_set"
+        }
         ("GET", "power/idle-bias") => "device.power.idle_bias_get",
         ("PUT", "power/config") => {
             let config = body.ok_or_else(|| anyhow!("power config body is required"))?;
@@ -410,6 +431,9 @@ fn map_http_endpoint(
         ("GET", "/ports") => (method, "/api/v1/ports".to_string(), body),
         ("GET", "/diagnostics") => (method, "/api/v1/pd-diagnostics".to_string(), body),
         ("GET", "/power/config") => (method, "/api/v1/power/config".to_string(), body),
+        ("POST" | "PUT", _) if suffix.starts_with("/power/runtime?owner=") => {
+            (Method::PUT, format!("/api/v1{suffix}"), body)
+        }
         ("GET", "/power/idle-bias") => (method, "/api/v1/power/idle-bias".to_string(), body),
         ("PUT", _) if suffix.starts_with("/power/config?owner=") => {
             (Method::PUT, format!("/api/v1{suffix}"), body)

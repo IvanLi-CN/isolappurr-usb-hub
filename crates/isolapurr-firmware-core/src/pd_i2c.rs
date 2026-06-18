@@ -18,6 +18,7 @@ pub struct PowerRequest {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PowerSetpoint {
     pub output_enabled: bool,
+    pub discharge_enabled: bool,
     pub v_out_mv: u16,
     pub i_lim_ma: u16,
 }

@@ -58,6 +58,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             get(device_power_config_get).put(device_power_config_set),
         )
         .route(
+            "/api/v1/devices/{id}/power/runtime",
+            post(device_power_runtime_set).put(device_power_runtime_set),
+        )
+        .route(
             "/api/v1/devices/{id}/power/idle-bias",
             get(device_power_idle_bias_get).put(device_power_idle_bias_set),
         )
@@ -798,6 +802,30 @@ async fn device_power_config_set(
                 Err(_) => error_from_anyhow(err),
             }
         }
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_power_runtime_set(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<PowerOwnerQuery>,
+    Json(body): Json<Value>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    let params = json!({
+        "action": body.get("action").cloned().unwrap_or(Value::Null),
+        "enabled": body.get("enabled").cloned().unwrap_or(Value::Null),
+        "owner": query.owner,
+    });
+    match usb_jsonl_request(&state, &id, "power.runtime_set", Some(params)).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }
 }

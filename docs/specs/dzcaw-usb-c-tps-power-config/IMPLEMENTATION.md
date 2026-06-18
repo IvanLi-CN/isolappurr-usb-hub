@@ -22,6 +22,9 @@
   separate route or EEPROM record.
 - Updated the PD/TPS runtime loop so pending config writes are saved, applied,
   reflected in diagnostics, and used for SW2303 profile application.
+- Added runtime-only power actions that map the owner-facing `Power`
+  action to TPS55288 `OE` and the advanced output-off control to TPS55288
+  `DISCHG`, while keeping both values out of the persisted EEPROM config.
 - Added SW2303 path helpers for automatic control, force-close, and force-open.
 - Added TPS55288 `MODE` register light-load helpers so saved
   `light_load_mode=fpwm` immediately forces PWM while preserving the board's
@@ -72,6 +75,10 @@
   write the merged config back through the aligned `power.config_*` contract.
 - Added `isolapurr power idle-bias show|run|clear|set --enabled <bool>` with
   interactive confirmation and `--yes` bypass handling.
+- Added `isolapurr power runtime output|discharge --enabled <bool>` so the
+  owner CLI can control runtime-only TPS output gating without mutating the
+  saved power profile, and added a manual high-voltage warning to the human
+  `power show` output.
 - Updated human CLI output so the main USB-C reading stays corrected while
   `--json` preserves both corrected telemetry and the raw USB-C debug fields.
 - Updated the existing `power output ...` and `power source-capability set`
@@ -117,6 +124,12 @@
 - Added a `TPS light-load mode` control to the existing Power settings panel so
   operators can switch between persisted `PFM` and `FPWM` without leaving the
   saved power-config surface.
+- Reworked the Power page so the right-side actions column now carries the
+  live USB-C voltage/current/power readout plus `Power` and `Replug` actions,
+  while the manual-only advanced `TPS discharge on output-off` control remains
+  separate and explicit about not solving SW2303 heating.
+- Moved the `TPS light-load mode` explanatory copy into a help popover so the
+  right rail stays compact without losing the board-default vs FPWM guidance.
 - Hardened `DevicePowerPanel` late-load behavior so a successful reload or lock
   refresh no longer overwrites in-progress edits with a fresh `cloneConfig()`,
   while initial retry paths can still hydrate an empty form after a transient

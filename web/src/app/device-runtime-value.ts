@@ -32,6 +32,7 @@ type DeviceRuntimeValueParams = {
   | "savePowerConfig"
   | "restorePowerDefaults"
   | "setPowerLock"
+  | "setPowerRuntime"
   | "setIdleBiasCorrection"
   | "runIdleBiasCalibration"
   | "clearIdleBiasCalibration"
@@ -60,6 +61,7 @@ export function buildDeviceRuntimeContextValue({
   savePowerConfig,
   restorePowerDefaults,
   setPowerLock,
+  setPowerRuntime,
   setIdleBiasCorrection,
   runIdleBiasCalibration,
   clearIdleBiasCalibration,
@@ -166,6 +168,7 @@ export function buildDeviceRuntimeContextValue({
     savePowerConfig,
     restorePowerDefaults,
     setPowerLock,
+    setPowerRuntime,
     setIdleBiasCorrection,
     runIdleBiasCalibration,
     clearIdleBiasCalibration,

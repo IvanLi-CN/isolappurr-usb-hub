@@ -6,6 +6,7 @@ import type {
   PowerConfigResponse,
   Result,
 } from "../../domain/deviceApi";
+import type { PortState, PortTelemetry } from "../../domain/ports";
 import { DevicePowerPanel } from "./DevicePowerPanel";
 
 const manualConfig: PowerConfigResponse = {
@@ -13,6 +14,10 @@ const manualConfig: PowerConfigResponse = {
   persisted: true,
   tps_mode: "manual",
   light_load_mode: "pfm",
+  runtime: {
+    output_enabled: true,
+    discharge_enabled: false,
+  },
   capability: {
     profile: "full",
     power_watts: 100,
@@ -49,6 +54,14 @@ const autoConfig: PowerConfigResponse = {
     current_limit_ma: 1000,
     usb_c_path_mode: "default",
     path_policy: "auto",
+  },
+};
+
+const manualOutputOffConfig: PowerConfigResponse = {
+  ...manualConfig,
+  runtime: {
+    output_enabled: false,
+    discharge_enabled: true,
   },
 };
 
@@ -163,6 +176,21 @@ const apiError = (message: string): Promise<Result<PowerConfigResponse>> =>
     },
   });
 
+const usbCTelemetry: PortTelemetry = {
+  status: "ok",
+  voltage_mv: 20060,
+  current_ma: 30,
+  power_mw: 540,
+  sample_uptime_ms: 1000,
+};
+
+const usbCState: PortState = {
+  power_enabled: true,
+  data_connected: true,
+  replugging: false,
+  busy: false,
+};
+
 const meta: Meta<typeof DevicePowerPanel> = {
   title: "Panels/DevicePowerPanel",
   component: DevicePowerPanel,
@@ -195,9 +223,14 @@ const defaultArgs: Story["args"] = {
   savePowerConfig: () => ok(manualConfig),
   restorePowerDefaults: () => ok(autoConfig),
   setPowerLock: () => ok(manualConfig),
+  setPowerRuntime: () => ok(manualConfig),
   setIdleBiasCorrection: () => okIdle(idleBiasReadyOn),
   runIdleBiasCalibration: () => okIdle(idleBiasRunning),
   clearIdleBiasCalibration: () => okIdle(idleBiasMissing),
+  usbCTelemetry,
+  usbCState,
+  usbCPending: false,
+  replugUsbC: async () => undefined,
 };
 
 export const Default: Story = {
@@ -250,6 +283,35 @@ export const AutoFollowDefaults: Story = {
   },
 };
 
+export const OutputOffManualHighVoltage: Story = {
+  args: {
+    ...defaultArgs,
+    loadPowerConfig: () => ok(manualOutputOffConfig),
+    savePowerConfig: () => ok(manualOutputOffConfig),
+    setPowerLock: () => ok(manualOutputOffConfig),
+    setPowerRuntime: () => ok(manualOutputOffConfig),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Power off")).toBeVisible();
+    await expect(
+      await canvas.findByTestId("runtime-output-toggle"),
+    ).toHaveTextContent("Power");
+    await expect(
+      await canvas.findByTestId("runtime-discharge-toggle"),
+    ).toHaveTextContent("Enabled");
+    await expect(await canvas.findByTestId("usb-c-voltage")).toHaveTextContent(
+      "20.06V",
+    );
+    await expect(await canvas.findByTestId("usb-c-current")).toHaveTextContent(
+      "0.03A",
+    );
+    await expect(await canvas.findByTestId("usb-c-power")).toHaveTextContent(
+      "0.54W",
+    );
+  },
+};
+
 export const ForcedPwmMode: Story = {
   args: {
     ...defaultArgs,
@@ -262,6 +324,9 @@ export const ForcedPwmMode: Story = {
     await expect(
       await canvas.findByRole("button", { name: "FPWM" }),
     ).toHaveTextContent("FPWM");
+    await userEvent.click(
+      await canvas.findByLabelText("TPS light-load mode help"),
+    );
     await expect(
       await canvas.findByText(/PFM follows the board default/i),
     ).toBeVisible();

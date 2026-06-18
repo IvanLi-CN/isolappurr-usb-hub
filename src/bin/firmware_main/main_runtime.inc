@@ -417,6 +417,11 @@
     #[cfg(not(feature = "net_http"))]
     let mut power_config = PowerConfig::defaults();
     let mut last_sw2303_path_control: Option<Sw2303PathControl> = None;
+    let mut runtime_tps_output_enabled = true;
+    let mut runtime_tps_discharge_enabled = false;
+    let mut runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
+    let mut runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
+    let mut power_runtime_result_inflight = false;
     #[cfg(feature = "net_http")]
     let mut settings_reset_inflight: Option<net::ApiSettingsResetScope> = None;
     #[cfg(feature = "net_http")]
@@ -427,6 +432,8 @@
             net::ApiIdleBiasRunSnapshot::idle(),
             None,
         );
+        guard.power.runtime_output_enabled = runtime_tps_output_enabled_reported;
+        guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled_reported;
     }
     #[cfg(feature = "net_http")]
     let net_handles =
@@ -567,6 +574,7 @@
         let ui_was_in_error = ui_error_latched;
         #[cfg(feature = "net_http")]
         let mut power_config_result_pending: Option<bool> = None;
+        let mut power_runtime_result_pending: Option<bool> = None;
         let usb_c_pd_power_on: bool;
         let usb_c_power_off_setpoint: PowerSetpoint;
         let mut request: Option<PowerRequest>;

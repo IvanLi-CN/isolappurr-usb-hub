@@ -316,6 +316,23 @@ async fn dispatch_ipc_request(
                 .await?,
             ))
         }
+        "device.power.runtime_set" => {
+            let req: DevicePowerRuntimeSetRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "power.runtime_set",
+                    Some(json!({
+                        "action": req.action,
+                        "enabled": req.enabled,
+                        "owner": req.owner,
+                    })),
+                )
+                .await?,
+            ))
+        }
         "device.power.config_defaults" => {
             let req: DevicePowerOwnerRequest = serde_json::from_value(params)?;
             require_compatible_project_firmware(state, &req.device_id).await?;
@@ -475,6 +492,14 @@ struct DeviceHubRouteRequest {
 struct DevicePowerConfigSetRequest {
     device_id: String,
     config: Value,
+    owner: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevicePowerRuntimeSetRequest {
+    device_id: String,
+    action: String,
+    enabled: bool,
     owner: Option<u32>,
 }
 

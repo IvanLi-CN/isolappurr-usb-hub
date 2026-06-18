@@ -5,6 +5,7 @@ import {
   filterEsp32SerialPorts,
   isEsp32SerialPort,
   listLocalUsbSerialPorts,
+  sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
   stableLocalUsbDeviceId,
 } from "./hardwareConsole";
@@ -215,5 +216,59 @@ describe("legacy Local USB fallback", () => {
 
     expect(response.ok).toBe(true);
     expect(response.result?.device?.device_id).toBe("f293cc9c139e");
+  });
+});
+
+describe("Local USB runtime power route", () => {
+  test("maps power.runtime_set to the device runtime endpoint", async () => {
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/devices/scan")) {
+        expect(init?.method).toBe("POST");
+        return jsonResponse({
+          devices: [
+            {
+              id: "usb--dev-cu-usbmodem21221401",
+              usb: { portPath: "/dev/cu.usbmodem21221401" },
+            },
+          ],
+        });
+      }
+      if (
+        url.endsWith(
+          "/api/v1/devices/usb--dev-cu-usbmodem21221401/power/runtime?owner=7",
+        )
+      ) {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body ?? "{}"))).toEqual({
+          action: "output",
+          enabled: false,
+          owner: 7,
+        });
+        return jsonResponse({
+          ok: true,
+          result: {
+            runtime: {
+              output_enabled: false,
+              discharge_enabled: false,
+            },
+          },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+
+    const response = (await sendDevdLocalUsbJsonlRequest(
+      makeAgent(),
+      "usb--dev-cu-usbmodem21221401",
+      {
+        id: 1,
+        method: "power.runtime_set",
+        params: { action: "output", enabled: false, owner: 7 },
+      },
+    )) as { ok: boolean; result?: { runtime?: { output_enabled?: boolean } } };
+
+    expect(response.ok).toBe(true);
+    expect(response.result?.runtime?.output_enabled).toBe(false);
   });
 });

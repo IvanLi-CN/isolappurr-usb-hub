@@ -235,6 +235,11 @@ enum PowerCommand {
         #[command(flatten)]
         selector: PowerSelectorArgs,
     },
+    #[command(about = "Toggle runtime 2mm output power or TPS discharge")]
+    Runtime {
+        #[command(subcommand)]
+        command: RuntimeCommand,
+    },
     #[command(about = "Switch output mode or update the saved manual output target")]
     Output {
         #[command(subcommand)]
@@ -312,6 +317,24 @@ enum OutputCommand {
     Auto {
         #[command(flatten)]
         selector: PowerSelectorArgs,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RuntimeCommand {
+    #[command(about = "Enable or disable the runtime 2mm output gate")]
+    Output {
+        #[command(flatten)]
+        selector: PowerSelectorArgs,
+        #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
+        enabled: bool,
+    },
+    #[command(about = "Enable or disable TPS55288 output discharge while off")]
+    Discharge {
+        #[command(flatten)]
+        selector: PowerSelectorArgs,
+        #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
+        enabled: bool,
     },
 }
 
@@ -438,9 +461,28 @@ struct CliPowerConfig {
     tps_mode: String,
     #[serde(default = "default_light_load_mode")]
     light_load_mode: String,
+    #[serde(default)]
+    runtime: CliPowerRuntime,
     capability: CliPowerCapability,
     manual: CliPowerManual,
     lock: Option<CliPowerLock>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+struct CliPowerRuntime {
+    #[serde(default = "default_runtime_output_enabled")]
+    output_enabled: bool,
+    #[serde(default)]
+    discharge_enabled: bool,
+}
+
+impl Default for CliPowerRuntime {
+    fn default() -> Self {
+        Self {
+            output_enabled: default_runtime_output_enabled(),
+            discharge_enabled: false,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -723,6 +765,7 @@ struct CliPowerRequest {
 #[derive(Debug, Clone)]
 struct CliPowerSetpoint {
     output_enabled: Option<bool>,
+    discharge_enabled: Option<bool>,
     mv: Option<u32>,
     iout_limit_ma: Option<u32>,
 }
@@ -734,8 +777,9 @@ impl Serialize for CliPowerSetpoint {
     {
         use serde::ser::SerializeMap;
 
-        let mut map = serializer.serialize_map(Some(4))?;
+        let mut map = serializer.serialize_map(Some(5))?;
         map.serialize_entry("output_enabled", &self.output_enabled)?;
+        map.serialize_entry("discharge_enabled", &self.discharge_enabled)?;
         map.serialize_entry("mv", &self.mv)?;
         map.serialize_entry("iout_limit_ma", &self.iout_limit_ma)?;
         map.serialize_entry("ilim_ma", &self.iout_limit_ma)?;
@@ -751,6 +795,7 @@ impl<'de> Deserialize<'de> for CliPowerSetpoint {
         #[derive(Deserialize)]
         struct RawCliPowerSetpoint {
             output_enabled: Option<bool>,
+            discharge_enabled: Option<bool>,
             mv: Option<u32>,
             iout_limit_ma: Option<u32>,
             ilim_ma: Option<u32>,
@@ -759,6 +804,7 @@ impl<'de> Deserialize<'de> for CliPowerSetpoint {
         let raw = RawCliPowerSetpoint::deserialize(deserializer)?;
         Ok(Self {
             output_enabled: raw.output_enabled,
+            discharge_enabled: raw.discharge_enabled,
             mv: raw.mv,
             iout_limit_ma: raw.iout_limit_ma.or(raw.ilim_ma),
         })
@@ -770,6 +816,10 @@ const MANUAL_OUTPUT_DEFAULT_CURRENT_MA: u16 = 1_000;
 
 fn default_light_load_mode() -> String {
     "pfm".to_string()
+}
+
+fn default_runtime_output_enabled() -> bool {
+    true
 }
 
 impl SourceCapabilitySetArgs {
