@@ -717,7 +717,7 @@ export function DevicePowerPanel({
   const manualHighVoltageWarning =
     form.tps_mode === "manual" && form.manual.voltage_mv > 5000;
   const usbCPowerActionDisabled = powerControlsDisabled || usbCPending;
-  const usbCPowerEnabled = usbCState?.power_enabled ?? runtimeOutputEnabled;
+  const usbCPowerEnabled = runtimeOutputEnabled;
   const usbCDataLinked =
     usbCState?.replugging === true
       ? "Replugging"

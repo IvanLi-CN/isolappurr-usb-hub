@@ -293,6 +293,7 @@ export const OutputOffManualHighVoltage: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Power off")).toBeVisible();
     await expect(
       await canvas.findByTestId("runtime-output-toggle"),
     ).toHaveTextContent("Power");
