@@ -732,11 +732,6 @@
             POWER_CONFIG_RESULT.signal(result);
         }
 
-        #[cfg(feature = "net_http")]
-        if power_runtime_result_inflight {
-            power_runtime_result_pending = Some(false);
-        }
-
         loop_delay_ms = SW2303_POLL_MS;
 
         if let Err(err) = apply_light_load_mode(
@@ -780,6 +775,7 @@
         let manual_tps_active = usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual;
         if (!manual_tps_active
             && usb_c_pd_power_on
+            && !power_runtime_result_inflight
             && runtime_tps_output_enabled
             && sw2303_stable_reads < SW2303_STABLE_READS_BEFORE_TPS
             && !tps_boot_restore_needed)
@@ -800,6 +796,9 @@
 
             tps_state.last = None;
             tps_state.light_load_mode = None;
+            if power_runtime_result_inflight {
+                power_runtime_result_pending = Some(false);
+            }
             loop_delay_ms = SW2303_ERROR_RETRY_MS;
         } else {
             tps_error_latched = false;
