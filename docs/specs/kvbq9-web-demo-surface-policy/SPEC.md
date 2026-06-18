@@ -122,13 +122,17 @@ allowed and how future exceptions are approved.
 - Evidence SHA: `195c6378d2cb40a6e4fd90503a469bc707d62b08`
 - Formal SPA dashboard in canonical demo mode on `/?demo=true`, showing the
   unified header demo affordance and the canonical session-backed device world:
+  PR: include
   ![Formal SPA demo dashboard](assets/demo-dashboard.png)
 - Formal SPA demo control panel on desktop, using a modal inside the
   production app shell:
+  PR: include
   ![Formal SPA demo control panel](assets/demo-control-panel-desktop.png)
 - Formal SPA demo control panel on mobile, using a drawer/sheet inside the
   production app shell:
+  PR: include
   ![Formal SPA mobile demo control panel](assets/demo-control-panel-mobile.png)
 - Formal SPA detail flow after demo-only discovery success and manual add
   success, both staying on production routes with `?demo=true` preserved:
+  PR: include
   ![Formal SPA demo add-device flow](assets/demo-add-device.png)
