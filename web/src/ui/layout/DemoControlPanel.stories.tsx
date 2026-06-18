@@ -1,30 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, userEvent, within } from "@storybook/test";
-import { useEffect, useState } from "react";
 import { MemoryRouter } from "react-router";
 
 import { DemoModeProvider, initDemoMode } from "../../app/demo-mode";
+import { DesktopAgentProvider } from "../../app/desktop-agent-ui";
 import { ThemeProvider } from "../../app/theme-ui";
+import { ToastProvider } from "../toast/ToastProvider";
 import { DemoControlPanel } from "./DemoControlPanel";
 
-function DemoControlPanelStorySurface() {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    initDemoMode("/", "?demo=true");
-    setReady(true);
-  }, []);
-
-  if (!ready) {
-    return null;
-  }
-
-  return (
-    <div className="flex min-h-screen items-start justify-end bg-[var(--bg)] p-4 sm:p-8">
-      <DemoControlPanel />
-    </div>
-  );
-}
+initDemoMode("/", "?demo=true");
 
 const meta: Meta<typeof DemoControlPanel> = {
   title: "Layouts/DemoControlPanel",
@@ -37,19 +21,27 @@ const meta: Meta<typeof DemoControlPanel> = {
     (Story, context) => (
       <MemoryRouter initialEntries={["/?demo=true"]}>
         <DemoModeProvider>
-          <ThemeProvider>
-            <div
-              className="min-h-screen"
-              data-theme={context.parameters.isolapurrTheme ?? "isolapurr"}
-            >
-              <Story />
-            </div>
-          </ThemeProvider>
+          <DesktopAgentProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <div
+                  className="min-h-screen"
+                  data-theme={context.parameters.isolapurrTheme ?? "isolapurr"}
+                >
+                  <Story />
+                </div>
+              </ToastProvider>
+            </ThemeProvider>
+          </DesktopAgentProvider>
         </DemoModeProvider>
       </MemoryRouter>
     ),
   ],
-  render: () => <DemoControlPanelStorySurface />,
+  render: () => (
+    <div className="flex min-h-screen items-start justify-end bg-[var(--bg)] p-4 sm:p-8">
+      <DemoControlPanel />
+    </div>
+  ),
 };
 
 export default meta;
