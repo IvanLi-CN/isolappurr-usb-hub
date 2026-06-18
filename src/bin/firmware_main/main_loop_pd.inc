@@ -127,6 +127,8 @@
                     power_config_persisted = false;
                     runtime_tps_output_enabled = true;
                     runtime_tps_discharge_enabled = false;
+                    runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
+                    runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
                     tps_state.light_load_mode = None;
                     sw2303_profile_applied = false;
                     sw2303_readback_config = Sw2303CapabilityReadback::unavailable();

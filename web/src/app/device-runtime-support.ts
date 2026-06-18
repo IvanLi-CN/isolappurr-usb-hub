@@ -314,6 +314,7 @@ export function jsonlTimeoutMsForMethod(
   if (
     method === "power.config_set" ||
     method === "power.config_defaults" ||
+    method === "power.runtime_set" ||
     method === "power.idle_bias_set" ||
     method === "power.idle_bias_clear"
   ) {
