@@ -7,7 +7,9 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 - `/` — Dashboard (multi-device grid)
 - `/devices/:deviceId` — Device details (Overview)
 - `/devices/:deviceId/info` — Device details (Hardware)
+- `/devices/:deviceId/power` — Device details (Power)
 - `/about` — About
+- `*` — Standalone 404 fallback with Dashboard/About recovery links
 
 ## Theme
 

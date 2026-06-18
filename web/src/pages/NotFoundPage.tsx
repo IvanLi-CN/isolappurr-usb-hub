@@ -1,17 +1,29 @@
-import { DemoLink } from "../app/demo-navigation";
+import { useLocation } from "react-router";
+
+import { ErrorState } from "../ui/errors/ErrorState";
 
 export function NotFoundPage() {
+  const location = useLocation();
+
   return (
-    <div className="flex flex-col gap-3" data-testid="not-found">
-      <div className="text-lg font-semibold">Not found</div>
-      <div className="text-sm opacity-80">
-        The page you are looking for does not exist.
-      </div>
-      <div>
-        <DemoLink className="link" to="/">
-          Back to dashboard
-        </DemoLink>
-      </div>
-    </div>
+    <ErrorState
+      code="404"
+      title="Page not found"
+      description="This route does not exist in the IsolaPurr control console. Use a known entry point to return to the current workspace."
+      context={
+        <span data-testid="not-found-path">
+          Missing path: {location.pathname}
+          {location.search}
+          {location.hash}
+        </span>
+      }
+      eyebrow="Route fallback"
+      testId="not-found"
+      fullPage
+      actions={[
+        { label: "Back to Dashboard", to: "/", variant: "primary" },
+        { label: "About", to: "/about", variant: "secondary" },
+      ]}
+    />
   );
 }
