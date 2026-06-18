@@ -68,4 +68,4 @@
 | jdyh2 | PR label driven automatic release | 已完成 | `jdyh2-pr-label-release-automation/SPEC.md` | 2026-06-01 | Label Gate, centralized Release workflow, manifest-free version injection, and release failure notifier |
 | d8s4n | Source structure guard | 已完成 | `d8s4n-source-structure-guard/SPEC.md` | 2026-06-02 | Source length guard, generated-file exemption, and oversized source split |
 | k7p9x | Firmware Validation Contract | 已完成 | `k7p9x-firmware-validation-contract/SPEC.md` | 2026-06-13 | Shared no_std firmware core host tests plus firmware-check validation entrypoint |
-| kvbq9 | Web demo surface policy | 已完成 | `kvbq9-web-demo-surface-policy/SPEC.md` | 2026-06-17 | Formal Web verification surfaces locked to production pages, composite Storybook stories, and spec-owned visual evidence; page-level stories and ad hoc demo routes forbidden |
+| kvbq9 | Web demo surface policy | 已完成 | `kvbq9-web-demo-surface-policy/SPEC.md` | 2026-06-18 | Formal Web verification surfaces locked to production pages, controlled SPA `?demo=true|false`, composite Storybook stories, and spec-owned visual evidence; extra demo pages and page-level stories forbidden |

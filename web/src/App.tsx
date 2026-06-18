@@ -1,12 +1,15 @@
+import { useEffect } from "react";
 import {
   BrowserRouter,
   Outlet,
   Route,
   Routes,
-  useNavigate,
+  useLocation,
   useParams,
 } from "react-router";
 import { AddDeviceUiProvider } from "./app/add-device-ui";
+import { DemoModeProvider, useDemoMode } from "./app/demo-mode";
+import { useDemoNavigate } from "./app/demo-navigation";
 import { DesktopAgentProvider } from "./app/desktop-agent-ui";
 import { DeviceRuntimeProvider } from "./app/device-runtime";
 import { DevicesProvider, useDevices } from "./app/devices-store";
@@ -25,7 +28,7 @@ import { ToastProvider } from "./ui/toast/ToastProvider";
 function RootLayout() {
   const { deviceId } = useParams();
   const { devices, addDevice, upsertDevice } = useDevices();
-  const navigate = useNavigate();
+  const navigate = useDemoNavigate();
 
   const existingIds = devices.map((d) => d.id);
   const existingBaseUrls = devices.map((d) => d.baseUrl);
@@ -65,38 +68,51 @@ function RootLayout() {
   );
 }
 
+function DemoBootstrapper() {
+  const location = useLocation();
+  const { bootstrap } = useDemoMode();
+
+  useEffect(() => {
+    bootstrap(location.pathname, location.search);
+  }, [bootstrap, location.pathname, location.search]);
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <DesktopAgentProvider>
-        <ThemeProvider>
-          <ToastProvider>
-            <DevicesProvider>
-              <DeviceRuntimeProvider>
-                <Routes>
-                  <Route path="/" element={<RootLayout />}>
-                    <Route index element={<DashboardPage />} />
-                    <Route
-                      path="devices/:deviceId"
-                      element={<DeviceDashboardPage />}
-                    />
-                    <Route
-                      path="devices/:deviceId/info"
-                      element={<DeviceInfoPage />}
-                    />
-                    <Route
-                      path="devices/:deviceId/power"
-                      element={<DevicePowerPage />}
-                    />
-                    <Route path="about" element={<AboutPage />} />
-                    <Route path="*" element={<NotFoundPage />} />
-                  </Route>
-                </Routes>
-              </DeviceRuntimeProvider>
-            </DevicesProvider>
-          </ToastProvider>
-        </ThemeProvider>
-      </DesktopAgentProvider>
+      <DemoModeProvider>
+        <DemoBootstrapper />
+        <DesktopAgentProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <DevicesProvider>
+                <DeviceRuntimeProvider>
+                  <Routes>
+                    <Route path="/" element={<RootLayout />}>
+                      <Route index element={<DashboardPage />} />
+                      <Route
+                        path="devices/:deviceId"
+                        element={<DeviceDashboardPage />}
+                      />
+                      <Route
+                        path="devices/:deviceId/info"
+                        element={<DeviceInfoPage />}
+                      />
+                      <Route
+                        path="devices/:deviceId/power"
+                        element={<DevicePowerPage />}
+                      />
+                      <Route path="about" element={<AboutPage />} />
+                      <Route path="*" element={<NotFoundPage />} />
+                    </Route>
+                  </Routes>
+                </DeviceRuntimeProvider>
+              </DevicesProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </DesktopAgentProvider>
+      </DemoModeProvider>
     </BrowserRouter>
   );
 }

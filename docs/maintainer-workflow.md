@@ -80,10 +80,11 @@ Do not reintroduce deprecated released selector variants or temporary devd IDs a
 - `docs/solutions/**` hold reusable engineering lessons when the task hits existing solution knowledge or creates a new stable reusable lesson.
 - Web verification surfaces are governed by
   [`docs/specs/kvbq9-web-demo-surface-policy/SPEC.md`](./specs/kvbq9-web-demo-surface-policy/SPEC.md):
-  production SPA pages remain the only app-level Web pages, composite
-  Storybook stories remain the mock-only verification surface, and ad hoc demo
-  routes plus page-level Storybook stories are forbidden unless a spec approves
-  an explicit exception first.
+  production SPA pages remain the only app-level Web pages, the formal
+  owner-facing demo contract is `?demo=true|false` on those same routes,
+  composite Storybook stories remain the mock-only verification surface, and
+  extra `/demo/*` pages plus page-level Storybook stories are forbidden unless
+  a spec approves an explicit exception first.
 
 ## Required Gates Before Close-Out
 
@@ -102,8 +103,8 @@ Do not reintroduce deprecated released selector variants or temporary devd IDs a
 - If the task repairs a documentation or process drift that could recur, add or update automated contract tests in `.github/scripts/` and any owning CI workflow.
 - If the task changes a command example quoted in docs, add or update host-tools parser tests so the documented form is explicitly accepted and the deprecated form is explicitly rejected.
 - If the task changes the allowed Web verification surfaces, update the repo
-  contract tests so page-level Storybook stories and ad hoc demo routes remain
-  blocked by automation.
+  contract tests so page-level Storybook stories and uncontrolled demo routes
+  remain blocked by automation.
 
 ## Stop and Ask
 

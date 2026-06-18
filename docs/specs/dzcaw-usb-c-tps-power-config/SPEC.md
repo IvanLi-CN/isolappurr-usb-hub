@@ -151,7 +151,8 @@ for diagnostics.
   verification happens through composite Storybook stories such as
   `Panels/DevicePowerPanel` and `Panels/DeviceDashboardPanel`, and owner-facing
   screenshots bind through this spec's `## Visual Evidence`. It MUST NOT
-  introduce a dedicated Web demo page, route, or `?demo=*` toggle for power.
+  introduce a dedicated Web demo page, route, or any power-specific demo query
+  contract beyond the repository-wide controlled `?demo=true|false` mode.
 - When a saved idle-bias dataset exists, the Web UI MUST keep the dataset
   detail surface collapsed by default, open into a chart-first review mode,
   and allow switching between a single-series voltage-to-offset chart and a

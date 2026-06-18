@@ -9,10 +9,40 @@ export type DesktopAgent = {
   agentBaseUrl: string;
 };
 
+export const DEMO_AGENT_TOKEN = "demo-session";
+export const DEMO_AGENT_BASE_URL = "https://demo-agent.invalid";
+
 const LOCAL_USB_PORT_START = 51200;
 const LOCAL_USB_PORT_END = 51299;
 
+function isDemoModeEnabled(): boolean {
+  if (typeof window === "undefined" || !window.sessionStorage) {
+    return false;
+  }
+  return window.sessionStorage.getItem("isolapurr.demo.enabled") === "true";
+}
+
+export function createDemoDesktopAgent(): DesktopAgent {
+  return {
+    token: DEMO_AGENT_TOKEN,
+    agentBaseUrl: DEMO_AGENT_BASE_URL,
+  };
+}
+
+export function isDemoDesktopAgent(
+  agent: DesktopAgent | null | undefined,
+): boolean {
+  return (
+    Boolean(agent) &&
+    agent?.agentBaseUrl === DEMO_AGENT_BASE_URL &&
+    agent.token === DEMO_AGENT_TOKEN
+  );
+}
+
 export async function tryBootstrapDesktopAgent(): Promise<DesktopAgent | null> {
+  if (isDemoModeEnabled()) {
+    return createDemoDesktopAgent();
+  }
   const sameOrigin = await fetchDesktopAgentBootstrap("/api/v1/bootstrap");
   if (sameOrigin) {
     return sameOrigin;

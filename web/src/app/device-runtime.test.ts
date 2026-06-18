@@ -1,16 +1,19 @@
 import { describe, expect, test } from "bun:test";
 
+import { createDemoDesktopAgent } from "../domain/desktopAgent";
 import { LocalUsbAgentHttpError } from "../domain/hardwareConsole";
 import {
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   orderedDeviceTransports,
+  resetLocalUsbRuntimeState,
   resolveActiveDeviceTransport,
   resolveTransportBadgeState,
   runQueuedDeviceRequest,
   shortApiError,
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
+  shouldReuseLocalUsbAgentForDemoMode,
 } from "./device-runtime-support";
 
 describe("localUsbErrorToDeviceApiError", () => {
@@ -59,6 +62,65 @@ describe("shouldResetLocalUsbConnectionCache", () => {
     expect(shouldResetLocalUsbConnectionCache(new Error("fetch failed"))).toBe(
       true,
     );
+  });
+});
+
+describe("shouldReuseLocalUsbAgentForDemoMode", () => {
+  test("rejects a cached demo agent after demo mode exits", () => {
+    expect(
+      shouldReuseLocalUsbAgentForDemoMode(createDemoDesktopAgent(), false),
+    ).toBe(false);
+  });
+
+  test("rejects a cached real agent when demo mode is enabled", () => {
+    expect(
+      shouldReuseLocalUsbAgentForDemoMode(
+        {
+          token: "real-token",
+          agentBaseUrl: "http://127.0.0.1:51200",
+        },
+        true,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("resetLocalUsbRuntimeState", () => {
+  test("clears local usb transport state after a mode switch", () => {
+    expect(
+      resetLocalUsbRuntimeState({
+        d1: {
+          lastOkAt: 1,
+          lastError: null,
+          transport: "local_usb",
+          channels: {
+            http: { lastOkAt: 2, lastError: null },
+            web_serial: { lastOkAt: 3, lastError: null },
+            local_usb: {
+              lastOkAt: 4,
+              lastError: { kind: "offline", message: "demo agent offline" },
+            },
+          },
+          hub: null,
+          ports: null,
+          pending: { port_a: false, port_c: false },
+        },
+      }),
+    ).toEqual({
+      d1: {
+        lastOkAt: 1,
+        lastError: null,
+        transport: null,
+        channels: {
+          http: { lastOkAt: 2, lastError: null },
+          web_serial: { lastOkAt: 3, lastError: null },
+          local_usb: { lastOkAt: null, lastError: null },
+        },
+        hub: null,
+        ports: null,
+        pending: { port_a: false, port_c: false },
+      },
+    });
   });
 });
 

@@ -10,11 +10,11 @@ The Web console uses three different owner-facing evidence surfaces today:
   live evidence
 
 This arrangement is useful only when each surface keeps a clear role.
-Ad hoc demo pages or route/query toggles inside the production SPA make the Web
-surface harder to reason about, and page-level Storybook stories blur the line
-between route verification and component verification. The repository needs a
-single policy that defines which Web demo surfaces are allowed and how future
-exceptions are approved.
+Unbounded demo pages or arbitrary route/query toggles inside the production SPA
+make the Web surface harder to reason about, and page-level Storybook stories
+blur the line between route verification and component verification. The
+repository needs a single policy that defines which Web demo surfaces are
+allowed and how future exceptions are approved.
 
 ## Goals
 
@@ -24,8 +24,8 @@ exceptions are approved.
   components and composite UI surfaces.
 - Preserve spec `## Visual Evidence` blocks as the canonical place to bind
   owner-facing screenshots to a documented state.
-- Prevent ad hoc Web demo routes, query toggles, and page-level Storybook
-  stories from reappearing.
+- Prevent ad hoc Web demo routes, uncontrolled query toggles, and page-level
+  Storybook stories from reappearing.
 
 ## Non-goals
 
@@ -39,11 +39,30 @@ exceptions are approved.
 
 ## Requirements
 
-- `demo surface` in this repository MUST mean only a temporary Web verification
-  surface added under `web/` for a specific task or debugging need.
-- The production SPA MUST NOT add dedicated demo routes such as `/demo/*`,
-  query-driven demo entrypoints such as `?demo=*`, or equivalent ad hoc
-  app-level route toggles.
+- `demo surface` in this repository MUST mean either the formal production SPA
+  demo mode defined here or a temporary exception surface explicitly approved
+  by a spec update first.
+- The production SPA MUST NOT add dedicated demo routes such as `/demo/*`.
+- The production SPA MAY expose exactly one formal demo-mode query contract:
+  `?demo=true` enters the canonical demo world for the current browser session,
+  and `?demo=false` exits that demo world for the current browser session.
+- The production SPA MUST NOT add any other `demo` query values, ad hoc query
+  toggles, scenario selectors, or equivalent app-level demo controls without a
+  further spec update.
+- The formal SPA demo mode MUST reuse the production routes and production
+  page/provider logic. It MUST NOT fork to a separate app shell or page tree.
+- The formal SPA demo mode MUST mock only the front-end API boundary needed for
+  bootstrap, storage, discovery, and device APIs.
+- The formal SPA demo mode MUST keep demo world state only in `sessionStorage`.
+  It MUST NOT overwrite real saved devices, desktop storage, Web Serial state,
+  Local USB state, or other real owner data.
+- The formal SPA demo mode MUST keep one canonical demo world in v1. It MUST
+  NOT expose a scenario switcher or page-level Storybook route replacement as
+  the default owner-facing demo surface.
+- The formal SPA demo mode MAY expose one header-level demo control panel for
+  the canonical world, provided it remains inside the production app shell,
+  keeps `?demo=true|false` as the only demo route contract, and does not turn
+  into a scenario switcher.
 - Storybook MUST remain the formal mock-only verification surface for reusable
   components and composite surfaces, including `Panels/*`, `Layouts/*`,
   `Dialogs/*`, and `Cards/*`.
@@ -55,20 +74,22 @@ exceptions are approved.
   stable states through spec `## Visual Evidence` sections instead of informal
   chat-only route references.
 - When a task needs route-level validation, it MUST use the production SPA page
-  itself, an approved live HIL/browser path, or a spec-owned evidence capture;
-  it MUST NOT add a dedicated demo page or route toggle.
+  itself, the formal SPA demo mode defined here, an approved live HIL/browser
+  path, or a spec-owned evidence capture; it MUST NOT add a dedicated demo page
+  or uncontrolled route toggle.
 - The repository MUST treat current production routes, composite Storybook
-  stories, and spec-owned visual evidence as the only default allowed Web
-  verification surfaces.
-- The repository MUST ship with no active exception whitelist for Web demo
-  pages or routes.
+  stories, spec-owned visual evidence, and the formal SPA demo mode as the
+  only default allowed Web verification surfaces.
+- The repository MUST ship with no active exception whitelist for extra Web
+  demo pages or routes beyond the formal SPA demo mode.
 - Any future exception to the no-demo-page rule MUST be approved by updating a
   spec that names the exact surface, purpose, ownership boundary, and
   acceptance path before the implementation lands.
 - Repository contract tests MUST fail if page-level Storybook stories under
   `web/src/pages/` are reintroduced.
-- Repository contract tests MUST fail if production routing adds `/demo/`,
-  `demo=`, or equivalent ad hoc demo entrypoints in `web/src/App.tsx`.
+- Repository contract tests MUST fail if production routing adds `/demo/*`,
+  page-level Storybook stories, or any `demo` entrypoint in `web/src/App.tsx`
+  other than the controlled `?demo=true|false` contract.
 
 ## Acceptance Criteria
 
@@ -76,8 +97,18 @@ exceptions are approved.
   scanned, then no `web/src/pages/*.stories.*` files exist and no
   `web/src/pages/*DemoPage.tsx` files exist.
 - Given the production Web router, when `web/src/App.tsx` is checked, then it
-  contains no `/demo/` routes, `demo=` query toggles, or equivalent ad hoc
-  demo entrypoints.
+  contains no `/demo/` routes, no uncontrolled `demo` query toggles, and no
+  extra demo entrypoints beyond the controlled `?demo=true|false` contract.
+- Given the production SPA is opened with `?demo=true`, when the owner navigates
+  across formal routes, then the app stays on those same production routes
+  while preserving demo mode in the current browser session.
+- Given demo mode is active, when the owner uses the header demo affordance,
+  then the SPA opens a single demo control panel instead of separate badge and
+  exit controls, using a desktop modal and a mobile drawer/sheet.
+- Given the production SPA is opened with `?demo=false` or the demo exit
+  affordance is used, when the owner leaves demo mode, then the current browser
+  session clears the canonical demo world and returns to ordinary non-demo
+  behavior.
 - Given Storybook coverage for the Web console, when maintainers add or update
   UI verification stories, then composite `Panels/*`, `Layouts/*`, `Dialogs/*`,
   or `Cards/*` stories remain allowed while page-level route stories remain
@@ -88,3 +119,23 @@ exceptions are approved.
 - Given a future task proposes a Web demo page exception, when the repository
   is reviewed, then the exception is blocked unless a spec explicitly defines
   the surface, purpose, and acceptance boundary first.
+
+## Visual Evidence
+
+- Evidence SHA: `195c6378d2cb40a6e4fd90503a469bc707d62b08`
+- Formal SPA dashboard in canonical demo mode on `/?demo=true`, showing the
+  unified header demo affordance and the canonical session-backed device world:
+  PR: include
+  ![Formal SPA demo dashboard](assets/demo-dashboard.png)
+- Formal SPA demo control panel on desktop, using a modal inside the
+  production app shell:
+  PR: include
+  ![Formal SPA demo control panel](assets/demo-control-panel-desktop.png)
+- Formal SPA demo control panel on mobile, using a drawer/sheet inside the
+  production app shell:
+  PR: include
+  ![Formal SPA mobile demo control panel](assets/demo-control-panel-mobile.png)
+- Formal SPA detail flow after demo-only discovery success and manual add
+  success, both staying on production routes with `?demo=true` preserved:
+  PR: include
+  ![Formal SPA demo add-device flow](assets/demo-add-device.png)

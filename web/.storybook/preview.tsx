@@ -1,6 +1,7 @@
 import type { Preview } from "@storybook/react-vite";
 
 import "../src/index.css";
+import { DemoModeProvider } from "../src/app/demo-mode";
 import { DesktopAgentProvider } from "../src/app/desktop-agent-ui";
 import { ToastProvider } from "../src/ui/toast/ToastProvider";
 
@@ -58,11 +59,13 @@ const ISOLAPURR_VIEWPORTS = {
 const preview: Preview = {
   decorators: [
     (Story) => (
-      <DesktopAgentProvider>
-        <ToastProvider>
-          <Story />
-        </ToastProvider>
-      </DesktopAgentProvider>
+      <DemoModeProvider>
+        <DesktopAgentProvider>
+          <ToastProvider>
+            <Story />
+          </ToastProvider>
+        </DesktopAgentProvider>
+      </DemoModeProvider>
     ),
   ],
   parameters: {
