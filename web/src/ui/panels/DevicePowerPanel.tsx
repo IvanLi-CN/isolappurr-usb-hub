@@ -1,8 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Children,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { getStablePowerLockOwner } from "../../app/device-runtime-support";
 import type {
   IdleBiasResponse,
+  PdDiagnosticsResponse,
   PowerConfigInput,
   PowerConfigManualInput,
   PowerConfigResponse,
@@ -42,6 +52,7 @@ type DevicePowerPanelProps = {
   clearIdleBiasCalibration: (
     owner: number,
   ) => Promise<Result<IdleBiasResponse>>;
+  loadPdDiagnostics: () => Promise<Result<PdDiagnosticsResponse>>;
   usbCTelemetry: PortTelemetry | null;
   usbCState: PortState | null;
   usbCPending: boolean;
@@ -51,12 +62,7 @@ type DevicePowerPanelProps = {
 type FormState = PowerConfigInput;
 type NegotiationChannel = "cc" | "dpdm";
 
-type ProtocolToggle = {
-  label: string;
-  negotiation: NegotiationChannel;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-};
+type ActiveProtocol = NonNullable<PdDiagnosticsResponse["active_protocol"]>;
 
 function cloneConfig(config: PowerConfigResponse): FormState {
   return {
@@ -74,12 +80,39 @@ function cloneConfig(config: PowerConfigResponse): FormState {
 
 function badgeTone(enabled: boolean): string {
   return enabled
-    ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
+    ? "border border-[var(--surface-success-ring)] bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]"
     : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]";
 }
 
 function negotiationBadgeLabel(channel: NegotiationChannel): string {
   return channel === "cc" ? "CC" : "DPDM";
+}
+
+function formatVoltageOption(mv: number): string {
+  return `${mv / 1000}V`;
+}
+
+function boolLabel(enabled: boolean): string {
+  return enabled ? "On" : "Off";
+}
+
+function formatCompactCurrent(ma: number): string {
+  const amps = ma / 1000;
+  return `${Number.isInteger(amps) ? amps : Number(amps.toFixed(2))}A`;
+}
+
+function formatFixedVoltageSummary(voltagesMv: number[]): string {
+  if (voltagesMv.length === 0) {
+    return "PDO Off";
+  }
+  if (voltagesMv.length === 1) {
+    return `${voltagesMv[0] / 1000}V`;
+  }
+  return `${voltagesMv.length} PDO`;
+}
+
+function activeProtocolLabel(protocol: ActiveProtocol | null): string | null {
+  return protocol ? "Live" : null;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -303,6 +336,281 @@ function InlineHelpPopover({
   );
 }
 
+type PopoverPosition = {
+  left: number;
+  top: number;
+};
+
+function usePopoverPosition(
+  open: boolean,
+  anchorRef: React.RefObject<HTMLElement | null>,
+) {
+  const [position, setPosition] = useState<PopoverPosition | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+    const update = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) {
+        return;
+      }
+      const rect = anchor.getBoundingClientRect();
+      const maxLeft = Math.max(12, window.innerWidth - rect.width - 12);
+      setPosition({
+        left: Math.min(rect.left, maxLeft),
+        top: rect.bottom + 6,
+      });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [anchorRef, open]);
+
+  return position;
+}
+
+function PopoverPortal({
+  open,
+  anchorRef,
+  className,
+  children,
+}: {
+  open: boolean;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  className: string;
+  children: ReactNode;
+}) {
+  const position = usePopoverPosition(open, anchorRef);
+
+  if (!open || !position) {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className={`iso-popover protocol-control-menu ${className}`}
+      style={{ left: `${position.left}px`, top: `${position.top}px` }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+function CompactSelectField({
+  disabled = false,
+  summary,
+  menuTitle,
+  value,
+  options,
+  onChange,
+}: {
+  disabled?: boolean;
+  summary: string;
+  menuTitle?: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!ref.current || ref.current.contains(event.target as Node)) {
+        return;
+      }
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        aria-expanded={open}
+        className="protocol-control-trigger"
+        disabled={disabled}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
+        ref={triggerRef}
+        title={summary}
+        type="button"
+      >
+        <span className="truncate">{summary}</span>
+        <span className="protocol-control-caret">▾</span>
+      </button>
+      <PopoverPortal
+        anchorRef={triggerRef}
+        className="min-w-[7rem]"
+        open={open}
+      >
+        <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] p-1.5 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)]">
+          {menuTitle ? (
+            <div className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.03em] text-[var(--muted)]">
+              {menuTitle}
+            </div>
+          ) : null}
+          <div className="grid gap-1">
+            {options.map((option) => (
+              <button
+                className={`flex min-h-8 items-center justify-between rounded-[6px] px-2 text-[11px] text-left ${
+                  option.value === value
+                    ? "bg-[var(--panel-2)] font-semibold text-[var(--text)]"
+                    : "text-[var(--muted)] hover:bg-[var(--panel-2)] hover:text-[var(--text)]"
+                }`}
+                key={option.value}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                type="button"
+              >
+                <span>{option.label}</span>
+                {option.value === value ? <span>•</span> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      </PopoverPortal>
+    </div>
+  );
+}
+
+function CompactMultiSelectField({
+  disabled = false,
+  summary,
+  menuTitle,
+  options,
+  onToggle,
+}: {
+  disabled?: boolean;
+  summary: string;
+  menuTitle?: string;
+  options: Array<{ value: string; label: string; selected: boolean }>;
+  onToggle: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!ref.current || ref.current.contains(event.target as Node)) {
+        return;
+      }
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        aria-expanded={open}
+        className="protocol-control-trigger"
+        disabled={disabled}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
+        ref={triggerRef}
+        title={summary}
+        type="button"
+      >
+        <span className="truncate">{summary}</span>
+        <span className="protocol-control-caret">▾</span>
+      </button>
+      <PopoverPortal
+        anchorRef={triggerRef}
+        className="min-w-[11rem] max-w-[14rem]"
+        open={open}
+      >
+        <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] p-2 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)]">
+          {menuTitle ? (
+            <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.03em] text-[var(--muted)]">
+              {menuTitle}
+            </div>
+          ) : null}
+          <div className="grid gap-1">
+            {options.map((option) => (
+              <label
+                className="flex min-h-8 items-center justify-between gap-2 rounded-[7px] px-2 py-1.5 text-[11px] text-[var(--text)] hover:bg-[var(--panel-2)]"
+                key={option.value}
+              >
+                <span>{option.label}</span>
+                <input
+                  checked={option.selected}
+                  className="h-4 w-4 accent-[var(--primary)]"
+                  onChange={() => onToggle(option.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  type="checkbox"
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      </PopoverPortal>
+    </div>
+  );
+}
+
+function CompactOptionsRow({ children }: { children: ReactNode }) {
+  const items = Children.toArray(children).filter((child) => child != null);
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return <div className="protocol-options-row">{items}</div>;
+}
+
+function protocolCardState({
+  active,
+  checked,
+}: {
+  active: boolean;
+  checked: boolean;
+}) {
+  if (active) {
+    return {
+      dataState: "active",
+      className:
+        "border-[1.5px] border-[var(--protocol-active-ring)] bg-[linear-gradient(180deg,var(--protocol-active-top),var(--protocol-active-bg))] shadow-[inset_0_1px_0_var(--protocol-active-inner-highlight),0_1px_0_rgba(255,255,255,0.03)]",
+    };
+  }
+  if (checked) {
+    return {
+      dataState: "enabled",
+      className:
+        "border-[var(--protocol-enabled-ring)] bg-[linear-gradient(180deg,var(--protocol-enabled-top),var(--protocol-enabled-bg))] shadow-[inset_0_1px_0_var(--protocol-enabled-inner-highlight)]",
+    };
+  }
+  return {
+    dataState: "off",
+    className: "border-[var(--border-subtle)] bg-[var(--panel)]",
+  };
+}
+
 export function DevicePowerPanel({
   deviceKey,
   deviceName,
@@ -317,6 +625,7 @@ export function DevicePowerPanel({
   setIdleBiasCorrection,
   runIdleBiasCalibration,
   clearIdleBiasCalibration,
+  loadPdDiagnostics,
   usbCTelemetry,
   usbCState,
   usbCPending,
@@ -330,11 +639,14 @@ export function DevicePowerPanel({
   const [dirty, setDirty] = useState(false);
   const [idleBiasSnapshot, setIdleBiasSnapshot] =
     useState<IdleBiasResponse | null>(null);
+  const [pdDiagnostics, setPdDiagnostics] =
+    useState<PdDiagnosticsResponse | null>(null);
   const [idleBiasBusy, setIdleBiasBusy] = useState(false);
   const [idleBiasRunning, setIdleBiasRunning] = useState(false);
   const lockedRef = useRef(false);
   const loadPowerConfigRef = useRef(loadPowerConfig);
   const loadIdleBiasRef = useRef(loadIdleBias);
+  const loadPdDiagnosticsRef = useRef(loadPdDiagnostics);
   const setPowerLockRef = useRef(setPowerLock);
   const setPowerRuntimeRef = useRef(setPowerRuntime);
   const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
@@ -355,6 +667,10 @@ export function DevicePowerPanel({
   useEffect(() => {
     loadIdleBiasRef.current = loadIdleBias;
   }, [loadIdleBias]);
+
+  useEffect(() => {
+    loadPdDiagnosticsRef.current = loadPdDiagnostics;
+  }, [loadPdDiagnostics]);
 
   useEffect(() => {
     setPowerLockRef.current = setPowerLock;
@@ -390,8 +706,20 @@ export function DevicePowerPanel({
         setIdleBiasRunning(false);
       }
     };
+    const loadPdSnapshot = async () => {
+      const pdRes = await loadPdDiagnosticsRef.current();
+      if (cancelled) {
+        return;
+      }
+      if (pdRes.ok) {
+        setPdDiagnostics(pdRes.value);
+      } else {
+        setPdDiagnostics(null);
+      }
+    };
     void loadConfig();
     void loadIdleBiasSnapshot();
+    void loadPdSnapshot();
     return () => {
       cancelled = true;
     };
@@ -585,68 +913,79 @@ export function DevicePowerPanel({
     setDirty(true);
   };
 
-  const protocolToggles: ProtocolToggle[] = [
-    {
-      label: "PD",
-      negotiation: "cc",
-      checked: form.capability.protocols.pd,
-      onChange: (value: boolean) => setProtocol("pd", value),
-    },
-    {
-      label: "PPS",
-      negotiation: "cc",
-      checked: form.capability.pd.pps,
-      onChange: setPps,
-    },
-    {
-      label: "QC2",
-      negotiation: "dpdm",
-      checked: form.capability.protocols.qc20,
-      onChange: (value: boolean) => setProtocol("qc20", value),
-    },
-    {
-      label: "QC3",
-      negotiation: "dpdm",
-      checked: form.capability.protocols.qc30,
-      onChange: (value: boolean) => setProtocol("qc30", value),
-    },
-    {
-      label: "FCP",
-      negotiation: "dpdm",
-      checked: form.capability.protocols.fcp,
-      onChange: (value: boolean) => setProtocol("fcp", value),
-    },
-    {
-      label: "AFC",
-      negotiation: "dpdm",
-      checked: form.capability.protocols.afc,
-      onChange: (value: boolean) => setProtocol("afc", value),
-    },
-    {
-      label: "SCP",
-      negotiation: "dpdm",
-      checked: form.capability.protocols.scp,
-      onChange: (value: boolean) => setProtocol("scp", value),
-    },
-    {
-      label: "PE2",
-      negotiation: "dpdm",
-      checked: form.capability.protocols.pe20,
-      onChange: (value: boolean) => setProtocol("pe20", value),
-    },
-    {
-      label: "BC1.2",
-      negotiation: "dpdm",
-      checked: form.capability.protocols.bc12,
-      onChange: (value: boolean) => setProtocol("bc12", value),
-    },
-    {
-      label: "SFCP",
-      negotiation: "dpdm",
-      checked: form.capability.protocols.sfcp,
-      onChange: (value: boolean) => setProtocol("sfcp", value),
-    },
-  ];
+  const setCurrentProfile = (
+    key: keyof FormState["capability"]["current"],
+    value: number | boolean,
+  ) => {
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            capability: {
+              ...current.capability,
+              current: {
+                ...current.capability.current,
+                [key]: value,
+              },
+            },
+          }
+        : current,
+    );
+    setDirty(true);
+  };
+
+  const setFastChargeConfig = (
+    key: keyof FormState["capability"]["fast_charge"],
+    value: boolean,
+  ) => {
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            capability: {
+              ...current.capability,
+              fast_charge: {
+                ...current.capability.fast_charge,
+                [key]: value,
+              },
+            },
+          }
+        : current,
+    );
+    setDirty(true);
+  };
+
+  const toggleFixedVoltage = (mv: number) => {
+    setForm((current) => {
+      if (!current) {
+        return current;
+      }
+      const exists = current.capability.pd.fixed_voltages_mv.includes(mv);
+      const fixed_voltages_mv = exists
+        ? current.capability.pd.fixed_voltages_mv.filter(
+            (value) => value !== mv,
+          )
+        : [...current.capability.pd.fixed_voltages_mv, mv].sort(
+            (a, b) => a - b,
+          );
+      return {
+        ...current,
+        capability: {
+          ...current.capability,
+          pd: {
+            ...current.capability.pd,
+            fixed_voltages_mv,
+          },
+        },
+      };
+    });
+    setDirty(true);
+  };
+
+  const activeProtocol = pdDiagnostics?.active_protocol ?? null;
+  const fixedVoltageSummary = formatFixedVoltageSummary(
+    form.capability.pd.fixed_voltages_mv,
+  );
 
   const submit = async () => {
     setBusy(true);
@@ -744,12 +1083,12 @@ export function DevicePowerPanel({
             {config?.persisted ? "EEPROM saved" : "Unsaved default"}
           </span>
           <span
-            className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${lockedByOtherHost ? "bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
+            className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${lockedByOtherHost ? "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
           >
             {lockedByOtherHost ? "Host lock active" : "Host lock idle"}
           </span>
           <span
-            className={`inline-flex h-7 items-center rounded-full px-3 font-semibold ${idleBiasRunning ? "bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
+            className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${idleBiasRunning ? "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
           >
             {idleBiasRunning ? "Calibration running" : "Calibration idle"}
           </span>
@@ -757,8 +1096,8 @@ export function DevicePowerPanel({
       </header>
 
       <div className="grid gap-5">
-        <section className="grid gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <section className="grid gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+          <div className="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="text-[14px] font-semibold">Safe profile</div>
               <div className="mt-1 text-[12px] text-[var(--muted)]">
@@ -778,51 +1117,342 @@ export function DevicePowerPanel({
             step={1}
             value={form.capability.power_watts}
           />
-          <div className="protocol-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {protocolToggles.map((protocol) => (
-              <label
-                className={`protocol-card flex min-h-[64px] items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-[13px] transition ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
-                key={protocol.label}
+          <div className="protocol-grid grid items-start gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              {
+                key: "pd",
+                label: "PD",
+                negotiation: "cc" as const,
+                checked: form.capability.protocols.pd,
+                toggle: () => setProtocol("pd", !form.capability.protocols.pd),
+                active: activeProtocol === "pd",
+              },
+              {
+                key: "pps",
+                label: "PPS",
+                negotiation: "cc" as const,
+                checked: form.capability.pd.pps,
+                toggle: () => setPps(!form.capability.pd.pps),
+                active: activeProtocol === "pps",
+              },
+              {
+                key: "qc20",
+                label: "QC2",
+                negotiation: "dpdm" as const,
+                checked: form.capability.protocols.qc20,
+                toggle: () =>
+                  setProtocol("qc20", !form.capability.protocols.qc20),
+                active: activeProtocol === "qc20",
+              },
+              {
+                key: "qc30",
+                label: "QC3",
+                negotiation: "dpdm" as const,
+                checked: form.capability.protocols.qc30,
+                toggle: () =>
+                  setProtocol("qc30", !form.capability.protocols.qc30),
+                active: activeProtocol === "qc30",
+              },
+              {
+                key: "fcp",
+                label: "FCP",
+                negotiation: "dpdm" as const,
+                checked: form.capability.protocols.fcp,
+                toggle: () =>
+                  setProtocol("fcp", !form.capability.protocols.fcp),
+                active: activeProtocol === "fcp",
+              },
+              {
+                key: "afc",
+                label: "AFC",
+                negotiation: "dpdm" as const,
+                checked: form.capability.protocols.afc,
+                toggle: () =>
+                  setProtocol("afc", !form.capability.protocols.afc),
+                active: activeProtocol === "afc",
+              },
+              {
+                key: "scp",
+                label: "SCP",
+                negotiation: "dpdm" as const,
+                checked: form.capability.protocols.scp,
+                toggle: () =>
+                  setProtocol("scp", !form.capability.protocols.scp),
+                active: activeProtocol === "scp",
+              },
+              {
+                key: "pe20",
+                label: "PE2",
+                negotiation: "dpdm" as const,
+                checked: form.capability.protocols.pe20,
+                toggle: () =>
+                  setProtocol("pe20", !form.capability.protocols.pe20),
+                active: activeProtocol === "pe20",
+              },
+              {
+                key: "bc12",
+                label: "BC1.2",
+                negotiation: "dpdm" as const,
+                checked: form.capability.protocols.bc12,
+                toggle: () =>
+                  setProtocol("bc12", !form.capability.protocols.bc12),
+                active: activeProtocol === "bc12",
+              },
+              {
+                key: "sfcp",
+                label: "SFCP",
+                negotiation: "dpdm" as const,
+                checked: form.capability.protocols.sfcp,
+                toggle: () =>
+                  setProtocol("sfcp", !form.capability.protocols.sfcp),
+                active: activeProtocol === "sfcp",
+              },
+            ].map((protocol) => (
+              <div
+                className={`protocol-card flex flex-col gap-2 rounded-[8px] border px-2.5 py-2 transition sm:gap-1 sm:px-2 sm:py-1.5 ${
+                  protocolCardState({
+                    active: protocol.active,
+                    checked: protocol.checked,
+                  }).className
+                } ${powerControlsDisabled ? "opacity-60" : ""}`}
+                data-state={
+                  protocolCardState({
+                    active: protocol.active,
+                    checked: protocol.checked,
+                  }).dataState
+                }
+                key={protocol.key}
               >
-                <span className="grid min-w-0 gap-1">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate font-semibold">
+                <button
+                  className="protocol-card-toggle flex w-full min-w-0 items-center justify-between gap-2 text-left"
+                  disabled={powerControlsDisabled}
+                  onClick={protocol.toggle}
+                  type="button"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[14px] font-semibold sm:text-[13px]">
                       {protocol.label}
                     </span>
                     <span
-                      className="protocol-negotiation-badge h-5 shrink-0 items-center rounded-full border border-current/15 bg-[var(--panel)] px-2 text-[10px] font-bold uppercase tracking-[0.02em]"
+                      className="protocol-negotiation-badge h-5 shrink-0 items-center rounded-full border border-current/15 bg-[var(--panel)] px-1.5 text-[9px] font-bold uppercase tracking-[0.03em]"
                       data-testid={`${protocol.label}-negotiation-badge`}
                     >
                       {negotiationBadgeLabel(protocol.negotiation)}
                     </span>
                   </span>
-                  <span className="text-[11px] font-semibold uppercase">
-                    {protocol.checked ? "On" : "Off"}
-                  </span>
-                </span>
-                <input
-                  checked={protocol.checked}
-                  className="peer sr-only"
-                  disabled={powerControlsDisabled}
-                  onChange={(event) => protocol.onChange(event.target.checked)}
-                  type="checkbox"
-                />
-                <span
-                  aria-hidden="true"
-                  className={`relative h-6 w-11 shrink-0 rounded-full border transition peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--focus)] ${protocol.checked ? "border-[var(--badge-success-text)] bg-[var(--badge-success-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)]"}`}
-                >
-                  <span
-                    className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-[var(--panel)] shadow-sm transition ${protocol.checked ? "left-[24px]" : "left-[3px]"}`}
-                  />
-                </span>
-              </label>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span
+                      className={`inline-flex h-6 shrink-0 items-center rounded-full px-2.5 text-[10px] font-semibold uppercase tracking-[0.05em] sm:h-5 sm:px-2 sm:text-[9px] ${
+                        protocol.active
+                          ? "border border-[var(--protocol-live-border)] bg-[var(--protocol-live-bg)] text-[var(--protocol-live-text)]"
+                          : protocol.checked
+                            ? "border border-[var(--protocol-on-badge-border)] bg-[var(--protocol-on-badge-bg)] text-[var(--protocol-on-badge-text)]"
+                            : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
+                      }`}
+                    >
+                      {protocol.active
+                        ? activeProtocolLabel(activeProtocol)
+                        : protocol.checked
+                          ? "On"
+                          : "Off"}
+                    </span>
+                  </div>
+                </button>
+                <CompactOptionsRow>
+                  {protocol.key === "pd" ? (
+                    <CompactMultiSelectField
+                      disabled={powerControlsDisabled}
+                      menuTitle="Fixed PDO"
+                      onToggle={(value) => toggleFixedVoltage(Number(value))}
+                      options={[9000, 12000, 15000, 20000].map((value) => ({
+                        value: String(value),
+                        label: formatVoltageOption(value),
+                        selected:
+                          form.capability.pd.fixed_voltages_mv.includes(value),
+                      }))}
+                      summary={fixedVoltageSummary}
+                    />
+                  ) : null}
+                  {protocol.key === "pps" ? (
+                    <>
+                      <CompactSelectField
+                        disabled={powerControlsDisabled}
+                        menuTitle="PPS3 current"
+                        onChange={(value) =>
+                          setCurrentProfile("pps3_limit_ma", Number(value))
+                        }
+                        options={[
+                          { label: "3A", value: "3000" },
+                          { label: "5A", value: "5000" },
+                        ]}
+                        summary={`P3 ${formatCompactCurrent(form.capability.current.pps3_limit_ma)}`}
+                        value={String(form.capability.current.pps3_limit_ma)}
+                      />
+                      <CompactSelectField
+                        disabled={powerControlsDisabled}
+                        menuTitle="PPS 5A"
+                        onChange={(value) =>
+                          setCurrentProfile("pd_pps_5a", value === "true")
+                        }
+                        options={[
+                          { label: "Off", value: "false" },
+                          { label: "On", value: "true" },
+                        ]}
+                        summary={`5A ${boolLabel(form.capability.current.pd_pps_5a)}`}
+                        value={String(form.capability.current.pd_pps_5a)}
+                      />
+                    </>
+                  ) : null}
+                  {protocol.key === "qc20" ? (
+                    <CompactSelectField
+                      disabled={powerControlsDisabled}
+                      menuTitle="20V profile"
+                      onChange={(value) =>
+                        setFastChargeConfig(
+                          "qc20_20v_enabled",
+                          value === "true",
+                        )
+                      }
+                      options={[
+                        { label: "Off", value: "false" },
+                        { label: "On", value: "true" },
+                      ]}
+                      summary={`20V ${boolLabel(form.capability.fast_charge.qc20_20v_enabled)}`}
+                      value={String(
+                        form.capability.fast_charge.qc20_20v_enabled,
+                      )}
+                    />
+                  ) : null}
+                  {protocol.key === "qc30" ? (
+                    <CompactSelectField
+                      disabled={powerControlsDisabled}
+                      menuTitle="20V profile"
+                      onChange={(value) =>
+                        setFastChargeConfig(
+                          "qc30_20v_enabled",
+                          value === "true",
+                        )
+                      }
+                      options={[
+                        { label: "Off", value: "false" },
+                        { label: "On", value: "true" },
+                      ]}
+                      summary={`20V ${boolLabel(form.capability.fast_charge.qc30_20v_enabled)}`}
+                      value={String(
+                        form.capability.fast_charge.qc30_20v_enabled,
+                      )}
+                    />
+                  ) : null}
+                  {protocol.key === "fcp" ||
+                  protocol.key === "afc" ||
+                  protocol.key === "sfcp" ? (
+                    <>
+                      <CompactSelectField
+                        disabled={powerControlsDisabled}
+                        menuTitle="Current"
+                        onChange={(value) =>
+                          setCurrentProfile(
+                            "fcp_afc_sfcp_limit_ma",
+                            Number(value),
+                          )
+                        }
+                        options={[
+                          { label: "2.25A", value: "2250" },
+                          { label: "3.25A", value: "3250" },
+                        ]}
+                        summary={formatCompactCurrent(
+                          form.capability.current.fcp_afc_sfcp_limit_ma,
+                        )}
+                        value={String(
+                          form.capability.current.fcp_afc_sfcp_limit_ma,
+                        )}
+                      />
+                      <CompactSelectField
+                        disabled={powerControlsDisabled}
+                        menuTitle="12V profile"
+                        onChange={(value) =>
+                          setFastChargeConfig(
+                            "non_pd_12v_enabled",
+                            value === "true",
+                          )
+                        }
+                        options={[
+                          { label: "Off", value: "false" },
+                          { label: "On", value: "true" },
+                        ]}
+                        summary={`12V ${boolLabel(form.capability.fast_charge.non_pd_12v_enabled)}`}
+                        value={String(
+                          form.capability.fast_charge.non_pd_12v_enabled,
+                        )}
+                      />
+                    </>
+                  ) : null}
+                  {protocol.key === "scp" ? (
+                    <CompactSelectField
+                      disabled={powerControlsDisabled}
+                      menuTitle="Current"
+                      onChange={(value) =>
+                        setCurrentProfile("scp_limit_ma", Number(value))
+                      }
+                      options={[
+                        { label: "2A", value: "2000" },
+                        { label: "4A", value: "4000" },
+                        { label: "5A", value: "5000" },
+                      ]}
+                      summary={formatCompactCurrent(
+                        form.capability.current.scp_limit_ma,
+                      )}
+                      value={String(form.capability.current.scp_limit_ma)}
+                    />
+                  ) : null}
+                  {protocol.key === "pe20" ? (
+                    <CompactSelectField
+                      disabled={powerControlsDisabled}
+                      menuTitle="20V profile"
+                      onChange={(value) =>
+                        setFastChargeConfig(
+                          "pe20_20v_enabled",
+                          value === "true",
+                        )
+                      }
+                      options={[
+                        { label: "Off", value: "false" },
+                        { label: "On", value: "true" },
+                      ]}
+                      summary={`20V ${boolLabel(form.capability.fast_charge.pe20_20v_enabled)}`}
+                      value={String(
+                        form.capability.fast_charge.pe20_20v_enabled,
+                      )}
+                    />
+                  ) : null}
+                  {protocol.key === "bc12" ? (
+                    <CompactSelectField
+                      disabled={powerControlsDisabled}
+                      menuTitle="Type-C broadcast"
+                      onChange={(value) =>
+                        setCurrentProfile("type_c_broadcast_ma", Number(value))
+                      }
+                      options={[
+                        { label: "500mA", value: "500" },
+                        { label: "1.5A", value: "1500" },
+                      ]}
+                      summary={formatCurrentInput(
+                        form.capability.current.type_c_broadcast_ma,
+                      ).replace(" ", "")}
+                      value={String(
+                        form.capability.current.type_c_broadcast_ma,
+                      )}
+                    />
+                  ) : null}
+                </CompactOptionsRow>
+              </div>
             ))}
           </div>
         </section>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-          <section className="grid gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <section className="grid gap-4 rounded-[10px] border border-[var(--border-subtle)] bg-[var(--panel-2)] px-4 py-4">
+            <div className="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-[14px] font-semibold">Output mode</div>
                 <div className="mt-1 text-[12px] text-[var(--muted)]">
@@ -830,7 +1460,7 @@ export function DevicePowerPanel({
                   policy stays explicit.
                 </div>
               </div>
-              <div className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-1 sm:w-auto">
+              <div className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border-subtle)] bg-[var(--panel-3)] p-1 sm:w-auto">
                 <button
                   className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "auto_follow" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
                   disabled={powerControlsDisabled}
@@ -888,7 +1518,7 @@ export function DevicePowerPanel({
                   title="USB-C path"
                 />
                 {manualHighVoltageWarning ? (
-                  <span className="rounded-full bg-[var(--badge-warning-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--badge-warning-text)]">
+                  <span className="rounded-full border border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--badge-warning-text)]">
                     High voltage
                   </span>
                 ) : null}
@@ -901,7 +1531,7 @@ export function DevicePowerPanel({
                 ].map(([value, label, detail]) => (
                   <button
                     key={value}
-                    className={`flex min-h-[88px] flex-col items-start justify-between rounded-[8px] border px-3 py-3 text-left ${form.manual.usb_c_path_mode === value ? "border-[var(--primary)] bg-[var(--panel)]" : "border-[var(--border)] bg-[var(--panel)]"} ${powerControlsDisabled || form.tps_mode !== "manual" ? "opacity-60" : ""}`}
+                    className={`flex min-h-[88px] flex-col items-start justify-between rounded-[8px] border px-3 py-3 text-left ${form.manual.usb_c_path_mode === value ? "border-[var(--primary)] bg-[var(--panel-3)]" : "border-[var(--border-subtle)] bg-[var(--panel)]"} ${powerControlsDisabled || form.tps_mode !== "manual" ? "opacity-60" : ""}`}
                     disabled={
                       powerControlsDisabled || form.tps_mode !== "manual"
                     }
@@ -920,7 +1550,7 @@ export function DevicePowerPanel({
                 ))}
               </div>
               {form.tps_mode === "manual" ? (
-                <div className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3">
+                <div className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2">
                       <div className="text-[13px] font-semibold">
@@ -981,9 +1611,7 @@ export function DevicePowerPanel({
                 </button>
               </div>
               {status ? (
-                <div className="text-[12px] text-[var(--badge-success-text)]">
-                  {status}
-                </div>
+                <div className="text-[12px] text-[var(--muted)]">{status}</div>
               ) : null}
               {error ? (
                 <div className="text-[12px] text-[var(--badge-error-text)]">
@@ -994,11 +1622,11 @@ export function DevicePowerPanel({
           </section>
 
           <aside className="grid gap-5">
-            <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-              <div className="flex items-start justify-between gap-4">
+            <section className="rounded-[10px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-4 py-4">
+              <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] pb-4">
                 <div className="text-[14px] font-semibold">USB-C</div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <div className="flex h-6 items-center justify-center rounded-full bg-[var(--btn-disabled-fill-soft)] px-3 text-[12px] font-semibold text-[var(--muted)]">
+                  <div className="flex h-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] px-3 text-[12px] font-semibold text-[var(--muted)]">
                     {formatTelemetryValue(
                       usbCTelemetry?.current_ma ?? null,
                       "A",
@@ -1010,7 +1638,7 @@ export function DevicePowerPanel({
                 <div
                   className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
                     usbCPowerEnabled
-                      ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
+                      ? "border border-[var(--protocol-enabled-ring)] bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
                       : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
                   }`}
                 >
@@ -1021,7 +1649,7 @@ export function DevicePowerPanel({
                 <div
                   className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
                     usbCState?.data_connected && usbCState?.replugging !== true
-                      ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
+                      ? "border border-[var(--protocol-enabled-ring)] bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
                       : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
                   }`}
                 >
@@ -1100,8 +1728,8 @@ export function DevicePowerPanel({
               </div>
             </section>
 
-            <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
-              <div className="flex items-center gap-2">
+            <section className="rounded-[10px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-4 py-4">
+              <div className="flex items-center gap-2 border-b border-[var(--border)] pb-4">
                 <div className="text-[14px] font-semibold">
                   TPS light-load mode
                 </div>
