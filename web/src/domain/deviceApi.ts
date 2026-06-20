@@ -107,6 +107,19 @@ export type PowerConfigResponse = {
       pps: boolean;
       fixed_voltages_mv: number[];
     };
+    current: {
+      pps3_limit_ma: number;
+      pd_pps_5a: boolean;
+      type_c_broadcast_ma: number;
+      scp_limit_ma: number;
+      fcp_afc_sfcp_limit_ma: number;
+    };
+    fast_charge: {
+      qc20_20v_enabled: boolean;
+      qc30_20v_enabled: boolean;
+      pe20_20v_enabled: boolean;
+      non_pd_12v_enabled: boolean;
+    };
   };
   manual: {
     voltage_mv: number;
@@ -137,6 +150,28 @@ function normalizePowerConfigResponse(
   return {
     ...value,
     light_load_mode: value.light_load_mode === "fpwm" ? "fpwm" : "pfm",
+    capability: {
+      ...value.capability,
+      current: {
+        pps3_limit_ma: value.capability.current?.pps3_limit_ma ?? 5000,
+        pd_pps_5a: value.capability.current?.pd_pps_5a ?? false,
+        type_c_broadcast_ma:
+          value.capability.current?.type_c_broadcast_ma ?? 500,
+        scp_limit_ma: value.capability.current?.scp_limit_ma ?? 5000,
+        fcp_afc_sfcp_limit_ma:
+          value.capability.current?.fcp_afc_sfcp_limit_ma ?? 3250,
+      },
+      fast_charge: {
+        qc20_20v_enabled:
+          value.capability.fast_charge?.qc20_20v_enabled ?? true,
+        qc30_20v_enabled:
+          value.capability.fast_charge?.qc30_20v_enabled ?? true,
+        pe20_20v_enabled:
+          value.capability.fast_charge?.pe20_20v_enabled ?? true,
+        non_pd_12v_enabled:
+          value.capability.fast_charge?.non_pd_12v_enabled ?? true,
+      },
+    },
     runtime: {
       output_enabled: value.runtime?.output_enabled ?? true,
       discharge_enabled: value.runtime?.discharge_enabled ?? false,
@@ -170,10 +205,35 @@ export type PdDiagnosticsResponse = {
       pps: boolean | null;
       fixed_voltages_mv: number[];
     };
+    current: {
+      pps3_limit_ma: number | null;
+      pd_pps_5a: boolean | null;
+      type_c_broadcast_ma: number | null;
+      scp_limit_ma: number | null;
+      fcp_afc_sfcp_limit_ma: number | null;
+    };
+    fast_charge: {
+      qc20_20v_enabled: boolean | null;
+      qc30_20v_enabled: boolean | null;
+      pe20_20v_enabled: boolean | null;
+      non_pd_12v_enabled: boolean | null;
+    };
   };
   sw2303_request: { mv: number | null; ma: number | null };
   sw2303_vbus_mv: number | null;
   sw2303_last_valid_request: { mv: number | null; ma: number | null };
+  active_protocol:
+    | "pd"
+    | "pps"
+    | "qc20"
+    | "qc30"
+    | "fcp"
+    | "afc"
+    | "scp"
+    | "pe20"
+    | "bc12"
+    | "sfcp"
+    | null;
   display: {
     mode: {
       kind: "pd" | "pps" | "dc" | "off";
@@ -291,7 +351,14 @@ function serializePowerConfigInput(config: PowerConfigInput): string {
     hardware: config.hardware,
     tps_mode: config.tps_mode,
     light_load_mode: config.light_load_mode,
-    capability: config.capability,
+    capability: {
+      profile: config.capability.profile,
+      power_watts: config.capability.power_watts,
+      protocols: config.capability.protocols,
+      pd: config.capability.pd,
+      current: config.capability.current,
+      fast_charge: config.capability.fast_charge,
+    },
     manual: {
       voltage_mv: config.manual.voltage_mv,
       current_limit_ma: config.manual.current_limit_ma,

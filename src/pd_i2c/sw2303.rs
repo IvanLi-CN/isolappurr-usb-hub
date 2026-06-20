@@ -98,14 +98,17 @@ where
         pe20_enabled: config.capability.pe20_enabled,
         sfcp_enabled: config.capability.sfcp_enabled,
         bc12_enabled: config.capability.bc12_enabled,
-        // Full profile: allow up to 5A tiers where applicable.
-        scp_current_limit: 0,
-        // Full profile: allow higher current tier where applicable.
-        fcp_afc_sfcp_2_25a: false,
-        qc20_20v_enabled: true,
-        qc30_20v_enabled: true,
-        pe20_20v_enabled: true,
-        pd_12v_enabled: true,
+        scp_current_limit: match config.capability.current.scp_limit_ma {
+            5_000 => 0,
+            4_000 => 1,
+            2_000 => 2,
+            _ => 0,
+        },
+        fcp_afc_sfcp_2_25a: config.capability.current.fcp_afc_sfcp_limit_ma == 2_250,
+        qc20_20v_enabled: config.capability.fast_charge.qc20_20v_enabled,
+        qc30_20v_enabled: config.capability.fast_charge.qc30_20v_enabled,
+        pe20_20v_enabled: config.capability.fast_charge.pe20_20v_enabled,
+        pd_12v_enabled: config.capability.fast_charge.non_pd_12v_enabled,
     })
     .await?;
 
@@ -116,21 +119,24 @@ where
     }
 
     dev.configure_type_c(sw2303::TypeCConfiguration {
-        // Do not force broadcast currents here:
-        // - Let SW2303 decide Type‑C advertisement based on negotiated PD power.
-        // - Only advertise PPS 5A when cable/emarker constraints allow it.
-        current_1_5a: false,
-        pd_pps_5a: false,
+        current_1_5a: config.capability.current.type_c_broadcast_ma == 1_500,
+        pd_pps_5a: config.capability.current.pd_pps_5a,
         cc_un_driving: false,
     })
     .await?;
 
     let (power_config_register_mode, power_watts) = dev.get_power_config().await?;
     let protocols = dev.get_protocol_status().await?;
-    let pd_capabilities = dev.get_pd_capability_status().await.ok();
-    let readback = capability_readback(power_watts, &protocols, pd_capabilities);
     let fast_charge = dev.get_fast_charge_status().await?;
     let type_c = dev.get_type_c_status().await?;
+    let pd_capabilities = dev.get_pd_capability_status().await.ok();
+    let readback = capability_readback(
+        power_watts,
+        &protocols,
+        pd_capabilities,
+        &fast_charge,
+        &type_c,
+    );
     let vin_mv = dev.read_vin_mv_12bit().await.ok();
     let vbus_mv = dev.read_vbus_mv_12bit().await.ok();
     let system_status0 = dev.get_system_status0().await.ok();
@@ -157,6 +163,8 @@ fn capability_readback(
     power_watts: u8,
     protocols: &sw2303::ProtocolConfiguration,
     pd_capabilities: Option<sw2303::PdCapabilityStatus>,
+    fast_charge: &sw2303::FastChargeConfiguration,
+    type_c: &sw2303::TypeCConfiguration,
 ) -> Sw2303CapabilityReadback {
     let Some(pd_capabilities) = pd_capabilities else {
         return Sw2303CapabilityReadback {
@@ -176,6 +184,15 @@ fn capability_readback(
             fixed_12v: None,
             fixed_15v: None,
             fixed_20v: None,
+            pps3_limit_ma: None,
+            pd_pps_5a: None,
+            type_c_broadcast_ma: None,
+            scp_limit_ma: None,
+            fcp_afc_sfcp_limit_ma: None,
+            qc20_20v_enabled: None,
+            qc30_20v_enabled: None,
+            pe20_20v_enabled: None,
+            non_pd_12v_enabled: None,
         };
     };
 
@@ -196,6 +213,24 @@ fn capability_readback(
         fixed_12v: Some(pd_capabilities.fixed_voltages[1]),
         fixed_15v: Some(pd_capabilities.fixed_voltages[2]),
         fixed_20v: Some(pd_capabilities.fixed_voltages[3]),
+        pps3_limit_ma: Some(pd_capabilities.pps3_current_limit_ma),
+        pd_pps_5a: Some(type_c.pd_pps_5a),
+        type_c_broadcast_ma: Some(if type_c.current_1_5a { 1_500 } else { 500 }),
+        scp_limit_ma: Some(match fast_charge.scp_current_limit {
+            0 => 5_000,
+            1 => 4_000,
+            2 => 2_000,
+            _ => 5_000,
+        }),
+        fcp_afc_sfcp_limit_ma: Some(if fast_charge.fcp_afc_sfcp_2_25a {
+            2_250
+        } else {
+            3_250
+        }),
+        qc20_20v_enabled: Some(fast_charge.qc20_20v_enabled),
+        qc30_20v_enabled: Some(fast_charge.qc30_20v_enabled),
+        pe20_20v_enabled: Some(fast_charge.pe20_20v_enabled),
+        non_pd_12v_enabled: Some(fast_charge.pd_12v_enabled),
     }
 }
 

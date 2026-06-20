@@ -92,6 +92,48 @@ pub struct UsbCCapabilityConfig {
     pub fixed_12v: bool,
     pub fixed_15v: bool,
     pub fixed_20v: bool,
+    pub current: UsbCCurrentLimitConfig,
+    pub fast_charge: UsbCFastChargeConfig,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UsbCCurrentLimitConfig {
+    pub pps3_limit_ma: u16,
+    pub pd_pps_5a: bool,
+    pub type_c_broadcast_ma: u16,
+    pub scp_limit_ma: u16,
+    pub fcp_afc_sfcp_limit_ma: u16,
+}
+
+impl UsbCCurrentLimitConfig {
+    pub const fn defaults() -> Self {
+        Self {
+            pps3_limit_ma: 5_000,
+            pd_pps_5a: false,
+            type_c_broadcast_ma: 500,
+            scp_limit_ma: 5_000,
+            fcp_afc_sfcp_limit_ma: 3_250,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UsbCFastChargeConfig {
+    pub qc20_20v_enabled: bool,
+    pub qc30_20v_enabled: bool,
+    pub pe20_20v_enabled: bool,
+    pub non_pd_12v_enabled: bool,
+}
+
+impl UsbCFastChargeConfig {
+    pub const fn defaults() -> Self {
+        Self {
+            qc20_20v_enabled: true,
+            qc30_20v_enabled: true,
+            pe20_20v_enabled: true,
+            non_pd_12v_enabled: true,
+        }
+    }
 }
 
 impl UsbCCapabilityConfig {
@@ -112,6 +154,8 @@ impl UsbCCapabilityConfig {
             fixed_12v: true,
             fixed_15v: true,
             fixed_20v: true,
+            current: UsbCCurrentLimitConfig::defaults(),
+            fast_charge: UsbCFastChargeConfig::defaults(),
         }
     }
 }
@@ -150,6 +194,15 @@ pub struct Sw2303CapabilityReadback {
     pub fixed_12v: Option<bool>,
     pub fixed_15v: Option<bool>,
     pub fixed_20v: Option<bool>,
+    pub pps3_limit_ma: Option<u16>,
+    pub pd_pps_5a: Option<bool>,
+    pub type_c_broadcast_ma: Option<u16>,
+    pub scp_limit_ma: Option<u16>,
+    pub fcp_afc_sfcp_limit_ma: Option<u16>,
+    pub qc20_20v_enabled: Option<bool>,
+    pub qc30_20v_enabled: Option<bool>,
+    pub pe20_20v_enabled: Option<bool>,
+    pub non_pd_12v_enabled: Option<bool>,
 }
 
 impl Sw2303CapabilityReadback {
@@ -171,6 +224,15 @@ impl Sw2303CapabilityReadback {
             fixed_12v: None,
             fixed_15v: None,
             fixed_20v: None,
+            pps3_limit_ma: None,
+            pd_pps_5a: None,
+            type_c_broadcast_ma: None,
+            scp_limit_ma: None,
+            fcp_afc_sfcp_limit_ma: None,
+            qc20_20v_enabled: None,
+            qc30_20v_enabled: None,
+            pe20_20v_enabled: None,
+            non_pd_12v_enabled: None,
         }
     }
 
@@ -192,6 +254,15 @@ impl Sw2303CapabilityReadback {
             && self.fixed_12v == Some(cap.fixed_12v)
             && self.fixed_15v == Some(cap.fixed_15v)
             && self.fixed_20v == Some(cap.fixed_20v)
+            && self.pps3_limit_ma == Some(cap.current.pps3_limit_ma)
+            && self.pd_pps_5a == Some(cap.current.pd_pps_5a)
+            && self.type_c_broadcast_ma == Some(cap.current.type_c_broadcast_ma)
+            && self.scp_limit_ma == Some(cap.current.scp_limit_ma)
+            && self.fcp_afc_sfcp_limit_ma == Some(cap.current.fcp_afc_sfcp_limit_ma)
+            && self.qc20_20v_enabled == Some(cap.fast_charge.qc20_20v_enabled)
+            && self.qc30_20v_enabled == Some(cap.fast_charge.qc30_20v_enabled)
+            && self.pe20_20v_enabled == Some(cap.fast_charge.pe20_20v_enabled)
+            && self.non_pd_12v_enabled == Some(cap.fast_charge.non_pd_12v_enabled)
     }
 }
 
@@ -232,6 +303,18 @@ impl PowerConfig {
             return Err(PowerConfigError::UnsupportedHardware);
         }
         if self.capability.power_watts == 0 || self.capability.power_watts > DEFAULT_POWER_WATTS {
+            return Err(PowerConfigError::InvalidCapability);
+        }
+        if !matches!(self.capability.current.pps3_limit_ma, 3_000 | 5_000) {
+            return Err(PowerConfigError::InvalidCapability);
+        }
+        if !matches!(self.capability.current.type_c_broadcast_ma, 500 | 1_500) {
+            return Err(PowerConfigError::InvalidCapability);
+        }
+        if !matches!(self.capability.current.scp_limit_ma, 2_000 | 4_000 | 5_000) {
+            return Err(PowerConfigError::InvalidCapability);
+        }
+        if !matches!(self.capability.current.fcp_afc_sfcp_limit_ma, 2_250 | 3_250) {
             return Err(PowerConfigError::InvalidCapability);
         }
         if self.manual.voltage_mv < MANUAL_MIN_VOLTAGE_MV
@@ -315,6 +398,37 @@ mod tests {
     #[test]
     fn defaults_to_pfm_light_load_mode() {
         assert_eq!(PowerConfig::defaults().light_load_mode, LightLoadMode::Pfm);
+    }
+
+    #[test]
+    fn defaults_to_full_current_and_fast_charge_capability() {
+        let capability = PowerConfig::defaults().capability;
+        assert_eq!(capability.current.pps3_limit_ma, 5_000);
+        assert!(!capability.current.pd_pps_5a);
+        assert_eq!(capability.current.type_c_broadcast_ma, 500);
+        assert_eq!(capability.current.scp_limit_ma, 5_000);
+        assert_eq!(capability.current.fcp_afc_sfcp_limit_ma, 3_250);
+        assert!(capability.fast_charge.qc20_20v_enabled);
+        assert!(capability.fast_charge.qc30_20v_enabled);
+        assert!(capability.fast_charge.pe20_20v_enabled);
+        assert!(capability.fast_charge.non_pd_12v_enabled);
+    }
+
+    #[test]
+    fn rejects_invalid_discrete_sw2303_capability_values() {
+        let mut config = PowerConfig::defaults();
+        config.capability.current.pps3_limit_ma = 4_000;
+        assert_eq!(
+            config.validated().err(),
+            Some(PowerConfigError::InvalidCapability)
+        );
+
+        let mut config = PowerConfig::defaults();
+        config.capability.current.type_c_broadcast_ma = 900;
+        assert_eq!(
+            config.validated().err(),
+            Some(PowerConfigError::InvalidCapability)
+        );
     }
 
     #[test]

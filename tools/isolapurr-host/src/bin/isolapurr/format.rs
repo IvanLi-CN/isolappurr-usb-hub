@@ -329,6 +329,15 @@ fn format_power_config_output(output: &Value) -> String {
         )
     ));
     lines.push(format!(
+        "Fast-charge profile: {}",
+        format_fast_charge_profile(
+            config.capability.fast_charge.qc20_20v_enabled,
+            config.capability.fast_charge.qc30_20v_enabled,
+            config.capability.fast_charge.pe20_20v_enabled,
+            config.capability.fast_charge.non_pd_12v_enabled,
+        )
+    ));
+    lines.push(format!(
         "Manual output: {} mV, {} mA, USB-C path {}",
         config.manual.voltage_mv,
         config.manual.current_limit_ma,
@@ -378,6 +387,12 @@ fn format_live_power_output(output: &Value) -> String {
         "Negotiated request: {}",
         format_power_request(&diagnostics.sw2303_request)
     ));
+    if let Some(active_protocol) = diagnostics.active_protocol.as_deref() {
+        lines.push(format!(
+            "Active protocol: {}",
+            format_active_protocol(active_protocol)
+        ));
+    }
     lines.push(format!(
         "Last valid request: {}",
         format_power_request(&diagnostics.sw2303_last_valid_request)
@@ -645,6 +660,53 @@ fn format_current_profile(
     )
 }
 
+fn format_fast_charge_profile(
+    qc20_20v_enabled: bool,
+    qc30_20v_enabled: bool,
+    pe20_20v_enabled: bool,
+    non_pd_12v_enabled: bool,
+) -> String {
+    format!(
+        "QC2.0 20 V {}, QC3.0 20 V {}, PE2.0 20 V {}, non-PD 12 V {}",
+        if qc20_20v_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        if qc30_20v_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        if pe20_20v_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        if non_pd_12v_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+    )
+}
+
+fn format_active_protocol(protocol: &str) -> &'static str {
+    match protocol {
+        "pd" => "PD",
+        "pps" => "PPS",
+        "qc20" => "QC2.0",
+        "qc30" => "QC3.0",
+        "fcp" => "FCP",
+        "afc" => "AFC",
+        "scp" => "SCP",
+        "pe20" => "PE2.0",
+        "bc12" => "BC1.2",
+        "sfcp" => "SFCP",
+        _ => "Unknown",
+    }
+}
+
 fn format_capability_state(diagnostics: &CliPowerDiagnostics) -> &'static str {
     let readback = &diagnostics.sw2303_readback_config;
     if !diagnostics.usb_c_power_enabled {
@@ -682,6 +744,10 @@ fn format_readback_summary(readback: &CliPowerCapabilityReadback) -> String {
     parts.push(format!(
         "current {}",
         format_readback_current_profile(&readback.current)
+    ));
+    parts.push(format!(
+        "fast charge {}",
+        format_readback_fast_charge_profile(&readback.fast_charge)
     ));
     parts.join("; ")
 }
@@ -728,6 +794,30 @@ fn format_readback_current_profile(current: &CliPowerCurrentReadback) -> String 
         .map(|value| format!("{value} mA"))
         .unwrap_or_else(|| "unknown".to_string());
     format!("PPS3 {pps3}, PD/PPS 5 A {pd_pps_5a}, Type-C {type_c}, SCP {scp}, FCP/AFC/SFCP {fcp}")
+}
+
+fn format_readback_fast_charge_profile(readback: &CliPowerFastChargeReadback) -> String {
+    let qc20 = match readback.qc20_20v_enabled {
+        Some(true) => "enabled",
+        Some(false) => "disabled",
+        None => "unknown",
+    };
+    let qc30 = match readback.qc30_20v_enabled {
+        Some(true) => "enabled",
+        Some(false) => "disabled",
+        None => "unknown",
+    };
+    let pe20 = match readback.pe20_20v_enabled {
+        Some(true) => "enabled",
+        Some(false) => "disabled",
+        None => "unknown",
+    };
+    let non_pd_12v = match readback.non_pd_12v_enabled {
+        Some(true) => "enabled",
+        Some(false) => "disabled",
+        None => "unknown",
+    };
+    format!("QC2.0 20 V {qc20}, QC3.0 20 V {qc30}, PE2.0 20 V {pe20}, non-PD 12 V {non_pd_12v}")
 }
 
 fn format_power_request(request: &CliPowerRequest) -> String {

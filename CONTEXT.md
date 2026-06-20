@@ -51,3 +51,19 @@
 - `output current limit`
   The applied TPS55288 `IOUT_LIMIT` output-current setpoint exposed by PD diagnostics.
   It is a configured limit value, not the live measured USB-C current.
+
+- `enabled protocol`
+  A protocol that remains advertised in the saved SW2303 capability profile.
+  It means the source is willing to negotiate that protocol when a matching
+  sink attaches. It does not mean the sink is currently using that protocol.
+
+- `active protocol`
+  The live protocol currently negotiated on USB-C, exposed by PD diagnostics.
+  The Web Power panel uses this term for the visually highlighted protocol
+  card. It is distinct from `enabled protocol`, because several protocols may
+  stay enabled while only one protocol is active at a time.
+
+- `fast-charge profile`
+  The saved per-protocol high-voltage and current-limit toggles that extend the
+  basic protocol on/off matrix, including QC2.0/QC3.0/PE2.0 20 V support and
+  the shared non-PD 12 V path for FCP/AFC/SFCP.

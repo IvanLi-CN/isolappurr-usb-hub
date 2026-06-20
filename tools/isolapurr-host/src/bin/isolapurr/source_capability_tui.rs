@@ -17,10 +17,14 @@ enum SourceCapabilityEditorRow {
     TypeCBroadcast,
     ScpLimit,
     FcpAfcSfcpLimit,
+    Qc20HighVoltage,
+    Qc30HighVoltage,
+    Pe20HighVoltage,
+    NonPd12v,
     Actions,
 }
 
-const SOURCE_CAPABILITY_EDITOR_ROWS: [SourceCapabilityEditorRow; 18] = [
+const SOURCE_CAPABILITY_EDITOR_ROWS: [SourceCapabilityEditorRow; 22] = [
     SourceCapabilityEditorRow::PowerWatts,
     SourceCapabilityEditorRow::Pd,
     SourceCapabilityEditorRow::Pps,
@@ -38,6 +42,10 @@ const SOURCE_CAPABILITY_EDITOR_ROWS: [SourceCapabilityEditorRow; 18] = [
     SourceCapabilityEditorRow::TypeCBroadcast,
     SourceCapabilityEditorRow::ScpLimit,
     SourceCapabilityEditorRow::FcpAfcSfcpLimit,
+    SourceCapabilityEditorRow::Qc20HighVoltage,
+    SourceCapabilityEditorRow::Qc30HighVoltage,
+    SourceCapabilityEditorRow::Pe20HighVoltage,
+    SourceCapabilityEditorRow::NonPd12v,
     SourceCapabilityEditorRow::Actions,
 ];
 
@@ -517,6 +525,38 @@ fn render_source_capability_row(
             }),
             selected,
         ),
+        SourceCapabilityEditorRow::Qc20HighVoltage => make_choice_row(
+            "QC2.0 20 V",
+            [false, true].into_iter().map(|value| {
+                let active = config.capability.fast_charge.qc20_20v_enabled == value;
+                (on_off(value).to_string(), active, selected && active)
+            }),
+            selected,
+        ),
+        SourceCapabilityEditorRow::Qc30HighVoltage => make_choice_row(
+            "QC3.0 20 V",
+            [false, true].into_iter().map(|value| {
+                let active = config.capability.fast_charge.qc30_20v_enabled == value;
+                (on_off(value).to_string(), active, selected && active)
+            }),
+            selected,
+        ),
+        SourceCapabilityEditorRow::Pe20HighVoltage => make_choice_row(
+            "PE2.0 20 V",
+            [false, true].into_iter().map(|value| {
+                let active = config.capability.fast_charge.pe20_20v_enabled == value;
+                (on_off(value).to_string(), active, selected && active)
+            }),
+            selected,
+        ),
+        SourceCapabilityEditorRow::NonPd12v => make_choice_row(
+            "Non-PD 12 V",
+            [false, true].into_iter().map(|value| {
+                let active = config.capability.fast_charge.non_pd_12v_enabled == value;
+                (on_off(value).to_string(), active, selected && active)
+            }),
+            selected,
+        ),
         SourceCapabilityEditorRow::Actions => make_choice_row(
             "Action",
             ACTION_OPTIONS.iter().enumerate().map(|(index, label)| {
@@ -715,6 +755,34 @@ fn apply_row_direction(
                 direction,
             );
         }
+        SourceCapabilityEditorRow::Qc20HighVoltage => {
+            config.capability.fast_charge.qc20_20v_enabled = cycle_choice(
+                config.capability.fast_charge.qc20_20v_enabled,
+                &[false, true],
+                direction,
+            );
+        }
+        SourceCapabilityEditorRow::Qc30HighVoltage => {
+            config.capability.fast_charge.qc30_20v_enabled = cycle_choice(
+                config.capability.fast_charge.qc30_20v_enabled,
+                &[false, true],
+                direction,
+            );
+        }
+        SourceCapabilityEditorRow::Pe20HighVoltage => {
+            config.capability.fast_charge.pe20_20v_enabled = cycle_choice(
+                config.capability.fast_charge.pe20_20v_enabled,
+                &[false, true],
+                direction,
+            );
+        }
+        SourceCapabilityEditorRow::NonPd12v => {
+            config.capability.fast_charge.non_pd_12v_enabled = cycle_choice(
+                config.capability.fast_charge.non_pd_12v_enabled,
+                &[false, true],
+                direction,
+            );
+        }
         SourceCapabilityEditorRow::Actions => {
             state.action_focus = cycle_index(state.action_focus, ACTION_OPTIONS.len(), direction);
         }
@@ -822,6 +890,22 @@ fn source_capability_row_label(config: &CliPowerConfig, row: SourceCapabilityEdi
         SourceCapabilityEditorRow::FcpAfcSfcpLimit => format!(
             "FCP/AFC/SFCP current: {} mA",
             config.capability.current.fcp_afc_sfcp_limit_ma
+        ),
+        SourceCapabilityEditorRow::Qc20HighVoltage => format!(
+            "QC2.0 20 V: {}",
+            on_off(config.capability.fast_charge.qc20_20v_enabled)
+        ),
+        SourceCapabilityEditorRow::Qc30HighVoltage => format!(
+            "QC3.0 20 V: {}",
+            on_off(config.capability.fast_charge.qc30_20v_enabled)
+        ),
+        SourceCapabilityEditorRow::Pe20HighVoltage => format!(
+            "PE2.0 20 V: {}",
+            on_off(config.capability.fast_charge.pe20_20v_enabled)
+        ),
+        SourceCapabilityEditorRow::NonPd12v => format!(
+            "Non-PD 12 V: {}",
+            on_off(config.capability.fast_charge.non_pd_12v_enabled)
         ),
         SourceCapabilityEditorRow::Actions => "Actions: save, reload, cancel".to_string(),
     }
@@ -1026,6 +1110,50 @@ fn edit_source_capability_row(
                 |value| format!("{value} mA"),
             )? {
                 config.capability.current.fcp_afc_sfcp_limit_ma = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Qc20HighVoltage => {
+            if let Some(value) = select_choice(
+                "QC2.0 20 V",
+                &[false, true],
+                config.capability.fast_charge.qc20_20v_enabled,
+                |value| on_off(value).to_string(),
+            )? {
+                config.capability.fast_charge.qc20_20v_enabled = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Qc30HighVoltage => {
+            if let Some(value) = select_choice(
+                "QC3.0 20 V",
+                &[false, true],
+                config.capability.fast_charge.qc30_20v_enabled,
+                |value| on_off(value).to_string(),
+            )? {
+                config.capability.fast_charge.qc30_20v_enabled = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::Pe20HighVoltage => {
+            if let Some(value) = select_choice(
+                "PE2.0 20 V",
+                &[false, true],
+                config.capability.fast_charge.pe20_20v_enabled,
+                |value| on_off(value).to_string(),
+            )? {
+                config.capability.fast_charge.pe20_20v_enabled = value;
+            }
+            Ok(None)
+        }
+        SourceCapabilityEditorRow::NonPd12v => {
+            if let Some(value) = select_choice(
+                "Non-PD 12 V",
+                &[false, true],
+                config.capability.fast_charge.non_pd_12v_enabled,
+                |value| on_off(value).to_string(),
+            )? {
+                config.capability.fast_charge.non_pd_12v_enabled = value;
             }
             Ok(None)
         }

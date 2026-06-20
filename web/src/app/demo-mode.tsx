@@ -650,12 +650,13 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
     method === "POST"
   ) {
     const acquire = suffix.endsWith("lock");
+    const owner = Number(url.searchParams.get("owner") ?? DEMO_OWNER);
     const next = updateWorld((current) => {
       const mutated = cloneWorld(current);
       const target = findByDeviceId(mutated, deviceId);
       if (target) {
         target.power.lock = acquire
-          ? { owner: DEMO_OWNER, expires_at_ms: Date.now() + 60_000 }
+          ? { owner, expires_at_ms: Date.now() + 60_000 }
           : null;
       }
       return mutated;
@@ -967,12 +968,13 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
     method === "POST"
   ) {
     const acquire = url.pathname.endsWith("/lock");
+    const owner = Number(url.searchParams.get("owner") ?? DEMO_OWNER);
     const next = updateWorld((current) => {
       const mutated = cloneWorld(current);
       const target = findByDeviceId(mutated, record.stored.id);
       if (target) {
         target.power.lock = acquire
-          ? { owner: DEMO_OWNER, expires_at_ms: Date.now() + 60_000 }
+          ? { owner, expires_at_ms: Date.now() + 60_000 }
           : null;
       }
       return mutated;

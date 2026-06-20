@@ -635,6 +635,10 @@ mod power_output_tests {
                                     type_c_broadcast_ma,
                                     scp_limit_ma,
                                     fcp_afc_sfcp_limit_ma,
+                                    qc20_20v_enabled,
+                                    qc30_20v_enabled,
+                                    pe20_20v_enabled,
+                                    non_pd_12v_enabled,
                                 },
                             ..
                         },
@@ -661,6 +665,10 @@ mod power_output_tests {
         assert_eq!(type_c_broadcast_ma, Some(1500));
         assert_eq!(scp_limit_ma, Some(5000));
         assert_eq!(fcp_afc_sfcp_limit_ma, Some(3250));
+        assert_eq!(qc20_20v_enabled, None);
+        assert_eq!(qc30_20v_enabled, None);
+        assert_eq!(pe20_20v_enabled, None);
+        assert_eq!(non_pd_12v_enabled, None);
     }
 
     #[test]
