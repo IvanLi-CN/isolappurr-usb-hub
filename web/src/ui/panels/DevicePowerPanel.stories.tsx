@@ -322,6 +322,7 @@ export const Default: Story = {
   args: defaultArgs,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const portal = within(canvasElement.ownerDocument.body);
     await expect(
       await canvas.findByTestId("PD-negotiation-badge"),
     ).toBeVisible();
@@ -338,8 +339,8 @@ export const Default: Story = {
     await userEvent.click(
       await canvas.findByRole("button", { name: /4 PDO/i }),
     );
-    await expect(await canvas.findByText("Fixed PDO")).toBeVisible();
-    await expect(await canvas.findByText("12V")).toBeVisible();
+    await expect(await portal.findByText("9V")).toBeVisible();
+    await expect(await portal.findByText("12V")).toBeVisible();
   },
 };
 
