@@ -4,7 +4,7 @@ import type { PortCardProps } from "./types";
 function statusBadgeStyles(status: string): { bg: string; text: string } {
   if (status === "ok") {
     return {
-      bg: "bg-[var(--badge-success-bg)]",
+      bg: "bg-[var(--surface-success-bg)] border border-[var(--surface-success-ring)]",
       text: "text-[var(--badge-success-text)]",
     };
   }
@@ -58,7 +58,7 @@ function PortStateSummary({
           className={[
             "flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold",
             item.active
-              ? "bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
+              ? "border border-[var(--surface-success-ring)] bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]"
               : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]",
           ].join(" ")}
           key={item.label}

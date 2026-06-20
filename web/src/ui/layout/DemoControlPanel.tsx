@@ -75,7 +75,7 @@ export function DemoControlPanel() {
           setOpen(true);
         }}
       >
-        <span className="inline-flex h-5 items-center rounded-full bg-[var(--badge-warning-bg)] px-2 text-[11px] font-bold text-[var(--badge-warning-text)]">
+        <span className="inline-flex h-5 items-center rounded-full border border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] px-2 text-[11px] font-bold text-[var(--badge-warning-text)]">
           Demo
         </span>
         <span className="hidden text-[var(--muted)] lg:inline">
@@ -125,7 +125,7 @@ export function DemoControlPanel() {
 
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="inline-flex h-7 items-center rounded-full bg-[var(--badge-warning-bg)] px-3 text-[12px] font-bold text-[var(--badge-warning-text)]">
+              <div className="inline-flex h-7 items-center rounded-full border border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] px-3 text-[12px] font-bold text-[var(--badge-warning-text)]">
                 Demo mode
               </div>
               <div className="mt-3 text-[20px] font-bold leading-7">

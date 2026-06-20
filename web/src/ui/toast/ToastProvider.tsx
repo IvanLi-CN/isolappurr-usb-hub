@@ -35,6 +35,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           classNames: {
             toast:
               "border border-[var(--border)] bg-[var(--panel)] text-[var(--text)]",
+            success:
+              "border border-[var(--toast-success-border)] bg-[var(--toast-success-bg)] text-[var(--toast-success-text)]",
             description: "text-[var(--muted)]",
             actionButton:
               "bg-[var(--primary)] text-[var(--primary-text)] font-bold",

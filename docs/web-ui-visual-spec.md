@@ -66,7 +66,8 @@
 
 规范性要求（要点）：
 
-- `primary`：仅用于主 CTA（例如 Add device / Create / Apply）。避免把大量普通按钮都做成 `primary`。
+- `primary`：当前为 restrained sage 家族，仅用于主 CTA（例如 Add device / Create / Apply）、当前选择与安装入口。避免把大量普通按钮都做成 `primary`。
+- `secondary`：当前为 restrained warm-amber 家族，取自品牌图标内芯的暖黄系，用于“实时/信息性强调”（例如当前协商协议、图表高亮、辅助信息强调）；不得替代 `success` 语义。
 - `success/warning/error/info`：仅用于状态表达，不用于“装饰性上色”。
 - disabled：保持文字可读，不通过极低 opacity 让内容“消失”。
 

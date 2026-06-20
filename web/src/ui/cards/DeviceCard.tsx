@@ -13,12 +13,14 @@ export type DeviceTransportBadge = {
 
 function badgeStyles(state: ConnectionState): {
   bg: string;
+  border: string;
   text: string;
   width: string;
 } {
   if (state === "online") {
     return {
       bg: "bg-[var(--badge-success-bg)]",
+      border: "border-[var(--badge-success-border)]",
       text: "text-[var(--badge-success-text)]",
       width: "w-[96px]",
     };
@@ -26,12 +28,14 @@ function badgeStyles(state: ConnectionState): {
   if (state === "offline") {
     return {
       bg: "bg-[var(--badge-error-bg)]",
+      border: "border-[var(--badge-error-border)]",
       text: "text-[var(--badge-error-text)]",
       width: "w-[96px]",
     };
   }
   return {
     bg: "bg-[var(--badge-warning-bg)]",
+    border: "border-[var(--badge-warning-border)]",
     text: "text-[var(--badge-warning-text)]",
     width: "w-[96px]",
   };
@@ -324,9 +328,10 @@ export function DeviceCard({
         </div>
         <div
           className={[
-            "flex h-[22px] items-center justify-center rounded-full",
+            "flex h-[22px] items-center justify-center rounded-full border",
             badge.width,
             badge.bg,
+            badge.border,
             badge.text,
             "text-[12px] font-semibold",
           ].join(" ")}

@@ -289,11 +289,11 @@ function SummaryCard({
 }: SummaryCardProps) {
   const toneClass =
     tone === "success"
-      ? "border-[var(--badge-success-text)]/20 bg-[var(--badge-success-bg)]"
+      ? "border-[var(--protocol-enabled-ring)] bg-[var(--protocol-enabled-bg)]"
       : tone === "warning"
-        ? "border-[var(--badge-warning-text)]/20 bg-[var(--badge-warning-bg)]"
+        ? "border-[var(--surface-warning-ring)] bg-[var(--surface-warning-bg)]"
         : tone === "error"
-          ? "border-[var(--badge-error-text)]/20 bg-[var(--panel)]"
+          ? "border-[var(--surface-error-ring)] bg-[var(--surface-error-bg)]"
           : "border-[var(--border)] bg-[var(--panel)]";
 
   return (
@@ -490,7 +490,7 @@ export function DevicePowerPanelIdleBiasSection({
 
   return (
     <>
-      <section className="grid gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+      <section className="grid gap-4 rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-[760px]">
             <div className="text-[14px] font-semibold">
@@ -502,7 +502,7 @@ export function DevicePowerPanelIdleBiasSection({
               and optionally subtract it from the main USB-C INA226 reading.
             </div>
           </div>
-          <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3 text-[12px] leading-6 text-[var(--muted)]">
+          <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel-3)] px-3 py-3 text-[12px] leading-6 text-[var(--muted)]">
             <div className="font-semibold text-[var(--text)]">
               Safety reminder
             </div>
@@ -533,7 +533,7 @@ export function DevicePowerPanelIdleBiasSection({
         </div>
 
         {canShowIdleBiasTable ? (
-          <section className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)]">
+          <section className="rounded-[10px] border border-[var(--border)] bg-[var(--panel-3)]">
             <button
               aria-expanded={idleBiasTableExpanded}
               className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
@@ -564,7 +564,7 @@ export function DevicePowerPanelIdleBiasSection({
                     </div>
                     <div
                       aria-labelledby={idleBiasViewLabelId}
-                      className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel-2)] p-1 md:w-auto"
+                      className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-1 md:w-auto"
                       role="tablist"
                     >
                       <span className="sr-only" id={idleBiasViewLabelId}>
@@ -592,7 +592,7 @@ export function DevicePowerPanelIdleBiasSection({
                   </div>
 
                   {idleBiasViewMode === "chart" ? (
-                    <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-3 py-3">
+                    <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel-3)] px-3 py-3">
                       <div className="h-[280px] w-full md:h-[320px]">
                         <ResponsiveContainer
                           height="100%"
@@ -760,7 +760,7 @@ export function DevicePowerPanelIdleBiasSection({
         ) : null}
 
         {idleBias?.run.state === "running" ? (
-          <div className="rounded-[10px] border border-[var(--badge-warning-text)]/25 bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-warning-text)]">
+          <div className="rounded-[10px] border border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-warning-text)]">
             Calibration progress: {idleBias.run.completed_points}/
             {idleBias.run.point_count}
             {idleBias.run.target_voltage_mv === null
@@ -804,21 +804,21 @@ export function DevicePowerPanelIdleBiasSection({
         </div>
 
         {lockedByOtherHost ? (
-          <div className="rounded-[10px] border border-[var(--badge-warning-text)]/25 bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-warning-text)]">
+          <div className="rounded-[10px] border border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-warning-text)]">
             Another host owns the power lock, so idle-bias actions are blocked
             until that lock expires.
           </div>
         ) : null}
 
         {idleBiasStatus ? (
-          <div className="rounded-[10px] border border-[var(--badge-success-text)]/20 bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-success-text)]">
+          <div className="rounded-[10px] border border-[var(--badge-success-border)] bg-[var(--surface-success-bg)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-success-text)]">
             {idleBiasStatus}
           </div>
         ) : null}
 
         {idleBiasError ? (
           <div
-            className="rounded-[10px] border border-[var(--badge-error-text)]/20 bg-[var(--panel)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-error-text)]"
+            className="rounded-[10px] border border-[var(--badge-error-border)] bg-[var(--surface-error-bg)] px-4 py-3 text-[12px] font-semibold leading-6 text-[var(--badge-error-text)]"
             role="alert"
           >
             {idleBiasError}
