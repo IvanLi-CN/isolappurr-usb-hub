@@ -148,6 +148,13 @@
   separate and explicit about not solving SW2303 heating.
 - Moved the `TPS light-load mode` explanatory copy into a help popover so the
   right rail stays compact without losing the board-default vs FPWM guidance.
+- Shifted the active-protocol emphasis onto the shared warm-amber
+  `secondary` token family so informational highlight no longer competes with
+  success semantics, and added a dedicated `Brand/ThemePalette` Storybook
+  review story to document that token usage in both themes.
+- Unified dashboard, device-card, port-card, demo-sheet, idle-bias summary,
+  and toast success surfaces around bordered semantic badge tokens so light and
+  dark themes keep the same state hierarchy without muddy fills.
 - Hardened `DevicePowerPanel` late-load behavior so a successful reload or lock
   refresh no longer overwrites in-progress edits with a fresh `cloneConfig()`,
   while initial retry paths can still hydrate an empty form after a transient

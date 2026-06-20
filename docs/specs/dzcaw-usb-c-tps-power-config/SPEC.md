@@ -137,6 +137,12 @@ for diagnostics.
 - Web UI protocol cards MUST visually distinguish the currently active
   negotiated protocol from merely enabled protocols by consuming live PD
   diagnostics `active_protocol` instead of inferring it only from saved config.
+- Web UI MUST reserve `success` semantics for real positive device or port
+  state, and MUST use the shared warm-amber `secondary` informational tone for
+  active protocol / live emphasis instead of reusing the success fill.
+- Dashboard, device cards, demo-panel badges, idle-bias summary cards, and
+  toast success states MUST use the shared bordered semantic badge/surface
+  tokens so bright and dark themes keep a consistent hierarchy.
 - Manual TPS output live semantics MUST come from the shared USB-C display
   contract: `manual + output_enabled` sets the left USB-C badge to the manual
   TPS setpoint formatted as `x.xxV`; `force` fixes the right badge to `FOCUS`;
@@ -300,6 +306,58 @@ for diagnostics.
   job, host/CLI/Web contracts, and calibration UI.
 
 ## Visual Evidence
+
+- source_type: storybook_canvas
+  story_id_or_title: `Brand/ThemePalette/Review`
+  state: light theme token review with warm-amber `secondary`
+  requested_viewport: `1440x2000`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the formal light-theme token palette keeps `primary`
+  on task actions while the warm-amber `secondary` tone is reserved for live
+  protocol emphasis and not confused with success semantics.
+
+![Theme palette light review current](./assets/theme-palette-light-current.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Brand/ThemePalette/Review`
+  state: dark theme token review with warm-amber `secondary`
+  requested_viewport: `1440x2000`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the dark-theme token palette preserves the same
+  warm-amber active emphasis and keeps semantic status colors separate from the
+  active protocol lift.
+
+![Theme palette dark review current](./assets/theme-palette-dark-current.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CalibrationApplied`
+  state: semantic surfaces on power page summaries
+  requested_viewport: `1440x1500`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the idle-bias summary cards now consume the shared
+  semantic surface tokens instead of ad-hoc tinted fills, keeping the panel
+  aligned with the rest of the page hierarchy.
+
+![Device power panel semantic surfaces current](./assets/device-power-panel-semantic-surfaces-current.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/Default`
+  state: bordered semantic badges on dashboard and USB-C live header
+  requested_viewport: `1440x1400`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the dashboard status chips, success surfaces, and
+  USB-C live header now share the bordered semantic badge treatment while the
+  live informational emphasis remains visually distinct from success state.
+
+![Device dashboard semantic badges current](./assets/device-dashboard-semantic-badges-current.png)
 
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/ManualForceConfigOnly`

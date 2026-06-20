@@ -17,6 +17,16 @@
   protocol controls on narrow screens without undoing the compact desktop
   layout.
 
+## 2026-06-21
+
+- Formalized the warm-amber `secondary` theme token as the Web informational
+  highlight for the live active protocol instead of reusing success semantics.
+- Added a `Brand/ThemePalette` Storybook review surface so the light/dark token
+  palette and active-card emphasis can be audited in one stable place.
+- Unified dashboard, device-card, demo-sheet, port-card, idle-bias summary,
+  and toast semantic badges around bordered state surfaces so both themes keep
+  a cleaner hierarchy between live emphasis and success status.
+
 ## 2026-06-03
 
 - Added the SW2303-only power configuration topic.
