@@ -119,6 +119,18 @@ fn apply_source_capability_args(
     if let Some(fcp_afc_sfcp_limit_ma) = args.fcp_afc_sfcp_limit_ma {
         config.capability.current.fcp_afc_sfcp_limit_ma = fcp_afc_sfcp_limit_ma;
     }
+    if let Some(qc20_20v_enabled) = args.qc20_20v_enabled {
+        config.capability.fast_charge.qc20_20v_enabled = qc20_20v_enabled;
+    }
+    if let Some(qc30_20v_enabled) = args.qc30_20v_enabled {
+        config.capability.fast_charge.qc30_20v_enabled = qc30_20v_enabled;
+    }
+    if let Some(pe20_20v_enabled) = args.pe20_20v_enabled {
+        config.capability.fast_charge.pe20_20v_enabled = pe20_20v_enabled;
+    }
+    if let Some(non_pd_12v_enabled) = args.non_pd_12v_enabled {
+        config.capability.fast_charge.non_pd_12v_enabled = non_pd_12v_enabled;
+    }
     Ok(())
 }
 
@@ -174,6 +186,10 @@ fn power_config_update_payload(config: &CliPowerConfig) -> Value {
         "type_c_broadcast_ma": config.capability.current.type_c_broadcast_ma,
         "scp_limit_ma": config.capability.current.scp_limit_ma,
         "fcp_afc_sfcp_limit_ma": config.capability.current.fcp_afc_sfcp_limit_ma,
+        "qc20_20v_enabled": config.capability.fast_charge.qc20_20v_enabled,
+        "qc30_20v_enabled": config.capability.fast_charge.qc30_20v_enabled,
+        "pe20_20v_enabled": config.capability.fast_charge.pe20_20v_enabled,
+        "non_pd_12v_enabled": config.capability.fast_charge.non_pd_12v_enabled,
     })
 }
 
@@ -205,6 +221,7 @@ fn full_power_capability_defaults() -> CliPowerCapability {
             fixed_voltages_mv: vec![9000, 12000, 15000, 20000],
         },
         current: CliPowerCurrentProfile::default(),
+        fast_charge: CliPowerFastChargeProfile::default(),
     }
 }
 

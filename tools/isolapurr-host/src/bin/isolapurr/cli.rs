@@ -452,6 +452,14 @@ struct SourceCapabilitySetArgs {
     scp_limit_ma: Option<u16>,
     #[arg(long, value_parser = parse_fcp_afc_sfcp_limit_ma)]
     fcp_afc_sfcp_limit_ma: Option<u16>,
+    #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
+    qc20_20v_enabled: Option<bool>,
+    #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
+    qc30_20v_enabled: Option<bool>,
+    #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
+    pe20_20v_enabled: Option<bool>,
+    #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
+    non_pd_12v_enabled: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -493,6 +501,8 @@ struct CliPowerCapability {
     pd: CliPowerPd,
     #[serde(default)]
     current: CliPowerCurrentProfile,
+    #[serde(default)]
+    fast_charge: CliPowerFastChargeProfile,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -508,6 +518,14 @@ struct CliPowerCurrentProfile {
     type_c_broadcast_ma: u16,
     scp_limit_ma: u16,
     fcp_afc_sfcp_limit_ma: u16,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+struct CliPowerFastChargeProfile {
+    qc20_20v_enabled: bool,
+    qc30_20v_enabled: bool,
+    pe20_20v_enabled: bool,
+    non_pd_12v_enabled: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -541,6 +559,8 @@ struct CliPowerDiagnostics {
     display: Option<CliUsbCDisplay>,
     #[serde(default)]
     usb_c_actual: Option<CliPortTelemetry>,
+    #[serde(default)]
+    active_protocol: Option<String>,
     tps_setpoint: CliPowerSetpoint,
     #[serde(default)]
     tps_iout_limit_readback: Option<CliTpsIoutLimitReadback>,
@@ -631,6 +651,8 @@ struct CliPowerCapabilityReadback {
     pd: CliPowerPdReadback,
     #[serde(default)]
     current: CliPowerCurrentReadback,
+    #[serde(default)]
+    fast_charge: CliPowerFastChargeReadback,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -663,6 +685,14 @@ struct CliPowerCurrentReadback {
     fcp_afc_sfcp_limit_ma: Option<u16>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+struct CliPowerFastChargeReadback {
+    qc20_20v_enabled: Option<bool>,
+    qc30_20v_enabled: Option<bool>,
+    pe20_20v_enabled: Option<bool>,
+    non_pd_12v_enabled: Option<bool>,
+}
+
 impl Default for CliPowerCurrentProfile {
     fn default() -> Self {
         Self {
@@ -671,6 +701,17 @@ impl Default for CliPowerCurrentProfile {
             type_c_broadcast_ma: 500,
             scp_limit_ma: 5000,
             fcp_afc_sfcp_limit_ma: 3250,
+        }
+    }
+}
+
+impl Default for CliPowerFastChargeProfile {
+    fn default() -> Self {
+        Self {
+            qc20_20v_enabled: true,
+            qc30_20v_enabled: true,
+            pe20_20v_enabled: true,
+            non_pd_12v_enabled: true,
         }
     }
 }
@@ -841,6 +882,10 @@ impl SourceCapabilitySetArgs {
             || self.type_c_broadcast_ma.is_some()
             || self.scp_limit_ma.is_some()
             || self.fcp_afc_sfcp_limit_ma.is_some()
+            || self.qc20_20v_enabled.is_some()
+            || self.qc30_20v_enabled.is_some()
+            || self.pe20_20v_enabled.is_some()
+            || self.non_pd_12v_enabled.is_some()
     }
 }
 

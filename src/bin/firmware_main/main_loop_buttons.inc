@@ -874,6 +874,7 @@
                     .map(|request| request.v_req_mv as u32),
                 sw2303_last_valid_ma: last_valid_sw2303_request
                     .map(|request| request.i_req_ma as u32),
+                active_protocol: api_active_protocol(request),
                 usb_c_display_mode: usb_c_display.mode,
                 usb_c_display_badge: usb_c_display.badge,
                 usb_c_display_measurements_visible: usb_c_display.measurements_visible,

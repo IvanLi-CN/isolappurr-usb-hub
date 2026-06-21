@@ -1080,6 +1080,39 @@ pub fn parse_power_config_body(body: &str) -> Option<PowerConfig> {
     set_bool_if_present(body, "bc12", &mut config.capability.bc12_enabled);
     set_bool_if_present(body, "sfcp", &mut config.capability.sfcp_enabled);
     set_bool_if_present(body, "pps", &mut config.capability.pps_enabled);
+    if let Some(pps3_limit_ma) = extract_body_u16(body, "pps3_limit_ma") {
+        config.capability.current.pps3_limit_ma = pps3_limit_ma;
+    }
+    set_bool_if_present(body, "pd_pps_5a", &mut config.capability.current.pd_pps_5a);
+    if let Some(type_c_broadcast_ma) = extract_body_u16(body, "type_c_broadcast_ma") {
+        config.capability.current.type_c_broadcast_ma = type_c_broadcast_ma;
+    }
+    if let Some(scp_limit_ma) = extract_body_u16(body, "scp_limit_ma") {
+        config.capability.current.scp_limit_ma = scp_limit_ma;
+    }
+    if let Some(fcp_afc_sfcp_limit_ma) = extract_body_u16(body, "fcp_afc_sfcp_limit_ma") {
+        config.capability.current.fcp_afc_sfcp_limit_ma = fcp_afc_sfcp_limit_ma;
+    }
+    set_bool_if_present(
+        body,
+        "qc20_20v_enabled",
+        &mut config.capability.fast_charge.qc20_20v_enabled,
+    );
+    set_bool_if_present(
+        body,
+        "qc30_20v_enabled",
+        &mut config.capability.fast_charge.qc30_20v_enabled,
+    );
+    set_bool_if_present(
+        body,
+        "pe20_20v_enabled",
+        &mut config.capability.fast_charge.pe20_20v_enabled,
+    );
+    set_bool_if_present(
+        body,
+        "non_pd_12v_enabled",
+        &mut config.capability.fast_charge.non_pd_12v_enabled,
+    );
     apply_fixed_voltages_if_present(body, &mut config.capability)?;
     config.validated().ok()
 }

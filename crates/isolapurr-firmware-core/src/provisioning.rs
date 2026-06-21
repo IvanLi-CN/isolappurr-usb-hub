@@ -4,14 +4,14 @@ use crate::idle_bias::{
 };
 use crate::power_config::{
     LightLoadMode, ManualTpsConfig, ManualUsbCPathMode, PowerConfig, PowerHardwareKind, TpsMode,
-    UsbCCapabilityConfig,
+    UsbCCapabilityConfig, UsbCCurrentLimitConfig, UsbCFastChargeConfig,
 };
 
 const IDLE_BIAS_FIXED_METADATA: IdleBiasMetadata = IdleBiasMetadata::fixed();
 
 pub const POWER_SETTINGS_RECORD_LEN: usize = 96;
 pub const POWER_SETTINGS_MAGIC: &[u8; 8] = b"IPPWR01\0";
-pub const POWER_SETTINGS_VERSION: u8 = 1;
+pub const POWER_SETTINGS_VERSION: u8 = 2;
 pub const IDLE_BIAS_RECORD_LEN: usize = 96;
 pub const IDLE_BIAS_MAGIC: &[u8; 8] = b"IPIBIAS\0";
 pub const IDLE_BIAS_VERSION: u8 = 1;
@@ -71,9 +71,23 @@ pub fn encode_power_config(record: &mut [u8; POWER_SETTINGS_RECORD_LEN], config:
         LightLoadMode::Pfm => 0,
         LightLoadMode::Fpwm => 1,
     };
+    record[20] = match config.capability.current.pps3_limit_ma {
+        3_000 => 0,
+        5_000 => 1,
+        _ => 1,
+    };
+    record[21] = (config.capability.current.pd_pps_5a as u8)
+        | ((config.capability.current.type_c_broadcast_ma == 1_500) as u8) << 1
+        | (pack_scp_limit(config.capability.current.scp_limit_ma) << 2)
+        | ((config.capability.current.fcp_afc_sfcp_limit_ma == 2_250) as u8) << 4;
+    record[22] = (config.capability.fast_charge.qc20_20v_enabled as u8)
+        | ((config.capability.fast_charge.qc30_20v_enabled as u8) << 1)
+        | ((config.capability.fast_charge.pe20_20v_enabled as u8) << 2)
+        | ((config.capability.fast_charge.non_pd_12v_enabled as u8) << 3);
 }
 
 pub fn decode_power_config(record: &[u8; POWER_SETTINGS_RECORD_LEN]) -> Option<PowerConfig> {
+    let version = record[POWER_SETTINGS_MAGIC.len()];
     let hardware = match record[9] {
         0 => PowerHardwareKind::Sw2303,
         _ => return None,
@@ -105,7 +119,13 @@ pub fn decode_power_config(record: &[u8; POWER_SETTINGS_RECORD_LEN]) -> Option<P
             current_limit_ma,
             usb_c_path_mode,
         },
-        capability: unpack_capability(record[16], record[17], record[18]),
+        capability: if version >= 2 {
+            unpack_capability_v2(
+                record[16], record[17], record[18], record[20], record[21], record[22],
+            )?
+        } else {
+            unpack_capability_v1(record[16], record[17], record[18])
+        },
     })
 }
 
@@ -129,7 +149,7 @@ fn pack_pd_flags(capability: UsbCCapabilityConfig) -> u8 {
         | ((capability.fixed_20v as u8) << 5)
 }
 
-fn unpack_capability(power_watts: u8, flags: u8, pd_flags: u8) -> UsbCCapabilityConfig {
+fn unpack_capability_v1(power_watts: u8, flags: u8, pd_flags: u8) -> UsbCCapabilityConfig {
     UsbCCapabilityConfig {
         power_watts,
         pd_enabled: flags & (1 << 0) != 0,
@@ -146,6 +166,78 @@ fn unpack_capability(power_watts: u8, flags: u8, pd_flags: u8) -> UsbCCapability
         fixed_12v: pd_flags & (1 << 3) != 0,
         fixed_15v: pd_flags & (1 << 4) != 0,
         fixed_20v: pd_flags & (1 << 5) != 0,
+        current: UsbCCurrentLimitConfig::defaults(),
+        fast_charge: UsbCFastChargeConfig::defaults(),
+    }
+}
+
+fn unpack_capability_v2(
+    power_watts: u8,
+    flags: u8,
+    pd_flags: u8,
+    current_flags0: u8,
+    current_flags1: u8,
+    fast_charge_flags: u8,
+) -> Option<UsbCCapabilityConfig> {
+    Some(UsbCCapabilityConfig {
+        power_watts,
+        pd_enabled: flags & (1 << 0) != 0,
+        qc20_enabled: flags & (1 << 1) != 0,
+        qc30_enabled: flags & (1 << 2) != 0,
+        fcp_enabled: flags & (1 << 3) != 0,
+        afc_enabled: flags & (1 << 4) != 0,
+        scp_enabled: flags & (1 << 5) != 0,
+        pe20_enabled: flags & (1 << 6) != 0,
+        bc12_enabled: flags & (1 << 7) != 0,
+        sfcp_enabled: pd_flags & (1 << 0) != 0,
+        pps_enabled: pd_flags & (1 << 1) != 0,
+        fixed_9v: pd_flags & (1 << 2) != 0,
+        fixed_12v: pd_flags & (1 << 3) != 0,
+        fixed_15v: pd_flags & (1 << 4) != 0,
+        fixed_20v: pd_flags & (1 << 5) != 0,
+        current: UsbCCurrentLimitConfig {
+            pps3_limit_ma: if current_flags0 & 1 == 0 {
+                3_000
+            } else {
+                5_000
+            },
+            pd_pps_5a: current_flags1 & (1 << 0) != 0,
+            type_c_broadcast_ma: if current_flags1 & (1 << 1) != 0 {
+                1_500
+            } else {
+                500
+            },
+            scp_limit_ma: unpack_scp_limit((current_flags1 >> 2) & 0x03)?,
+            fcp_afc_sfcp_limit_ma: if current_flags1 & (1 << 4) != 0 {
+                2_250
+            } else {
+                3_250
+            },
+        },
+        fast_charge: UsbCFastChargeConfig {
+            qc20_20v_enabled: fast_charge_flags & (1 << 0) != 0,
+            qc30_20v_enabled: fast_charge_flags & (1 << 1) != 0,
+            pe20_20v_enabled: fast_charge_flags & (1 << 2) != 0,
+            non_pd_12v_enabled: fast_charge_flags & (1 << 3) != 0,
+        },
+    })
+}
+
+fn pack_scp_limit(value: u16) -> u8 {
+    match value {
+        5_000 => 0,
+        4_000 => 1,
+        2_000 => 2,
+        _ => 0,
+    }
+}
+
+fn unpack_scp_limit(bits: u8) -> Option<u16> {
+    match bits {
+        0 => Some(5_000),
+        1 => Some(4_000),
+        2 => Some(2_000),
+        _ => None,
     }
 }
 
@@ -213,6 +305,22 @@ mod tests {
                 current_limit_ma: 3_000,
                 usb_c_path_mode: ManualUsbCPathMode::Force,
             },
+            capability: UsbCCapabilityConfig {
+                current: UsbCCurrentLimitConfig {
+                    pps3_limit_ma: 3_000,
+                    pd_pps_5a: true,
+                    type_c_broadcast_ma: 1_500,
+                    scp_limit_ma: 4_000,
+                    fcp_afc_sfcp_limit_ma: 2_250,
+                },
+                fast_charge: UsbCFastChargeConfig {
+                    qc20_20v_enabled: false,
+                    qc30_20v_enabled: true,
+                    pe20_20v_enabled: false,
+                    non_pd_12v_enabled: true,
+                },
+                ..PowerConfig::defaults().capability
+            },
             ..PowerConfig::defaults()
         };
         let mut record = [0u8; POWER_SETTINGS_RECORD_LEN];
@@ -245,6 +353,26 @@ mod tests {
         assert_eq!(decoded.light_load_mode, LightLoadMode::Pfm);
         assert_eq!(decoded.tps_mode, TpsMode::Manual);
         assert_eq!(decoded.manual.voltage_mv, 9_000);
+    }
+
+    #[test]
+    fn power_config_defaults_new_fields_for_v1_legacy_record_bytes() {
+        let config = PowerConfig::defaults();
+        let mut record = [0u8; POWER_SETTINGS_RECORD_LEN];
+        record[..POWER_SETTINGS_MAGIC.len()].copy_from_slice(POWER_SETTINGS_MAGIC);
+        record[POWER_SETTINGS_MAGIC.len()] = 1;
+        encode_power_config(&mut record, config);
+
+        let decoded = decode_power_config(&record).expect("legacy record should decode");
+        assert_eq!(decoded.capability.current.pps3_limit_ma, 5_000);
+        assert!(!decoded.capability.current.pd_pps_5a);
+        assert_eq!(decoded.capability.current.type_c_broadcast_ma, 500);
+        assert_eq!(decoded.capability.current.scp_limit_ma, 5_000);
+        assert_eq!(decoded.capability.current.fcp_afc_sfcp_limit_ma, 3_250);
+        assert!(decoded.capability.fast_charge.qc20_20v_enabled);
+        assert!(decoded.capability.fast_charge.qc30_20v_enabled);
+        assert!(decoded.capability.fast_charge.pe20_20v_enabled);
+        assert!(decoded.capability.fast_charge.non_pd_12v_enabled);
     }
 
     #[test]

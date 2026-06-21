@@ -244,6 +244,7 @@ pub struct ApiPdSnapshot {
     pub sw2303_vbus_mv: Option<u32>,
     pub sw2303_last_valid_mv: Option<u32>,
     pub sw2303_last_valid_ma: Option<u32>,
+    pub active_protocol: Option<ApiActiveProtocol>,
     pub usb_c_display_mode: NormalUiPortMode,
     pub usb_c_display_badge: NormalUiPortBadge,
     pub usb_c_display_measurements_visible: bool,
@@ -274,6 +275,7 @@ impl ApiPdSnapshot {
             sw2303_vbus_mv: None,
             sw2303_last_valid_mv: None,
             sw2303_last_valid_ma: None,
+            active_protocol: None,
             usb_c_display_mode: NormalUiPortMode::Off,
             usb_c_display_badge: NormalUiPortBadge::Off,
             usb_c_display_measurements_visible: false,
@@ -286,6 +288,37 @@ impl ApiPdSnapshot {
             tps_iout_limit_readback_enabled: None,
             runtime_recovery_count: 0,
             sample_uptime_ms: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiActiveProtocol {
+    Pd,
+    Pps,
+    Qc20,
+    Qc30,
+    Fcp,
+    Afc,
+    Scp,
+    Pe20,
+    Bc12,
+    Sfcp,
+}
+
+impl ApiActiveProtocol {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pd => "pd",
+            Self::Pps => "pps",
+            Self::Qc20 => "qc20",
+            Self::Qc30 => "qc30",
+            Self::Fcp => "fcp",
+            Self::Afc => "afc",
+            Self::Scp => "scp",
+            Self::Pe20 => "pe20",
+            Self::Bc12 => "bc12",
+            Self::Sfcp => "sfcp",
         }
     }
 }
@@ -930,6 +963,7 @@ mod tests {
             sw2303_vbus_mv: Some(8_950),
             sw2303_last_valid_mv: Some(9_000),
             sw2303_last_valid_ma: Some(3_000),
+            active_protocol: Some(ApiActiveProtocol::Pd),
             usb_c_display_mode: NormalUiPortMode::Pd,
             usb_c_display_badge: NormalUiPortBadge::VoltageMv(9_000),
             usb_c_display_measurements_visible: true,

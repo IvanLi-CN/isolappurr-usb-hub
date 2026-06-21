@@ -22,12 +22,14 @@ export type DeviceSummaryCardProps = {
 
 function connectionBadge(state: ConnectionState): {
   bg: string;
+  border: string;
   text: string;
   width: string;
 } {
   if (state === "online") {
     return {
       bg: "bg-[var(--badge-success-bg)]",
+      border: "border-[var(--badge-success-border)]",
       text: "text-[var(--badge-success-text)]",
       width: "w-[72px]",
     };
@@ -35,12 +37,14 @@ function connectionBadge(state: ConnectionState): {
   if (state === "offline") {
     return {
       bg: "bg-[var(--badge-error-bg)]",
+      border: "border-[var(--badge-error-border)]",
       text: "text-[var(--badge-error-text)]",
       width: "w-[72px]",
     };
   }
   return {
     bg: "bg-[var(--badge-warning-bg)]",
+    border: "border-[var(--badge-warning-border)]",
     text: "text-[var(--badge-warning-text)]",
     width: "w-[96px]",
   };
@@ -76,8 +80,10 @@ export function DeviceSummaryCard({
             <div
               className={[
                 "flex h-6 items-center justify-center rounded-full",
+                "border",
                 badge.width,
                 badge.bg,
+                badge.border,
                 badge.text,
                 "text-[12px] font-semibold",
               ].join(" ")}

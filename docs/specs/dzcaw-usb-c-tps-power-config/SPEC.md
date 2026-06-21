@@ -125,6 +125,24 @@ for diagnostics.
 - Web UI protocol cards MUST hide the negotiation badge when an individual card
   is too narrow to fit the protocol name, badge, state, and toggle without a
   cramped layout.
+- Web UI protocol cards MUST use card click as the enable/disable action and
+  MUST NOT require a separate switch control inside the card.
+- Web UI protocol cards MUST stay compact enough to fit within the existing
+  Power panel without forcing the protocol matrix to dominate the page height.
+- Web UI protocol cards MUST expose saved per-protocol option selectors inline
+  when that protocol has additional persisted capability settings, including:
+  `PPS`, `PPS3`, `PD/PPS 5 A`, fixed PD PDOs, `Type-C` current, `SCP` current,
+  `FCP/AFC/SFCP` current, `QC2.0 20 V`, `QC3.0 20 V`, `PE2.0 20 V`, and
+  non-PD `12 V`.
+- Web UI protocol cards MUST visually distinguish the currently active
+  negotiated protocol from merely enabled protocols by consuming live PD
+  diagnostics `active_protocol` instead of inferring it only from saved config.
+- Web UI MUST reserve `success` semantics for real positive device or port
+  state, and MUST use the shared warm-amber `secondary` informational tone for
+  active protocol / live emphasis instead of reusing the success fill.
+- Dashboard, device cards, demo-panel badges, idle-bias summary cards, and
+  toast success states MUST use the shared bordered semantic badge/surface
+  tokens so bright and dark themes keep a consistent hierarchy.
 - Manual TPS output live semantics MUST come from the shared USB-C display
   contract: `manual + output_enabled` sets the left USB-C badge to the manual
   TPS setpoint formatted as `x.xxV`; `force` fixes the right badge to `FOCUS`;
@@ -236,6 +254,9 @@ for diagnostics.
 - Given the narrow power panel story, when a protocol card becomes too narrow,
   then its negotiation badge is hidden without clipping the protocol card
   content or toggle.
+- Given multiple protocols stay enabled, when live PD diagnostics report one
+  `active_protocol`, then only that protocol card is visually highlighted as
+  active while the remaining enabled cards keep the non-active enabled style.
 - Given the GC9307 settings menu, when the owner opens Power Preset, then the
   screen shows the current preset and a second confirm restores defaults.
 - Given the GC9307 settings menu, when the owner opens Power Advanced, then the
@@ -285,6 +306,58 @@ for diagnostics.
   job, host/CLI/Web contracts, and calibration UI.
 
 ## Visual Evidence
+
+- source_type: storybook_canvas
+  story_id_or_title: `Brand/ThemePalette/Review`
+  state: light theme token review with warm-amber `secondary`
+  requested_viewport: `1440x2000`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the formal light-theme token palette keeps `primary`
+  on task actions while the warm-amber `secondary` tone is reserved for live
+  protocol emphasis and not confused with success semantics.
+
+![Theme palette light review current](./assets/theme-palette-light-current.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Brand/ThemePalette/Review`
+  state: dark theme token review with warm-amber `secondary`
+  requested_viewport: `1440x2000`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the dark-theme token palette preserves the same
+  warm-amber active emphasis and keeps semantic status colors separate from the
+  active protocol lift.
+
+![Theme palette dark review current](./assets/theme-palette-dark-current.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CalibrationApplied`
+  state: semantic surfaces on power page summaries
+  requested_viewport: `1440x1500`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the idle-bias summary cards now consume the shared
+  semantic surface tokens instead of ad-hoc tinted fills, keeping the panel
+  aligned with the rest of the page hierarchy.
+
+![Device power panel semantic surfaces current](./assets/device-power-panel-semantic-surfaces-current.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/Default`
+  state: bordered semantic badges on dashboard and USB-C live header
+  requested_viewport: `1440x1400`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the dashboard status chips, success surfaces, and
+  USB-C live header now share the bordered semantic badge treatment while the
+  live informational emphasis remains visually distinct from success state.
+
+![Device dashboard semantic badges current](./assets/device-dashboard-semantic-badges-current.png)
 
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/ManualForceConfigOnly`
@@ -357,6 +430,71 @@ PR: include
 
 PR: include
 ![Device power panel fpwm saved live](./assets/device-power-panel-fpwm-saved-live.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/Default`
+  state: compact full panel with inline protocol options
+  requested_viewport: `1440x1400`
+  viewport_strategy: `playwright-local-preview`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the protocol area is tighter than the previous
+  switch-based layout while keeping inline current and fast-charge selectors
+  inside the same saved power-config surface.
+
+![Device power panel compact protocol layout](./assets/device-power-panel-protocol-compact.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/Default`
+  state: protocol grid active highlight and inline selectors
+  requested_viewport: `1440x1400`
+  viewport_strategy: `playwright-local-preview`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies card-click toggles, active-protocol highlight, and
+  always-visible per-protocol selectors for current and extra fast-charge
+  options inside the compact grid.
+
+![Device power panel compact protocol grid](./assets/device-power-panel-protocol-grid.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ManualForceConfigOnly`
+  state: dark theme protocol grid with refined active highlight
+  requested_viewport: `1280x800`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies dark mode keeps the live protocol card separated by a
+  cleaner warm-amber lift, while enabled non-live cards stay subdued instead of
+  turning muddy against the dark panel surface.
+
+![Device power panel protocol grid dark](./assets/device-power-panel-protocol-cards-dark.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/Default`
+  state: final bright-theme compact protocol grid with corrected success badge contrast
+  requested_viewport: `1440x1400`
+  viewport_strategy: `playwright-local-preview`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the final compact protocol layout keeps the larger
+  inline selectors while the bright-theme success badge and card hierarchy stay
+  readable after the accessibility polish pass.
+
+![Device power panel final bright protocol layout](./assets/device-power-panel-protocol-final-light.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/Default`
+  state: final dark-theme compact protocol grid with touch-safe inline selectors
+  requested_viewport: `1440x1400`
+  viewport_strategy: `playwright-local-preview`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the final dark-theme protocol grid preserves the live
+  active-card emphasis while the inline option controls remain compact on
+  desktop and move to touch-safe hit areas on narrow screens.
+
+![Device power panel final dark protocol layout](./assets/device-power-panel-protocol-final-dark.png)
 
 - source_type: live_hil_web_page
   story_id_or_title: `device 856a141cdbd4 power page`

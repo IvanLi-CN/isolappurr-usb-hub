@@ -3,6 +3,7 @@ import { expect, userEvent, within } from "@storybook/test";
 
 import type {
   IdleBiasResponse,
+  PdDiagnosticsResponse,
   PowerConfigResponse,
   Result,
 } from "../../domain/deviceApi";
@@ -35,6 +36,19 @@ const manualConfig: PowerConfigResponse = {
     pd: {
       pps: true,
       fixed_voltages_mv: [9000, 12000, 15000, 20000],
+    },
+    current: {
+      pps3_limit_ma: 5000,
+      pd_pps_5a: false,
+      type_c_broadcast_ma: 500,
+      scp_limit_ma: 5000,
+      fcp_afc_sfcp_limit_ma: 3250,
+    },
+    fast_charge: {
+      qc20_20v_enabled: true,
+      qc30_20v_enabled: true,
+      pe20_20v_enabled: true,
+      non_pd_12v_enabled: true,
     },
   },
   manual: {
@@ -191,6 +205,76 @@ const usbCState: PortState = {
   busy: false,
 };
 
+const pdDiagnostics: PdDiagnosticsResponse = {
+  usb_c_power_enabled: true,
+  sw2303_i2c_allowed: true,
+  sw2303_profile_applied: true,
+  sw2303_stable_reads: 32,
+  sw2303_error_latched: false,
+  tps_error_latched: false,
+  sw2303_readback_config: {
+    available: true,
+    matches_config: true,
+    power_watts: 100,
+    protocols: {
+      pd: true,
+      qc20: true,
+      qc30: true,
+      fcp: true,
+      afc: true,
+      scp: true,
+      pe20: true,
+      bc12: true,
+      sfcp: true,
+    },
+    pd: {
+      pps: true,
+      fixed_voltages_mv: [9000, 12000, 15000, 20000],
+    },
+    current: {
+      pps3_limit_ma: 5000,
+      pd_pps_5a: false,
+      type_c_broadcast_ma: 500,
+      scp_limit_ma: 5000,
+      fcp_afc_sfcp_limit_ma: 3250,
+    },
+    fast_charge: {
+      qc20_20v_enabled: true,
+      qc30_20v_enabled: true,
+      pe20_20v_enabled: true,
+      non_pd_12v_enabled: true,
+    },
+  },
+  sw2303_request: { mv: 20000, ma: 3000 },
+  sw2303_vbus_mv: 20060,
+  sw2303_last_valid_request: { mv: 20000, ma: 3000 },
+  active_protocol: "pd",
+  display: {
+    mode: { kind: "pd", label: "PD" },
+    measurements_visible: true,
+    badge: { kind: "on", label: "ON" },
+  },
+  usb_c_actual: {
+    status: "ok",
+    voltage_mv: 20060,
+    current_ma: 30,
+    power_mw: 540,
+    sample_uptime_ms: 1000,
+  },
+  tps_setpoint: {
+    output_enabled: true,
+    discharge_enabled: false,
+    mv: 20000,
+    iout_limit_ma: 3000,
+  },
+  tps_iout_limit_readback: {
+    enabled: true,
+    ma: 3000,
+  },
+  runtime_recovery_count: 0,
+  sample_uptime_ms: 1000,
+};
+
 const meta: Meta<typeof DevicePowerPanel> = {
   title: "Panels/DevicePowerPanel",
   component: DevicePowerPanel,
@@ -220,6 +304,7 @@ const defaultArgs: Story["args"] = {
   localAdvancedLocked: false,
   loadPowerConfig: () => ok(manualConfig),
   loadIdleBias: () => okIdle(idleBiasMissing),
+  loadPdDiagnostics: () => Promise.resolve({ ok: true, value: pdDiagnostics }),
   savePowerConfig: () => ok(manualConfig),
   restorePowerDefaults: () => ok(autoConfig),
   setPowerLock: () => ok(manualConfig),
@@ -237,6 +322,7 @@ export const Default: Story = {
   args: defaultArgs,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const portal = within(canvasElement.ownerDocument.body);
     await expect(
       await canvas.findByTestId("PD-negotiation-badge"),
     ).toBeVisible();
@@ -250,6 +336,11 @@ export const Default: Story = {
       await canvas.findByRole("button", { name: "Run calibration" }),
     ).toBeVisible();
     await expect(await canvas.findByText("Missing")).toBeVisible();
+    await userEvent.click(
+      await canvas.findByRole("button", { name: /4 PDO/i }),
+    );
+    await expect(await portal.findByText("9V")).toBeVisible();
+    await expect(await portal.findByText("12V")).toBeVisible();
   },
 };
 
@@ -508,6 +599,9 @@ export const Narrow: Story = {
     await expect(
       canvas.queryByTestId("QC2-negotiation-badge"),
     ).not.toBeVisible();
+    await expect(
+      await canvas.findByRole("button", { name: /4 PDO/i }),
+    ).toBeVisible();
   },
 };
 

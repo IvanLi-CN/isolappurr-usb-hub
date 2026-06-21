@@ -317,9 +317,11 @@ where
     if record.iter().all(|b| *b == 0x00 || *b == 0xff) {
         return Ok(None);
     }
-    if &record[..POWER_SETTINGS_MAGIC.len()] != POWER_SETTINGS_MAGIC
-        || record[POWER_SETTINGS_MAGIC.len()] != POWER_SETTINGS_VERSION
-    {
+    if &record[..POWER_SETTINGS_MAGIC.len()] != POWER_SETTINGS_MAGIC {
+        return Err(ProvisioningError::InvalidRecord);
+    }
+    let version = record[POWER_SETTINGS_MAGIC.len()];
+    if version != 1 && version != POWER_SETTINGS_VERSION {
         return Err(ProvisioningError::InvalidRecord);
     }
 

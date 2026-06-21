@@ -103,7 +103,14 @@ pub fn write_pd_diagnostics_json(
     write_json_u32_or_null(body, pd.sw2303_last_valid_mv);
     let _ = body.push_str(",\"ma\":");
     write_json_u32_or_null(body, pd.sw2303_last_valid_ma);
-    let _ = body.push_str("},\"display\":{");
+    let _ = body.push_str("},\"active_protocol\":");
+    match pd.active_protocol {
+        Some(protocol) => write_json_string(body, protocol.as_str()),
+        None => {
+            let _ = body.push_str("null");
+        }
+    }
+    let _ = body.push_str(",\"display\":{");
     write_usb_c_display_json(body, pd);
     let _ = body.push_str("},\"usb_c_actual\":");
     write_port_telemetry_json(body, &pd.usb_c_actual);
@@ -288,7 +295,25 @@ fn write_sw2303_readback_json(
     write_fixed_voltage_json(body, readback.fixed_12v.unwrap_or(false), 12000);
     write_fixed_voltage_json(body, readback.fixed_15v.unwrap_or(false), 15000);
     write_fixed_voltage_json(body, readback.fixed_20v.unwrap_or(false), 20000);
-    let _ = body.push_str("]}}");
+    let _ = body.push_str("]},\"current\":{\"pps3_limit_ma\":");
+    write_json_u32_or_null(body, readback.pps3_limit_ma.map(u32::from));
+    let _ = body.push_str(",\"pd_pps_5a\":");
+    write_json_bool_or_null(body, readback.pd_pps_5a);
+    let _ = body.push_str(",\"type_c_broadcast_ma\":");
+    write_json_u32_or_null(body, readback.type_c_broadcast_ma.map(u32::from));
+    let _ = body.push_str(",\"scp_limit_ma\":");
+    write_json_u32_or_null(body, readback.scp_limit_ma.map(u32::from));
+    let _ = body.push_str(",\"fcp_afc_sfcp_limit_ma\":");
+    write_json_u32_or_null(body, readback.fcp_afc_sfcp_limit_ma.map(u32::from));
+    let _ = body.push_str("},\"fast_charge\":{\"qc20_20v_enabled\":");
+    write_json_bool_or_null(body, readback.qc20_20v_enabled);
+    let _ = body.push_str(",\"qc30_20v_enabled\":");
+    write_json_bool_or_null(body, readback.qc30_20v_enabled);
+    let _ = body.push_str(",\"pe20_20v_enabled\":");
+    write_json_bool_or_null(body, readback.pe20_20v_enabled);
+    let _ = body.push_str(",\"non_pd_12v_enabled\":");
+    write_json_bool_or_null(body, readback.non_pd_12v_enabled);
+    let _ = body.push_str("}}");
 }
 
 pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
@@ -326,9 +351,29 @@ pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
     write_fixed_voltage_json(body, cfg.capability.fixed_12v, 12000);
     write_fixed_voltage_json(body, cfg.capability.fixed_15v, 15000);
     write_fixed_voltage_json(body, cfg.capability.fixed_20v, 20000);
+    let _ = body.push_str("]},\"current\":{");
     let _ = core::write!(
         body,
-        "]}}}},\"manual\":{{\"voltage_mv\":{},\"current_limit_ma\":{},\"usb_c_path_mode\":\"{}\",\"path_policy\":\"{}\"}},\"lock\":",
+        "\"pps3_limit_ma\":{},\"pd_pps_5a\":{},\"type_c_broadcast_ma\":{},\"scp_limit_ma\":{},\"fcp_afc_sfcp_limit_ma\":{}",
+        cfg.capability.current.pps3_limit_ma,
+        cfg.capability.current.pd_pps_5a,
+        cfg.capability.current.type_c_broadcast_ma,
+        cfg.capability.current.scp_limit_ma,
+        cfg.capability.current.fcp_afc_sfcp_limit_ma,
+    );
+    let _ = body.push_str("},\"fast_charge\":{");
+    let _ = core::write!(
+        body,
+        "\"qc20_20v_enabled\":{},\"qc30_20v_enabled\":{},\"pe20_20v_enabled\":{},\"non_pd_12v_enabled\":{}",
+        cfg.capability.fast_charge.qc20_20v_enabled,
+        cfg.capability.fast_charge.qc30_20v_enabled,
+        cfg.capability.fast_charge.pe20_20v_enabled,
+        cfg.capability.fast_charge.non_pd_12v_enabled,
+    );
+    let _ = body.push_str("}}");
+    let _ = core::write!(
+        body,
+        ",\"manual\":{{\"voltage_mv\":{},\"current_limit_ma\":{},\"usb_c_path_mode\":\"{}\",\"path_policy\":\"{}\"}},\"lock\":",
         cfg.manual.voltage_mv,
         cfg.manual.current_limit_ma,
         cfg.manual.usb_c_path_mode.as_str(),

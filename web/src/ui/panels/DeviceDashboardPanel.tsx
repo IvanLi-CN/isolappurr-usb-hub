@@ -37,12 +37,14 @@ function mergedPortState(
 
 function statusBadge(state: "online" | "offline" | "unknown"): {
   bg: string;
+  border: string;
   text: string;
   width: string;
 } {
   if (state === "online") {
     return {
       bg: "bg-[var(--badge-success-bg)]",
+      border: "border-[var(--badge-success-border)]",
       text: "text-[var(--badge-success-text)]",
       width: "w-[96px]",
     };
@@ -50,12 +52,14 @@ function statusBadge(state: "online" | "offline" | "unknown"): {
   if (state === "offline") {
     return {
       bg: "bg-[var(--badge-error-bg)]",
+      border: "border-[var(--badge-error-border)]",
       text: "text-[var(--badge-error-text)]",
       width: "w-[96px]",
     };
   }
   return {
     bg: "bg-[var(--badge-warning-bg)]",
+    border: "border-[var(--badge-warning-border)]",
     text: "text-[var(--badge-warning-text)]",
     width: "w-[96px]",
   };
@@ -63,6 +67,7 @@ function statusBadge(state: "online" | "offline" | "unknown"): {
 
 function upstreamBadge(upstreamConnected: boolean | null): {
   bg: string;
+  border: string;
   text: string;
   width: string;
   label: string;
@@ -70,6 +75,7 @@ function upstreamBadge(upstreamConnected: boolean | null): {
   if (upstreamConnected === null) {
     return {
       bg: "bg-[var(--badge-warning-bg)]",
+      border: "border-[var(--badge-warning-border)]",
       text: "text-[var(--badge-warning-text)]",
       width: "w-[96px]",
       label: "HOST —",
@@ -78,6 +84,7 @@ function upstreamBadge(upstreamConnected: boolean | null): {
   if (upstreamConnected) {
     return {
       bg: "bg-[var(--badge-success-bg)]",
+      border: "border-[var(--badge-success-border)]",
       text: "text-[var(--badge-success-text)]",
       width: "w-[96px]",
       label: "HOST LINK",
@@ -85,6 +92,7 @@ function upstreamBadge(upstreamConnected: boolean | null): {
   }
   return {
     bg: "bg-[var(--badge-error-bg)]",
+    border: "border-[var(--badge-error-border)]",
     text: "text-[var(--badge-error-text)]",
     width: "w-[96px]",
     label: "NO HOST",
@@ -96,6 +104,7 @@ function isolatedBadge(
   labels: { unknown: string; on: string; off: string },
 ): {
   bg: string;
+  border: string;
   text: string;
   width: string;
   label: string;
@@ -103,6 +112,7 @@ function isolatedBadge(
   if (value === null) {
     return {
       bg: "bg-[var(--badge-warning-bg)]",
+      border: "border-[var(--badge-warning-border)]",
       text: "text-[var(--badge-warning-text)]",
       width: "w-[112px]",
       label: labels.unknown,
@@ -111,6 +121,7 @@ function isolatedBadge(
   if (value) {
     return {
       bg: "bg-[var(--badge-success-bg)]",
+      border: "border-[var(--badge-success-border)]",
       text: "text-[var(--badge-success-text)]",
       width: "w-[112px]",
       label: labels.on,
@@ -118,6 +129,7 @@ function isolatedBadge(
   }
   return {
     bg: "bg-[var(--badge-error-bg)]",
+    border: "border-[var(--badge-error-border)]",
     text: "text-[var(--badge-error-text)]",
     width: "w-[112px]",
     label: labels.off,
@@ -126,6 +138,7 @@ function isolatedBadge(
 
 function isolatedFaultBadge(value: boolean | null): {
   bg: string;
+  border: string;
   text: string;
   width: string;
   label: string;
@@ -133,6 +146,7 @@ function isolatedFaultBadge(value: boolean | null): {
   if (value === null) {
     return {
       bg: "bg-[var(--badge-warning-bg)]",
+      border: "border-[var(--badge-warning-border)]",
       text: "text-[var(--badge-warning-text)]",
       width: "w-[112px]",
       label: "ISO FAULT —",
@@ -141,6 +155,7 @@ function isolatedFaultBadge(value: boolean | null): {
   if (value) {
     return {
       bg: "bg-[var(--badge-error-bg)]",
+      border: "border-[var(--badge-error-border)]",
       text: "text-[var(--badge-error-text)]",
       width: "w-[112px]",
       label: "ISO FAULT",
@@ -148,6 +163,7 @@ function isolatedFaultBadge(value: boolean | null): {
   }
   return {
     bg: "bg-[var(--badge-success-bg)]",
+    border: "border-[var(--badge-success-border)]",
     text: "text-[var(--badge-success-text)]",
     width: "w-[112px]",
     label: "ISO OK",
@@ -183,17 +199,17 @@ function liveModeTone(
   if (kind === "off") {
     return "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]";
   }
-  return "border-[var(--badge-warning-bg)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]";
+  return "border-[var(--protocol-live-border)] bg-[var(--protocol-live-bg)] text-[var(--protocol-live-text)]";
 }
 
 function liveBadgeTone(
   kind: PdDiagnosticsResponse["display"]["badge"]["kind"],
 ): string {
   if (kind === "focus") {
-    return "border-[var(--badge-warning-bg)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]";
+    return "border-[var(--protocol-live-border)] bg-[var(--protocol-live-bg)] text-[var(--protocol-live-text)]";
   }
   if (kind === "on" || kind === "voltage") {
-    return "border-[var(--badge-success-bg)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]";
+    return "border-[var(--surface-success-ring)] bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]";
   }
   if (kind === "off") {
     return "border-[var(--btn-disabled-fill-soft)] bg-[var(--panel)] text-[var(--muted)]";
@@ -362,9 +378,10 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
             <div className="flex flex-wrap items-center gap-2">
               <div
                 className={[
-                  "flex h-[26px] items-center justify-center rounded-full",
+                  "flex h-[26px] items-center justify-center rounded-full border",
                   badge.width,
                   badge.bg,
+                  badge.border,
                   badge.text,
                   "text-[12px] font-semibold",
                 ].join(" ")}
@@ -373,9 +390,10 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
               </div>
               <div
                 className={[
-                  "flex h-[26px] items-center justify-center rounded-full",
+                  "flex h-[26px] items-center justify-center rounded-full border",
                   upstream.width,
                   upstream.bg,
+                  upstream.border,
                   upstream.text,
                   "text-[12px] font-semibold",
                 ].join(" ")}
@@ -384,9 +402,10 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
               </div>
               <div
                 className={[
-                  "flex h-[26px] items-center justify-center rounded-full",
+                  "flex h-[26px] items-center justify-center rounded-full border",
                   isolatedFault.width,
                   isolatedFault.bg,
+                  isolatedFault.border,
                   isolatedFault.text,
                   "text-[11px] font-semibold",
                 ].join(" ")}
@@ -395,9 +414,10 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
               </div>
               <div
                 className={[
-                  "flex h-[26px] items-center justify-center rounded-full",
+                  "flex h-[26px] items-center justify-center rounded-full border",
                   isolatedReady.width,
                   isolatedReady.bg,
+                  isolatedReady.border,
                   isolatedReady.text,
                   "text-[11px] font-semibold",
                 ].join(" ")}

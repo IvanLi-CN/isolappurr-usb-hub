@@ -43,6 +43,12 @@ fn power_config_human_output_avoids_chip_names() {
                 "type_c_broadcast_ma": 500,
                 "scp_limit_ma": 5000,
                 "fcp_afc_sfcp_limit_ma": 3250
+            },
+            "fast_charge": {
+                "qc20_20v_enabled": true,
+                "qc30_20v_enabled": false,
+                "pe20_20v_enabled": true,
+                "non_pd_12v_enabled": false
             }
         },
         "manual": {
@@ -98,6 +104,12 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
                     "type_c_broadcast_ma": 500,
                     "scp_limit_ma": 5000,
                     "fcp_afc_sfcp_limit_ma": 3250
+                },
+                "fast_charge": {
+                    "qc20_20v_enabled": true,
+                    "qc30_20v_enabled": false,
+                    "pe20_20v_enabled": true,
+                    "non_pd_12v_enabled": false
                 }
             },
             "manual": {
@@ -160,12 +172,19 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
                     "type_c_broadcast_ma": 500,
                     "scp_current_limit_ma": 5000,
                     "fcp_afc_sfcp_limit_ma": 3250
+                },
+                "fast_charge": {
+                    "qc20_20v_enabled": true,
+                    "qc30_20v_enabled": false,
+                    "pe20_20v_enabled": true,
+                    "non_pd_12v_enabled": false
                 }
             },
             "sw2303_request": {
                 "mv": 20000,
                 "ma": 3250
             },
+            "active_protocol": "qc30",
             "sw2303_last_valid_request": {
                 "mv": 20000,
                 "ma": 3250
@@ -209,7 +228,9 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
     assert!(rendered.contains("Corrected telemetry: 20000 mV @ 3210 mA / 64200 mW"));
     assert!(rendered.contains("Capability state: applied"));
     assert!(rendered.contains("Advertised source: 100 W"));
+    assert!(rendered.contains("Fast-charge profile: QC2.0 20 V enabled, QC3.0 20 V disabled, PE2.0 20 V enabled, non-PD 12 V disabled"));
     assert!(rendered.contains("Negotiated request: 20000 mV @ 3250 mA"));
+    assert!(rendered.contains("Active protocol: QC3.0"));
     assert!(rendered.contains("TPS IOUT_LIMIT: 3250 mA"));
     assert!(rendered.contains("Idle-bias dataset: valid (3000..21000 mV, 37 points, step 500 mV)"));
     assert!(rendered.contains("Idle-bias correction: enabled"));
@@ -354,6 +375,12 @@ fn power_config_deserializes_when_current_profile_is_missing() {
             "pd": {
                 "pps": true,
                 "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+            },
+            "fast_charge": {
+                "qc20_20v_enabled": true,
+                "qc30_20v_enabled": false,
+                "pe20_20v_enabled": true,
+                "non_pd_12v_enabled": false
             }
         },
         "manual": {
@@ -372,6 +399,10 @@ fn power_config_deserializes_when_current_profile_is_missing() {
     assert_eq!(parsed.capability.current.type_c_broadcast_ma, 500);
     assert_eq!(parsed.capability.current.scp_limit_ma, 5000);
     assert_eq!(parsed.capability.current.fcp_afc_sfcp_limit_ma, 3250);
+    assert!(parsed.capability.fast_charge.qc20_20v_enabled);
+    assert!(!parsed.capability.fast_charge.qc30_20v_enabled);
+    assert!(parsed.capability.fast_charge.pe20_20v_enabled);
+    assert!(!parsed.capability.fast_charge.non_pd_12v_enabled);
 }
 
 #[test]
@@ -401,6 +432,12 @@ fn power_diagnostics_deserializes_when_readback_current_is_missing() {
             "pd": {
                 "pps": true,
                 "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+            },
+            "fast_charge": {
+                "qc20_20v_enabled": true,
+                "qc30_20v_enabled": false,
+                "pe20_20v_enabled": true,
+                "non_pd_12v_enabled": false
             }
         },
         "sw2303_request": {
@@ -455,6 +492,22 @@ fn power_diagnostics_deserializes_when_readback_current_is_missing() {
     assert_eq!(
         parsed.sw2303_readback_config.current.fcp_afc_sfcp_limit_ma,
         None
+    );
+    assert_eq!(
+        parsed.sw2303_readback_config.fast_charge.qc20_20v_enabled,
+        Some(true)
+    );
+    assert_eq!(
+        parsed.sw2303_readback_config.fast_charge.qc30_20v_enabled,
+        Some(false)
+    );
+    assert_eq!(
+        parsed.sw2303_readback_config.fast_charge.pe20_20v_enabled,
+        Some(true)
+    );
+    assert_eq!(
+        parsed.sw2303_readback_config.fast_charge.non_pd_12v_enabled,
+        Some(false)
     );
     assert_eq!(parsed.sw2303_vbus_mv, Some(11980));
     assert!(

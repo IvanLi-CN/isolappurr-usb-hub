@@ -1,5 +1,32 @@
 # History
 
+## 2026-06-19
+
+- Shrunk the Web protocol matrix so the capability area stays compact and
+  card-first instead of spending vertical space on a second switch control.
+- Changed Web protocol cards to toggle directly on click, while moving all
+  persisted protocol-specific current and high-voltage options into inline
+  compact selectors.
+- Exposed the previously hardcoded SW2303 current and fast-charge axes through
+  firmware, HTTP/USB JSONL, Web, and owner CLI so read/modify/write flows no
+  longer drop those settings.
+- Added live `active_protocol` diagnostics and used that signal to highlight
+  the currently negotiated protocol separately from merely enabled protocols.
+- Tightened the bright-theme success badge contrast, moved protocol option
+  menus out of the clipped card stacking context, and restored touch-safe
+  protocol controls on narrow screens without undoing the compact desktop
+  layout.
+
+## 2026-06-21
+
+- Formalized the warm-amber `secondary` theme token as the Web informational
+  highlight for the live active protocol instead of reusing success semantics.
+- Added a `Brand/ThemePalette` Storybook review surface so the light/dark token
+  palette and active-card emphasis can be audited in one stable place.
+- Unified dashboard, device-card, demo-sheet, port-card, idle-bias summary,
+  and toast semantic badges around bordered state surfaces so both themes keep
+  a cleaner hierarchy between live emphasis and success status.
+
 ## 2026-06-03
 
 - Added the SW2303-only power configuration topic.

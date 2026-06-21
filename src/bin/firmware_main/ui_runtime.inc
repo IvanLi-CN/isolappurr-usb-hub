@@ -119,6 +119,32 @@ const TOAST_USB_C_DATA_ON: [[u8; 13]; 3] =
     [*b"USB-C DATAON ", *b"DONE         ", *b"             "];
 const TOAST_USB_C_PWR_OFF: [[u8; 13]; 3] =
     [*b"USB-C PWROFF ", *b"DONE         ", *b"             "];
+
+#[cfg(feature = "net_http")]
+fn api_active_protocol(
+    request: Option<isolapurr_usb_hub::pd_i2c::PowerRequest>,
+) -> Option<net::ApiActiveProtocol> {
+    let request = request?;
+    match request.negotiated_protocol {
+        Some(sw2303::ProtocolType::PD) => {
+            if request.v_req_mv >= 3_300 && request.v_req_mv != 5_000 && request.v_req_mv % 100 != 0
+            {
+                Some(net::ApiActiveProtocol::Pps)
+            } else {
+                Some(net::ApiActiveProtocol::Pd)
+            }
+        }
+        Some(sw2303::ProtocolType::QC20) => Some(net::ApiActiveProtocol::Qc20),
+        Some(sw2303::ProtocolType::QC30) => Some(net::ApiActiveProtocol::Qc30),
+        Some(sw2303::ProtocolType::FCP) => Some(net::ApiActiveProtocol::Fcp),
+        Some(sw2303::ProtocolType::AFC) => Some(net::ApiActiveProtocol::Afc),
+        Some(sw2303::ProtocolType::SCP) => Some(net::ApiActiveProtocol::Scp),
+        Some(sw2303::ProtocolType::PE20) => Some(net::ApiActiveProtocol::Pe20),
+        Some(sw2303::ProtocolType::BC12) => Some(net::ApiActiveProtocol::Bc12),
+        Some(sw2303::ProtocolType::SFCP) => Some(net::ApiActiveProtocol::Sfcp),
+        None => None,
+    }
+}
 const TOAST_USB_C_PWR_ON: [[u8; 13]; 3] = [*b"USB-C PWRON  ", *b"DONE         ", *b"             "];
 const TOAST_USB_C_PWR_FAIL: [[u8; 13]; 3] =
     [*b"USB-C PWRERR ", *b"RETRY        ", *b"             "];

@@ -20,6 +20,10 @@
 - Extended the existing `power/config` request and response contract with a
   top-level `light_load_mode: "pfm" | "fpwm"` field instead of introducing a
   separate route or EEPROM record.
+- Extended the persisted SW2303 capability model with explicit `current` and
+  `fast_charge` subprofiles so saved source capability now covers the hidden
+  current tiers and protocol-specific high-voltage toggles instead of relying
+  on firmware hardcoded defaults.
 - Updated the PD/TPS runtime loop so pending config writes are saved, applied,
   reflected in diagnostics, and used for SW2303 profile application.
 - Added runtime-only power actions that map the owner-facing `Power`
@@ -34,6 +38,9 @@
 - Added PD diagnostics readback for the applied TPS55288 `IOUT_LIMIT`
   register so HIL can compare requested current limit, quantized setpoint, and
   live register state without inferring the chain indirectly.
+- Added live PD diagnostics `active_protocol` so Web and owner CLI can
+  distinguish the currently negotiated protocol from the larger set of enabled
+  advertised protocols.
 - Increased the USB JSONL request frame buffer from `512` to `1024` bytes after
   HIL proved that the whole-config `power.config_set` payload now exceeds the
   old limit once capability, manual, and `light_load_mode` fields are all
@@ -73,6 +80,9 @@
   whole saved power config, mutate only explicitly provided fields such as
   `light_load_mode` / `tps_mode` / manual output / source capabilities, and
   write the merged config back through the aligned `power.config_*` contract.
+- Extended owner-facing CLI source-capability read/modify/write and TUI flows
+  to preserve and expose the new `fast_charge` capability fields instead of
+  silently dropping them on save.
 - Added `isolapurr power idle-bias show|run|clear|set --enabled <bool>` with
   interactive confirmation and `--yes` bypass handling.
 - Added `isolapurr power runtime output|discharge --enabled <bool>` so the
@@ -121,6 +131,14 @@
   current non-PD protocol set renders `DPDM`.
 - Added card-level container-query behavior so negotiation badges show only on
   protocol cards that have enough local width to keep the layout readable.
+- Reworked the protocol-card interaction so the whole card toggles
+  enable/disable, removed the nested switch control, added inline compact
+  selectors for persisted current and fast-charge options, and highlighted the
+  live active protocol from PD diagnostics without overgrowing the panel.
+- Moved the protocol option popovers to a body-level overlay so the inline
+  selectors no longer lose pointer hit-testing when cards use clipped visual
+  treatments, and raised narrow-screen hit areas to a touch-safe `44 px`
+  minimum without re-expanding the desktop grid.
 - Added a `TPS light-load mode` control to the existing Power settings panel so
   operators can switch between persisted `PFM` and `FPWM` without leaving the
   saved power-config surface.
@@ -130,6 +148,13 @@
   separate and explicit about not solving SW2303 heating.
 - Moved the `TPS light-load mode` explanatory copy into a help popover so the
   right rail stays compact without losing the board-default vs FPWM guidance.
+- Shifted the active-protocol emphasis onto the shared warm-amber
+  `secondary` token family so informational highlight no longer competes with
+  success semantics, and added a dedicated `Brand/ThemePalette` Storybook
+  review story to document that token usage in both themes.
+- Unified dashboard, device-card, port-card, demo-sheet, idle-bias summary,
+  and toast success surfaces around bordered semantic badge tokens so light and
+  dark themes keep the same state hierarchy without muddy fills.
 - Hardened `DevicePowerPanel` late-load behavior so a successful reload or lock
   refresh no longer overwrites in-progress edits with a fresh `cloneConfig()`,
   while initial retry paths can still hydrate an empty form after a transient

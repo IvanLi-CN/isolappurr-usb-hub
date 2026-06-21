@@ -18,9 +18,9 @@
 
 ## Token guidelines (design rules)
 
-- `primary`：用于主 CTA（Add Device / Apply / Power toggle 等）。
-- `primary` 不应过度饱和/过浓：建议使用“柔和的蓝紫”（periwinkle/indigo）以适配长时间监控页面；通过 `hover/active` 与 `shadow` 表达强调，而不是把底色做得刺眼。
-- `accent`：用于高亮/选中态（选中设备、当前 tab）。
+- `primary`：用于主 CTA（Add Device / Apply / Power toggle 等），当前口径是 restrained sage 家族。
+- `secondary`：用于实时/信息性强调（当前协商协议、图表高亮、辅助强调），当前口径是取自品牌图标暖黄系的 restrained warm-amber 家族；不得替代 `success` 语义。
+- `primary` 与 `secondary` 都不应过度饱和/过浓；通过 `hover/active`、边框与轻量阴影表达强调，而不是把大面积底色做得刺眼。
 - `success/warning/error/info`：仅用于状态表达（在线、忙碌、错误、提示）。
 - `base-*`（背景/卡片）：应尽量“中性”（低饱和/低色相偏移），避免出现明显的蓝灰/脏灰导致卡片观感不佳；推荐通过更强的 `border` / `shadow` 体现层级，而不是用重色面。
 - 避免在 card 内再铺一层“彩色/有色底”的子卡片（尤其是浅蓝灰）；子区域优先使用 `bg-base-100` + `border` 区分，必要时再用 `bg-base-200` 做轻微层级。

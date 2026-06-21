@@ -41,6 +41,7 @@ export function DevicePowerPage() {
           runtime.clearIdleBiasCalibration(deviceId, owner)
         }
         loadIdleBias={() => runtime.idleBias(deviceId)}
+        loadPdDiagnostics={() => runtime.pdDiagnostics(deviceId)}
         loadPowerConfig={() => runtime.powerConfig(deviceId)}
         localAdvancedLocked={false}
         restorePowerDefaults={(owner) =>
