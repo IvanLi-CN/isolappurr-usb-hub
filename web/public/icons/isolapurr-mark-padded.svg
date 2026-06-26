@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <g transform="translate(23.040000000000006 23.040000000000006) scale(0.82)">
+    <title id="title">IsolaPurr USB Hub mark</title>
+      <desc id="desc">A soft isolated hub mark for IsolaPurr USB Hub.</desc>
+      <defs>
+        <linearGradient id="body" x1="34" x2="220" y1="22" y2="232" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#bcded5" />
+          <stop offset="1" stop-color="#a8cbbf" />
+        </linearGradient>
+        <linearGradient id="mark" x1="82" x2="178" y1="28" y2="210" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#fffaf0" />
+          <stop offset="1" stop-color="#f9efd8" />
+        </linearGradient>
+      </defs>
+      <rect width="256" height="256" fill="#f6f7f3" />
+      <rect width="256" height="256" rx="54" fill="url(#body)" />
+      <g transform="matrix(1.07 0 0 1.07 -18.59 0.5)">
+        <path
+          fill="url(#mark)"
+          d="M80 31H194C206 31 216 41 216 53C216 64 208 73 197 75L176 78C163 80 154 91 154 104V125C154 138 163 149 176 151L197 154C208 156 216 165 216 176C216 188 206 198 194 198H80C68 198 58 188 58 176C58 165 66 156 77 154L98 151C111 149 119 138 119 125V104C119 91 111 80 98 78L77 75C66 73 58 64 58 53C58 41 68 31 80 31Z"
+        />
+      </g>
+  </g>
+</svg>

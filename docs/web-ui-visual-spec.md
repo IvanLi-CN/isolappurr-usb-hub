@@ -78,7 +78,11 @@ Web 控制台使用圆角方形隔离 hub 作为产品 mark：外轮廓呼应硬
 规范性要求：
 
 - 图标源文件以 `web/src/assets/brand/isolapurr-mark.svg` 为 master，单色版本为 `web/src/assets/brand/isolapurr-mark-mono.svg`。
-- favicon、Apple touch icon、PWA any/maskable icon、desktop-ready PNG 均从 master 派生；更新 master 后运行 `cd web && bun run icons` 重新生成。
+- favicon、Apple touch icon、PWA any/maskable icon、desktop-ready PNG、Tauri install source PNG 均从 master 派生；更新 master 后运行 `cd web && bun run icons` 重新生成。
+- 安装图标采用双轨导出：
+  - `maskable-*` 保持 full-bleed，用于 Android / maskable PWA install surfaces。
+  - `pwa-*`、`apple-touch-icon`、`desktop-*`、`tauri-source-1024.png` 保持可测量的安全边距，用于 Chrome/macOS PWA、Apple touch 与 Tauri desktop bundle。
+- `desktop/src-tauri/icons/*.png|*.icns|*.ico` 属于 `cargo tauri icon` 基于 `tauri-source-1024.png` 的派生产物，不得手工维护。
 - UI 内品牌位优先使用 `BrandMark` 组件，按当前亮/暗主题选择清晰可读的变体。
 - 图标色彩遵循当前 restrained product palette：主色只服务识别、当前选择与安装入口，不作为大面积装饰。
 
