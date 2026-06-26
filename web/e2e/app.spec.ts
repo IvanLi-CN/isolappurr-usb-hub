@@ -44,11 +44,35 @@ test("publishes PWA metadata and offline app shell", async ({
     manifestHref ?? "/manifest.webmanifest",
   );
   expect(manifest.ok()).toBe(true);
+  const manifestJson = await manifest.json();
+  expect(manifestJson.icons).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        src: "icons/pwa-192.png",
+        purpose: "any",
+      }),
+      expect.objectContaining({
+        src: "icons/pwa-512.png",
+        purpose: "any",
+      }),
+      expect.objectContaining({
+        src: "icons/maskable-192.png",
+        purpose: "maskable",
+      }),
+      expect.objectContaining({
+        src: "icons/maskable-512.png",
+        purpose: "maskable",
+      }),
+    ]),
+  );
   await expect(
     page.locator('link[rel="icon"][type="image/svg+xml"]'),
   ).toHaveAttribute("href", /isolapurr-mark\.svg/);
 
-  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.waitForFunction(async () => {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    return registrations.length > 0;
+  });
   await page.reload();
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
 

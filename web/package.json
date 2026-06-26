@@ -11,6 +11,7 @@
     "format": "biome format --write .",
     "check": "biome check .",
     "icons": "bun scripts/generate-icons.mjs",
+    "test:icons": "python3 scripts/check-icons.py",
     "test:unit": "bun test ./src",
     "storybook": "storybook dev -p 46006",
     "build-storybook": "storybook build",

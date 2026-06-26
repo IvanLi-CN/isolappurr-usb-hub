@@ -20,11 +20,19 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 
 - Install: `bun install`
 - Dev server: `bun dev` (default: `http://127.0.0.1:45173`)
-- Icons: `bun run icons` regenerates favicon, Apple, PWA, maskable, and desktop-ready PNG assets from `src/assets/brand/isolapurr-mark.svg`
+- Icons: `bun run icons` regenerates favicon, Apple, regular PWA, maskable PWA, desktop-ready PNG assets, and the Tauri source PNG from `src/assets/brand/isolapurr-mark.svg`
 - Storybook: `bun run storybook` (default: `http://127.0.0.1:46006`)
 - Preview: `bun run preview` (default: `http://127.0.0.1:45175`)
 
-Icon regeneration requires `rsvg-convert` from librsvg and Python Pillow (`python3 -m pip install Pillow`).
+Icon regeneration requires `rsvg-convert` from librsvg, Python Pillow (`python3 -m pip install Pillow`), and `cargo tauri icon` for the desktop bundle assets.
+
+## Install icon contract
+
+- `web/src/assets/brand/isolapurr-mark.svg` is the single source of truth for all install icons.
+- Regular install icons (`favicon`, `pwa-*`, `apple-touch-icon`, `desktop-*`, `tauri-source-1024.png`) are exported with a visible safe zone for Chrome/macOS, Apple touch surfaces, and Tauri desktop bundles.
+- Maskable icons (`maskable-*`) stay full-bleed for Android/PWA maskable install slots.
+- `bun run icons` also refreshes `desktop/src-tauri/icons/*` through `cargo tauri icon`; do not hand-edit the generated desktop PNG/ICNS/ICO assets.
+- `bun run test:icons` validates the geometry contract: regular icons keep padding, maskable icons stay edge-aligned, and desktop PNG assets are not transparent placeholders.
 
 ## Review tips
 
@@ -40,6 +48,7 @@ Icon regeneration requires `rsvg-convert` from librsvg and Python Pillow (`pytho
 
 ## Quality gates
 
+- `bun run icons && bun run test:icons`
 - `bun run check`
 - `bun run build`
 - `bun run test:unit`

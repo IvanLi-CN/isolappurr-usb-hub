@@ -235,6 +235,12 @@ web:
 web-build:
 	cd web && bun run build
 
+web-icons:
+	cd web && bun run icons
+
+web-test-icons:
+	cd web && bun run test:icons
+
 web-preview:
 	cd web && bun run preview
 
@@ -243,6 +249,9 @@ web-lint:
 
 web-check:
 	cd web && bun run check
+
+desktop-icons:
+	cd web && bun run icons
 
 # Git hooks
 hooks-install:
