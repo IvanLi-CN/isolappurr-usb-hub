@@ -42,6 +42,78 @@ impl LightLoadMode {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TpsCdcRise {
+    V0,
+    V100,
+    V200,
+    V300,
+    V400,
+    V500,
+    V600,
+    V700,
+}
+
+impl TpsCdcRise {
+    pub const fn rise_mv(self) -> u16 {
+        match self {
+            Self::V0 => 0,
+            Self::V100 => 100,
+            Self::V200 => 200,
+            Self::V300 => 300,
+            Self::V400 => 400,
+            Self::V500 => 500,
+            Self::V600 => 600,
+            Self::V700 => 700,
+        }
+    }
+
+    pub const fn from_rise_mv(mv: u16) -> Option<Self> {
+        match mv {
+            0 => Some(Self::V0),
+            100 => Some(Self::V100),
+            200 => Some(Self::V200),
+            300 => Some(Self::V300),
+            400 => Some(Self::V400),
+            500 => Some(Self::V500),
+            600 => Some(Self::V600),
+            700 => Some(Self::V700),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Sw2303LineCompensation {
+    Off,
+    Ohm0,
+    MilliOhm50,
+    MilliOhm100,
+    MilliOhm150,
+}
+
+impl Sw2303LineCompensation {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Ohm0 => "0mohm",
+            Self::MilliOhm50 => "50mohm",
+            Self::MilliOhm100 => "100mohm",
+            Self::MilliOhm150 => "150mohm",
+        }
+    }
+
+    pub const fn display_label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Ohm0 => "0",
+            Self::MilliOhm50 => "50mΩ",
+            Self::MilliOhm100 => "100mΩ",
+            Self::MilliOhm150 => "150mΩ",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ManualUsbCPathMode {
     Default,
     Disconnect,
@@ -165,6 +237,7 @@ pub struct ManualTpsConfig {
     pub voltage_mv: u16,
     pub current_limit_ma: u16,
     pub usb_c_path_mode: ManualUsbCPathMode,
+    pub tps_cdc_rise: TpsCdcRise,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -173,6 +246,7 @@ pub struct PowerConfig {
     pub capability: UsbCCapabilityConfig,
     pub tps_mode: TpsMode,
     pub light_load_mode: LightLoadMode,
+    pub sw2303_line_compensation: Sw2303LineCompensation,
     pub manual: ManualTpsConfig,
 }
 
@@ -273,6 +347,8 @@ pub enum PowerConfigError {
     InvalidCurrent,
     InvalidPower,
     InvalidCapability,
+    InvalidTpsCdcRise,
+    InvalidSw2303LineCompensation,
 }
 
 pub const DEFAULT_POWER_WATTS: u8 = 100;
@@ -280,6 +356,8 @@ pub const MANUAL_MIN_VOLTAGE_MV: u16 = 3_000;
 pub const MANUAL_MAX_VOLTAGE_MV: u16 = 21_000;
 pub const MANUAL_DEFAULT_VOLTAGE_MV: u16 = 5_000;
 pub const MANUAL_DEFAULT_CURRENT_MA: u16 = 1_000;
+pub const DEFAULT_SW2303_LINE_COMPENSATION: Sw2303LineCompensation =
+    Sw2303LineCompensation::MilliOhm50;
 pub const TPS_MAX_CURRENT_MA: u16 = 6_350;
 pub const POWER_CAP_MW: u32 = 100_000;
 
@@ -290,10 +368,12 @@ impl PowerConfig {
             capability: UsbCCapabilityConfig::full_100w(),
             tps_mode: TpsMode::AutoFollow,
             light_load_mode: LightLoadMode::Pfm,
+            sw2303_line_compensation: DEFAULT_SW2303_LINE_COMPENSATION,
             manual: ManualTpsConfig {
                 voltage_mv: MANUAL_DEFAULT_VOLTAGE_MV,
                 current_limit_ma: MANUAL_DEFAULT_CURRENT_MA,
                 usb_c_path_mode: ManualUsbCPathMode::Default,
+                tps_cdc_rise: TpsCdcRise::V0,
             },
         }
     }
@@ -316,6 +396,19 @@ impl PowerConfig {
         }
         if !matches!(self.capability.current.fcp_afc_sfcp_limit_ma, 2_250 | 3_250) {
             return Err(PowerConfigError::InvalidCapability);
+        }
+        if TpsCdcRise::from_rise_mv(self.manual.tps_cdc_rise.rise_mv()).is_none() {
+            return Err(PowerConfigError::InvalidTpsCdcRise);
+        }
+        if !matches!(
+            self.sw2303_line_compensation,
+            Sw2303LineCompensation::Off
+                | Sw2303LineCompensation::Ohm0
+                | Sw2303LineCompensation::MilliOhm50
+                | Sw2303LineCompensation::MilliOhm100
+                | Sw2303LineCompensation::MilliOhm150
+        ) {
+            return Err(PowerConfigError::InvalidSw2303LineCompensation);
         }
         if self.manual.voltage_mv < MANUAL_MIN_VOLTAGE_MV
             || self.manual.voltage_mv > MANUAL_MAX_VOLTAGE_MV
@@ -386,6 +479,7 @@ mod tests {
                 voltage_mv: 21_000,
                 current_limit_ma: 6_350,
                 usb_c_path_mode: ManualUsbCPathMode::Default,
+                tps_cdc_rise: TpsCdcRise::V0,
             },
             ..PowerConfig::defaults()
         }
@@ -398,6 +492,16 @@ mod tests {
     #[test]
     fn defaults_to_pfm_light_load_mode() {
         assert_eq!(PowerConfig::defaults().light_load_mode, LightLoadMode::Pfm);
+    }
+
+    #[test]
+    fn defaults_new_cdc_and_line_comp_values() {
+        let config = PowerConfig::defaults();
+        assert_eq!(config.manual.tps_cdc_rise, TpsCdcRise::V0);
+        assert_eq!(
+            config.sw2303_line_compensation,
+            Sw2303LineCompensation::MilliOhm50
+        );
     }
 
     #[test]

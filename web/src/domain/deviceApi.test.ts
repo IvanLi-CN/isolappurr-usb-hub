@@ -145,6 +145,7 @@ describe("setPowerConfig", () => {
           persisted: true,
           tps_mode: "manual",
           light_load_mode: "fpwm",
+          sw2303_line_compensation: "100mohm",
           capability: {
             profile: "full",
             power_watts: 100,
@@ -168,6 +169,7 @@ describe("setPowerConfig", () => {
             voltage_mv: 20000,
             current_limit_ma: 2900,
             usb_c_path_mode: "disconnect",
+            tps_cdc_rise_mv: 500,
             path_policy: "force_close",
           },
           lock: null,
@@ -185,6 +187,7 @@ describe("setPowerConfig", () => {
         hardware: "sw2303",
         tps_mode: "manual",
         light_load_mode: "fpwm",
+        sw2303_line_compensation: "100mohm",
         capability: {
           profile: "full",
           power_watts: 100,
@@ -208,6 +211,7 @@ describe("setPowerConfig", () => {
           voltage_mv: 20000,
           current_limit_ma: 2900,
           usb_c_path_mode: "disconnect",
+          tps_cdc_rise_mv: 500,
           path_policy: "force_close",
         },
       } as Parameters<typeof setPowerConfig>[1],
@@ -216,6 +220,8 @@ describe("setPowerConfig", () => {
 
     expect(result.ok).toBe(true);
     expect(bodyText).toContain('"usb_c_path_mode":"disconnect"');
+    expect(bodyText).toContain('"tps_cdc_rise_mv":500');
+    expect(bodyText).toContain('"sw2303_line_compensation":"100mohm"');
     expect(bodyText).not.toContain("path_policy");
   });
 });

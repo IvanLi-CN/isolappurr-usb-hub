@@ -136,6 +136,8 @@
                         capability_changed && matches!(port_usb_c.power, PowerState::On);
                     last_sw2303_profile_attempt = None;
                     last_sw2303_path_control = None;
+                    last_sw2303_line_compensation = None;
+                    last_tps_cdc_rise = None;
                     sw2303_stable_reads = 0;
                     last_valid_sw2303_request = None;
                     last_request = None;
@@ -328,6 +330,8 @@
                             capability_changed && matches!(port_usb_c.power, PowerState::On);
                         last_sw2303_profile_attempt = None;
                         last_sw2303_path_control = None;
+                        last_sw2303_line_compensation = None;
+                        last_tps_cdc_rise = None;
                         sw2303_stable_reads = 0;
                         last_valid_sw2303_request = None;
                         last_request = None;
@@ -369,6 +373,8 @@
                             sw2303_recontract_pending = false;
                             last_sw2303_profile_attempt = None;
                             last_sw2303_path_control = None;
+                            last_sw2303_line_compensation = None;
+                            last_tps_cdc_rise = None;
                             sw2303_stable_reads = 0;
                             sw2303_consecutive_errors = 0;
                             tps_consecutive_errors = 0;
@@ -715,6 +721,28 @@
                     }
                 }
             }
+            if sw2303_i2c_allowed
+                && last_sw2303_line_compensation
+                    != Some(isolapurr_usb_hub::power_config::Sw2303LineCompensation::Off)
+            {
+                match apply_line_compensation(
+                    &mut sw2303_i2c,
+                    isolapurr_usb_hub::power_config::Sw2303LineCompensation::Off,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        last_sw2303_line_compensation =
+                            Some(isolapurr_usb_hub::power_config::Sw2303LineCompensation::Off);
+                    }
+                    Err(err) => {
+                        defmt::warn!(
+                            "sw2303 line compensation disable failed: {:?}",
+                            defmt::Debug2Format(&err)
+                        );
+                    }
+                }
+            }
         } else if usb_c_pd_power_on
             && sw2303_i2c_allowed
             && last_sw2303_path_control != Some(Sw2303PathControl::Auto)
@@ -727,6 +755,49 @@
                 Err(err) => {
                     defmt::warn!(
                         "sw2303 path control auto failed: {:?}",
+                        defmt::Debug2Format(&err)
+                    );
+                }
+            }
+        }
+
+        let target_tps_cdc_rise = if power_config.tps_mode == TpsMode::Manual {
+            power_config.manual.tps_cdc_rise
+        } else {
+            isolapurr_usb_hub::power_config::TpsCdcRise::V0
+        };
+        if last_tps_cdc_rise != Some(target_tps_cdc_rise) {
+            if let Err(err) =
+                apply_cable_compensation(telemetry_sampler.i2c_mut(), target_tps_cdc_rise).await
+            {
+                if !tps_error_latched {
+                    defmt::warn!(
+                        "tps55288 cable compensation apply error: {:?}",
+                        defmt::Debug2Format(&err)
+                    );
+                }
+                tps_error_latched = true;
+            } else {
+                last_tps_cdc_rise = Some(target_tps_cdc_rise);
+            }
+        }
+
+        if power_config.tps_mode != TpsMode::Manual
+            && sw2303_i2c_allowed
+            && last_sw2303_line_compensation != Some(power_config.sw2303_line_compensation)
+        {
+            match apply_line_compensation(
+                &mut sw2303_i2c,
+                power_config.sw2303_line_compensation,
+            )
+            .await
+            {
+                Ok(()) => {
+                    last_sw2303_line_compensation = Some(power_config.sw2303_line_compensation);
+                }
+                Err(err) => {
+                    defmt::warn!(
+                        "sw2303 line compensation apply failed: {:?}",
                         defmt::Debug2Format(&err)
                     );
                 }
@@ -1037,6 +1108,8 @@
                 last_request = None;
                 last_fast_protocol = None;
                 last_tps_status = None;
+                last_sw2303_line_compensation = None;
+                last_tps_cdc_rise = None;
                 info!(
                     "pd i2c runtime recovery #{} complete: sw2303_i2c_allowed={}",
                     pd_runtime_recovery_count, sw2303_i2c_allowed

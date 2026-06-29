@@ -8,6 +8,10 @@
 - Extended the shared saved power config with `light_load_mode` using the
   existing EEPROM power record reserved byte, keeping record length/version
   compatibility and decoding missing legacy data as `pfm`.
+- Extended the same EEPROM record again for
+  `manual.tps_cdc_rise_mv` and `sw2303_line_compensation`, bumped the power
+  config version to `3`, and kept legacy `v1/v2` records upgrade-safe by
+  defaulting to `0V rise` and `50mΩ`.
 - Added EEPROM load/store for a dedicated power-config record with fallback to
   full SW2303 auto-follow defaults.
 - Extended API shared state with power config, lock, pending command, persisted
@@ -26,6 +30,15 @@
   on firmware hardcoded defaults.
 - Updated the PD/TPS runtime loop so pending config writes are saved, applied,
   reflected in diagnostics, and used for SW2303 profile application.
+- Added a TPS55288 cable-compensation helper that RMWs register `0x05`,
+  preserves unrelated bits, forces internal CDC mode, and applies only the
+  owner-facing `0.0V..0.7V rise` ladder.
+- Added a SW2303 line-compensation helper that expands one owner-facing value
+  into the `0x14` master switch, `0xA4` impedance bucket, and `0xAD bit7`
+  protocol gate.
+- Updated runtime policy so `auto_follow` always applies SW2303 line
+  compensation while forcing TPS CDC off, and `manual` always applies the TPS
+  CDC rise while forcing SW2303 line compensation off.
 - Added runtime-only power actions that map the owner-facing `Power`
   action to TPS55288 `OE` and the advanced output-off control to TPS55288
   `DISCHG`, while keeping both values out of the persisted EEPROM config.
@@ -80,6 +93,12 @@
   whole saved power config, mutate only explicitly provided fields such as
   `light_load_mode` / `tps_mode` / manual output / source capabilities, and
   write the merged config back through the aligned `power.config_*` contract.
+- Added `--sw2303-line-comp <off|0|50|100|150>` to
+  `isolapurr power config set`, plus `--tps-cdc-rise-mv <0|100|...|700>` to
+  both `power config set` and `power output manual`.
+- Updated human CLI rendering so the new controls are described in owner-facing
+  semantics instead of leaking raw chip names, while still making clear that
+  line compensation applies in Auto follow.
 - Extended owner-facing CLI source-capability read/modify/write and TUI flows
   to preserve and expose the new `fast_charge` capability fields instead of
   silently dropping them on save.
@@ -142,6 +161,11 @@
 - Added a `TPS light-load mode` control to the existing Power settings panel so
   operators can switch between persisted `PFM` and `FPWM` without leaving the
   saved power-config surface.
+- Added `TPS cable compensation` inside `Output mode` between `Current limit`
+  and `USB-C path`.
+- Added `SW2303 line compensation` as a separate right-rail card below
+  `TPS light-load mode`, keeping the saved setting editable in Manual TPS while
+  moving the applicability guidance into a compact help popover.
 - Reworked the Power page so the right-side actions column now carries the
   live USB-C voltage/current/power readout plus `Power` and `Replug` actions,
   while the manual-only advanced `TPS discharge on output-off` control remains

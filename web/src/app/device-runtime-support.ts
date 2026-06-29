@@ -663,6 +663,7 @@ function defaultPowerConfigIsRestored(value: unknown): boolean {
     config.persisted === false &&
     config.tps_mode === "auto_follow" &&
     config.light_load_mode === "pfm" &&
+    config.sw2303_line_compensation === "50mohm" &&
     capability.profile === "full" &&
     capability.power_watts === 100 &&
     protocols.pd === true &&
@@ -678,7 +679,8 @@ function defaultPowerConfigIsRestored(value: unknown): boolean {
     defaultFixedVoltagesAreRestored(pd.fixed_voltages_mv) &&
     manual.voltage_mv === 5000 &&
     manual.current_limit_ma === 1000 &&
-    manual.usb_c_path_mode === "default"
+    manual.usb_c_path_mode === "default" &&
+    manual.tps_cdc_rise_mv === 0
   );
 }
 

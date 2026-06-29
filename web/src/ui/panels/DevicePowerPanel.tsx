@@ -18,11 +18,13 @@ import {
   CompactOptionsRow,
   CompactSelectField,
   cloneConfig,
+  DiscreteSliderField,
   type FormState,
   formatCompactCurrent,
   formatCurrentInput,
   formatFixedVoltageSummary,
   formatPowerInput,
+  formatSw2303LineCompensation,
   formatVoltageInput,
   formatVoltageOption,
   InlineHelpPopover,
@@ -312,6 +314,32 @@ export function DevicePowerPanel({
             },
           }
         : current,
+    );
+    setDirty(true);
+  };
+
+  const setManualTpsCdcRise = (
+    value: FormState["manual"]["tps_cdc_rise_mv"],
+  ) => {
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            manual: {
+              ...current.manual,
+              tps_cdc_rise_mv: value,
+            },
+          }
+        : current,
+    );
+    setDirty(true);
+  };
+
+  const setSw2303LineCompensation = (
+    value: FormState["sw2303_line_compensation"],
+  ) => {
+    setForm((current) =>
+      current ? { ...current, sw2303_line_compensation: value } : current,
     );
     setDirty(true);
   };
@@ -958,6 +986,35 @@ export function DevicePowerPanel({
                 step={50}
                 value={form.manual.current_limit_ma}
               />
+              <DiscreteSliderField
+                disabled={powerControlsDisabled || form.tps_mode !== "manual"}
+                label="TPS CDC"
+                labelAccessory={
+                  <InlineHelpPopover
+                    lines={[
+                      "Applies in Manual TPS.",
+                      "Auto follow forces TPS CDC off and uses the saved SW2303 line compensation.",
+                    ]}
+                    title="TPS CDC"
+                  />
+                }
+                onChange={(value) =>
+                  setManualTpsCdcRise(
+                    Number(value) as FormState["manual"]["tps_cdc_rise_mv"],
+                  )
+                }
+                options={[
+                  { label: "Off", value: "0" },
+                  { label: "0.1V", value: "100" },
+                  { label: "0.2V", value: "200" },
+                  { label: "0.3V", value: "300" },
+                  { label: "0.4V", value: "400" },
+                  { label: "0.5V", value: "500" },
+                  { label: "0.6V", value: "600" },
+                  { label: "0.7V", value: "700" },
+                ]}
+                value={String(form.manual.tps_cdc_rise_mv)}
+              />
             </div>
 
             <div className="grid gap-2">
@@ -1003,6 +1060,12 @@ export function DevicePowerPanel({
                     </span>
                   </button>
                 ))}
+              </div>
+              <div className="text-[12px] leading-5 text-[var(--muted)]">
+                Saved SW2303 line compensation:{" "}
+                {formatSw2303LineCompensation(form.sw2303_line_compensation)}.
+                Auto follow applies that value and forces TPS cable compensation
+                off.
               </div>
               {form.tps_mode === "manual" ? (
                 <div className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-3 py-3">
@@ -1078,11 +1141,13 @@ export function DevicePowerPanel({
 
           <DevicePowerPanelSidebar
             lightLoadMode={form.light_load_mode}
+            onSetSw2303LineCompensation={setSw2303LineCompensation}
             onReplugUsbC={replugUsbC}
             onSetLightLoadMode={setLightLoadMode}
             onToggleRuntime={toggleRuntime}
             powerControlsDisabled={powerControlsDisabled}
             runtimeOutputEnabled={runtimeOutputEnabled}
+            sw2303LineCompensation={form.sw2303_line_compensation}
             usbCPending={usbCPending}
             usbCState={usbCState}
             usbCTelemetry={usbCTelemetry}

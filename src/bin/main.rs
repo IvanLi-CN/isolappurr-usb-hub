@@ -71,12 +71,12 @@ use isolapurr_usb_hub::pd_i2c::PowerRequest;
 use isolapurr_usb_hub::pd_i2c::PowerSetpoint;
 use isolapurr_usb_hub::pd_i2c::TPS55288_ADDR_7BIT;
 use isolapurr_usb_hub::pd_i2c::sw2303::{
-    EnableProfileStatus, apply_enable_profile, read_power_request, set_path_control,
-    trigger_cc_un_driving,
+    EnableProfileStatus, apply_enable_profile, apply_line_compensation, read_power_request,
+    set_path_control, trigger_cc_un_driving,
 };
 use isolapurr_usb_hub::pd_i2c::tps55288::{
-    TpsApplyState, apply_light_load_mode, apply_setpoint, boot_supply_setpoint,
-    power_request_to_setpoint, stop_output_and_enable_discharge,
+    TpsApplyState, apply_cable_compensation, apply_light_load_mode, apply_setpoint,
+    boot_supply_setpoint, power_request_to_setpoint, stop_output_and_enable_discharge,
 };
 use isolapurr_usb_hub::power_config::{
     MANUAL_DEFAULT_CURRENT_MA, PowerConfig, Sw2303CapabilityReadback, Sw2303PathControl, TpsMode,

@@ -698,6 +698,7 @@ mod power_output_tests {
                                 ManualOutputArgs {
                                     voltage_mv,
                                     current_limit_ma,
+                                    tps_cdc_rise_mv,
                                     usb_c_path,
                                 },
                             ..
@@ -710,6 +711,7 @@ mod power_output_tests {
 
         assert_eq!(voltage_mv, Some(9000));
         assert_eq!(current_limit_ma, Some(3000));
+        assert_eq!(tps_cdc_rise_mv, None);
         assert!(matches!(usb_c_path, Some(OutputUsbCPathArg::ForcedOn)));
     }
 

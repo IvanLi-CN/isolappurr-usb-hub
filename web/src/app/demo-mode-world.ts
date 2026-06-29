@@ -180,6 +180,7 @@ function buildDemoDevice({
       persisted: true,
       tps_mode: "auto_follow",
       light_load_mode: "pfm",
+      sw2303_line_compensation: "50mohm",
       runtime: {
         output_enabled: true,
         discharge_enabled: false,
@@ -220,6 +221,7 @@ function buildDemoDevice({
         voltage_mv: 5000,
         current_limit_ma: 1000,
         usb_c_path_mode: "default",
+        tps_cdc_rise_mv: 0,
       },
       lock: null,
     },

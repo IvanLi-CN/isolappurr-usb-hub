@@ -1,7 +1,9 @@
 use embedded_hal_async::i2c::I2c;
 
 use super::{PowerRequest, SW2303_ADDR_7BIT};
-use crate::power_config::{PowerConfig, Sw2303CapabilityReadback, Sw2303PathControl};
+use crate::power_config::{
+    PowerConfig, Sw2303CapabilityReadback, Sw2303LineCompensation, Sw2303PathControl,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnableProfileStatus {
@@ -257,6 +259,53 @@ where
         Sw2303PathControl::ForceClose => dev.force_path(false).await,
         Sw2303PathControl::ForceOpen => dev.force_path(true).await,
     }
+}
+
+pub async fn apply_line_compensation<I2C>(
+    i2c: &mut I2C,
+    line_compensation: Sw2303LineCompensation,
+) -> Result<(), sw2303::error::Error<I2C::Error>>
+where
+    I2C: I2c,
+    I2C::Error: core::fmt::Debug,
+{
+    use sw2303::registers::{ConnectionControlFlags, FastChargeConfig0Flags, Register};
+
+    let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
+    dev.unlock_write_enable_0().await?;
+
+    let enabled = !matches!(line_compensation, Sw2303LineCompensation::Off);
+    dev.set_line_compensation(enabled).await?;
+
+    let mut ad = dev.get_fast_charge_config_0_raw().await?;
+    if enabled {
+        ad.remove(FastChargeConfig0Flags::QC_PD_FIX_LINECOMP_DISABLE);
+    } else {
+        ad.insert(FastChargeConfig0Flags::QC_PD_FIX_LINECOMP_DISABLE);
+    }
+    dev.set_fast_charge_config_0_raw(ad).await?;
+
+    if enabled {
+        let impedance_code = match line_compensation {
+            Sw2303LineCompensation::Off => 0b00,
+            Sw2303LineCompensation::MilliOhm50 => 0b00,
+            Sw2303LineCompensation::Ohm0 => 0b01,
+            Sw2303LineCompensation::MilliOhm100 => 0b10,
+            Sw2303LineCompensation::MilliOhm150 => 0b11,
+        };
+        let mut a4 = dev.read_register(Register::LineCompensationConfig).await?;
+        a4 = (a4 & 0x3f) | (impedance_code << 6);
+        dev.write_register(Register::LineCompensationConfig, a4)
+            .await?;
+    }
+
+    let mut cc = dev.get_connection_control_raw().await?;
+    if enabled {
+        cc.remove(ConnectionControlFlags::LINE_COMPENSATION_CLOSE);
+    } else {
+        cc.insert(ConnectionControlFlags::LINE_COMPENSATION_CLOSE);
+    }
+    dev.set_connection_control_raw(cc).await
 }
 
 pub async fn trigger_cc_un_driving<I2C>(

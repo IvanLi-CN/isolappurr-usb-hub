@@ -363,6 +363,8 @@ struct PowerConfigSetArgs {
     light_load_mode: Option<LightLoadModeArg>,
     #[arg(long, value_enum)]
     tps_mode: Option<TpsModeArg>,
+    #[arg(long, value_enum)]
+    sw2303_line_comp: Option<Sw2303LineCompArg>,
     #[command(flatten)]
     manual: ManualOutputArgs,
     #[command(flatten)]
@@ -375,6 +377,8 @@ struct ManualOutputArgs {
     voltage_mv: Option<u16>,
     #[arg(long, value_parser = clap::value_parser!(u16).range(1..=6350))]
     current_limit_ma: Option<u16>,
+    #[arg(long, value_parser = parse_tps_cdc_rise_mv)]
+    tps_cdc_rise_mv: Option<u16>,
     #[arg(long, value_enum)]
     usb_c_path: Option<OutputUsbCPathArg>,
 }
@@ -412,6 +416,31 @@ impl TpsModeArg {
         match self {
             Self::AutoFollow => "auto_follow",
             Self::Manual => "manual",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Sw2303LineCompArg {
+    Off,
+    #[value(name = "0")]
+    Zero,
+    #[value(name = "50")]
+    Fifty,
+    #[value(name = "100")]
+    OneHundred,
+    #[value(name = "150")]
+    OneHundredFifty,
+}
+
+impl Sw2303LineCompArg {
+    const fn as_config_value(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Zero => "0mohm",
+            Self::Fifty => "50mohm",
+            Self::OneHundred => "100mohm",
+            Self::OneHundredFifty => "150mohm",
         }
     }
 }
@@ -469,6 +498,8 @@ struct CliPowerConfig {
     tps_mode: String,
     #[serde(default = "default_light_load_mode")]
     light_load_mode: String,
+    #[serde(default = "default_sw2303_line_compensation")]
+    sw2303_line_compensation: String,
     #[serde(default)]
     runtime: CliPowerRuntime,
     capability: CliPowerCapability,
@@ -533,6 +564,8 @@ struct CliPowerManual {
     voltage_mv: u16,
     current_limit_ma: u16,
     usb_c_path_mode: String,
+    #[serde(default)]
+    tps_cdc_rise_mv: u16,
     path_policy: Option<String>,
 }
 
@@ -859,8 +892,23 @@ fn default_light_load_mode() -> String {
     "pfm".to_string()
 }
 
+fn default_sw2303_line_compensation() -> String {
+    "50mohm".to_string()
+}
+
 fn default_runtime_output_enabled() -> bool {
     true
+}
+
+fn parse_tps_cdc_rise_mv(raw: &str) -> Result<u16, String> {
+    match raw {
+        "0" | "100" | "200" | "300" | "400" | "500" | "600" | "700" => raw
+            .parse::<u16>()
+            .map_err(|_| String::from("expected 0, 100, 200, 300, 400, 500, 600, or 700")),
+        _ => Err(String::from(
+            "expected 0, 100, 200, 300, 400, 500, 600, or 700",
+        )),
+    }
 }
 
 impl SourceCapabilitySetArgs {
@@ -893,8 +941,10 @@ impl PowerConfigSetArgs {
     fn has_updates(&self) -> bool {
         self.light_load_mode.is_some()
             || self.tps_mode.is_some()
+            || self.sw2303_line_comp.is_some()
             || self.manual.voltage_mv.is_some()
             || self.manual.current_limit_ma.is_some()
+            || self.manual.tps_cdc_rise_mv.is_some()
             || self.manual.usb_c_path.is_some()
             || self.source.has_updates()
     }

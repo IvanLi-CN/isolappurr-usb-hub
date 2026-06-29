@@ -320,11 +320,12 @@ pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
     let cfg = power.config;
     let _ = core::write!(
         body,
-        "{{\"hardware\":\"{}\",\"persisted\":{},\"tps_mode\":\"{}\",\"light_load_mode\":\"{}\",\"runtime\":{{\"output_enabled\":{},\"discharge_enabled\":{}}},\"capability\":{{\"profile\":\"full\",\"power_watts\":{},\"protocols\":{{\"pd\":{},\"qc20\":{},\"qc30\":{},\"fcp\":{},\"afc\":{},\"scp\":{},\"pe20\":{},\"bc12\":{},\"sfcp\":{}}},\"pd\":{{\"pps\":{},\"fixed_voltages_mv\":[",
+        "{{\"hardware\":\"{}\",\"persisted\":{},\"tps_mode\":\"{}\",\"light_load_mode\":\"{}\",\"sw2303_line_compensation\":\"{}\",\"runtime\":{{\"output_enabled\":{},\"discharge_enabled\":{}}},\"capability\":{{\"profile\":\"full\",\"power_watts\":{},\"protocols\":{{\"pd\":{},\"qc20\":{},\"qc30\":{},\"fcp\":{},\"afc\":{},\"scp\":{},\"pe20\":{},\"bc12\":{},\"sfcp\":{}}},\"pd\":{{\"pps\":{},\"fixed_voltages_mv\":[",
         cfg.hardware.as_str(),
         if power.persisted { "true" } else { "false" },
         cfg.tps_mode.as_str(),
         cfg.light_load_mode.as_str(),
+        cfg.sw2303_line_compensation.as_str(),
         if power.runtime_output_enabled {
             "true"
         } else {
@@ -373,10 +374,11 @@ pub fn write_power_config_json(body: &mut String, power: &ApiPowerSnapshot) {
     let _ = body.push_str("}}");
     let _ = core::write!(
         body,
-        ",\"manual\":{{\"voltage_mv\":{},\"current_limit_ma\":{},\"usb_c_path_mode\":\"{}\",\"path_policy\":\"{}\"}},\"lock\":",
+        ",\"manual\":{{\"voltage_mv\":{},\"current_limit_ma\":{},\"usb_c_path_mode\":\"{}\",\"tps_cdc_rise_mv\":{},\"path_policy\":\"{}\"}},\"lock\":",
         cfg.manual.voltage_mv,
         cfg.manual.current_limit_ma,
         cfg.manual.usb_c_path_mode.as_str(),
+        cfg.manual.tps_cdc_rise.rise_mv(),
         reported_manual_path_policy(power),
     );
     match power.lock {

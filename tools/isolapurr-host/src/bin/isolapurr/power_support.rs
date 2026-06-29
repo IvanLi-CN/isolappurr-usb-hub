@@ -141,6 +141,9 @@ fn apply_manual_output_args(config: &mut CliPowerConfig, args: &ManualOutputArgs
     if let Some(current_limit_ma) = args.current_limit_ma {
         config.manual.current_limit_ma = current_limit_ma;
     }
+    if let Some(tps_cdc_rise_mv) = args.tps_cdc_rise_mv {
+        config.manual.tps_cdc_rise_mv = tps_cdc_rise_mv;
+    }
     if let Some(usb_c_path) = args.usb_c_path {
         config.manual.usb_c_path_mode = usb_c_path.as_config_value().to_string();
     }
@@ -156,6 +159,9 @@ fn apply_power_config_set_args(
     if let Some(tps_mode) = args.tps_mode {
         config.tps_mode = tps_mode.as_config_value().to_string();
     }
+    if let Some(sw2303_line_comp) = args.sw2303_line_comp {
+        config.sw2303_line_compensation = sw2303_line_comp.as_config_value().to_string();
+    }
     apply_manual_output_args(config, &args.manual);
     apply_source_capability_args(config, &args.source)?;
     Ok(())
@@ -166,8 +172,10 @@ fn power_config_update_payload(config: &CliPowerConfig) -> Value {
         "hardware": config.hardware,
         "tps_mode": config.tps_mode,
         "light_load_mode": config.light_load_mode,
+        "sw2303_line_compensation": config.sw2303_line_compensation,
         "voltage_mv": config.manual.voltage_mv,
         "current_limit_ma": config.manual.current_limit_ma,
+        "tps_cdc_rise_mv": config.manual.tps_cdc_rise_mv,
         "usb_c_path_mode": config.manual.usb_c_path_mode,
         "power_watts": config.capability.power_watts,
         "pd": protocol_enabled(&config.capability.protocols, "pd"),
@@ -197,6 +205,7 @@ fn same_power_config_contents(left: &CliPowerConfig, right: &CliPowerConfig) -> 
     left.hardware == right.hardware
         && left.tps_mode == right.tps_mode
         && left.light_load_mode == right.light_load_mode
+        && left.sw2303_line_compensation == right.sw2303_line_compensation
         && left.capability == right.capability
         && left.manual == right.manual
 }
@@ -229,10 +238,12 @@ fn expected_default_power_config(current: &CliPowerConfig) -> CliPowerConfig {
     let mut expected = current.clone();
     expected.tps_mode = "auto_follow".to_string();
     expected.light_load_mode = "pfm".to_string();
+    expected.sw2303_line_compensation = default_sw2303_line_compensation();
     expected.capability = full_power_capability_defaults();
     expected.manual = CliPowerManual {
         voltage_mv: MANUAL_OUTPUT_DEFAULT_VOLTAGE_MV,
         current_limit_ma: MANUAL_OUTPUT_DEFAULT_CURRENT_MA,
+        tps_cdc_rise_mv: 0,
         usb_c_path_mode: "default".to_string(),
         path_policy: current
             .manual

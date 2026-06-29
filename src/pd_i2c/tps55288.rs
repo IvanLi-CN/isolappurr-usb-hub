@@ -1,5 +1,5 @@
 use super::{PowerRequest, PowerSetpoint, TPS55288_ADDR_7BIT};
-use crate::power_config::LightLoadMode;
+use crate::power_config::{LightLoadMode, TpsCdcRise};
 
 /// Default "keep-alive" setpoint used to power SW2303 before PD negotiation.
 ///
@@ -62,6 +62,35 @@ where
         dev.write_reg(addr::MODE, next_mode.bits()).await?;
     }
     state.light_load_mode = Some(light_load_mode);
+    Ok(())
+}
+
+pub async fn apply_cable_compensation<I2C>(
+    i2c: &mut I2C,
+    rise: TpsCdcRise,
+) -> Result<(), tps55288::Error<I2C::Error>>
+where
+    I2C: embedded_hal_async::i2c::I2c,
+{
+    use tps55288::registers::{CdcBits, addr};
+
+    let mut dev = tps55288::Tps55288::with_address(i2c, TPS55288_ADDR_7BIT);
+    let raw = dev.read_reg(addr::CDC).await?;
+    let mut bits = CdcBits::from_bits_truncate(raw);
+    bits.remove(CdcBits::CDC_OPT | CdcBits::CDC0 | CdcBits::CDC1 | CdcBits::CDC2);
+    bits |= match rise {
+        TpsCdcRise::V0 => CdcBits::empty(),
+        TpsCdcRise::V100 => CdcBits::CDC0,
+        TpsCdcRise::V200 => CdcBits::CDC1,
+        TpsCdcRise::V300 => CdcBits::CDC0 | CdcBits::CDC1,
+        TpsCdcRise::V400 => CdcBits::CDC2,
+        TpsCdcRise::V500 => CdcBits::CDC2 | CdcBits::CDC0,
+        TpsCdcRise::V600 => CdcBits::CDC2 | CdcBits::CDC1,
+        TpsCdcRise::V700 => CdcBits::CDC2 | CdcBits::CDC1 | CdcBits::CDC0,
+    };
+    if bits.bits() != raw {
+        dev.write_reg(addr::CDC, bits.bits()).await?;
+    }
     Ok(())
 }
 

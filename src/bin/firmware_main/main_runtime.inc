@@ -417,6 +417,8 @@
     #[cfg(not(feature = "net_http"))]
     let mut power_config = PowerConfig::defaults();
     let mut last_sw2303_path_control: Option<Sw2303PathControl> = None;
+    let mut last_sw2303_line_compensation = None;
+    let mut last_tps_cdc_rise = None;
     let mut runtime_tps_output_enabled = true;
     let mut runtime_tps_discharge_enabled = false;
     let mut runtime_tps_output_enabled_reported = runtime_tps_output_enabled;

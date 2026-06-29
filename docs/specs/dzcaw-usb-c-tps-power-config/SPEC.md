@@ -44,6 +44,10 @@ for diagnostics.
   `auto_follow|manual`.
 - `light_load_mode` MUST mean only the TPS55288 light-load switching mode
   with values `pfm|fpwm`.
+- `manual.tps_cdc_rise_mv` MUST accept only
+  `0|100|200|300|400|500|600|700`.
+- `sw2303_line_compensation` MUST accept only
+  `off|0mohm|50mohm|100mohm|150mohm`.
 - Defaults MUST restore the full SW2303 profile: PD, PPS, QC2, QC3, FCP, AFC,
   SCP, PE2.0, BC1.2, SFCP, fixed 9/12/15/20 V PDOs, and 100 W cap.
 - Manual TPS voltage MUST stay in the 3 V to 21 V range.
@@ -64,6 +68,31 @@ for diagnostics.
 - Power config get/set/defaults/reset-other MUST expose `light_load_mode` at
   the top level of the existing `power/config` payload instead of introducing a
   dedicated route or EEPROM record.
+- Power config get/set/defaults/reset-other MUST expose
+  `sw2303_line_compensation` at the top level of the existing `power/config`
+  payload and `manual.tps_cdc_rise_mv` inside the existing manual object
+  instead of introducing dedicated routes or records.
+- Legacy EEPROM power-config records that predate the compensation fields MUST
+  decode as `manual.tps_cdc_rise_mv=0` and
+  `sw2303_line_compensation=50mohm` without wiping the record.
+- TPS55288 cable compensation MUST be limited to internal `CDC[2:0]` control on
+  register `0x05`; the current board MUST NOT expose or apply external CDC pin
+  compensation.
+- Firmware MUST preserve `SC_MASK`, `OCP_MASK`, `OVP_MASK`, and reserved bits
+  when updating TPS55288 register `0x05`.
+- SW2303 line compensation MUST remain an owner-facing single choice even
+  though firmware expands it to register `0x14`, register `0xA4`, and register
+  `0xAD bit7`.
+- In `auto_follow`, firmware MUST force TPS cable compensation to `0V rise`
+  and apply the saved SW2303 line-compensation value.
+- In `manual`, firmware MUST force SW2303 line compensation off and apply the
+  saved TPS cable-compensation rise.
+- Web UI MUST add `TPS cable compensation` inside `Output mode` between
+  `Current limit` and `USB-C path`.
+- Web UI MUST add `SW2303 line compensation` below `TPS light-load mode` with
+  helper copy that makes clear the value applies in `Auto follow`.
+- Owner-facing CLI MUST expose both saved settings and clearly state that the
+  line-compensation setting applies in `Auto follow`.
 - Saving `light_load_mode=fpwm` MUST immediately force TPS55288 light-load
   behavior through the `MODE` register while explicitly preserving the board's
   external-VCC and `0x74` I2C-address semantics.
@@ -199,6 +228,9 @@ for diagnostics.
   `light_load_mode=pfm`.
 - Given a valid saved record, when firmware boots, then it loads the record and
   applies the selected SW2303 capability profile after the SW2303 read gate.
+- Given a legacy EEPROM power-config record with `version < 3`, when firmware
+  boots, then it keeps the saved capability/manual/path settings and resolves
+  `manual.tps_cdc_rise_mv=0` plus `sw2303_line_compensation=50mohm`.
 - Given a whole power config write over HTTP, Web Serial, or Local USB, when the
   request validates and the lock allows it, then firmware stores the config to
   EEPROM, updates the API snapshot, and reapplies the SW2303 profile.
@@ -218,6 +250,13 @@ for diagnostics.
 - Given `manual.usb_c_path_mode=default`, when manual VOUT is less than or
   equal to the explicit SW2303 protocol request, then firmware clears SW2303
   force-open and force-close bits.
+- Given `tps_mode=auto_follow`, when firmware applies runtime power policy,
+  then TPS55288 cable compensation is forced to `0V rise` and SW2303 line
+  compensation is expanded from the saved owner-facing setting into
+  `0x14 + 0xA4 + 0xAD bit7`.
+- Given `tps_mode=manual`, when firmware applies runtime power policy, then
+  SW2303 line compensation is forced off while TPS55288 applies the saved
+  `manual.tps_cdc_rise_mv` value using internal CDC mode only.
 - Given a remote host lock, when another host attempts a config write, then the
   write is rejected as busy and the UI presents the locked state.
 - Given the runtime `Power` action turns output off, when the request
@@ -311,7 +350,7 @@ for diagnostics.
   story_id_or_title: `Brand/ThemePalette/Review`
   state: light theme token review with warm-amber `secondary`
   requested_viewport: `1440x2000`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the formal light-theme token palette keeps `primary`
@@ -324,7 +363,7 @@ for diagnostics.
   story_id_or_title: `Brand/ThemePalette/Review`
   state: dark theme token review with warm-amber `secondary`
   requested_viewport: `1440x2000`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the dark-theme token palette preserves the same
@@ -337,7 +376,7 @@ for diagnostics.
   story_id_or_title: `Panels/DevicePowerPanel/CalibrationApplied`
   state: semantic surfaces on power page summaries
   requested_viewport: `1440x1500`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the idle-bias summary cards now consume the shared
@@ -350,7 +389,7 @@ for diagnostics.
   story_id_or_title: `Panels/DeviceDashboardPanel/Default`
   state: bordered semantic badges on dashboard and USB-C live header
   requested_viewport: `1440x1400`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the dashboard status chips, success surfaces, and
@@ -382,16 +421,33 @@ PR: include
   target_program: `mock-only`
   evidence_note: verifies the normal SW2303 manual TPS settings layout,
   `CC`/`DPDM` negotiation badges on wide protocol cards, path mode choices,
-  actions, and the uncalibrated USB-C idle-bias section.
+  actions, and the uncalibrated USB-C idle-bias section, with the manual TPS
+  cable-compensation slider and separate SW2303 line-compensation card both
+  visible in the same saved power surface.
 
 PR: include
 ![Device power panel desktop](./assets/device-power-panel-default-desktop.png)
 
 - source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ManualTpsCdcSet`
+  state: manual TPS cable compensation set to `0.7V`
+  requested_viewport: `1280x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies `Output mode` now exposes the saved TPS cable
+  compensation slider for `Manual TPS`, while the separate SW2303
+  line-compensation card keeps the saved owner-facing role scoped to the next
+  return to `Auto follow`.
+
+PR: include
+![Device power panel manual TPS cable compensation](./assets/device-power-panel-manual-tps-cdc-set.png)
+
+- source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/ForcedPwmMode`
   state: saved `light_load_mode=fpwm`
   requested_viewport: `1440x1400`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the Power settings panel exposes the persisted TPS
@@ -406,7 +462,7 @@ PR: include
   story_id_or_title: `Panels/DevicePowerPanel/OutputOffManualHighVoltage`
   state: runtime `Power` off with manual high-voltage warning
   requested_viewport: `1440x1400`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the runtime-only `Power` action can show the
@@ -416,6 +472,20 @@ PR: include
 
 PR: include
 ![Device power panel output off manual high voltage](./assets/power-output-off-manual-high-voltage.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/HostLocked`
+  state: host lock active with saved compensation controls disabled
+  requested_viewport: `1280x900`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies host-lock disable rules still cover the new TPS
+  cable-compensation slider and SW2303 line-compensation control, while the
+  saved values remain visible for inspection.
+
+PR: include
+![Device power panel host locked](./assets/device-power-panel-host-locked.png)
 
 - source_type: live_hil_web_page
   story_id_or_title: `device 856a141cdbd4 power page`
@@ -461,7 +531,7 @@ PR: include
   story_id_or_title: `Panels/DevicePowerPanel/ManualForceConfigOnly`
   state: dark theme protocol grid with refined active highlight
   requested_viewport: `1280x800`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies dark mode keeps the live protocol card separated by a
@@ -618,13 +688,14 @@ PR: include
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/Narrow`
   state: narrow responsive
-  requested_viewport: `390x844`
+  requested_viewport: `360x640`
   viewport_strategy: `devtools-emulate`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the power settings panel stacks without clipping
   labels, power cap, segmented controls, action buttons, or narrow protocol
-  cards after the negotiation badge hides.
+  cards after the negotiation badge hides, while keeping the compact TPS CDC
+  control reachable above the light-load card.
 
 PR: include
 ![Device power panel narrow](./assets/device-power-panel-narrow.png)

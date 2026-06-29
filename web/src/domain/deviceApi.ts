@@ -85,6 +85,7 @@ export type PowerConfigResponse = {
   persisted: boolean;
   tps_mode: "auto_follow" | "manual";
   light_load_mode: "pfm" | "fpwm";
+  sw2303_line_compensation: "off" | "0mohm" | "50mohm" | "100mohm" | "150mohm";
   runtime?: {
     output_enabled: boolean;
     discharge_enabled: boolean;
@@ -125,6 +126,7 @@ export type PowerConfigResponse = {
     voltage_mv: number;
     current_limit_ma: number;
     usb_c_path_mode: "default" | "disconnect" | "force";
+    tps_cdc_rise_mv: 0 | 100 | 200 | 300 | 400 | 500 | 600 | 700;
     path_policy?: string;
   };
   lock: { owner: number; expires_at_ms: number } | null;
@@ -134,12 +136,14 @@ export type PowerConfigManualInput = {
   voltage_mv: number;
   current_limit_ma: number;
   usb_c_path_mode: "default" | "disconnect" | "force";
+  tps_cdc_rise_mv: 0 | 100 | 200 | 300 | 400 | 500 | 600 | 700;
 };
 
 export type PowerConfigInput = {
   hardware: "sw2303";
   tps_mode: "auto_follow" | "manual";
   light_load_mode: "pfm" | "fpwm";
+  sw2303_line_compensation: "off" | "0mohm" | "50mohm" | "100mohm" | "150mohm";
   capability: PowerConfigResponse["capability"];
   manual: PowerConfigManualInput;
 };
@@ -150,6 +154,13 @@ function normalizePowerConfigResponse(
   return {
     ...value,
     light_load_mode: value.light_load_mode === "fpwm" ? "fpwm" : "pfm",
+    sw2303_line_compensation:
+      value.sw2303_line_compensation === "off" ||
+      value.sw2303_line_compensation === "0mohm" ||
+      value.sw2303_line_compensation === "100mohm" ||
+      value.sw2303_line_compensation === "150mohm"
+        ? value.sw2303_line_compensation
+        : "50mohm",
     capability: {
       ...value.capability,
       current: {
@@ -175,6 +186,19 @@ function normalizePowerConfigResponse(
     runtime: {
       output_enabled: value.runtime?.output_enabled ?? true,
       discharge_enabled: value.runtime?.discharge_enabled ?? false,
+    },
+    manual: {
+      ...value.manual,
+      tps_cdc_rise_mv:
+        value.manual?.tps_cdc_rise_mv === 100 ||
+        value.manual?.tps_cdc_rise_mv === 200 ||
+        value.manual?.tps_cdc_rise_mv === 300 ||
+        value.manual?.tps_cdc_rise_mv === 400 ||
+        value.manual?.tps_cdc_rise_mv === 500 ||
+        value.manual?.tps_cdc_rise_mv === 600 ||
+        value.manual?.tps_cdc_rise_mv === 700
+          ? value.manual.tps_cdc_rise_mv
+          : 0,
     },
   };
 }
@@ -351,6 +375,7 @@ function serializePowerConfigInput(config: PowerConfigInput): string {
     hardware: config.hardware,
     tps_mode: config.tps_mode,
     light_load_mode: config.light_load_mode,
+    sw2303_line_compensation: config.sw2303_line_compensation,
     capability: {
       profile: config.capability.profile,
       power_watts: config.capability.power_watts,
@@ -363,6 +388,7 @@ function serializePowerConfigInput(config: PowerConfigInput): string {
       voltage_mv: config.manual.voltage_mv,
       current_limit_ma: config.manual.current_limit_ma,
       usb_c_path_mode: config.manual.usb_c_path_mode,
+      tps_cdc_rise_mv: config.manual.tps_cdc_rise_mv,
     },
   } satisfies PowerConfigInput);
 }

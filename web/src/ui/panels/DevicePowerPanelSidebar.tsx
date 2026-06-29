@@ -1,5 +1,6 @@
 import type { PortState, PortTelemetry } from "../../domain/ports";
 import {
+  DiscreteSliderField,
   type FormState,
   formatTelemetryValue,
   InlineHelpPopover,
@@ -7,6 +8,9 @@ import {
 
 type DevicePowerPanelSidebarProps = {
   lightLoadMode: FormState["light_load_mode"];
+  onSetSw2303LineCompensation: (
+    value: FormState["sw2303_line_compensation"],
+  ) => void;
   onReplugUsbC: () => Promise<void>;
   onSetLightLoadMode: (mode: FormState["light_load_mode"]) => void;
   onToggleRuntime: (
@@ -15,6 +19,7 @@ type DevicePowerPanelSidebarProps = {
   ) => Promise<void>;
   powerControlsDisabled: boolean;
   runtimeOutputEnabled: boolean;
+  sw2303LineCompensation: FormState["sw2303_line_compensation"];
   usbCPending: boolean;
   usbCState: PortState | null;
   usbCTelemetry: PortTelemetry | null;
@@ -22,11 +27,13 @@ type DevicePowerPanelSidebarProps = {
 
 export function DevicePowerPanelSidebar({
   lightLoadMode,
+  onSetSw2303LineCompensation,
   onReplugUsbC,
   onSetLightLoadMode,
   onToggleRuntime,
   powerControlsDisabled,
   runtimeOutputEnabled,
+  sw2303LineCompensation,
   usbCPending,
   usbCState,
   usbCTelemetry,
@@ -175,6 +182,42 @@ export function DevicePowerPanelSidebar({
           >
             FPWM
           </button>
+        </div>
+      </section>
+
+      <section className="rounded-[10px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-4 py-4">
+        <div className="flex items-center gap-2 border-b border-[var(--border)] pb-4">
+          <div className="text-[14px] font-semibold">
+            SW2303 line compensation
+          </div>
+          <InlineHelpPopover
+            lines={[
+              "Applies in Auto follow.",
+              "Manual TPS saves the value for the next return to automatic tracking.",
+            ]}
+            title="SW2303 line compensation"
+          />
+        </div>
+        <div className="mt-3">
+          <DiscreteSliderField
+            disabled={powerControlsDisabled}
+            hideLabel
+            label="SW2303 line compensation"
+            showValue={false}
+            onChange={(value) =>
+              onSetSw2303LineCompensation(
+                value as FormState["sw2303_line_compensation"],
+              )
+            }
+            options={[
+              { label: "Off", value: "off" },
+              { label: "0", value: "0mohm" },
+              { label: "50mΩ", value: "50mohm" },
+              { label: "100mΩ", value: "100mohm" },
+              { label: "150mΩ", value: "150mohm" },
+            ]}
+            value={sw2303LineCompensation}
+          />
         </div>
       </section>
     </aside>

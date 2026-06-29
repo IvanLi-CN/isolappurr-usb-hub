@@ -386,6 +386,12 @@ body {
   }
 }
 
+@media (max-width: 639px) {
+  .protocol-negotiation-badge {
+    display: none;
+  }
+}
+
 .modal::backdrop {
   background: var(--overlay);
 }
