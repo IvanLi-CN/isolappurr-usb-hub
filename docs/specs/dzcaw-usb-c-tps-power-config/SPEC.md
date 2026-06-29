@@ -402,7 +402,7 @@ for diagnostics.
   story_id_or_title: `Panels/DevicePowerPanel/ManualForceConfigOnly`
   state: power panel configuration-only manual force
   requested_viewport: `1440x1400`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: proves the Web power settings page stays configuration-only
@@ -416,7 +416,7 @@ PR: include
   story_id_or_title: `Panels/DevicePowerPanel/Default`
   state: default desktop
   requested_viewport: `1280x900`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies the normal SW2303 manual TPS settings layout,
@@ -432,7 +432,7 @@ PR: include
   story_id_or_title: `Panels/DevicePowerPanel/ManualTpsCdcSet`
   state: manual TPS cable compensation set to `0.7V`
   requested_viewport: `1280x900`
-  viewport_strategy: `devtools-emulate`
+  viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   target_program: `mock-only`
   evidence_note: verifies `Output mode` now exposes the saved TPS cable
