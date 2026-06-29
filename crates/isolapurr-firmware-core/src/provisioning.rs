@@ -50,6 +50,10 @@ pub fn write_record_checksum(record: &mut [u8]) {
     record[checksum_offset..].copy_from_slice(&crc.to_le_bytes());
 }
 
+pub const fn power_settings_version_supported(version: u8) -> bool {
+    version == 1 || version == 2 || version == POWER_SETTINGS_VERSION
+}
+
 pub fn encode_power_config(record: &mut [u8; POWER_SETTINGS_RECORD_LEN], config: PowerConfig) {
     record[9] = match config.hardware {
         PowerHardwareKind::Sw2303 => 0,
@@ -459,6 +463,17 @@ mod tests {
             decoded.sw2303_line_compensation,
             DEFAULT_SW2303_LINE_COMPENSATION
         );
+    }
+
+    #[test]
+    fn power_config_loader_supports_v2_records() {
+        assert!(power_settings_version_supported(1));
+        assert!(power_settings_version_supported(2));
+        assert!(power_settings_version_supported(POWER_SETTINGS_VERSION));
+        assert!(!power_settings_version_supported(0));
+        assert!(!power_settings_version_supported(
+            POWER_SETTINGS_VERSION + 1
+        ));
     }
 
     #[test]
