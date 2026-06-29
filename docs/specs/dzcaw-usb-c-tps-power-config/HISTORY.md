@@ -1,5 +1,15 @@
 # History
 
+## 2026-06-29
+
+- Added persisted manual cable-compensation and auto-follow line-compensation
+  settings without changing the EEPROM record length.
+- Locked the runtime rule that `auto_follow` uses SW2303 line compensation and
+  forces TPS cable compensation off, while `manual` does the opposite.
+- Collapsed SW2303 register `0x14`, `0xA4`, and `0xAD bit7` into one
+  owner-facing setting and documented why the current board must not expose TPS
+  external CDC mode.
+
 ## 2026-06-19
 
 - Shrunk the Web protocol matrix so the capability area stays compact and

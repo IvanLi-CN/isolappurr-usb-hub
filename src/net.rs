@@ -21,7 +21,7 @@ use isolapurr_usb_hub::display_ui::{NormalUiPortBadge, NormalUiPortMode};
 use isolapurr_usb_hub::idle_bias::{IDLE_BIAS_POINT_COUNT, IdleBiasMetadata};
 use isolapurr_usb_hub::power_config::{
     LightLoadMode, ManualTpsConfig, ManualUsbCPathMode, PowerConfig, Sw2303CapabilityReadback,
-    TpsMode, UsbCCapabilityConfig,
+    Sw2303LineCompensation, TpsCdcRise, TpsMode, UsbCCapabilityConfig,
 };
 use isolapurr_usb_hub::provisioning::{
     DEFAULT_USB_C_DOWNSTREAM_ROUTE, UsbCDownstreamRoute, WifiCredentials,
@@ -1015,6 +1015,7 @@ mod tests {
                     voltage_mv: 9_000,
                     current_limit_ma: 1_000,
                     usb_c_path_mode: ManualUsbCPathMode::Default,
+                    tps_cdc_rise: TpsCdcRise::V0,
                 },
                 ..PowerConfig::defaults()
             },

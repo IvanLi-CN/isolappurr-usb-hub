@@ -1058,14 +1058,38 @@ pub fn parse_power_config_body(body: &str) -> Option<PowerConfig> {
         "force" => ManualUsbCPathMode::Force,
         _ => return None,
     };
+    let tps_cdc_rise = match extract_body_u16(body, "tps_cdc_rise_mv").unwrap_or(0) {
+        0 => TpsCdcRise::V0,
+        100 => TpsCdcRise::V100,
+        200 => TpsCdcRise::V200,
+        300 => TpsCdcRise::V300,
+        400 => TpsCdcRise::V400,
+        500 => TpsCdcRise::V500,
+        600 => TpsCdcRise::V600,
+        700 => TpsCdcRise::V700,
+        _ => return None,
+    };
+    let sw2303_line_compensation = match extract_body_string(body, "sw2303_line_compensation")
+        .unwrap_or_else(|| String::from("50mohm"))
+        .as_str()
+    {
+        "off" => Sw2303LineCompensation::Off,
+        "0mohm" => Sw2303LineCompensation::Ohm0,
+        "50mohm" => Sw2303LineCompensation::MilliOhm50,
+        "100mohm" => Sw2303LineCompensation::MilliOhm100,
+        "150mohm" => Sw2303LineCompensation::MilliOhm150,
+        _ => return None,
+    };
     let mut config = PowerConfig::defaults();
     config.tps_mode = tps_mode;
     config.light_load_mode = light_load_mode;
+    config.sw2303_line_compensation = sw2303_line_compensation;
     config.manual = ManualTpsConfig {
         voltage_mv: extract_body_u16(body, "voltage_mv").unwrap_or(config.manual.voltage_mv),
         current_limit_ma: extract_body_u16(body, "current_limit_ma")
             .unwrap_or(config.manual.current_limit_ma),
         usb_c_path_mode: manual_path,
+        tps_cdc_rise,
     };
     if let Some(power_watts) = extract_body_u8(body, "power_watts") {
         config.capability.power_watts = power_watts;

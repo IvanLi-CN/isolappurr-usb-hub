@@ -26,11 +26,13 @@ export function cloneConfig(config: PowerConfigResponse): FormState {
     hardware: "sw2303",
     tps_mode: config.tps_mode,
     light_load_mode: config.light_load_mode,
+    sw2303_line_compensation: config.sw2303_line_compensation,
     capability: config.capability,
     manual: {
       voltage_mv: config.manual.voltage_mv,
       current_limit_ma: config.manual.current_limit_ma,
       usb_c_path_mode: config.manual.usb_c_path_mode,
+      tps_cdc_rise_mv: config.manual.tps_cdc_rise_mv,
     },
   };
 }
@@ -147,6 +149,27 @@ export function formatCurrentInput(ma: number): string {
   return ma >= 1000 && ma % 1000 === 0 ? `${ma / 1000} A` : `${ma} mA`;
 }
 
+export function formatTpsCdcOption(mv: number): string {
+  return mv === 0 ? "Off" : `${(mv / 1000).toFixed(1)}V`;
+}
+
+export function formatSw2303LineCompensation(
+  value: FormState["sw2303_line_compensation"],
+): string {
+  switch (value) {
+    case "off":
+      return "Off";
+    case "0mohm":
+      return "0";
+    case "100mohm":
+      return "100mΩ";
+    case "150mohm":
+      return "150mΩ";
+    default:
+      return "50mΩ";
+  }
+}
+
 export function formatPowerInput(watts: number): string {
   return `${watts} W`;
 }
@@ -236,6 +259,99 @@ export function UnitSliderField({
         />
       </span>
     </label>
+  );
+}
+
+export function DiscreteSliderField({
+  disabled = false,
+  hideLabel = false,
+  label,
+  labelAccessory,
+  showValue = true,
+  onChange,
+  options,
+  value,
+}: {
+  disabled?: boolean;
+  hideLabel?: boolean;
+  label: string;
+  labelAccessory?: ReactNode;
+  showValue?: boolean;
+  onChange: (value: string) => void;
+  options: Array<{ label: string; value: string; valueLabel?: string }>;
+  value: string;
+}) {
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  );
+  const selectedOption = options[selectedIndex] ?? options[0];
+  const lastIndex = Math.max(1, options.length - 1);
+
+  return (
+    <div className="grid gap-1.5 text-[13px]">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={
+              hideLabel ? "sr-only" : "font-medium text-[var(--muted)]"
+            }
+          >
+            {label}
+          </span>
+          {hideLabel ? null : labelAccessory}
+        </div>
+        {showValue ? (
+          <span
+            className={`inline-flex h-8 shrink-0 items-center rounded-full border border-[var(--border)] bg-[var(--panel)] px-3 text-[12px] font-semibold text-[var(--text)] ${
+              disabled ? "opacity-60" : ""
+            }`}
+          >
+            {selectedOption?.valueLabel ?? selectedOption?.label}
+          </span>
+        ) : null}
+      </div>
+      <input
+        aria-label={label}
+        className="w-full accent-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={disabled}
+        max={Math.max(0, options.length - 1)}
+        min={0}
+        onChange={(event) =>
+          onChange(options[Number(event.target.value)]?.value ?? value)
+        }
+        step={1}
+        type="range"
+        value={selectedIndex}
+      />
+      <div className="relative h-4">
+        {options.map((option, index) => {
+          const selected = option.value === value;
+          return (
+            <button
+              className={`absolute top-0 min-w-0 bg-transparent px-0 text-center text-[11px] font-semibold leading-4 ${
+                selected ? "text-[var(--text)]" : "text-[var(--muted)]"
+              } ${disabled ? "opacity-60" : "hover:text-[var(--text)]"}`}
+              disabled={disabled}
+              key={option.value}
+              onClick={() => onChange(option.value)}
+              style={{
+                left: `${(index / lastIndex) * 100}%`,
+                transform:
+                  index === 0
+                    ? "translateX(0)"
+                    : index === lastIndex
+                      ? "translateX(-100%)"
+                      : "translateX(-50%)",
+              }}
+              type="button"
+            >
+              <span className="block truncate">{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

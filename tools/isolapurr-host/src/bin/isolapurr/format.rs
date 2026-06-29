@@ -299,6 +299,10 @@ fn format_power_config_output(output: &Value) -> String {
         format_light_load_mode(&config.light_load_mode)
     ));
     lines.push(format!(
+        "Auto-follow line compensation: {}",
+        format_sw2303_line_compensation(&config.sw2303_line_compensation)
+    ));
+    lines.push(format!(
         "Runtime 2mm output: {}",
         if config.runtime.output_enabled {
             "enabled"
@@ -338,9 +342,10 @@ fn format_power_config_output(output: &Value) -> String {
         )
     ));
     lines.push(format!(
-        "Manual output: {} mV, {} mA, USB-C path {}",
+        "Manual output: {} mV, {} mA, cable compensation {}, USB-C path {}",
         config.manual.voltage_mv,
         config.manual.current_limit_ma,
+        format_tps_cdc_rise(config.manual.tps_cdc_rise_mv),
         format_usb_c_path_mode(&config.manual.usb_c_path_mode)
     ));
     if let Some(lock) = &config.lock {
@@ -356,6 +361,21 @@ fn format_power_config_output(output: &Value) -> String {
         lines.push("Host lock: idle".to_string());
     }
     format!("{}\n", lines.join("\n"))
+}
+
+fn format_tps_cdc_rise(value: u16) -> String {
+    format!("{} V rise", (value as f32) / 1000.0)
+}
+
+fn format_sw2303_line_compensation(value: &str) -> &'static str {
+    match value {
+        "off" => "Off",
+        "0mohm" => "0",
+        "50mohm" => "50mΩ",
+        "100mohm" => "100mΩ",
+        "150mohm" => "150mΩ",
+        _ => "50mΩ",
+    }
 }
 
 fn format_live_power_output(output: &Value) -> String {

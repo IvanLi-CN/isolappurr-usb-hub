@@ -10,7 +10,7 @@ use isolapurr_firmware_core::provisioning::{
     IDLE_BIAS_MAGIC, IDLE_BIAS_RECORD_LEN, IDLE_BIAS_VERSION, POWER_SETTINGS_MAGIC,
     POWER_SETTINGS_RECORD_LEN, POWER_SETTINGS_VERSION, checksum, decode_idle_bias_calibration,
     decode_power_config, encode_idle_bias_calibration, encode_power_config,
-    record_checksum_matches, write_record_checksum,
+    power_settings_version_supported, record_checksum_matches, write_record_checksum,
 };
 
 pub const WIFI_EEPROM_ADDR_7BIT: SevenBitAddress = 0x50;
@@ -321,7 +321,7 @@ where
         return Err(ProvisioningError::InvalidRecord);
     }
     let version = record[POWER_SETTINGS_MAGIC.len()];
-    if version != 1 && version != POWER_SETTINGS_VERSION {
+    if !power_settings_version_supported(version) {
         return Err(ProvisioningError::InvalidRecord);
     }
 

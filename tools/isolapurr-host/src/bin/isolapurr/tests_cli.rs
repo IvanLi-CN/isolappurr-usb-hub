@@ -1,9 +1,9 @@
 use super::{
     CliPowerConfig, CliPowerDiagnostics, CliPowerSetpoint, DeviceProfile, DiscoverFirmware,
     LightLoadModeArg, ManualOutputArgs, OutputUsbCPathArg, PowerConfigSetArgs,
-    SourceCapabilitySetArgs, TpsModeArg, apply_manual_output_args, apply_power_config_set_args,
-    discover_usb_match_keys, format_power_config_output, format_power_show_output,
-    parse_device_identity_from_info, parse_discovered_http_info,
+    SourceCapabilitySetArgs, Sw2303LineCompArg, TpsModeArg, apply_manual_output_args,
+    apply_power_config_set_args, discover_usb_match_keys, format_power_config_output,
+    format_power_show_output, parse_device_identity_from_info, parse_discovered_http_info,
     saved_hardware_match_for_transport,
 };
 use serde_json::json;
@@ -15,6 +15,7 @@ fn power_config_human_output_avoids_chip_names() {
         "persisted": true,
         "tps_mode": "manual",
         "light_load_mode": "fpwm",
+        "sw2303_line_compensation": "50mohm",
         "runtime": {
             "output_enabled": true,
             "discharge_enabled": false
@@ -54,6 +55,7 @@ fn power_config_human_output_avoids_chip_names() {
         "manual": {
             "voltage_mv": 12000,
             "current_limit_ma": 3000,
+            "tps_cdc_rise_mv": 300,
             "usb_c_path_mode": "default",
             "path_policy": "auto"
         },
@@ -62,6 +64,8 @@ fn power_config_human_output_avoids_chip_names() {
 
     assert!(rendered.contains("Output mode: Manual bench output"));
     assert!(rendered.contains("Light-load mode: FPWM"));
+    assert!(rendered.contains("Auto-follow line compensation: 50mΩ"));
+    assert!(rendered.contains("cable compensation 0.3 V rise"));
     assert!(rendered.contains("Runtime 2mm output: enabled"));
     assert!(rendered.contains("Current profile: PPS3 5000 mA"));
     assert!(!rendered.to_ascii_lowercase().contains("sw2303"));
@@ -76,6 +80,7 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
             "persisted": true,
             "tps_mode": "auto_follow",
             "light_load_mode": "pfm",
+            "sw2303_line_compensation": "100mohm",
             "runtime": {
                 "output_enabled": true,
                 "discharge_enabled": false
@@ -115,6 +120,7 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
             "manual": {
                 "voltage_mv": 5000,
                 "current_limit_ma": 5000,
+                "tps_cdc_rise_mv": 0,
                 "usb_c_path_mode": "default",
                 "path_policy": "auto"
             },
@@ -694,6 +700,7 @@ fn power_config_runtime_defaults_enabled_when_missing() {
         "persisted": true,
         "tps_mode": "auto_follow",
         "light_load_mode": "pfm",
+        "sw2303_line_compensation": "50mohm",
         "capability": {
             "profile": "full",
             "power_watts": 100,
@@ -770,6 +777,7 @@ fn manual_output_updates_only_manual_section() {
         "manual": {
             "voltage_mv": 5000,
             "current_limit_ma": 1000,
+            "tps_cdc_rise_mv": 0,
             "usb_c_path_mode": "default",
             "path_policy": "auto"
         },
@@ -784,6 +792,7 @@ fn manual_output_updates_only_manual_section() {
         &ManualOutputArgs {
             voltage_mv: Some(21_000),
             current_limit_ma: Some(6_350),
+            tps_cdc_rise_mv: Some(700),
             usb_c_path: Some(OutputUsbCPathArg::Disconnected),
         },
     );
@@ -792,6 +801,7 @@ fn manual_output_updates_only_manual_section() {
     assert_eq!(updated.light_load_mode, "pfm");
     assert_eq!(updated.manual.voltage_mv, 21_000);
     assert_eq!(updated.manual.current_limit_ma, 6_350);
+    assert_eq!(updated.manual.tps_cdc_rise_mv, 700);
     assert_eq!(updated.manual.usb_c_path_mode, "disconnect");
     assert!(updated.manual.voltage_mv >= 3_000);
 }

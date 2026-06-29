@@ -15,6 +15,7 @@ const manualConfig: PowerConfigResponse = {
   persisted: true,
   tps_mode: "manual",
   light_load_mode: "pfm",
+  sw2303_line_compensation: "50mohm",
   runtime: {
     output_enabled: true,
     discharge_enabled: false,
@@ -55,6 +56,7 @@ const manualConfig: PowerConfigResponse = {
     voltage_mv: 9000,
     current_limit_ma: 3000,
     usb_c_path_mode: "default",
+    tps_cdc_rise_mv: 300,
     path_policy: "auto",
   },
   lock: null,
@@ -67,6 +69,7 @@ const autoConfig: PowerConfigResponse = {
     voltage_mv: 5000,
     current_limit_ma: 1000,
     usb_c_path_mode: "default",
+    tps_cdc_rise_mv: 0,
     path_policy: "auto",
   },
 };
@@ -341,6 +344,9 @@ export const Default: Story = {
     );
     await expect(await portal.findByText("9V")).toBeVisible();
     await expect(await portal.findByText("12V")).toBeVisible();
+    await userEvent.click(
+      await canvas.findByRole("button", { name: /4 PDO/i }),
+    );
   },
 };
 
@@ -371,6 +377,20 @@ export const AutoFollowDefaults: Story = {
     loadIdleBias: () => okIdle(idleBiasReadyOff),
     savePowerConfig: () => ok(autoConfig),
     setPowerLock: () => ok(autoConfig),
+  },
+};
+
+export const ManualTpsCdcSet: Story = {
+  args: {
+    ...defaultArgs,
+    loadPowerConfig: () =>
+      ok({
+        ...manualConfig,
+        manual: {
+          ...manualConfig.manual,
+          tps_cdc_rise_mv: 700,
+        },
+      }),
   },
 };
 

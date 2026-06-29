@@ -5,6 +5,7 @@ fn power_config_set_updates_only_requested_fields() {
         "persisted": true,
         "tps_mode": "auto_follow",
         "light_load_mode": "pfm",
+        "sw2303_line_compensation": "50mohm",
         "capability": {
             "profile": "full",
             "power_watts": 65,
@@ -34,6 +35,7 @@ fn power_config_set_updates_only_requested_fields() {
         "manual": {
             "voltage_mv": 5000,
             "current_limit_ma": 1000,
+            "tps_cdc_rise_mv": 0,
             "usb_c_path_mode": "default",
             "path_policy": "auto"
         },
@@ -48,6 +50,7 @@ fn power_config_set_updates_only_requested_fields() {
         &PowerConfigSetArgs {
             light_load_mode: Some(LightLoadModeArg::Fpwm),
             tps_mode: Some(TpsModeArg::Manual),
+            sw2303_line_comp: Some(Sw2303LineCompArg::OneHundredFifty),
             manual: ManualOutputArgs::default(),
             source: SourceCapabilitySetArgs::default(),
         },
@@ -56,6 +59,7 @@ fn power_config_set_updates_only_requested_fields() {
 
     assert_eq!(updated.light_load_mode, "fpwm");
     assert_eq!(updated.tps_mode, "manual");
+    assert_eq!(updated.sw2303_line_compensation, "150mohm");
     assert_eq!(updated.capability, capability_before);
     assert_eq!(updated.manual, original.manual);
 }

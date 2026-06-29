@@ -3,7 +3,8 @@ use crate::idle_bias::{
     IdleBiasCalibration, IdleBiasMetadata,
 };
 use crate::power_config::{
-    LightLoadMode, ManualTpsConfig, ManualUsbCPathMode, PowerConfig, PowerHardwareKind, TpsMode,
+    DEFAULT_SW2303_LINE_COMPENSATION, LightLoadMode, ManualTpsConfig, ManualUsbCPathMode,
+    PowerConfig, PowerHardwareKind, Sw2303LineCompensation, TpsCdcRise, TpsMode,
     UsbCCapabilityConfig, UsbCCurrentLimitConfig, UsbCFastChargeConfig,
 };
 
@@ -11,7 +12,7 @@ const IDLE_BIAS_FIXED_METADATA: IdleBiasMetadata = IdleBiasMetadata::fixed();
 
 pub const POWER_SETTINGS_RECORD_LEN: usize = 96;
 pub const POWER_SETTINGS_MAGIC: &[u8; 8] = b"IPPWR01\0";
-pub const POWER_SETTINGS_VERSION: u8 = 2;
+pub const POWER_SETTINGS_VERSION: u8 = 3;
 pub const IDLE_BIAS_RECORD_LEN: usize = 96;
 pub const IDLE_BIAS_MAGIC: &[u8; 8] = b"IPIBIAS\0";
 pub const IDLE_BIAS_VERSION: u8 = 1;
@@ -49,6 +50,10 @@ pub fn write_record_checksum(record: &mut [u8]) {
     record[checksum_offset..].copy_from_slice(&crc.to_le_bytes());
 }
 
+pub const fn power_settings_version_supported(version: u8) -> bool {
+    version == 1 || version == 2 || version == POWER_SETTINGS_VERSION
+}
+
 pub fn encode_power_config(record: &mut [u8; POWER_SETTINGS_RECORD_LEN], config: PowerConfig) {
     record[9] = match config.hardware {
         PowerHardwareKind::Sw2303 => 0,
@@ -84,6 +89,23 @@ pub fn encode_power_config(record: &mut [u8; POWER_SETTINGS_RECORD_LEN], config:
         | ((config.capability.fast_charge.qc30_20v_enabled as u8) << 1)
         | ((config.capability.fast_charge.pe20_20v_enabled as u8) << 2)
         | ((config.capability.fast_charge.non_pd_12v_enabled as u8) << 3);
+    record[23] = match config.manual.tps_cdc_rise {
+        TpsCdcRise::V0 => 0,
+        TpsCdcRise::V100 => 1,
+        TpsCdcRise::V200 => 2,
+        TpsCdcRise::V300 => 3,
+        TpsCdcRise::V400 => 4,
+        TpsCdcRise::V500 => 5,
+        TpsCdcRise::V600 => 6,
+        TpsCdcRise::V700 => 7,
+    };
+    record[24] = match config.sw2303_line_compensation {
+        Sw2303LineCompensation::Off => 0,
+        Sw2303LineCompensation::Ohm0 => 1,
+        Sw2303LineCompensation::MilliOhm50 => 2,
+        Sw2303LineCompensation::MilliOhm100 => 3,
+        Sw2303LineCompensation::MilliOhm150 => 4,
+    };
 }
 
 pub fn decode_power_config(record: &[u8; POWER_SETTINGS_RECORD_LEN]) -> Option<PowerConfig> {
@@ -110,14 +132,26 @@ pub fn decode_power_config(record: &[u8; POWER_SETTINGS_RECORD_LEN]) -> Option<P
         1 => LightLoadMode::Fpwm,
         _ => return None,
     };
+    let tps_cdc_rise = if version >= 3 {
+        unpack_tps_cdc_rise(record[23])?
+    } else {
+        TpsCdcRise::V0
+    };
+    let sw2303_line_compensation = if version >= 3 {
+        unpack_sw2303_line_compensation(record[24])?
+    } else {
+        DEFAULT_SW2303_LINE_COMPENSATION
+    };
     Some(PowerConfig {
         hardware,
         tps_mode,
         light_load_mode,
+        sw2303_line_compensation,
         manual: ManualTpsConfig {
             voltage_mv,
             current_limit_ma,
             usb_c_path_mode,
+            tps_cdc_rise,
         },
         capability: if version >= 2 {
             unpack_capability_v2(
@@ -241,6 +275,31 @@ fn unpack_scp_limit(bits: u8) -> Option<u16> {
     }
 }
 
+fn unpack_tps_cdc_rise(raw: u8) -> Option<TpsCdcRise> {
+    match raw {
+        0 => Some(TpsCdcRise::V0),
+        1 => Some(TpsCdcRise::V100),
+        2 => Some(TpsCdcRise::V200),
+        3 => Some(TpsCdcRise::V300),
+        4 => Some(TpsCdcRise::V400),
+        5 => Some(TpsCdcRise::V500),
+        6 => Some(TpsCdcRise::V600),
+        7 => Some(TpsCdcRise::V700),
+        _ => None,
+    }
+}
+
+fn unpack_sw2303_line_compensation(raw: u8) -> Option<Sw2303LineCompensation> {
+    match raw {
+        0 => Some(Sw2303LineCompensation::Off),
+        1 => Some(Sw2303LineCompensation::Ohm0),
+        2 => Some(Sw2303LineCompensation::MilliOhm50),
+        3 => Some(Sw2303LineCompensation::MilliOhm100),
+        4 => Some(Sw2303LineCompensation::MilliOhm150),
+        _ => None,
+    }
+}
+
 pub fn encode_idle_bias_calibration(
     record: &mut [u8; IDLE_BIAS_RECORD_LEN],
     calibration: IdleBiasCalibration,
@@ -304,6 +363,7 @@ mod tests {
                 voltage_mv: 9_000,
                 current_limit_ma: 3_000,
                 usb_c_path_mode: ManualUsbCPathMode::Force,
+                tps_cdc_rise: TpsCdcRise::V400,
             },
             capability: UsbCCapabilityConfig {
                 current: UsbCCurrentLimitConfig {
@@ -321,6 +381,7 @@ mod tests {
                 },
                 ..PowerConfig::defaults().capability
             },
+            sw2303_line_compensation: Sw2303LineCompensation::MilliOhm150,
             ..PowerConfig::defaults()
         };
         let mut record = [0u8; POWER_SETTINGS_RECORD_LEN];
@@ -340,6 +401,7 @@ mod tests {
                 voltage_mv: 9_000,
                 current_limit_ma: 3_000,
                 usb_c_path_mode: ManualUsbCPathMode::Force,
+                tps_cdc_rise: TpsCdcRise::V300,
             },
             ..PowerConfig::defaults()
         };
@@ -373,6 +435,45 @@ mod tests {
         assert!(decoded.capability.fast_charge.qc30_20v_enabled);
         assert!(decoded.capability.fast_charge.pe20_20v_enabled);
         assert!(decoded.capability.fast_charge.non_pd_12v_enabled);
+        assert_eq!(decoded.manual.tps_cdc_rise, TpsCdcRise::V0);
+        assert_eq!(
+            decoded.sw2303_line_compensation,
+            DEFAULT_SW2303_LINE_COMPENSATION
+        );
+    }
+
+    #[test]
+    fn power_config_v2_record_defaults_new_compensation_fields() {
+        let config = PowerConfig {
+            manual: ManualTpsConfig {
+                tps_cdc_rise: TpsCdcRise::V600,
+                ..PowerConfig::defaults().manual
+            },
+            sw2303_line_compensation: Sw2303LineCompensation::Off,
+            ..PowerConfig::defaults()
+        };
+        let mut record = [0u8; POWER_SETTINGS_RECORD_LEN];
+        record[..POWER_SETTINGS_MAGIC.len()].copy_from_slice(POWER_SETTINGS_MAGIC);
+        record[POWER_SETTINGS_MAGIC.len()] = 2;
+        encode_power_config(&mut record, config);
+
+        let decoded = decode_power_config(&record).expect("v2 record should decode");
+        assert_eq!(decoded.manual.tps_cdc_rise, TpsCdcRise::V0);
+        assert_eq!(
+            decoded.sw2303_line_compensation,
+            DEFAULT_SW2303_LINE_COMPENSATION
+        );
+    }
+
+    #[test]
+    fn power_config_loader_supports_v2_records() {
+        assert!(power_settings_version_supported(1));
+        assert!(power_settings_version_supported(2));
+        assert!(power_settings_version_supported(POWER_SETTINGS_VERSION));
+        assert!(!power_settings_version_supported(0));
+        assert!(!power_settings_version_supported(
+            POWER_SETTINGS_VERSION + 1
+        ));
     }
 
     #[test]
