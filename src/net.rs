@@ -1015,6 +1015,7 @@ mod tests {
                     voltage_mv: 9_000,
                     current_limit_ma: 1_000,
                     usb_c_path_mode: ManualUsbCPathMode::Default,
+                    tps_cdc_rise: TpsCdcRise::V0,
                 },
                 ..PowerConfig::defaults()
             },
