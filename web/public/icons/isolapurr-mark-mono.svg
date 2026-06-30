@@ -1,12 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">IsolaPurr USB Hub monochrome mark</title>
-  <desc id="desc">A monochrome soft isolated hub mark for IsolaPurr USB Hub.</desc>
-  <rect width="256" height="256" fill="#f6f7f3" />
-  <rect width="256" height="256" rx="54" fill="#6f9886" />
-  <g transform="matrix(1.07 0 0 1.07 -18.59 0.5)">
-    <path
-      fill="#fff8e7"
-      d="M80 31H194C206 31 216 41 216 53C216 64 208 73 197 75L176 78C163 80 154 91 154 104V125C154 138 163 149 176 151L197 154C208 156 216 165 216 176C216 188 206 198 194 198H80C68 198 58 188 58 176C58 165 66 156 77 154L98 151C111 149 119 138 119 125V104C119 91 111 80 98 78L77 75C66 73 58 64 58 53C58 41 68 31 80 31Z"
-    />
-  </g>
+  <desc id="desc">A standalone monochrome rounded isolated USB hub mark with a square shell, inner panel, protected rail, and lower status signal.</desc>
+  <rect x="42" y="42" width="172" height="172" rx="40" fill="#6f9886" />
+  <rect x="66" y="78" width="124" height="92" rx="30" fill="#fff8e7" opacity="0.92" />
+  <rect x="80" y="104" width="96" height="36" rx="17" fill="#293331" />
+  <rect x="98" y="117" width="60" height="9" rx="4.5" fill="#fff8e7" />
+  <rect x="96" y="154" width="64" height="5" rx="2.5" fill="#fff8e7" opacity="0.92" />
 </svg>

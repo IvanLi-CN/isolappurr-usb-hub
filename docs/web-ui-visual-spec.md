@@ -73,12 +73,15 @@
 
 ## 品牌与安装图标（Brand / Icons）
 
-Web 控制台使用圆角方形隔离 hub 作为产品 mark：外轮廓呼应硬件设备的方形形态，内部留白表达被隔离的连接通道。图标必须保持圆润、扁平、可缩小，不使用写实硬件、猫形、复杂电路或营销式吉祥物。
+Web 控制台使用圆角方形隔离 hub 作为产品 mark：外轮廓呼应硬件设备的方形形态，内部面板、端口与状态灯表达被隔离的连接通道。图标必须保持圆润、扁平、可缩小，不使用写实硬件、猫形、复杂电路或营销式吉祥物。
 
 规范性要求：
 
 - 图标源文件以 `web/src/assets/brand/isolapurr-mark.svg` 为 master，单色版本为 `web/src/assets/brand/isolapurr-mark-mono.svg`。
+- 横向 logo 源文件为 `web/src/assets/brand/isolapurr-logo.svg`，派生 PNG 为 `web/public/brand/isolapurr-logo.png`。
+- 产品营销母图为 `web/src/assets/brand/product-render-source.png`，派生输出包括 `web/public/brand/isolapurr-product-poster.png`、`web/public/brand/github-social-preview.png` 与 `.github/social-preview.png`。
 - favicon、Apple touch icon、PWA any/maskable icon、desktop-ready PNG、Tauri install source PNG 均从 master 派生；更新 master 后运行 `cd web && bun run icons` 重新生成。
+- GitHub Social preview 固定为 `1280×640`，产品海报固定为 `1440×1920`；二者文字必须由本地脚本叠加，避免生成图内文字拼写漂移。
 - 安装图标采用双轨导出：
   - `maskable-*` 保持 full-bleed，用于 Android / maskable PWA install surfaces。
   - `pwa-*`、`apple-touch-icon`、`desktop-*`、`tauri-source-1024.png` 保持可测量的安全边距，用于 Chrome/macOS PWA、Apple touch 与 Tauri desktop bundle。

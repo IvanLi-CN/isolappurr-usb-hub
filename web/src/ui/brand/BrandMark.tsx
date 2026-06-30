@@ -9,22 +9,24 @@ export function BrandMark({
   variant?: BrandMarkVariant;
   title?: string;
 }) {
-  const isMono = variant === "mono";
   const background =
     variant === "dark"
       ? "oklch(0.28 0.045 160)"
       : variant === "light"
         ? "oklch(0.82 0.045 160)"
-        : "oklch(0.82 0.05 170)";
-  const markFill =
+        : "transparent";
+  const panelFill =
     variant === "color"
-      ? "url(#brand-mark-gradient)"
+      ? "url(#brand-panel-gradient)"
       : variant === "dark"
         ? "oklch(0.95 0.028 88)"
         : "oklch(0.97 0.03 88)";
-  const shadow = isMono ? "none" : "0 5px 14px oklch(0.35 0.045 160 / 0.16)";
-  const bodyFill =
-    variant === "color" ? "url(#brand-body-gradient)" : background;
+  const railFill =
+    variant === "dark" ? "oklch(0.2 0.02 170)" : "url(#brand-rail-gradient)";
+  const shellFill =
+    variant === "color" ? "url(#brand-shell-gradient)" : "oklch(0.62 0.07 160)";
+  const lineFill = variant === "mono" ? panelFill : "#7dd9e9";
+  const portFill = variant === "mono" ? panelFill : "#f7f1df";
 
   return (
     <svg
@@ -35,37 +37,53 @@ export function BrandMark({
     >
       <defs>
         <linearGradient
-          id="brand-body-gradient"
-          x1="34"
-          x2="220"
-          y1="22"
-          y2="232"
+          id="brand-shell-gradient"
+          x1="42"
+          x2="214"
+          y1="42"
+          y2="214"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0" stopColor="#bcded5" />
-          <stop offset="1" stopColor="#a8cbbf" />
+          <stop offset="0" stopColor="#cfe2db" />
+          <stop offset="1" stopColor="#83b7a7" />
         </linearGradient>
         <linearGradient
-          id="brand-mark-gradient"
-          x1="82"
-          x2="178"
-          y1="28"
-          y2="210"
+          id="brand-panel-gradient"
+          x1="66"
+          x2="190"
+          y1="78"
+          y2="174"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0" stopColor="#fffaf0" />
-          <stop offset="1" stopColor="#f9efd8" />
+          <stop offset="0" stopColor="#fff8e8" />
+          <stop offset="1" stopColor="#e8dcc0" />
+        </linearGradient>
+        <linearGradient
+          id="brand-rail-gradient"
+          x1="80"
+          x2="176"
+          y1="102"
+          y2="146"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0" stopColor="#35413e" />
+          <stop offset="1" stopColor="#1d2524" />
         </linearGradient>
       </defs>
-      <rect width="256" height="256" fill="oklch(0.97 0.008 120)" />
-      <rect width="256" height="256" rx="54" fill={bodyFill} />
-      <g transform="matrix(1.07 0 0 1.07 -18.59 0.5)">
-        <path
-          fill={markFill}
-          style={{ filter: `drop-shadow(${shadow})` }}
-          d="M80 31H194C206 31 216 41 216 53C216 64 208 73 197 75L176 78C163 80 154 91 154 104V125C154 138 163 149 176 151L197 154C208 156 216 165 216 176C216 188 206 198 194 198H80C68 198 58 188 58 176C58 165 66 156 77 154L98 151C111 149 119 138 119 125V104C119 91 111 80 98 78L77 75C66 73 58 64 58 53C58 41 68 31 80 31Z"
-        />
-      </g>
+      <rect width="256" height="256" fill={background} />
+      <rect x="42" y="42" width="172" height="172" rx="40" fill={shellFill} />
+      <rect x="66" y="78" width="124" height="92" rx="30" fill={panelFill} />
+      <rect x="80" y="104" width="96" height="36" rx="17" fill={railFill} />
+      <rect x="98" y="117" width="60" height="9" rx="4.5" fill={portFill} />
+      <rect
+        x="96"
+        y="154"
+        width="64"
+        height="5"
+        rx="2.5"
+        fill={lineFill}
+        opacity="0.84"
+      />
     </svg>
   );
 }

@@ -40,6 +40,9 @@ export default defineConfig(() => {
           "icons/pwa-192.png",
           "icons/pwa-512.png",
           "icons/maskable-512.png",
+          "brand/isolapurr-logo.png",
+          "brand/isolapurr-product-poster.png",
+          "brand/github-social-preview.png",
         ],
         manifest: {
           id: base,

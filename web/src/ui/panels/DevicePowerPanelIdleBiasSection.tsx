@@ -250,6 +250,20 @@ function chunkIdleBiasTableRows(
   }).filter((column) => column.rows.length > 0);
 }
 
+function buildIdleBiasTableRowKeys(columns: IdleBiasTableColumn[]): string[] {
+  const rowCount = Math.max(0, ...columns.map((column) => column.rows.length));
+  return Array.from({ length: rowCount }, (_value, rowIndex) =>
+    columns
+      .map((column) => {
+        const row = column.rows[rowIndex];
+        return row
+          ? `${column.index}:${row.index}:${row.voltageMv}`
+          : `${column.index}:empty`;
+      })
+      .join("|"),
+  );
+}
+
 function offsetTickFormatter(value: number): string {
   return `${value} mA`;
 }
@@ -425,6 +439,7 @@ export function DevicePowerPanelIdleBiasSection({
   const idleBiasTableRows = buildIdleBiasTableRows(idleBias);
   const canShowIdleBiasTable = idleBiasTableRows.length > 0;
   const idleBiasTableColumns = chunkIdleBiasTableRows(idleBiasTableRows, 3);
+  const idleBiasTableRowKeys = buildIdleBiasTableRowKeys(idleBiasTableColumns);
 
   const requestIdleBiasAction = (action: IdleBiasAction) => {
     setIdleBiasConfirm(confirmCopyForIdleBiasAction(action));
@@ -702,28 +717,14 @@ export function DevicePowerPanelIdleBiasSection({
                           </tr>
                         </thead>
                         <tbody>
-                          {Array.from({
-                            length: Math.max(
-                              ...idleBiasTableColumns.map(
-                                (column) => column.rows.length,
-                              ),
-                            ),
-                          }).map((_value, rowIndex) => (
-                            <tr
-                              className="text-[var(--text)]"
-                              key={`table-row-${idleBiasTableColumns
-                                .map(
-                                  (column) =>
-                                    column.rows[rowIndex]?.index ?? "empty",
-                                )
-                                .join("-")}`}
-                            >
+                          {idleBiasTableRowKeys.map((rowKey, rowIndex) => (
+                            <tr className="text-[var(--text)]" key={rowKey}>
                               {idleBiasTableColumns.map((column) => {
                                 const row = column.rows[rowIndex];
                                 if (!row) {
                                   return (
                                     <Fragment
-                                      key={`empty-${column.index}-${rowIndex}`}
+                                      key={`empty-${column.index}-${rowKey}`}
                                     >
                                       <td className="border-b border-[var(--border)]/40 px-3 py-2" />
                                       <td className="border-b border-[var(--border)]/40 px-3 py-2" />
