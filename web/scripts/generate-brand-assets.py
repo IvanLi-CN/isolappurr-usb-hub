@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from shutil import copyfile
+import subprocess
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,21 +20,6 @@ LOGO_PNG = PUBLIC_BRAND / "isolapurr-logo.png"
 POSTER = PUBLIC_BRAND / "isolapurr-product-poster.png"
 SOCIAL = GH_DIR / "social-preview.png"
 PUBLIC_SOCIAL = PUBLIC_BRAND / "github-social-preview.png"
-
-
-def font(size: int, weight: str = "regular") -> ImageFont.FreeTypeFont:
-    preferred = (
-        "/System/Library/Fonts/SFNS.ttf",
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
-        if weight == "bold"
-        else "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/Library/Fonts/Arial Unicode.ttf",
-    )
-    for path in preferred:
-        candidate = Path(path)
-        if candidate.exists():
-            return ImageFont.truetype(str(candidate), size=size)
-    return ImageFont.load_default(size=size)
 
 
 def cover_crop(
@@ -56,16 +42,21 @@ def generate_logo_png() -> None:
     if not LOGO_SVG.exists():
         raise SystemExit(f"missing logo svg: {LOGO_SVG}")
     copyfile(LOGO_SVG, PUBLIC_LOGO_SVG)
-    canvas = Image.new("RGBA", (1520, 480), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas)
-    draw.rounded_rectangle((108, 108, 340, 340), radius=54, fill=(163, 198, 185, 255))
-    draw.rounded_rectangle((140, 157, 307, 281), radius=40, fill=(246, 238, 217, 255))
-    draw.rounded_rectangle((159, 192, 289, 241), radius=23, fill=(39, 50, 48, 255))
-    draw.rounded_rectangle((184, 209, 265, 222), radius=7, fill=(247, 241, 223, 255))
-    draw.rounded_rectangle((181, 260, 267, 267), radius=4, fill=(125, 217, 233, 214))
-    draw.text((456, 132), "IsolaPurr", font=font(116, "bold"), fill=(32, 48, 45, 255))
-    draw.text((462, 250), "USB Hub", font=font(68, "bold"), fill=(32, 48, 45, 255))
-    canvas.save(LOGO_PNG)
+    subprocess.run(
+        [
+            "rsvg-convert",
+            str(LOGO_SVG),
+            "--width",
+            "1520",
+            "--height",
+            "480",
+            "--format",
+            "png",
+            "--output",
+            str(LOGO_PNG),
+        ],
+        check=True,
+    )
 
 
 def export_fixed_image(source_path: Path, output_paths: tuple[Path, ...], size: tuple[int, int]) -> None:
