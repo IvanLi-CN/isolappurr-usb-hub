@@ -41,7 +41,6 @@ export default defineConfig(() => {
           "icons/pwa-512.png",
           "icons/maskable-512.png",
           "brand/isolapurr-logo.png",
-          "brand/isolapurr-product-poster.png",
           "brand/github-social-preview.png",
         ],
         manifest: {
@@ -89,6 +88,7 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
+          globIgnores: ["**/brand/isolapurr-product-poster.png"],
           navigateFallback: `${base}index.html`,
         },
       }),
