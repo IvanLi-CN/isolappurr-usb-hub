@@ -26,6 +26,7 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 - Preview: `bun run preview` (default: `http://127.0.0.1:45175`)
 
 Brand and icon regeneration requires `rsvg-convert` from librsvg, Python Pillow (`python3 -m pip install Pillow`), and `cargo tauri icon` for the desktop bundle assets.
+Production social preview metadata uses an absolute image URL on GitHub Pages. For other hosts, set `VITE_SITE_ORIGIN=https://example.com` during `bun run build`.
 
 ## Install icon contract
 
