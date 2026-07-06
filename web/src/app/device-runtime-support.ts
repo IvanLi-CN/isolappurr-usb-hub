@@ -465,10 +465,8 @@ export function resolveOrderedDeviceTransports({
   const httpLinked =
     !!stored?.transports?.httpBaseUrl ||
     (stored ? !localUsbPortPathForDevice(stored) : false);
-  const localUsbLinked =
-    Boolean(localUsbPortPath) ||
-    hasLocalUsbLink ||
-    Boolean(storedLocalUsbPortPath);
+  const localUsbReady = Boolean(localUsbPortPath) || hasLocalUsbLink;
+  const localUsbLinked = localUsbReady || Boolean(storedLocalUsbPortPath);
   return orderedDeviceTransports({
     preferred,
     runtimeTransport: runtime?.transport ?? null,
@@ -482,7 +480,7 @@ export function resolveOrderedDeviceTransports({
     httpLinked,
     localUsbLinked,
     webSerialLinked: hasWebSerialLink,
-    preferLocalUsbFirst: Boolean(storedLocalUsbPortPath),
+    preferLocalUsbFirst: localUsbReady,
   });
 }
 
@@ -510,10 +508,8 @@ export function resolveActiveDeviceTransport({
   const httpLinked =
     !!stored?.transports?.httpBaseUrl ||
     (stored ? !localUsbPortPathForDevice(stored) : false);
-  const localUsbLinked =
-    Boolean(localUsbPortPath) ||
-    hasLocalUsbLink ||
-    Boolean(storedLocalUsbPortPath);
+  const localUsbReady = Boolean(localUsbPortPath) || hasLocalUsbLink;
+  const localUsbLinked = localUsbReady || Boolean(storedLocalUsbPortPath);
   const activeTransport = runtime?.transport ?? null;
   if (
     isLinkedTransportActive({
@@ -538,7 +534,7 @@ export function resolveActiveDeviceTransport({
     httpLinked,
     localUsbLinked,
     webSerialLinked: hasWebSerialLink,
-    preferLocalUsbFirst: Boolean(storedLocalUsbPortPath),
+    preferLocalUsbFirst: localUsbReady,
   });
   return next[0] ?? null;
 }

@@ -107,6 +107,9 @@ for diagnostics.
   - `force`: force-open unconditionally.
 - HTTP, Web Serial, and Local USB MUST expose config get, config set, defaults,
   and lock commands.
+- HTTP power-config writes MUST accept the full browser LAN request envelope,
+  including request line, CORS/PNA-related headers, and the whole-config JSON
+  payload, so Web saves behave the same as CLI and Local USB writes.
 - Firmware MUST store USB-C idle-bias state in a dedicated EEPROM record that
   is independent from the main power-config record.
 - The idle-bias dataset MUST sweep `3000..21000 mV` in `500 mV` steps for a

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -349,6 +349,11 @@ export function DevicePowerPanelIdleBiasSection({
   const [idleBiasTableExpanded, setIdleBiasTableExpanded] = useState(false);
   const [idleBiasViewMode, setIdleBiasViewMode] =
     useState<IdleBiasViewMode>("chart");
+  const loadIdleBiasRef = useRef(loadIdleBias);
+
+  useEffect(() => {
+    loadIdleBiasRef.current = loadIdleBias;
+  }, [loadIdleBias]);
 
   useEffect(() => {
     setIdleBias(initialIdleBias);
@@ -357,7 +362,7 @@ export function DevicePowerPanelIdleBiasSection({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const idleBiasRes = await loadIdleBias();
+      const idleBiasRes = await loadIdleBiasRef.current();
       if (cancelled) {
         return;
       }
@@ -372,7 +377,7 @@ export function DevicePowerPanelIdleBiasSection({
     return () => {
       cancelled = true;
     };
-  }, [loadIdleBias]);
+  }, []);
 
   useEffect(() => {
     if (idleBias?.run.state !== "running") {
@@ -380,7 +385,7 @@ export function DevicePowerPanelIdleBiasSection({
     }
     let cancelled = false;
     const poll = async () => {
-      const res = await loadIdleBias();
+      const res = await loadIdleBiasRef.current();
       if (cancelled) {
         return;
       }
@@ -407,7 +412,7 @@ export function DevicePowerPanelIdleBiasSection({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [idleBias?.run.state, loadIdleBias]);
+  }, [idleBias?.run.state]);
 
   useEffect(() => {
     onBusyChange?.(idleBiasBusy);
