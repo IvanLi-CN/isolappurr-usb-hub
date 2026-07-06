@@ -58,6 +58,10 @@
   HIL proved that the whole-config `power.config_set` payload now exceeds the
   old limit once capability, manual, and `light_load_mode` fields are all
   present in one Local USB write.
+- Increased the firmware HTTP request buffer from `1024` to `4096` bytes after
+  LAN Web HIL proved that Chromium request headers plus the whole-config
+  `PUT /api/v1/power/config` JSON body could exceed the old limit and leave the
+  device returning the previous saved `5000 mV` config.
 - Changed `power/config` rendering so `manual.path_policy` now prefers the live
   SW2303 path snapshot and otherwise falls back to the current saved config's
   derived policy, preventing transient `unknown` responses during immediate
@@ -214,6 +218,7 @@
 - `host=$(rustc +stable -vV | sed -n 's/^host: //p'); cargo +stable test --manifest-path tools/isolapurr-host/Cargo.toml --target "$host"`
 - `cd web && bun run check`
 - `cd web && bun run build`
+- `cd web && bun test ./src/app/device-runtime-support.test.ts ./src/domain/deviceApi.test.ts`
 - `cd web && bun run build-storybook`
 - `cd web && bun test ./src/domain/deviceApi.test.ts`
 - `cd web && bunx playwright test e2e/light-load-hil.spec.ts --project=chromium`
@@ -246,6 +251,14 @@ against the same `856a141cdbd4` board. The Playwright regression seeds desktop
 storage, opens `/devices/856a141cdbd4/power`, toggles `PFM -> FPWM -> PFM`
 through the rendered panel, and polls the bridge `power/config` readback until
 the persisted `light_load_mode` matches each saved state.
+
+The later LAN Web voltage HIL used the built Web app on
+`http://127.0.0.1:45175` and the same `856a141cdbd4 @ 192.168.31.122` board.
+The browser page loaded `/devices/856a141cdbd4/power`, showed
+`active transport http`, sent `PUT /api/v1/power/config` with
+`manual.voltage_mv=12020`, received a `200` response whose body also contained
+`manual.voltage_mv=12020`, and the device then read back
+`tps_setpoint.mv=12020` with `usb_c_actual.voltage_mv=12055`.
 
 Later LAN HIL on `f293cc9c139e @ 192.168.31.224` used LoadLynx in `CV` mode as
 the load stimulus and treated IsolaPurr PD diagnostics as the primary verdict

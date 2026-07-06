@@ -71,7 +71,10 @@ async fn handle_http_connection(
     wifi_state: &'static WifiStateMutex,
     api_state: &'static ApiSharedMutex,
 ) -> Result<(), embassy_net::tcp::Error> {
-    const MAX_REQUEST_SIZE: usize = 1024;
+    // Browser LAN writes carry substantially larger header sets than CLI/curl.
+    // Keep enough room for the full request line, CORS/PNA headers, and the
+    // saved power-config JSON body so mutating requests are not truncated.
+    const MAX_REQUEST_SIZE: usize = 4096;
 
     let mut buf = [0u8; MAX_REQUEST_SIZE];
     let mut total = 0usize;

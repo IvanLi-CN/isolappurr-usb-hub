@@ -1,5 +1,19 @@
 # History
 
+## 2026-07-06
+
+- Fixed LAN Web manual-voltage saves by raising the firmware HTTP request
+  buffer from `1024` to `4096` bytes so Chromium's larger request headers no
+  longer truncate the whole-config `PUT /api/v1/power/config` body.
+- Confirmed the built Web page can set the `856a141cdbd4` board from a 5 V
+  baseline to `12.02 V`; the page's `PUT` response contained
+  `manual.voltage_mv=12020`, and device diagnostics read back
+  `tps_setpoint.mv=12020` plus `usb_c_actual.voltage_mv=12055`.
+- Kept stale saved Local USB bindings from outranking a verified HTTP channel
+  unless a live Local USB link is actually available.
+- Stopped the idle-bias panel from continuously reloading when parent callbacks
+  get recreated during Power page renders.
+
 ## 2026-06-29
 
 - Added persisted manual cable-compensation and auto-follow line-compensation
