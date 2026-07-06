@@ -1,7 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">IsolaPurr USB Hub mark</title>
-  <desc id="desc">A padded rounded isolated USB hub mark.</desc>
-  <g transform="translate(23.040000000000006 23.040000000000006) scale(0.82)">
+  <title id="title">IsolaPurr USB Hub maskable icon</title>
+  <desc id="desc">A full-bleed maskable icon using the IsolaPurr mark geometry.</desc>
+  <rect width="256" height="256" rx="58" fill="#f7f5ed" />
+  <g>
     <defs>
         <linearGradient id="shell" x1="42" x2="214" y1="42" y2="214" gradientUnits="userSpaceOnUse">
           <stop offset="0" stop-color="#cfe2db" />

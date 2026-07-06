@@ -68,6 +68,14 @@ test("publishes PWA metadata and offline app shell", async ({
   await expect(
     page.locator('link[rel="icon"][type="image/svg+xml"]'),
   ).toHaveAttribute("href", /isolapurr-mark\.svg/);
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+    "content",
+    /brand\/github-social-preview\.png$/,
+  );
+  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
+    "content",
+    /brand\/github-social-preview\.png$/,
+  );
 
   await page.waitForFunction(async () => {
     const registrations = await navigator.serviceWorker.getRegistrations();

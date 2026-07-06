@@ -28,7 +28,7 @@ just desktop-icons
 ```
 
 - 图标母版固定为 `web/src/assets/brand/isolapurr-mark.svg`。
-- `just desktop-icons` / `cd web && bun run icons` 会先生成 regular 与 maskable Web 图标，再用 regular padded 的 `tauri-source-1024.png` 通过 `cargo tauri icon` 刷新 `desktop/src-tauri/icons/*`。
+- `just desktop-icons` / `cd web && bun run icons` 会先生成品牌营销图、regular 与 maskable Web 图标，再用 regular padded 的 `tauri-source-1024.png` 通过 `cargo tauri icon` 刷新 `desktop/src-tauri/icons/*`。
 - 不要手工修改 `desktop/src-tauri/icons/*.png|*.icns|*.ico`；它们属于派生产物。
 
 最小冒烟（CLI 启动 agent + health 检查）：

@@ -16,18 +16,41 @@ export default defineConfig(() => {
       ? withLeadingSlash
       : `${withLeadingSlash}/`;
   };
+  const normalizeOrigin = (raw: string | undefined): string | undefined => {
+    const trimmed = raw?.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+  };
 
   const explicitBase = process.env.VITE_BASE;
-  const repo = process.env.GITHUB_REPOSITORY?.split("/")[1];
+  const [owner, repo] = process.env.GITHUB_REPOSITORY?.split("/") ?? [];
   const base = explicitBase
     ? normalizeBase(explicitBase)
     : process.env.GITHUB_PAGES === "true" && repo
       ? `/${repo}/`
       : "/";
+  const explicitSiteOrigin = normalizeOrigin(process.env.VITE_SITE_ORIGIN);
+  const githubPagesOrigin =
+    process.env.GITHUB_PAGES === "true" && owner
+      ? `https://${owner.toLowerCase()}.github.io`
+      : undefined;
+  const siteOrigin = explicitSiteOrigin ?? githubPagesOrigin;
+  const publicUrl = (path: string): string =>
+    siteOrigin ? `${siteOrigin}${base}${path}` : `${base}${path}`;
 
   return {
     base,
     plugins: [
+      {
+        name: "isolapurr-html-meta",
+        transformIndexHtml: (html) =>
+          html.replaceAll(
+            "%SOCIAL_PREVIEW_IMAGE_URL%",
+            publicUrl("brand/github-social-preview.png"),
+          ),
+      },
       react(),
       tailwindcss(),
       VitePWA({
@@ -40,6 +63,8 @@ export default defineConfig(() => {
           "icons/pwa-192.png",
           "icons/pwa-512.png",
           "icons/maskable-512.png",
+          "brand/isolapurr-logo.png",
+          "brand/github-social-preview.png",
         ],
         manifest: {
           id: base,
@@ -86,6 +111,7 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
+          globIgnores: ["**/brand/isolapurr-product-poster.png"],
           navigateFallback: `${base}index.html`,
         },
       }),

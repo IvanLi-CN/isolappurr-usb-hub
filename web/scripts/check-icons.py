@@ -9,6 +9,8 @@ from PIL import Image
 ROOT: Final = Path(__file__).resolve().parents[1]
 WEB_ICONS: Final = ROOT / "public" / "icons"
 DESKTOP_ICONS: Final = ROOT.parent / "desktop" / "src-tauri" / "icons"
+BRAND_ASSETS: Final = ROOT / "public" / "brand"
+GITHUB_ASSETS: Final = ROOT.parent / ".github"
 
 REGULAR_ICONS: Final = [
     WEB_ICONS / "pwa-192.png",
@@ -30,6 +32,13 @@ DESKTOP_PNGS: Final = [
     DESKTOP_ICONS / "128x128@2x.png",
     DESKTOP_ICONS / "icon.png",
 ]
+
+MARKETING_ASSETS: Final = {
+    BRAND_ASSETS / "isolapurr-logo.png": (1520, 480),
+    BRAND_ASSETS / "isolapurr-product-poster.png": (1440, 1920),
+    BRAND_ASSETS / "github-social-preview.png": (1280, 640),
+    GITHUB_ASSETS / "social-preview.png": (1280, 640),
+}
 
 
 def visible_bounds(path: Path) -> tuple[int, int, int, int] | None:
@@ -75,6 +84,14 @@ def main() -> None:
 
     for path in DESKTOP_PNGS:
         _ = margin_ratio(path)
+
+    for path, size in MARKETING_ASSETS.items():
+        ensure_exists(path)
+        image = Image.open(path)
+        if image.size != size:
+            raise SystemExit(
+                f"marketing asset must be {size[0]}x{size[1]}, got {image.size}: {path}"
+            )
 
     print("icon geometry checks passed")
 
