@@ -45,29 +45,46 @@ test("publishes PWA metadata and offline app shell", async ({
   );
   expect(manifest.ok()).toBe(true);
   const manifestJson = await manifest.json();
+  const installIconVersions = manifestJson.icons.map((icon: { src: string }) =>
+    new URL(icon.src, "https://isolapurr.example").searchParams.get("v"),
+  );
+  expect([...new Set(installIconVersions)]).toHaveLength(1);
+  expect(installIconVersions[0]).toMatch(/^[0-9a-f]{12}$/);
   expect(manifestJson.icons).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        src: "icons/pwa-192.png",
+        src: expect.stringMatching(/^icons\/pwa-192\.png\?v=[0-9a-f]{12}$/),
         purpose: "any",
       }),
       expect.objectContaining({
-        src: "icons/pwa-512.png",
+        src: expect.stringMatching(/^icons\/pwa-512\.png\?v=[0-9a-f]{12}$/),
         purpose: "any",
       }),
       expect.objectContaining({
-        src: "icons/maskable-192.png",
+        src: expect.stringMatching(
+          /^icons\/maskable-192\.png\?v=[0-9a-f]{12}$/,
+        ),
         purpose: "maskable",
       }),
       expect.objectContaining({
-        src: "icons/maskable-512.png",
+        src: expect.stringMatching(
+          /^icons\/maskable-512\.png\?v=[0-9a-f]{12}$/,
+        ),
         purpose: "maskable",
       }),
     ]),
   );
+  await expect(page.locator('link[rel="icon"][sizes="any"]')).toHaveAttribute(
+    "href",
+    /favicon\.ico\?v=[0-9a-f]{12}$/,
+  );
   await expect(
     page.locator('link[rel="icon"][type="image/svg+xml"]'),
-  ).toHaveAttribute("href", /isolapurr-mark\.svg/);
+  ).toHaveAttribute("href", /isolapurr-mark\.svg\?v=[0-9a-f]{12}$/);
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+    "href",
+    /apple-touch-icon\.png\?v=[0-9a-f]{12}$/,
+  );
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
     "content",
     /brand\/github-social-preview\.png$/,
