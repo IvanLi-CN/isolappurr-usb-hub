@@ -1,4 +1,4 @@
-import type { DesktopAgent } from "../../domain/desktopAgent";
+import { agentFetch, type DesktopAgent } from "../../domain/desktopAgent";
 import type { DeviceInfoResponse } from "../../domain/deviceApi";
 import {
   isLegacyDeviceId,
@@ -9,6 +9,7 @@ import {
   nextJsonlRequestId,
   type SerialPortInfo,
   sendLocalUsbJsonlRequest,
+  stableLocalUsbDeviceId,
   type WebSerialJsonlTransport,
 } from "../../domain/hardwareConsole";
 
@@ -63,6 +64,52 @@ function extractUsbDevice(value: unknown): UsbDeviceInfo | null {
   }
   if (envelope.response) {
     return extractUsbDevice(envelope.response);
+  }
+  return null;
+}
+
+function extractUsbDeviceFromScan(
+  value: unknown,
+  portPath: string,
+): UsbDeviceInfo | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const devices = Array.isArray((value as { devices?: unknown[] }).devices)
+    ? ((value as { devices?: unknown[] }).devices ?? [])
+    : [];
+  for (const device of devices) {
+    if (!device || typeof device !== "object") {
+      continue;
+    }
+    const usb =
+      "usb" in device && device.usb && typeof device.usb === "object"
+        ? (device.usb as { portPath?: unknown })
+        : null;
+    if (usb?.portPath !== portPath) {
+      continue;
+    }
+    const session =
+      "session" in device &&
+      device.session &&
+      typeof device.session === "object"
+        ? (device.session as { traces?: unknown[] })
+        : null;
+    const traces = Array.isArray(session?.traces) ? session.traces : [];
+    for (let index = traces.length - 1; index >= 0; index -= 1) {
+      const trace = traces[index];
+      if (!trace || typeof trace !== "object") {
+        continue;
+      }
+      const payload =
+        "payload" in trace
+          ? (trace as { payload?: unknown }).payload
+          : undefined;
+      const parsed = extractUsbDevice(payload);
+      if (parsed) {
+        return parsed;
+      }
+    }
   }
   return null;
 }
@@ -280,12 +327,27 @@ export async function readLocalUsbInfo(
   port: SerialPortInfo,
   onLog: (message: string, tone?: UsbLogEntry["tone"]) => void,
 ): Promise<unknown> {
+  const deviceId = stableLocalUsbDeviceId(port.path);
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      onLog(
-        `Sending info request over Local USB (attempt ${attempt + 1}/3)...`,
+      onLog(`Reading Local USB status (attempt ${attempt + 1}/3)...`);
+      const statusRes = await agentFetch(
+        agent,
+        `/api/v1/devices/${deviceId}/status`,
       );
+      const statusJson = await statusRes.json().catch(() => null);
+      if (statusRes.ok && statusJson) {
+        return statusJson;
+      }
+      const scanRes = await agentFetch(agent, "/api/v1/devices/scan", {
+        method: "POST",
+      });
+      const scanJson = await scanRes.json().catch(() => null);
+      const tracedInfo = extractUsbDeviceFromScan(scanJson, port.path);
+      if (scanRes.ok && tracedInfo) {
+        return { result: { device: tracedInfo } };
+      }
       return await sendLocalUsbJsonlRequest(agent, port.path, {
         id: nextJsonlRequestId(),
         method: "info",

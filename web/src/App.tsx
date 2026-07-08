@@ -20,6 +20,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { DeviceDashboardPage } from "./pages/DeviceDashboardPage";
 import { DeviceInfoPage } from "./pages/DeviceInfoPage";
 import { DevicePowerPage } from "./pages/DevicePowerPage";
+import { FirmwareFlashPage } from "./pages/FirmwareFlashPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { AppLayout } from "./ui/layout/AppLayout";
 import { DeviceListPanel } from "./ui/panels/DeviceListPanel";
@@ -27,8 +28,11 @@ import { ToastProvider } from "./ui/toast/ToastProvider";
 
 function RootLayout() {
   const { deviceId } = useParams();
+  const location = useLocation();
+  const { enabled: demoEnabled } = useDemoMode();
   const { devices, addDevice, upsertDevice } = useDevices();
   const navigate = useDemoNavigate();
+  const forceEmptySidebar = demoEnabled && location.pathname === "/flash";
 
   const existingIds = devices.map((d) => d.id);
   const existingBaseUrls = devices.map((d) => d.baseUrl);
@@ -59,6 +63,7 @@ function RootLayout() {
             devices={devices}
             selectedDeviceId={deviceId}
             onSelect={(id) => navigate(`/devices/${id}`)}
+            forceEmptyState={forceEmptySidebar}
           />
         }
       >
@@ -103,6 +108,7 @@ export default function App() {
                         path="devices/:deviceId/power"
                         element={<DevicePowerPage />}
                       />
+                      <Route path="flash" element={<FirmwareFlashPage />} />
                       <Route path="about" element={<AboutPage />} />
                     </Route>
                     <Route path="*" element={<NotFoundPage />} />

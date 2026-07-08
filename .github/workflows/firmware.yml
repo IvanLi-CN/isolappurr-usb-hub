@@ -121,24 +121,25 @@ jobs:
           set -euo pipefail
           mkdir -p dist/firmware
           ELF="target/xtensa-esp32s3-none-elf/debug/isolapurr-usb-hub"
+          FULL_IMAGE="dist/firmware/isolapurr-usb-hub.full.bin"
           APP_BIN="dist/firmware/isolapurr-usb-hub.app.bin"
           cp "$ELF" dist/firmware/isolapurr-usb-hub.elf
-          espflash save-image --chip esp32s3 "$ELF" "$APP_BIN"
-          if [ ! -f "$APP_BIN" ]; then
-            generated="$(find dist/firmware -maxdepth 1 -type f -name '*0x10000*.bin' | head -n 1)"
-            if [ -z "$generated" ]; then
-              echo "espflash did not produce an app image at $APP_BIN or an address-prefixed 0x10000 image" >&2
-              exit 1
-            fi
+          espflash save-image --chip esp32s3 "$ELF" "$FULL_IMAGE"
+          generated="$(find dist/firmware -maxdepth 1 -type f -name '*0x10000*.bin' | head -n 1)"
+          if [ -n "$generated" ]; then
             cp "$generated" "$APP_BIN"
+          else
+            cp "$FULL_IMAGE" "$APP_BIN"
           fi
           python3 tools/firmware-catalog/build-catalog.py \
             --out dist/firmware/isolapurr-firmware-catalog.json \
             --artifact-id "isolapurr-${GITHUB_SHA::12}-debug" \
+            --recovery-artifact-id "isolapurr-${GITHUB_SHA::12}-debug-recovery" \
             --version "${GITHUB_REF_NAME:-dev}" \
             --git-sha "$GITHUB_SHA" \
             --build-id "$GITHUB_RUN_ID" \
             --app-bin "$APP_BIN" \
+            --full-image "$FULL_IMAGE" \
             --elf "dist/firmware/isolapurr-usb-hub.elf"
 
       - name: Upload firmware catalog and payloads

@@ -6,6 +6,9 @@
 - `isolapurr-devd serve` exposes a local IPC daemon by default: Unix domain socket on macOS/Linux and Windows named pipe on Windows. It tracks connected IPC clients and exits after the configured idle timeout when no clients remain.
 - `isolapurr-devd bridge-http` exposes the device-centric localhost HTTP bridge, token bootstrap, Local USB scanning, leases, session traces, storage import/list/save, Wi-Fi/ports/status/route/diagnostics/power-config proxy methods, firmware catalog validation, and guarded flash/reset endpoints.
 - `isolapurr` exposes released-style CLI entrypoints for hardware memory, discovery/devices/status, Wi-Fi, ports, flash, reset, monitor, and diagnostics over IPC, with sibling daemon auto-start when available.
+- The Web app now exposes a standalone `/flash` workbench with a
+  left-column/right-rail flashing layout, a bundled release picker, and entry
+  points from both the Dashboard add-device area and device Settings.
 - `isolapurr settings reset wifi|other`, IPC `device.settings.reset`, and `POST /api/v1/devices/{id}/settings/reset` are implemented with the same transport guardrails as the device firmware contract. Local USB `scope=other` now tolerates a brief serial drop during runtime default re-apply by re-reading route and power state after reconnect before returning success.
 - `isolapurr discover` now performs actual mixed discovery: LAN candidates come
   from mDNS/DNS-SD `_http._tcp.local` browsing plus verified `GET /api/v1/info`
@@ -61,6 +64,28 @@
   CLI and bridge expose, instead of relying only on mock Storybook coverage.
 - Local USB operations verify project firmware metadata from `info` before ordinary control paths. Non-project firmware, download-mode/no-JSONL targets, and incompatible firmware versions are rejected with corrective guidance; first-time full flash requires explicit confirmation.
 - Web Local USB discovery/request/flash code now targets the new `/api/v1/devices/*` and lease APIs while leaving Web Serial intact. Device profiles can retain HTTP and Local USB transports for one hardware identity, and the runtime prefers successful Local USB operations for unsupported or unreachable Wi-Fi/HTTP paths.
+- Bridge HTTP now also accepts `POST /api/v1/devices/{id}/flash-bundled`,
+  where the Web UI uploads a selected same-origin bundled asset plus its
+  catalog metadata. Host-side validation reuses the firmware catalog guardrails
+  for target, address, hash, and identity checks before writing.
+- Browser runtime flash selection now defaults to a same-origin bundled release
+  manifest under `web/public/firmware/`. Release builds replace the checked-in
+  empty manifest by downloading the most recent 50 non-draft GitHub Releases,
+  bundling app images for all 50 versions, and bundling recovery images only
+  for the latest stable plus latest prerelease, preferring `full_image`
+  artifacts and falling back to bundled `elf` assets when that is the only
+  recovery-capable release artifact.
+- Recovery writes from the `/flash` workbench now separate flash mode from
+  target trust: confirmed IsolaPurr targets may choose either a normal update
+  or a bundled recovery image, while non-project or identity-unknown recovery
+  targets still require the stronger confirmation dialog before write.
+- Host-side recovery flashing now releases the serial lock before post-flash
+  identity capture while preserving the exclusive flash guard, preventing the
+  Local USB recovery path from self-blocking during the reboot/probe handoff.
+- Local USB recovery writes no longer force the non-project confirmation path
+  for already confirmed IsolaPurr hardware. When the owner selects recovery on
+  a confirmed target, devd keeps the identity guard and allows the write
+  without pretending the board is unknown or foreign.
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.
 - Repo-managed workflow truth is now split cleanly by responsibility: `isolapurr-user-operations` tracks the released CLI surface, `isolapurr-developer-operations` tracks source/developer flows, `isolapurr-maintainer-workflow` is the repo-private router, `docs/maintainer-workflow.md` is the detailed maintainer doc, `README.md` handles human navigation, and `AGENTS.md` stays as the concise entry contract.
 - Repo-managed Web verification guidance now also points to the dedicated
@@ -74,10 +99,12 @@
 - `host-tools.yml` builds/tests/packages host-tools archives for Linux, macOS, and Windows.
 - Official host-tools installers added for Unix and Windows. Tag builds publish the host-tools archives, `SHA256SUMS`, and installer scripts to the matching GitHub Release.
 - `firmware.yml` emits a firmware catalog artifact after firmware build.
+- `firmware.yml` and `release.yml` now also emit `isolapurr-usb-hub.full.bin`
+  plus recovery artifact metadata, and release builds run the Web firmware
+  bundler before publishing the Web distribution tarball.
 - Removed the repo-managed legacy command examples that still referenced old released forms such as `status --hardware`, `status --device`, and `hardware save --id/--transport`, and added contract tests plus CLI parser tests so that drift fails CI instead of silently reappearing.
 
 ## Remaining hardening
 
 - Complete removal of the legacy Tauri-owned hardware-control server once the desktop packaging flow can bundle or locate `isolapurr-devd` at runtime.
-- Expand firmware flashing from browser-selected files to release catalog selection in the Web UI.
 - Expand mock and hardware-in-loop coverage as physical devices are available.

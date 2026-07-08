@@ -90,6 +90,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             "/api/v1/devices/{id}/flash-upload",
             post(device_flash_upload),
         )
+        .route(
+            "/api/v1/devices/{id}/flash-bundled",
+            post(device_flash_bundled),
+        )
         .route("/api/v1/devices/{id}/reset", post(device_reset))
         .route("/api/v1/devices/{id}/diagnostics", get(device_diagnostics))
         .route(
@@ -100,6 +104,7 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             "/api/v1/serial/lease",
             post(http_bridge_storage::create_lease),
         )
+        .route("/api/v1/serial/board-info", post(serial_board_info))
         .route(
             "/api/v1/serial/lease/{lease_id}",
             post(http_bridge_storage::heartbeat_lease).delete(http_bridge_storage::release_lease),
@@ -206,6 +211,26 @@ async fn scan_devices(State(state): State<AppState>, headers: HeaderMap) -> Resp
     reconcile_scanned_usb_devices(&mut inner, ports);
     let devices = inner.devices.values().cloned().collect::<Vec<_>>();
     Json(json!({"devices": devices})).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SerialBoardInfoRequest {
+    port_path: String,
+}
+
+async fn serial_board_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<SerialBoardInfoRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match local_usb_board_info(&state, &req.port_path).await {
+        Ok(result) => Json(json!({ "ok": true, "result": result })).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
 }
 
 fn reconcile_scanned_usb_devices(inner: &mut DevdState, ports: Vec<UsbTarget>) {
@@ -688,6 +713,25 @@ async fn device_flash_upload(
     }
 }
 
+async fn device_flash_bundled(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<BundledFirmwareFlashRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(response) = require_lease(&state, &id, Some(&req.lease_id)).await {
+        return *response;
+    }
+    let result = run_bundled_flash_request(&state, &id, req).await;
+    match result {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
 async fn device_reset(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -708,6 +752,10 @@ async fn device_reset(
         Ok(port_path) => port_path,
         Err(err) => return error_from_anyhow(err),
     };
+    let serial_guard = match acquire_serial_port_guard(&state, &port_path, None).await {
+        Ok(guard) => guard,
+        Err(err) => return error_from_anyhow(err),
+    };
     {
         let mut inner = state.inner.lock().await;
         if inner.exclusive_ports.contains_key(&port_path) {
@@ -720,6 +768,7 @@ async fn device_reset(
     let guard = ExclusiveGuard {
         state: state.clone(),
         port_path,
+        serial_guard: Some(serial_guard),
     };
     let result = usb_jsonl_request_with_exclusive(&state, &id, "reboot", None, Some("reset")).await;
     drop(guard);

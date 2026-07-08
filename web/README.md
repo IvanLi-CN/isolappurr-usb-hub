@@ -8,6 +8,7 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 - `/devices/:deviceId` — Device details (Overview)
 - `/devices/:deviceId/info` — Device details (Hardware)
 - `/devices/:deviceId/power` — Device details (Power)
+- `/flash` — Standalone firmware flash workbench
 - `/about` — About
 - `*` — Standalone 404 fallback with Dashboard/About recovery links
 
@@ -20,6 +21,7 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 
 - Install: `bun install`
 - Dev server: `bun dev` (default: `http://127.0.0.1:45173`)
+- Firmware bundle refresh: `bun run bundle-firmware` (release-maintainer path; requires GitHub access)
 - Brand assets: `bun run brand-assets` regenerates the product poster, GitHub Social preview, and PNG logo from the source images in `src/assets/brand/`
 - Icons: `bun run icons` regenerates brand assets plus favicon, Apple, regular PWA, maskable PWA, desktop-ready PNG assets, and the Tauri source PNG from `src/assets/brand/isolapurr-mark.svg`
 - Storybook: `bun run storybook` (default: `http://127.0.0.1:46006`)
@@ -27,6 +29,13 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 
 Brand and icon regeneration requires `rsvg-convert` from librsvg, Python Pillow (`python3 -m pip install Pillow`), and `cargo tauri icon` for the desktop bundle assets.
 Production social preview metadata uses an absolute image URL on GitHub Pages. For other hosts, set `VITE_SITE_ORIGIN=https://example.com` during `bun run build`.
+
+## Bundled firmware releases
+
+- `web/public/firmware/releases-manifest.json` is the checked-in offline/default manifest for local development and PR validation.
+- Release builds replace that file at build time by running `tools/firmware-bundle/build-web-bundle.py`, which fetches the current non-draft GitHub Releases from `IvanLi-CN/isolappurr-usb-hub`.
+- The generated web bundle keeps the most recent 50 app-upgrade releases and only the latest stable plus latest prerelease recovery images.
+- Firmware assets stay same-origin under `firmware/releases/**` and are fetched on demand by `/flash`; they are intentionally excluded from service-worker install-time precache.
 
 ## Install icon contract
 

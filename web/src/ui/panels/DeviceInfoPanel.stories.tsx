@@ -72,6 +72,7 @@ const meta: Meta<typeof DeviceInfoPanel> = {
     usbCDownstreamPersisted: true,
     routeBusy: false,
     setUsbCDownstreamRoute: async () => {},
+    openFirmwareFlashPage: () => {},
     deleteDevice: async () => undefined,
   },
 };

@@ -7,6 +7,16 @@
 - Added Local USB firmware guard requirements for project identity, compatibility, non-project firmware, and download-mode confirmation.
 - Added official user-machine host-tools installers so `isolapurr-user-operations` can install released CLI/devd tools without requiring a source checkout.
 - Tightened the user skill install gate so missing released host tools or unavailable installer assets cannot be answered with raw system USB/serial enumeration.
+- Added the standalone `/flash` workbench, moved the Web flash UX away from
+  the old inline upload-only panel, and introduced same-origin bundled release
+  assets with a 50-version app window plus latest stable/latest prerelease
+  recovery images.
+- Re-opened recovery flashing for confirmed IsolaPurr hardware and aligned the
+  bundled recovery path to accept either `full_image` or `elf` recovery
+  artifacts instead of forbidding recovery on ordinary boards.
+- Fixed the Local USB recovery closeout path so post-flash identity capture no
+  longer deadlocks on the serial guard during reboot, and confirmed-target
+  recovery no longer falsely requires the non-project strong-confirm path.
 - Clarified and implemented `isolapurr discover` so LAN results come from live
   mDNS discovery, USB results come from the current local scan, and saved
   device profiles only annotate matching live results instead of standing in for

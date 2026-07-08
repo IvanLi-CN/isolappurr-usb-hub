@@ -303,16 +303,25 @@ jobs:
           set -euo pipefail
           mkdir -p dist/firmware
           ELF="target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub"
+          FULL_IMAGE="dist/firmware/isolapurr-usb-hub.full.bin"
           APP_BIN="dist/firmware/isolapurr-usb-hub.app.bin"
           cp "$ELF" dist/firmware/isolapurr-usb-hub.elf
-          espflash save-image --chip esp32s3 "$ELF" "$APP_BIN"
+          espflash save-image --chip esp32s3 "$ELF" "$FULL_IMAGE"
+          generated="$(find dist/firmware -maxdepth 1 -type f -name '*0x10000*.bin' | head -n 1)"
+          if [ -n "$generated" ]; then
+            cp "$generated" "$APP_BIN"
+          else
+            cp "$FULL_IMAGE" "$APP_BIN"
+          fi
           python3 tools/firmware-catalog/build-catalog.py \
             --out dist/firmware/isolapurr-firmware-catalog.json \
             --artifact-id "isolapurr-${TARGET_SHA::12}" \
+            --recovery-artifact-id "isolapurr-${TARGET_SHA::12}-recovery" \
             --version "$RELEASE_VERSION" \
             --git-sha "$TARGET_SHA" \
             --build-id "$GITHUB_RUN_ID" \
             --app-bin "$APP_BIN" \
+            --full-image "$FULL_IMAGE" \
             --elf "dist/firmware/isolapurr-usb-hub.elf"
 
       - name: Upload firmware assets
@@ -344,6 +353,16 @@ jobs:
       - name: Install deps
         run: bun install --frozen-lockfile
         working-directory: web
+
+      - name: Bundle same-origin firmware releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 tools/firmware-bundle/build-web-bundle.py \
+            --repo IvanLi-CN/isolappurr-usb-hub \
+            --manifest web/public/firmware/releases-manifest.json \
+            --output-dir web/public/firmware \
+            --limit 50
 
       - name: Build web dist
         env:

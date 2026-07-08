@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-
+import { DEMO_BUNDLED_FIRMWARE_MANIFEST } from "./firmwareBundle";
 import {
   devdLocalUsbDeviceIdFromBaseUrl,
   filterEsp32SerialPorts,
+  flashBundledWithLocalUsb,
   isEsp32SerialPort,
   listLocalUsbSerialPorts,
   sendDevdLocalUsbJsonlRequest,
@@ -270,5 +271,175 @@ describe("Local USB runtime power route", () => {
 
     expect(response.ok).toBe(true);
     expect(response.result?.runtime?.output_enabled).toBe(false);
+  });
+});
+
+describe("flashBundledWithLocalUsb", () => {
+  test("posts bundled catalog and selected asset to the new flash endpoint", async () => {
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/firmware/releases/v0.5.1/isolapurr-usb-hub.app.bin")) {
+        return new Response(new Uint8Array([1, 2, 3]));
+      }
+      if (
+        url.endsWith(
+          "/firmware/releases/v0.5.1/isolapurr-firmware-catalog.json",
+        )
+      ) {
+        return jsonResponse({
+          schemaVersion: "1",
+          artifacts: [
+            {
+              artifactId: "isolapurr-demo-051",
+              target: "esp32s3_app",
+              version: "v0.5.1",
+              files: [
+                {
+                  kind: "app_bin",
+                  path: "isolapurr-usb-hub.app.bin",
+                  sha256: "abc",
+                  size: 3,
+                  flashAddress: 0x10000,
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/api/v1/devices/scan")) {
+        return jsonResponse({
+          devices: [
+            {
+              id: "usb--dev-cu-usbmodem21221401",
+              usb: { portPath: "/dev/cu.usbmodem21221401" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/api/v1/serial/lease")) {
+        return jsonResponse({ lease_id: "lease-1" });
+      }
+      if (
+        url.endsWith(
+          "/api/v1/devices/usb--dev-cu-usbmodem21221401/flash-bundled",
+        )
+      ) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >;
+        expect(body.artifactId).toBe("isolapurr-demo-051");
+        expect(body.fileKind).toBe("app_bin");
+        expect(body.firstTime).toBe(false);
+        expect(body.leaseId).toBe("lease-1");
+        expect((body.catalog as { schemaVersion?: string }).schemaVersion).toBe(
+          "1",
+        );
+        return jsonResponse({ ok: true, log: "done" });
+      }
+      if (url.endsWith("/api/v1/serial/lease/lease-1")) {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+
+    const release = DEMO_BUNDLED_FIRMWARE_MANIFEST.releases[0];
+    if (!release) {
+      throw new Error("missing demo release");
+    }
+    const log = await flashBundledWithLocalUsb(
+      makeAgent(),
+      "/dev/cu.usbmodem21221401",
+      release,
+      release.app,
+      false,
+      { deviceId: "aabbcc001122" },
+    );
+
+    expect(log).toBe("done");
+  });
+
+  test("sends elf recovery assets for first-time Local USB flash", async () => {
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/firmware/releases/v0.5.1/isolapurr-usb-hub.elf")) {
+        return new Response(new Uint8Array([1, 2, 3]));
+      }
+      if (
+        url.endsWith(
+          "/firmware/releases/v0.5.1/isolapurr-firmware-catalog.json",
+        )
+      ) {
+        return jsonResponse({
+          schemaVersion: "1",
+          artifacts: [
+            {
+              artifactId: "isolapurr-demo-051",
+              target: "esp32s3_app",
+              version: "v0.5.1",
+              files: [
+                {
+                  kind: "elf",
+                  path: "isolapurr-usb-hub.elf",
+                  sha256: "abc",
+                  size: 3,
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/api/v1/devices/scan")) {
+        return jsonResponse({
+          devices: [
+            {
+              id: "usb--dev-cu-usbmodem21221401",
+              usb: { portPath: "/dev/cu.usbmodem21221401" },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/api/v1/serial/lease")) {
+        return jsonResponse({ lease_id: "lease-1" });
+      }
+      if (
+        url.endsWith(
+          "/api/v1/devices/usb--dev-cu-usbmodem21221401/flash-bundled",
+        )
+      ) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >;
+        expect(body.fileKind).toBe("elf");
+        expect(body.firstTime).toBe(true);
+        expect(body.confirmNonProjectFirmware).toBe(true);
+        expect(body.expectedIdentity).toEqual({
+          deviceId: "aabbcc001122",
+          mac: "AA:BB:CC:DD:EE:FF",
+        });
+        return jsonResponse({ ok: true, log: "done" });
+      }
+      if (url.endsWith("/api/v1/serial/lease/lease-1")) {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+
+    const release = DEMO_BUNDLED_FIRMWARE_MANIFEST.releases[0];
+    if (!release?.recovery) {
+      throw new Error("missing demo recovery release");
+    }
+    const log = await flashBundledWithLocalUsb(
+      makeAgent(),
+      "/dev/cu.usbmodem21221401",
+      release,
+      release.recovery,
+      true,
+      { deviceId: "aabbcc001122", mac: "AA:BB:CC:DD:EE:FF" },
+      true,
+    );
+
+    expect(log).toBe("done");
   });
 });

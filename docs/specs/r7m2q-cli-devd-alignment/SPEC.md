@@ -34,6 +34,10 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST keep Web Serial available in the Web app as a formal supported channel.
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
+- MUST expose a standalone Web firmware flash workbench at `/flash`, with
+  entry points from the Dashboard add-device area and the device Settings
+  surface, while preserving the repository `?demo=true|false` contract instead
+  of introducing ad hoc demo pages.
 - MUST keep maintainer-facing workflow truth in one detailed project doc, with `README.md` as human navigation and `AGENTS.md` as concise entry rules rather than parallel full workflow manuals.
 - MUST keep repo-managed Web verification guidance aligned with the repository
   Web demo-surface policy: production SPA routes stay as app-level pages,
@@ -57,6 +61,27 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST validate firmware catalog target, flash address, file hash, and device identity before normal user flashing.
 - MUST allow first-time full flash from the user CLI only after explicit port selection, target/artifact evidence, typed confirmation or explicit non-interactive confirmation, and post-flash identity capture.
 - MUST require an explicit confirmation path before destructive operations that may affect download-mode or non-project firmware. CLI clients use an interactive typed confirmation or a confirmation flag for non-interactive runs; GUI clients must use a confirmation dialog.
+- MUST build the Web release flash source from same-origin bundled firmware
+  assets rather than runtime cross-origin GitHub downloads. The bundled
+  manifest source is the current `IvanLi-CN/isolappurr-usb-hub` GitHub
+  Releases list, filtered to non-draft releases and capped at the 50 most
+  recent app-upgrade versions.
+- MUST include `version/tag`, `publishedAt`, prerelease state, app-upgrade
+  catalog metadata, and recovery availability in the bundled Web manifest so
+  the `/flash` workbench can render a release list without querying GitHub at
+  runtime.
+- MUST bundle ordinary app-upgrade assets for the latest 50 release versions,
+  but bundle recovery/full-flash assets only for the latest stable release and
+  latest prerelease when one exists.
+- MUST allow ordinary Web updates only when the probed target is confirmed as
+  IsolaPurr firmware. The `/flash` workbench MUST also allow the owner to
+  choose a bundled recovery image for a confirmed IsolaPurr target over normal
+  hardware flashing, while recovery/provisioning for non-project,
+  download-mode, or identity-unknown targets still requires a strong
+  confirmation dialog.
+- MUST keep bundled firmware binaries out of service-worker install-time
+  precache; the Web UI may prefetch only the lightweight release manifest and
+  must fetch firmware binaries on demand after the owner selects a version.
 - MUST instruct users to upgrade firmware when `firmware.version` is below the devd-compatible minimum instead of attempting normal port/Wi-Fi/diagnostic operations.
 - MUST expose owner-facing power-config inspection, semantic USB-C source
   capability commands, and manual output mode controls through `isolapurr`
@@ -154,6 +179,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `POST /api/v1/devices/{id}/power/config/release`
 - `POST /api/v1/devices/{id}/flash`
 - `POST /api/v1/devices/{id}/flash-upload`
+- `POST /api/v1/devices/{id}/flash-bundled`
 - `POST /api/v1/devices/{id}/reset`
 - `GET /api/v1/devices/{id}/diagnostics`
 - `GET|POST /api/v1/storage/devices`
@@ -242,9 +268,71 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given devd owns a Local USB session, when another devd client requests the same port during an exclusive flash/reset, then devd returns a busy error instead of opening the port concurrently.
 - Given a firmware catalog references an app image, when CLI/devd flashes a normal update, then the image hash, target, address, and identity are verified before writing.
 - Given first-time hardware lacks identity or is in download mode, when a user runs a full flash, then the CLI shows target/artifact evidence, requires a typed confirmation or explicit non-interactive confirmation flag, flashes the full artifact, and writes confirmed identity after reboot.
+- Given the owner opens `/flash` in the Web app, when bundled firmware
+  metadata is available, then the page renders the latest same-origin release
+  list with version, published date, prerelease state, and recovery
+  availability without fetching GitHub assets from the browser.
+- Given the owner uses the Dashboard add-device area or a saved device
+  Settings page, when they need provisioning, recovery, or manual firmware
+  install, then each surface exposes an explicit entry point into the
+  standalone firmware flash workbench.
+- Given the Web release bundle is built for online hosting, when service
+  worker install-time precache runs, then bundled firmware binaries are
+  excluded from precache and are fetched only after the owner selects a
+  release to flash.
 - Given CLI Wi-Fi set includes a PSK, when session traces or diagnostics are exported, then the PSK is redacted.
 - Given the desktop app starts, when devd is available, then desktop UI uses the devd API rather than a divergent hardware-control implementation.
 
 ## Visual Evidence
 
-Visual evidence for UI changes belongs to `docs/specs/u5b2c-usb-console-provisioning/SPEC.md` unless a future UI change is specific only to this daemon/CLI boundary.
+Dashboard entry:
+
+![Dashboard flash entry](./assets/flash-dashboard-entry.png)
+
+Add-device entry:
+
+![Add device flash entry](./assets/flash-add-device-entry.png)
+
+Settings entry:
+
+![Settings flash entry](./assets/flash-settings-entry.png)
+
+Standalone `/flash?demo=true` workbench, idle state with the restored
+connection header rhythm and compact waiting placeholder:
+
+![Firmware flash workbench idle demo](./assets/flash-workbench-demo-idle-refined.png)
+
+Standalone `/flash?demo=true` workbench after selecting a demo Local USB
+target, showing the flattened target details without the redundant summary
+strip or nested info cards:
+
+![Firmware flash workbench connected demo](./assets/flash-workbench-demo-connected-refined.png)
+
+Standalone `/flash?demo=true` workbench on a confirmed IsolaPurr target after
+switching the right-rail mode toggle to `Recovery`, proving that ordinary
+hardware is no longer blocked from bundled recovery flashing:
+
+![Firmware flash workbench confirmed recovery demo](./assets/flash-workbench-demo-confirmed-recovery.png)
+
+Strong confirmation dialog for recovery on unconfirmed targets:
+
+![Recovery strong confirmation](./assets/flash-strong-confirm.png)
+
+Bundled release list Storybook surface:
+
+![Bundled release list story](./assets/flash-release-list-story.png)
+
+Real hardware `devd` / Local USB verification before flashing, with the page
+showing the true hardware identity and the device still on `0.5.0`:
+
+![Real hardware Local USB pre-flash](./assets/flash-devd-real-pre-v050.png)
+
+Real hardware `devd` / Local USB flash completion on the same `/flash` page,
+before the manual re-probe refresh:
+
+![Real hardware Local USB post-write](./assets/flash-devd-real-post-write.png)
+
+Real hardware `devd` / Local USB re-probe on the same page after flashing back
+to the latest stable bundled release `0.5.1`:
+
+![Real hardware Local USB post-reprobe](./assets/flash-devd-real-post-reprobe-v051.png)

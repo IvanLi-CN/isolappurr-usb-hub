@@ -772,9 +772,23 @@ export function AddDeviceDialog({
       }}
     >
       <div className="modal-box iso-modal flex max-h-[calc(100vh-32px)] w-[1040px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--panel)] px-8 pb-7 pt-6">
-        <div className="text-[24px] font-bold">Add device</div>
-        <div className="mt-2 text-[14px] font-medium text-[var(--muted)]">
-          Store locally; used for Dashboard and device pages.
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="text-[24px] font-bold">Add device</div>
+            <div className="mt-2 text-[14px] font-medium text-[var(--muted)]">
+              Store locally; used for Dashboard and device pages.
+            </div>
+          </div>
+          <button
+            className="btn btn-outline min-h-10"
+            type="button"
+            onClick={() => {
+              onClose();
+              navigate("/flash");
+            }}
+          >
+            Open firmware flash
+          </button>
         </div>
 
         <div

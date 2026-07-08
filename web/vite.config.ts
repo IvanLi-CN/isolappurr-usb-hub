@@ -140,7 +140,10 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
-          globIgnores: ["**/brand/isolapurr-product-poster.png"],
+          globIgnores: [
+            "**/brand/isolapurr-product-poster.png",
+            "**/firmware/**/*",
+          ],
           navigateFallback: `${base}index.html`,
         },
       }),

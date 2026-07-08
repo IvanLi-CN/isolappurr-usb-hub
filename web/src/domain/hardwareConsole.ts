@@ -1,4 +1,8 @@
 import { agentFetch, type DesktopAgent } from "./desktopAgent";
+import type {
+  BundledFirmwareAsset,
+  BundledFirmwareRelease,
+} from "./firmwareBundle";
 
 export type JsonlRequest = {
   id: number;
@@ -15,6 +19,7 @@ export type SerialPortInfo = {
   serialNumber?: string | null;
   manufacturer?: string | null;
   product?: string | null;
+  probeInfo?: unknown;
 };
 
 const ESPRESSIF_USB_VENDOR_ID = 0x303a;
@@ -65,6 +70,20 @@ export type FirmwareFlashProgress = {
   total?: number;
 };
 
+export type HardwareBoardInfo = {
+  source: "esptool-js" | "espflash";
+  chipType?: string;
+  mcuModel?: string;
+  chipRevision?: string;
+  flashSize?: string;
+  ramSize?: string;
+  psramSize?: string;
+  macAddress?: string;
+  crystalFrequency?: string;
+  features?: string[];
+  rawOutput?: string;
+};
+
 export type SerialLikePort = SerialPort & {
   readable: ReadableStream<Uint8Array> | null;
   writable: WritableStream<Uint8Array> | null;
@@ -111,10 +130,110 @@ export function isWebSerialSupported(): boolean {
   return typeof navigator !== "undefined" && "serial" in navigator;
 }
 
+function inferRamSize(chipType: string | undefined): string | undefined {
+  if (!chipType) {
+    return undefined;
+  }
+  const compact = chipType.toUpperCase().replace(/[\s_-]/g, "");
+  if (compact.includes("ESP32S3")) {
+    return "512 KB";
+  }
+  if (compact.includes("ESP32S2")) {
+    return "320 KB";
+  }
+  return undefined;
+}
+
+function normalizeCapacityToken(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const mbMatch = trimmed.match(/(\d+)\s*MB/i);
+  if (mbMatch) {
+    return `${mbMatch[1]} MB`;
+  }
+  const kbMatch = trimmed.match(/(\d+)\s*KB/i);
+  if (kbMatch) {
+    return `${kbMatch[1]} KB`;
+  }
+  return trimmed;
+}
+
+function extractFeatureCapacity(
+  features: string[],
+  label: "flash" | "psram",
+): string | undefined {
+  const pattern =
+    label === "flash"
+      ? /embedded flash\s+(\d+\s*MB)/i
+      : /embedded psram\s+(\d+\s*MB)/i;
+  for (const feature of features) {
+    const match = feature.match(pattern);
+    if (match) {
+      return normalizeCapacityToken(match[1]);
+    }
+  }
+  return undefined;
+}
+
+function normalizeChipDescription(
+  description: string,
+): Pick<HardwareBoardInfo, "chipType" | "mcuModel" | "chipRevision"> {
+  const [chipTypePart, revisionPart] = description
+    .split(/\s+\(revision\s+/i)
+    .map((part) => part.trim());
+  const chipType = chipTypePart || description.trim();
+  const compact = chipType.toUpperCase().replace(/[\s_-]/g, "");
+  const canonicalModel = compact.startsWith("ESP32S3")
+    ? "ESP32-S3"
+    : compact.startsWith("ESP32S2")
+      ? "ESP32-S2"
+      : compact.startsWith("ESP32C3")
+        ? "ESP32-C3"
+        : compact.startsWith("ESP32C6")
+          ? "ESP32-C6"
+          : compact.startsWith("ESP32H2")
+            ? "ESP32-H2"
+            : compact.startsWith("ESP32P4")
+              ? "ESP32-P4"
+              : undefined;
+  const modelMatch = chipType.match(/ESP32-[A-Z0-9]+/i);
+  const revision = revisionPart?.replace(/\)$/g, "").trim();
+  return {
+    chipType: canonicalModel ?? chipType,
+    mcuModel: canonicalModel ?? modelMatch?.[0]?.toUpperCase() ?? chipType,
+    chipRevision: revision,
+  };
+}
+
 export function nextJsonlRequestId(): number {
   const id = jsonlRequestSeq;
   jsonlRequestSeq = jsonlRequestSeq >= 999_999 ? 1 : jsonlRequestSeq + 1;
   return id;
+}
+
+function extractUsbProbeInfo(value: unknown): unknown {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const session =
+    "session" in value && value.session && typeof value.session === "object"
+      ? (value.session as { traces?: unknown[] })
+      : null;
+  const traces = Array.isArray(session?.traces) ? session.traces : [];
+  for (let index = traces.length - 1; index >= 0; index -= 1) {
+    const trace = traces[index];
+    if (!trace || typeof trace !== "object") {
+      continue;
+    }
+    const payload =
+      "payload" in trace ? (trace as { payload?: unknown }).payload : undefined;
+    if (payload && typeof payload === "object") {
+      return payload;
+    }
+  }
+  return null;
 }
 
 export async function listLocalUsbSerialPorts(
@@ -150,9 +269,36 @@ export async function listLocalUsbSerialPorts(
           vendorId: usb.vendorId,
           productId: usb.productId,
           serialNumber: usb.serialNumber,
+          probeInfo: extractUsbProbeInfo(
+            json.devices?.find(
+              (device) => device.usb?.portPath === usb.portPath,
+            ),
+          ),
         }))
         .filter((port) => port.path.length > 0)
     : [];
+}
+
+export async function readLocalUsbBoardInfo(
+  agent: DesktopAgent,
+  portPath: string,
+): Promise<HardwareBoardInfo> {
+  const res = await agentFetch(agent, "/api/v1/serial/board-info", {
+    method: "POST",
+    body: JSON.stringify({ portPath }),
+  });
+  const json = (await res.json().catch(() => null)) as {
+    ok?: boolean;
+    result?: HardwareBoardInfo;
+    error?: { message?: string };
+  } | null;
+  if (!res.ok || !json?.ok || !json.result) {
+    throw new Error(
+      json?.error?.message ??
+        `Local USB hardware probe failed (${res.status}).`,
+    );
+  }
+  return json.result;
 }
 
 async function listLegacyLocalUsbSerialPorts(
@@ -701,6 +847,84 @@ export async function flashWithLocalUsb(
   }
 }
 
+export async function flashBundledWithLocalUsb(
+  agent: DesktopAgent,
+  portPath: string,
+  release: BundledFirmwareRelease,
+  asset: BundledFirmwareAsset,
+  firstTime: boolean,
+  expectedIdentity?: DeviceIdentityExpectation,
+  confirmNonProjectFirmware = false,
+): Promise<string> {
+  const deviceId = stableLocalUsbDeviceId(portPath);
+  const assetResponse = await fetch(asset.assetPath, { cache: "no-store" });
+  if (!assetResponse.ok) {
+    throw new Error(`Firmware asset request failed (${assetResponse.status}).`);
+  }
+  const firmware = await fileToBase64(
+    new File([await assetResponse.arrayBuffer()], asset.fileName, {
+      type: "application/octet-stream",
+    }),
+  );
+  const catalogResponse = await fetch(release.catalogPath, {
+    cache: "no-store",
+  });
+  if (!catalogResponse.ok) {
+    throw new Error(
+      `Firmware catalog request failed (${catalogResponse.status}).`,
+    );
+  }
+  const catalog = (await catalogResponse.json()) as Record<string, unknown>;
+  let lease: { lease_id: string } | null = null;
+  try {
+    await ensureLocalUsbDeviceRegistered(agent, deviceId, portPath);
+    lease = await createLocalUsbLease(agent, deviceId);
+    const res = await agentFetch(
+      agent,
+      `/api/v1/devices/${deviceId}/flash-bundled`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          catalog,
+          artifactId: asset.artifactId,
+          fileKind: asset.fileKind,
+          fileName: asset.fileName,
+          fileBase64: firmware,
+          firstTime,
+          confirmNonProjectFirmware,
+          expectedIdentity: expectedIdentity
+            ? {
+                deviceId: expectedIdentity.deviceId ?? undefined,
+                mac: expectedIdentity.mac ?? undefined,
+              }
+            : undefined,
+          leaseId: lease.lease_id,
+        }),
+      },
+    );
+    const json = (await res.json()) as {
+      ok?: boolean;
+      log?: string;
+      error?: { code?: string; message?: string; retryable?: boolean };
+    };
+    if (!res.ok || !json.ok) {
+      throw new LocalUsbAgentHttpError(
+        json.error?.message ||
+          json.log ||
+          `Local USB flash failed (${res.status})`,
+        res.status,
+        json.error?.code,
+        json.error?.retryable,
+      );
+    }
+    return json.log ?? "";
+  } finally {
+    if (lease) {
+      await releaseLocalUsbLease(agent, lease.lease_id);
+    }
+  }
+}
+
 async function legacyFlashWithLocalUsb(
   agent: DesktopAgent,
   portPath: string,
@@ -960,6 +1184,65 @@ export class WebSerialJsonlTransport {
       ) {
         throw err;
       }
+    }
+  }
+}
+
+export async function getGrantedWebSerialPort(): Promise<SerialLikePort | null> {
+  return await findGrantedWebSerialPort();
+}
+
+export async function probeWebSerialBoard(
+  port: SerialLikePort,
+): Promise<HardwareBoardInfo> {
+  const { ESPLoader, Transport } = await import("esptool-js");
+  const transport = new Transport(port, true);
+  const terminal = {
+    clean() {},
+    writeLine() {},
+    write() {},
+  };
+  const loader = new ESPLoader({
+    transport,
+    baudrate: 115200,
+    terminal,
+    debugLogging: false,
+  });
+  patchEsp32S3UsbJtagStubStart(loader as EsptoolLoaderWithInternals);
+
+  try {
+    await loader.main("usb_reset");
+    const chipDescription = await loader.chip.getChipDescription(loader);
+    const features = await loader.chip.getChipFeatures(loader);
+    const macAddress = await loader.chip.readMac(loader);
+    const crystalFrequency = await loader.chip.getCrystalFreq(loader);
+    const flashSize = normalizeCapacityToken(
+      await loader.detectFlashSize().catch(() => undefined),
+    );
+    const normalized = normalizeChipDescription(chipDescription);
+    return {
+      source: "esptool-js",
+      ...normalized,
+      flashSize: flashSize ?? extractFeatureCapacity(features, "flash"),
+      ramSize: inferRamSize(normalized.chipType),
+      psramSize: extractFeatureCapacity(features, "psram"),
+      macAddress,
+      crystalFrequency:
+        typeof crystalFrequency === "number"
+          ? `${crystalFrequency} MHz`
+          : undefined,
+      features,
+    };
+  } finally {
+    try {
+      await loader.after("hard_reset");
+    } catch {
+      // Ignore reset failures while returning to runtime mode.
+    }
+    try {
+      await port.close();
+    } catch {
+      // Browser-owned serial ports may already be closed after reset.
     }
   }
 }
