@@ -33,6 +33,7 @@ Production social preview metadata uses an absolute image URL on GitHub Pages. F
 - `web/src/assets/brand/isolapurr-mark.svg` is the single source of truth for all install icons.
 - `web/src/assets/brand/isolapurr-logo.svg` is the source logo. `web/public/brand/isolapurr-logo.png` is the transparent PNG export for surfaces that need a raster logo.
 - `web/src/assets/brand/product-poster-source.png` and `web/src/assets/brand/github-social-preview-source.png` are the source marketing images. `bun run brand-assets` exports `web/public/brand/isolapurr-product-poster.png`, `web/public/brand/github-social-preview.png`, and `.github/social-preview.png`.
+- Build-time HTML and manifest metadata append a shared content-hash query to install-facing icon URLs so Chrome/macOS PWA installs refetch icon assets when the artwork changes.
 - Regular install icons (`favicon`, `pwa-*`, `apple-touch-icon`, `desktop-*`, `tauri-source-1024.png`) are exported with a visible safe zone for Chrome/macOS, Apple touch surfaces, and Tauri desktop bundles.
 - Maskable icons (`maskable-*`) stay full-bleed for Android/PWA maskable install slots.
 - `bun run icons` also refreshes `desktop/src-tauri/icons/*` through `cargo tauri icon`; do not hand-edit the generated desktop PNG/ICNS/ICO assets.
