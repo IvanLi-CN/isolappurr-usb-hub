@@ -228,10 +228,10 @@ export const DEMO_BUNDLED_FIRMWARE_MANIFEST: BundledFirmwareManifest = {
       recovery: {
         artifactId: "isolapurr-demo-051-recovery",
         assetPath: normalizeAssetPath(
-          "firmware/releases/v0.5.1/isolapurr-usb-hub.elf",
+          "firmware/releases/v0.5.1/isolapurr-usb-hub.full.bin",
         ),
-        fileName: "isolapurr-usb-hub.elf",
-        fileKind: "elf",
+        fileName: "isolapurr-usb-hub.full.bin",
+        fileKind: "full_image",
         flashAddress: 0,
       },
     },
@@ -274,10 +274,10 @@ export const DEMO_BUNDLED_FIRMWARE_MANIFEST: BundledFirmwareManifest = {
       recovery: {
         artifactId: "isolapurr-demo-050-dev2-recovery",
         assetPath: normalizeAssetPath(
-          "firmware/releases/v0.5.0-dev.2/isolapurr-usb-hub.elf",
+          "firmware/releases/v0.5.0-dev.2/isolapurr-usb-hub.full.bin",
         ),
-        fileName: "isolapurr-usb-hub.elf",
-        fileKind: "elf",
+        fileName: "isolapurr-usb-hub.full.bin",
+        fileKind: "full_image",
         flashAddress: 0,
       },
     },

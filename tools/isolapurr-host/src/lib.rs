@@ -27,7 +27,7 @@ use tokio::{
 };
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
-    services::ServeDir,
+    services::{ServeDir, ServeFile},
 };
 
 pub const DEFAULT_BIND: &str = "127.0.0.1:51200";

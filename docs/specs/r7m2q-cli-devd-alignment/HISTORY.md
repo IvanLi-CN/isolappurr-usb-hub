@@ -14,6 +14,9 @@
 - Re-opened recovery flashing for confirmed IsolaPurr hardware and aligned the
   bundled recovery path to accept either `full_image` or `elf` recovery
   artifacts instead of forbidding recovery on ordinary boards.
+- Updated the Web firmware bundler so legacy ELF-only recovery releases are
+  promoted into merged bundled `full_image` assets with matching local catalog
+  metadata, instead of accidentally repackaging the plain app image at `0x0`.
 - Fixed the Local USB recovery closeout path so post-flash identity capture no
   longer deadlocks on the serial guard during reboot, and confirmed-target
   recovery no longer falsely requires the non-project strong-confirm path.

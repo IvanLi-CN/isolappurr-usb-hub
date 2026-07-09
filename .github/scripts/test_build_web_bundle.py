@@ -72,6 +72,33 @@ class BuildWebBundleTest(unittest.TestCase):
             "releases/v0.6.0-dev.2/isolapurr-usb-hub.full.bin",
         )
 
+    def test_synthesized_full_image_name_replaces_elf_suffix(self) -> None:
+        self.assertEqual(
+            build_web_bundle.synthesized_full_image_name("isolapurr-usb-hub.elf"),
+            "isolapurr-usb-hub.full.bin",
+        )
+
+    def test_save_image_command_uses_merged_skip_padding_for_recovery(self) -> None:
+        command = build_web_bundle.save_image_command(
+            pathlib.Path("isolapurr-usb-hub.elf"),
+            pathlib.Path("isolapurr-usb-hub.full.bin"),
+            merged=True,
+        )
+
+        self.assertEqual(
+            command,
+            [
+                "espflash",
+                "save-image",
+                "--chip",
+                "esp32s3",
+                "--merge",
+                "--skip-padding",
+                "isolapurr-usb-hub.elf",
+                "isolapurr-usb-hub.full.bin",
+            ],
+        )
+
     def test_select_recovery_artifact_falls_back_to_elf(self) -> None:
         catalog = {
             "artifacts": [
@@ -105,6 +132,53 @@ class BuildWebBundleTest(unittest.TestCase):
         artifact, firmware_file = selected
         self.assertEqual(artifact["target"], "esp32s3_app")
         self.assertEqual(firmware_file["kind"], "elf")
+
+    def test_inject_synthesized_recovery_artifact_adds_full_image_catalog_entry(self) -> None:
+        catalog = {
+            "artifacts": [
+                {
+                    "artifactId": "isolapurr-3550a0c263a8",
+                    "target": "esp32s3_app",
+                    "version": "0.5.1",
+                    "gitSha": "3550a0c263a8ba718a28053caa002e72e60f8b32",
+                    "buildId": "28792767922",
+                    "files": [
+                        {
+                            "kind": "app_bin",
+                            "path": "isolapurr-usb-hub.app.bin",
+                        },
+                        {
+                            "kind": "elf",
+                            "path": "isolapurr-usb-hub.elf",
+                        },
+                    ],
+                }
+            ]
+        }
+
+        recovery_artifact = build_web_bundle.inject_synthesized_recovery_artifact(
+            catalog,
+            catalog["artifacts"][0],
+            file_name="isolapurr-usb-hub.full.bin",
+            sha256="abc123",
+            size=456,
+        )
+
+        self.assertEqual(recovery_artifact["target"], "esp32s3_full")
+        self.assertEqual(recovery_artifact["artifactId"], "isolapurr-3550a0c263a8-recovery")
+        self.assertEqual(
+            recovery_artifact["files"],
+            [
+                {
+                    "kind": "full_image",
+                    "path": "isolapurr-usb-hub.full.bin",
+                    "sha256": "abc123",
+                    "size": 456,
+                    "flashAddress": 0,
+                }
+            ],
+        )
+        self.assertEqual(catalog["artifacts"][-1], recovery_artifact)
 
 
 if __name__ == "__main__":

@@ -73,8 +73,10 @@
   empty manifest by downloading the most recent 50 non-draft GitHub Releases,
   bundling app images for all 50 versions, and bundling recovery images only
   for the latest stable plus latest prerelease, preferring `full_image`
-  artifacts and falling back to bundled `elf` assets when that is the only
-  recovery-capable release artifact.
+  artifacts. When a legacy release only ships an `elf` recovery artifact, the
+  bundler now synthesizes a merged same-origin `full_image` plus a matching
+  local catalog entry so Web Serial and Local USB recovery can share one
+  bundled recovery contract without falling back to the plain app image.
 - Recovery writes from the `/flash` workbench now separate flash mode from
   target trust: confirmed IsolaPurr targets may choose either a normal update
   or a bundled recovery image, while non-project or identity-unknown recovery
@@ -100,11 +102,38 @@
 - Official host-tools installers added for Unix and Windows. Tag builds publish the host-tools archives, `SHA256SUMS`, and installer scripts to the matching GitHub Release.
 - `firmware.yml` emits a firmware catalog artifact after firmware build.
 - `firmware.yml` and `release.yml` now also emit `isolapurr-usb-hub.full.bin`
-  plus recovery artifact metadata, and release builds run the Web firmware
-  bundler before publishing the Web distribution tarball.
+  plus recovery artifact metadata, with `app.bin` generated from the plain
+  app image and `full.bin` generated from a merged, skip-padding recovery
+  image. Release builds also run the Web firmware bundler before publishing
+  the Web distribution tarball.
 - Removed the repo-managed legacy command examples that still referenced old released forms such as `status --hardware`, `status --device`, and `hardware save --id/--transport`, and added contract tests plus CLI parser tests so that drift fails CI instead of silently reappearing.
 
 ## Remaining hardening
 
 - Complete removal of the legacy Tauri-owned hardware-control server once the desktop packaging flow can bundle or locate `isolapurr-devd` at runtime.
 - Expand mock and hardware-in-loop coverage as physical devices are available.
+
+## Audit Task Checklist
+
+- `F1` Web Serial `probe -> flash` transport-release defect fixed: completed
+- `F2` Web Serial regression tests/build after the transport-release fix: completed
+- `F3` devd / Local USB page fixed to read project firmware identity from the registered device-status path instead of the legacy `serial/request info` fallback: completed
+- `F4` devd / Local USB regression tests/build after the identity-path fix: completed
+
+- `D1` devd / Local USB connection shows page fields aligned with `/serial/board-info` and `/devices/{id}/status`: completed
+- `D2` devd / Local USB recovery flash succeeds on real hardware: completed
+- `D3` devd / Local USB recovery same-page re-probe refreshes to the post-flash real values: completed
+- `D4` devd / Local USB normal update succeeds on real hardware: completed
+- `D5` devd / Local USB normal update same-page re-probe refreshes to the post-flash real values: completed
+- `D6` devd / Local USB audit materials written to disk (`JSON`, screenshots, bridge evidence, steps): completed
+
+- `W1` Web Serial connection shows page fields aligned with hardware / firmware truth: completed
+- `W2` Web Serial recovery flash succeeds on real hardware: completed
+- `W3` Web Serial recovery same-page re-probe refreshes to the post-flash real values: completed
+- `W4` Web Serial normal update succeeds on real hardware: completed
+- `W5` Web Serial normal update same-page re-probe refreshes to the post-flash real values: completed
+- `W6` Web Serial audit materials written to disk (`JSON`, screenshots, steps): completed
+
+- `A1` Repair notes, test evidence, and visual evidence synced into the audit/spec surfaces: completed
+- `A2` Final acceptance audit over every explicit requirement: completed
+- `A3` Local signed-off commit to lock the result: pending

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useDemoMode } from "../app/demo-mode";
 import { useDemoNavigate } from "../app/demo-navigation";
@@ -16,30 +16,33 @@ import {
   loadBundledFirmwareManifest,
 } from "../domain/firmwareBundle";
 import {
+  clearFlashTransportLock,
+  setFlashTransportLock,
+} from "../domain/flashTransportLocks";
+import {
   type FirmwareFlashProgress,
   flashBundledWithLocalUsb,
   flashWithLocalUsb,
   flashWithWebSerial,
-  getGrantedWebSerialPort,
   type HardwareBoardInfo,
   isWebSerialSupported,
   listLocalUsbSerialPorts,
   probeWebSerialBoard,
   readLocalUsbBoardInfo,
+  refreshGrantedWebSerialPort,
+  type SerialLikePort,
   type SerialPortInfo,
   WebSerialJsonlTransport,
 } from "../domain/hardwareConsole";
 import { getLocalUsbDeviceLink } from "../domain/localUsbLinks";
-import {
-  readLocalUsbInfo,
-  readWebSerialInfo,
-} from "../ui/dialogs/AddDeviceDialog.helpers";
+import { readLocalUsbInfo } from "../ui/dialogs/AddDeviceDialog.helpers";
 import { FirmwareReleaseList } from "../ui/panels/FirmwareReleaseList";
 
 type FlashTransportMode = "local_usb" | "web_serial";
 type FirmwareSourceMode = "releases" | "local_file";
 type FlashMode = "normal" | "recovery";
 type ProbeKind = "idle" | "probing" | "recognized" | "non_project" | "unknown";
+type WebSerialProbeMode = "picker" | "selected";
 
 type ProbeState = {
   kind: ProbeKind;
@@ -219,6 +222,18 @@ function composeFlashStatus(prefix: string, log: string): string {
   return trimmed ? `${prefix}\n${trimmed}` : prefix;
 }
 
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function normalizeFirmwareVersion(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.replace(/^v/i, "");
+}
+
 function resolveExpectedIdentity(
   currentDevice: StoredDevice | undefined,
   probe: ProbeState,
@@ -288,6 +303,7 @@ export function FirmwareFlashPage() {
   const [strongConfirmOpen, setStrongConfirmOpen] = useState(false);
   const [strongConfirmText, setStrongConfirmText] = useState("");
   const localUsbDialogRef = useRef<HTMLDialogElement>(null);
+  const selectedWebSerialPortRef = useRef<SerialLikePort | null>(null);
   useEffect(() => {
     if (demoEnabled) {
       setManifest(DEMO_BUNDLED_FIRMWARE_MANIFEST);
@@ -330,6 +346,23 @@ export function FirmwareFlashPage() {
     }
     setSelectedLocalUsbPort((current) => current || currentLocalUsbPath);
   }, [currentLocalUsbPath]);
+
+  useLayoutEffect(() => {
+    if (!currentDevice?.id) {
+      return;
+    }
+    if (transportMode !== "local_usb") {
+      setFlashTransportLock({
+        deviceId: currentDevice.id,
+        transport: "web_serial",
+      });
+      return () => {
+        clearFlashTransportLock(currentDevice.id);
+      };
+    }
+    clearFlashTransportLock(currentDevice.id);
+    return undefined;
+  }, [currentDevice?.id, transportMode]);
 
   useEffect(() => {
     const dialog = localUsbDialogRef.current;
@@ -446,10 +479,10 @@ export function FirmwareFlashPage() {
     if (!port) {
       throw new Error("Selected Local USB path is no longer available.");
     }
-    let info: unknown = port.probeInfo ?? null;
+    let info: unknown = null;
     let fallback = "Local USB target did not expose project firmware metadata.";
     try {
-      info = await readLocalUsbInfo(agent, port, () => undefined);
+      info = await readLocalUsbInfo(agent, port, () => undefined, 1);
     } catch (err) {
       fallback =
         err instanceof Error
@@ -460,32 +493,28 @@ export function FirmwareFlashPage() {
     let hardware: HardwareBoardInfo | undefined;
     try {
       hardware = await readLocalUsbBoardInfo(agent, port.path);
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (info != null) {
         try {
-          info = await readLocalUsbInfo(agent, port, () => undefined);
-          break;
+          info = await readLocalUsbInfo(agent, port, () => undefined, 1);
         } catch (err) {
-          if (attempt === 2 && info == null) {
-            fallback =
-              err instanceof Error
-                ? err.message
-                : "Local USB target did not expose project firmware metadata.";
-          }
-          await new Promise<void>((resolve) =>
-            window.setTimeout(resolve, 350 * (attempt + 1)),
-          );
+          fallback =
+            err instanceof Error
+              ? err.message
+              : "Local USB target did not expose project firmware metadata.";
         }
       }
     } catch {
       // Keep the confirmed firmware identity even when board-info is unavailable.
     }
 
-    setProbe(classifyProbe(info, fallback, hardware));
+    const nextProbe = classifyProbe(info, fallback, hardware);
+    setProbe(nextProbe);
+    return nextProbe;
   };
 
-  const probeWebSerial = async () => {
+  const probeWebSerial = async (mode: WebSerialProbeMode) => {
     if (demoEnabled) {
-      setProbe({
+      const nextProbe: ProbeState = {
         kind: "recognized",
         summary: "Confirmed IsolaPurr target.",
         detail: "isolapurr-usb-hub v0.5.1 • demo Web Serial link",
@@ -513,34 +542,74 @@ export function FirmwareFlashPage() {
             "Embedded PSRAM 8MB",
           ],
         },
-      });
-      return;
+      };
+      setProbe(nextProbe);
+      return nextProbe;
     }
     if (!webSerialSupported) {
       throw new Error("Web Serial is not supported by this browser.");
     }
+    const connectPort = async (port: SerialLikePort) => {
+      const transport = new WebSerialJsonlTransport();
+      await transport.connectToPort(port);
+      const infoResult = await transport
+        .request({
+          id: Math.floor(Math.random() * 1_000_000_000),
+          method: "info",
+          timeoutMs: 1_200,
+        })
+        .then((value) => ({ ok: true as const, value }))
+        .catch((err: unknown) => ({
+          ok: false as const,
+          error:
+            err instanceof Error
+              ? err.message
+              : "Web Serial target did not expose project firmware metadata.",
+        }));
+      const selectedPort = await transport.takePortForExclusiveUse();
+      const hardware = await probeWebSerialBoard(selectedPort).catch(
+        () => undefined,
+      );
+      if (!infoResult.ok && !hardware) {
+        throw new Error(infoResult.error);
+      }
+      const refreshedPort = await refreshGrantedWebSerialPort(
+        selectedPort,
+      ).catch(() => selectedPort);
+      return {
+        port: refreshedPort,
+        probe: classifyProbe(
+          infoResult.ok ? infoResult.value : null,
+          infoResult.ok
+            ? "Web Serial target did not expose project firmware metadata."
+            : infoResult.error,
+          hardware,
+        ),
+      };
+    };
+
+    if (mode === "selected") {
+      const selectedPort = selectedWebSerialPortRef.current;
+      if (!selectedPort) {
+        throw new Error(
+          "Open Web USB first and choose the exact ESP32-S3 target.",
+        );
+      }
+      const candidate = await connectPort(
+        await refreshGrantedWebSerialPort(selectedPort),
+      );
+      selectedWebSerialPortRef.current = candidate.port;
+      setProbe(candidate.probe);
+      return candidate.probe;
+    }
+
     const transport = new WebSerialJsonlTransport();
     await transport.connectWithPicker();
-    const infoResult = await readWebSerialInfo(transport, () => undefined)
-      .then((value) => ({ ok: true as const, value }))
-      .catch((err: unknown) => ({
-        ok: false as const,
-        error:
-          err instanceof Error
-            ? err.message
-            : "Web Serial target did not expose project firmware metadata.",
-      }));
     const port = await transport.takePortForExclusiveUse();
-    const hardware = await probeWebSerialBoard(port).catch(() => undefined);
-    setProbe(
-      classifyProbe(
-        infoResult.ok ? infoResult.value : null,
-        infoResult.ok
-          ? "Web Serial target did not expose project firmware metadata."
-          : infoResult.error,
-        hardware,
-      ),
-    );
+    const candidate = await connectPort(port);
+    selectedWebSerialPortRef.current = candidate.port;
+    setProbe(candidate.probe);
+    return candidate.probe;
   };
 
   const loadLocalUsbPortChoices = async (): Promise<SerialPortInfo[]> => {
@@ -572,6 +641,7 @@ export function FirmwareFlashPage() {
   };
 
   const openLocalUsbPicker = async () => {
+    selectedWebSerialPortRef.current = null;
     setTransportMode("local_usb");
     setFlashError(null);
     const ports = await loadLocalUsbPortChoices();
@@ -581,16 +651,25 @@ export function FirmwareFlashPage() {
   };
 
   const openWebUsbPicker = async () => {
+    if (currentDevice?.id) {
+      setFlashTransportLock({
+        deviceId: currentDevice.id,
+        transport: "web_serial",
+      });
+    }
     setTransportMode("web_serial");
     setWebUsbPickerOpen(true);
     try {
-      await runProbe("web_serial");
+      await runProbe("web_serial", undefined, "picker");
     } finally {
       setWebUsbPickerOpen(false);
     }
   };
 
   const selectLocalUsbPort = async (portPath: string) => {
+    if (currentDevice?.id) {
+      clearFlashTransportLock(currentDevice.id);
+    }
     setSelectedLocalUsbPort(portPath);
     setLocalUsbPickerOpen(false);
     await runProbe("local_usb", portPath);
@@ -599,6 +678,7 @@ export function FirmwareFlashPage() {
   const runProbe = async (
     nextTransport: FlashTransportMode | null = transportMode,
     nextPortPath?: string,
+    webSerialMode: WebSerialProbeMode = "picker",
   ) => {
     if (!nextTransport) {
       setProbe({
@@ -620,7 +700,7 @@ export function FirmwareFlashPage() {
       if (nextTransport === "local_usb") {
         await probeLocalUsb(nextPortPath);
       } else {
-        await probeWebSerial();
+        await probeWebSerial(webSerialMode);
       }
     } catch (err) {
       setProbe({
@@ -631,6 +711,52 @@ export function FirmwareFlashPage() {
     } finally {
       setProbing(false);
     }
+  };
+
+  const refreshProbeAfterFlash = async (
+    nextTransport: FlashTransportMode | null,
+  ) => {
+    if (!nextTransport) {
+      return;
+    }
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        setProbe({
+          kind: "probing",
+          summary: "Refreshing target identity…",
+          detail: "Waiting for the board to reboot after flashing.",
+        });
+        const refreshed =
+          nextTransport === "local_usb"
+            ? await probeLocalUsb(selectedLocalUsbPort)
+            : await probeWebSerial("selected");
+        if (!refreshed) {
+          throw new Error("Target refresh did not return probe data.");
+        }
+        const expectedVersion =
+          sourceMode === "releases"
+            ? normalizeFirmwareVersion(selectedRelease?.version)
+            : null;
+        const observedVersion = normalizeFirmwareVersion(
+          refreshed?.firmwareVersion,
+        );
+        if (expectedVersion && observedVersion !== expectedVersion) {
+          throw new Error(
+            observedVersion
+              ? `Target still reports firmware ${refreshed.firmwareVersion}.`
+              : "Target has not reported the flashed firmware version yet.",
+          );
+        }
+        return;
+      } catch (err) {
+        lastError = err;
+        await delayMs(450 * (attempt + 1));
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Target identity refresh failed after flashing.");
   };
 
   const performFlash = async (confirmNonProjectFirmware: boolean) => {
@@ -668,22 +794,44 @@ export function FirmwareFlashPage() {
           setFlashStatus(
             composeFlashStatus("Bundled release flash completed.", log),
           );
+          await refreshProbeAfterFlash("local_usb").catch((err) => {
+            setFlashStatus((current) =>
+              composeFlashStatus(
+                current ?? "Bundled release flash completed.",
+                err instanceof Error
+                  ? `Target refresh failed: ${err.message}`
+                  : "Target refresh failed after flash.",
+              ),
+            );
+          });
           return;
         }
-        const port = await getGrantedWebSerialPort();
+        const port = selectedWebSerialPortRef.current;
         if (!port) {
           throw new Error(
-            "Open Web USB first so the browser grants the selected ESP32-S3 port.",
+            "Open Web USB first and choose the exact ESP32-S3 target.",
           );
         }
+        const refreshedPort = await refreshGrantedWebSerialPort(port);
+        selectedWebSerialPortRef.current = refreshedPort;
         const file = await fetchBundledFirmwareAssetFile(selectedAsset);
         await flashWithWebSerial(
-          port,
+          refreshedPort,
           file,
           selectedAsset.flashAddress,
           setFlashProgress,
         );
         setFlashStatus("Web Serial firmware flash completed.");
+        await refreshProbeAfterFlash("web_serial").catch((err) => {
+          setFlashStatus((current) =>
+            composeFlashStatus(
+              current ?? "Web Serial firmware flash completed.",
+              err instanceof Error
+                ? `Target refresh failed: ${err.message}`
+                : "Target refresh failed after flash.",
+            ),
+          );
+        });
         return;
       }
 
@@ -714,16 +862,43 @@ export function FirmwareFlashPage() {
         setFlashStatus(
           composeFlashStatus("Local USB firmware flash completed.", log),
         );
+        await refreshProbeAfterFlash("local_usb").catch((err) => {
+          setFlashStatus((current) =>
+            composeFlashStatus(
+              current ?? "Local USB firmware flash completed.",
+              err instanceof Error
+                ? `Target refresh failed: ${err.message}`
+                : "Target refresh failed after flash.",
+            ),
+          );
+        });
         return;
       }
-      const port = await getGrantedWebSerialPort();
+      const port = selectedWebSerialPortRef.current;
       if (!port) {
         throw new Error(
-          "Open Web USB first so the browser grants the selected ESP32-S3 port.",
+          "Open Web USB first and choose the exact ESP32-S3 target.",
         );
       }
-      await flashWithWebSerial(port, localFile, address, setFlashProgress);
+      const refreshedPort = await refreshGrantedWebSerialPort(port);
+      selectedWebSerialPortRef.current = refreshedPort;
+      await flashWithWebSerial(
+        refreshedPort,
+        localFile,
+        address,
+        setFlashProgress,
+      );
       setFlashStatus("Web Serial firmware flash completed.");
+      await refreshProbeAfterFlash("web_serial").catch((err) => {
+        setFlashStatus((current) =>
+          composeFlashStatus(
+            current ?? "Web Serial firmware flash completed.",
+            err instanceof Error
+              ? `Target refresh failed: ${err.message}`
+              : "Target refresh failed after flash.",
+          ),
+        );
+      });
     } catch (err) {
       setFlashError(
         err instanceof Error ? err.message : "Firmware flash failed.",
@@ -892,6 +1067,7 @@ export function FirmwareFlashPage() {
                         : "Available"
                   }
                   description="Open the browser picker immediately."
+                  onMouseDownActivate={() => void openWebUsbPicker()}
                   onClick={() => void openWebUsbPicker()}
                 />
               </div>
@@ -1284,18 +1460,41 @@ function TransportChoiceCard({
   title,
   status,
   description,
+  onMouseDownActivate,
   onClick,
 }: {
   title: string;
   status: string;
   description: string;
+  onMouseDownActivate?: () => void;
   onClick: () => void;
 }) {
   return (
     <button
       className="flex h-full w-full min-w-0 flex-col rounded-[14px] border border-[var(--border)] bg-[var(--panel)] px-4 py-3.5 text-left transition-colors hover:bg-[var(--panel-2)]"
       type="button"
-      onClick={onClick}
+      onMouseDown={
+        onMouseDownActivate
+          ? (event) => {
+              if (event.button !== 0) {
+                return;
+              }
+              event.preventDefault();
+              onMouseDownActivate();
+            }
+          : undefined
+      }
+      onClick={
+        onMouseDownActivate
+          ? (event) => {
+              if (event.detail !== 0) {
+                event.preventDefault();
+                return;
+              }
+              onClick();
+            }
+          : onClick
+      }
     >
       <div className="flex items-start justify-between gap-3">
         <div className="text-[14px] font-bold text-[var(--text)]">{title}</div>

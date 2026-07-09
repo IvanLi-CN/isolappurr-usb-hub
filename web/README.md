@@ -21,7 +21,7 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 
 - Install: `bun install`
 - Dev server: `bun dev` (default: `http://127.0.0.1:45173`)
-- Firmware bundle refresh: `bun run bundle-firmware` (release-maintainer path; requires GitHub access)
+- Firmware bundle refresh: `bun run bundle-firmware` (release-maintainer path; requires GitHub access plus local `espflash`)
 - Brand assets: `bun run brand-assets` regenerates the product poster, GitHub Social preview, and PNG logo from the source images in `src/assets/brand/`
 - Icons: `bun run icons` regenerates brand assets plus favicon, Apple, regular PWA, maskable PWA, desktop-ready PNG assets, and the Tauri source PNG from `src/assets/brand/isolapurr-mark.svg`
 - Storybook: `bun run storybook` (default: `http://127.0.0.1:46006`)
@@ -33,7 +33,7 @@ Production social preview metadata uses an absolute image URL on GitHub Pages. F
 ## Bundled firmware releases
 
 - `web/public/firmware/releases-manifest.json` is the checked-in offline/default manifest for local development and PR validation.
-- Release builds replace that file at build time by running `tools/firmware-bundle/build-web-bundle.py`, which fetches the current non-draft GitHub Releases from `IvanLi-CN/isolappurr-usb-hub`.
+- Release builds replace that file at build time by running `tools/firmware-bundle/build-web-bundle.py`, which fetches the current non-draft GitHub Releases from `IvanLi-CN/isolappurr-usb-hub` and synthesizes merged `full_image` recovery assets when a legacy release only ships an ELF recovery artifact.
 - The generated web bundle keeps the most recent 50 app-upgrade releases and only the latest stable plus latest prerelease recovery images.
 - Firmware assets stay same-origin under `firmware/releases/**` and are fetched on demand by `/flash`; they are intentionally excluded from service-worker install-time precache.
 

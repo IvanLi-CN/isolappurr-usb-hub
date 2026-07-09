@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -105,6 +107,10 @@ def read_catalog(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def write_catalog(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 def artifact_by_target(catalog: dict[str, Any], target: str) -> dict[str, Any] | None:
     for artifact in catalog.get("artifacts", []):
         if isinstance(artifact, dict) and artifact.get("target") == target:
@@ -153,6 +159,99 @@ def select_recovery_artifact(
 
 def output_path_for(tag_name: str, asset_name: str) -> str:
     return f"releases/{sanitize_tag(tag_name)}/{asset_name}"
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def synthesized_full_image_name(elf_name: str) -> str:
+    if elf_name.endswith(".elf"):
+        return f"{elf_name[:-4]}.full.bin"
+    return f"{elf_name}.full.bin"
+
+
+def save_image_command(elf_path: Path, out_path: Path, *, merged: bool) -> list[str]:
+    command = [
+        "espflash",
+        "save-image",
+        "--chip",
+        "esp32s3",
+    ]
+    if merged:
+        command.extend(["--merge", "--skip-padding"])
+    command.extend([str(elf_path), str(out_path)])
+    return command
+
+
+def generate_full_image_from_elf(elf_path: Path, out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        save_image_command(elf_path, out_path, merged=True),
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "ESPFLASH_SKIP_UPDATE_CHECK": "true"},
+    )
+    if result.returncode == 0:
+        return
+    combined = "\n".join(
+        part.strip() for part in [result.stdout, result.stderr] if part.strip()
+    )
+    detail = f": {combined}" if combined else ""
+    raise SystemExit(
+        f"failed to synthesize full_image from {elf_path.name} with espflash{detail}"
+    )
+
+
+def inject_synthesized_recovery_artifact(
+    catalog: dict[str, Any],
+    app_artifact: dict[str, Any],
+    *,
+    file_name: str,
+    sha256: str,
+    size: int,
+) -> dict[str, Any]:
+    artifacts = catalog.setdefault("artifacts", [])
+    if not isinstance(artifacts, list):
+        raise SystemExit("firmware catalog artifacts field is not a list")
+
+    recovery_artifact = artifact_by_target(catalog, "esp32s3_full")
+    synthesized = {
+        "artifactId": f"{app_artifact['artifactId']}-recovery",
+        "target": "esp32s3_full",
+        "version": app_artifact.get("version"),
+        "gitSha": app_artifact.get("gitSha"),
+        "buildId": app_artifact.get("buildId"),
+        "files": [
+            {
+                "kind": "full_image",
+                "path": file_name,
+                "sha256": sha256,
+                "size": size,
+                "flashAddress": 0,
+            }
+        ],
+    }
+    if recovery_artifact is None:
+        artifacts.append(synthesized)
+        return synthesized
+
+    recovery_artifact.update(
+        {
+            "artifactId": synthesized["artifactId"],
+            "target": "esp32s3_full",
+            "version": synthesized["version"],
+            "gitSha": synthesized["gitSha"],
+            "buildId": synthesized["buildId"],
+            "files": synthesized["files"],
+        }
+    )
+    return recovery_artifact
 
 
 def main() -> int:
@@ -211,20 +310,47 @@ def main() -> int:
         if tag_name in recovery_tags and recovery_selection:
             recovery_artifact, recovery_file = recovery_selection
             recovery_asset_name = recovery_file["path"]
-            recovery_rel_path = output_path_for(tag_name, recovery_asset_name)
-            download(
-                assets[recovery_asset_name].url,
-                args.output_dir / recovery_rel_path,
-                token,
-            )
+            recovery_file_kind = recovery_file["kind"]
+            if recovery_file_kind == "elf":
+                recovery_source_rel_path = output_path_for(tag_name, recovery_asset_name)
+                recovery_source_path = args.output_dir / recovery_source_rel_path
+                download(assets[recovery_asset_name].url, recovery_source_path, token)
+                synthesized_name = synthesized_full_image_name(recovery_asset_name)
+                recovery_rel_path = output_path_for(tag_name, synthesized_name)
+                recovery_output_path = args.output_dir / recovery_rel_path
+                generate_full_image_from_elf(recovery_source_path, recovery_output_path)
+                recovery_source_path.unlink(missing_ok=True)
+                recovery_sha256 = sha256_file(recovery_output_path)
+                recovery_size = recovery_output_path.stat().st_size
+                recovery_artifact = inject_synthesized_recovery_artifact(
+                    catalog,
+                    app_artifact,
+                    file_name=synthesized_name,
+                    sha256=recovery_sha256,
+                    size=recovery_size,
+                )
+                write_catalog(args.output_dir / catalog_rel_path, catalog)
+                recovery_asset_name = synthesized_name
+                recovery_file_kind = "full_image"
+            else:
+                recovery_rel_path = output_path_for(tag_name, recovery_asset_name)
+                download(
+                    assets[recovery_asset_name].url,
+                    args.output_dir / recovery_rel_path,
+                    token,
+                )
             recovery_entry = {
                 "artifactId": recovery_artifact["artifactId"],
                 "assetPath": f"firmware/{recovery_rel_path}",
                 "fileName": recovery_asset_name,
-                "fileKind": recovery_file["kind"],
-                "flashAddress": recovery_file.get("flashAddress", 0),
-                "sha256": recovery_file.get("sha256"),
-                "size": recovery_file.get("size"),
+                "fileKind": recovery_file_kind,
+                "flashAddress": 0 if recovery_file_kind == "full_image" else recovery_file.get("flashAddress", 0),
+                "sha256": sha256_file(args.output_dir / recovery_rel_path)
+                if recovery_file_kind == "full_image"
+                else recovery_file.get("sha256"),
+                "size": (args.output_dir / recovery_rel_path).stat().st_size
+                if recovery_file_kind == "full_image"
+                else recovery_file.get("size"),
             }
             bundled_recovery_tags.add(tag_name)
 

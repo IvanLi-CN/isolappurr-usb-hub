@@ -36,9 +36,9 @@ describe("parseBundledFirmwareManifest", () => {
           },
           recovery: {
             artifactId: "isolapurr-demo-051-recovery",
-            assetPath: "/firmware/releases/v0.5.1/isolapurr-usb-hub.elf",
-            fileName: "isolapurr-usb-hub.elf",
-            fileKind: "elf",
+            assetPath: "/firmware/releases/v0.5.1/isolapurr-usb-hub.full.bin",
+            fileName: "isolapurr-usb-hub.full.bin",
+            fileKind: "full_image",
             flashAddress: 0,
           },
         },
@@ -54,6 +54,6 @@ describe("parseBundledFirmwareManifest", () => {
     expect(parsed.releases).toHaveLength(1);
     expect(parsed.releases[0]?.tagName).toBe("v0.5.1");
     expect(parsed.releases[0]?.recovery?.flashAddress).toBe(0);
-    expect(parsed.releases[0]?.recovery?.fileKind).toBe("elf");
+    expect(parsed.releases[0]?.recovery?.fileKind).toBe("full_image");
   });
 });

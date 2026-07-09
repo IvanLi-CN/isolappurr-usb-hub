@@ -22,6 +22,22 @@
           "size": 9565068
         }
       ]
+    },
+    {
+      "artifactId": "isolapurr-3550a0c263a8-recovery",
+      "target": "esp32s3_full",
+      "version": "0.5.1",
+      "gitSha": "3550a0c263a8ba718a28053caa002e72e60f8b32",
+      "buildId": "28792767922",
+      "files": [
+        {
+          "kind": "full_image",
+          "path": "isolapurr-usb-hub.full.bin",
+          "sha256": "83d8ce14e20a3af682a79b0636cf3dd07ac58da607344e5074d5432b2e7d6afa",
+          "size": 825696,
+          "flashAddress": 0
+        }
+      ]
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { agentFetch, type DesktopAgent } from "../../domain/desktopAgent";
+import type { DesktopAgent } from "../../domain/desktopAgent";
 import type { DeviceInfoResponse } from "../../domain/deviceApi";
 import {
   isLegacyDeviceId,
@@ -9,7 +9,6 @@ import {
   nextJsonlRequestId,
   type SerialPortInfo,
   sendLocalUsbJsonlRequest,
-  stableLocalUsbDeviceId,
   type WebSerialJsonlTransport,
 } from "../../domain/hardwareConsole";
 
@@ -64,52 +63,6 @@ function extractUsbDevice(value: unknown): UsbDeviceInfo | null {
   }
   if (envelope.response) {
     return extractUsbDevice(envelope.response);
-  }
-  return null;
-}
-
-function extractUsbDeviceFromScan(
-  value: unknown,
-  portPath: string,
-): UsbDeviceInfo | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const devices = Array.isArray((value as { devices?: unknown[] }).devices)
-    ? ((value as { devices?: unknown[] }).devices ?? [])
-    : [];
-  for (const device of devices) {
-    if (!device || typeof device !== "object") {
-      continue;
-    }
-    const usb =
-      "usb" in device && device.usb && typeof device.usb === "object"
-        ? (device.usb as { portPath?: unknown })
-        : null;
-    if (usb?.portPath !== portPath) {
-      continue;
-    }
-    const session =
-      "session" in device &&
-      device.session &&
-      typeof device.session === "object"
-        ? (device.session as { traces?: unknown[] })
-        : null;
-    const traces = Array.isArray(session?.traces) ? session.traces : [];
-    for (let index = traces.length - 1; index >= 0; index -= 1) {
-      const trace = traces[index];
-      if (!trace || typeof trace !== "object") {
-        continue;
-      }
-      const payload =
-        "payload" in trace
-          ? (trace as { payload?: unknown }).payload
-          : undefined;
-      const parsed = extractUsbDevice(payload);
-      if (parsed) {
-        return parsed;
-      }
-    }
   }
   return null;
 }
@@ -319,49 +272,44 @@ export function parseDesktopDiscoverySnapshot(
 }
 
 export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+}
+
+async function readLocalUsbInfoDirect(
+  agent: DesktopAgent,
+  portPath: string,
+): Promise<unknown> {
+  return sendLocalUsbJsonlRequest(agent, portPath, {
+    id: nextJsonlRequestId(),
+    method: "info",
+    timeoutMs: 1_500,
+  });
 }
 
 export async function readLocalUsbInfo(
   agent: DesktopAgent,
   port: SerialPortInfo,
   onLog: (message: string, tone?: UsbLogEntry["tone"]) => void,
+  maxAttempts = 3,
 ): Promise<unknown> {
-  const deviceId = stableLocalUsbDeviceId(port.path);
   let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
-      onLog(`Reading Local USB status (attempt ${attempt + 1}/3)...`);
-      const statusRes = await agentFetch(
-        agent,
-        `/api/v1/devices/${deviceId}/status`,
-      );
-      const statusJson = await statusRes.json().catch(() => null);
-      if (statusRes.ok && statusJson) {
-        return statusJson;
-      }
-      const scanRes = await agentFetch(agent, "/api/v1/devices/scan", {
-        method: "POST",
-      });
-      const scanJson = await scanRes.json().catch(() => null);
-      const tracedInfo = extractUsbDeviceFromScan(scanJson, port.path);
-      if (scanRes.ok && tracedInfo) {
-        return { result: { device: tracedInfo } };
-      }
-      return await sendLocalUsbJsonlRequest(agent, port.path, {
-        id: nextJsonlRequestId(),
-        method: "info",
-        timeoutMs: 1_500,
-      });
-    } catch (err) {
-      lastError = err;
       onLog(
-        err instanceof Error
-          ? `Local USB info attempt failed: ${err.message}`
+        `Reading Local USB status (attempt ${attempt + 1}/${maxAttempts})...`,
+      );
+      return await readLocalUsbInfoDirect(agent, port.path);
+    } catch (directErr) {
+      lastError = directErr;
+      onLog(
+        directErr instanceof Error
+          ? `Local USB info attempt failed: ${directErr.message}`
           : "Local USB info attempt failed.",
         "warning",
       );
-      await delay(250 + attempt * 250);
+      if (attempt + 1 < maxAttempts) {
+        await delay(250 + attempt * 250);
+      }
     }
   }
   throw lastError instanceof Error

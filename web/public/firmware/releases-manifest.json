@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
   "repo": "IvanLi-CN/isolappurr-usb-hub",
-  "generatedAt": "2026-07-08T18:19:26.972513+00:00",
+  "generatedAt": "2026-07-08T20:26:48.537427+00:00",
   "releaseCount": 12,
   "recoveryTags": ["v0.5.0-dev.2", "v0.5.1"],
   "releases": [
@@ -21,13 +21,13 @@
         "size": 760160
       },
       "recovery": {
-        "artifactId": "isolapurr-3550a0c263a8",
-        "assetPath": "firmware/releases/v0.5.1/isolapurr-usb-hub.elf",
-        "fileName": "isolapurr-usb-hub.elf",
-        "fileKind": "elf",
+        "artifactId": "isolapurr-3550a0c263a8-recovery",
+        "assetPath": "firmware/releases/v0.5.1/isolapurr-usb-hub.full.bin",
+        "fileName": "isolapurr-usb-hub.full.bin",
+        "fileKind": "full_image",
         "flashAddress": 0,
-        "sha256": "cdbaa02790e6a9a1dc3d99ae1efcf9ea3830a79a3c3bf5106d54725eb3b986aa",
-        "size": 9565068
+        "sha256": "83d8ce14e20a3af682a79b0636cf3dd07ac58da607344e5074d5432b2e7d6afa",
+        "size": 825696
       }
     },
     {
@@ -97,13 +97,13 @@
         "size": 744352
       },
       "recovery": {
-        "artifactId": "isolapurr-9cd61c4d502e",
-        "assetPath": "firmware/releases/v0.5.0-dev.2/isolapurr-usb-hub.elf",
-        "fileName": "isolapurr-usb-hub.elf",
-        "fileKind": "elf",
+        "artifactId": "isolapurr-9cd61c4d502e-recovery",
+        "assetPath": "firmware/releases/v0.5.0-dev.2/isolapurr-usb-hub.full.bin",
+        "fileName": "isolapurr-usb-hub.full.bin",
+        "fileKind": "full_image",
         "flashAddress": 0,
-        "sha256": "dfe159aec1b154aa2fc2befc563a1d272fbf82bf1bbb7a28331837738d317121",
-        "size": 9455652
+        "sha256": "1809ff2b5d0e391b7e2bf8bca5342978eaecb204a0ec8bbfe9ce10baa477706e",
+        "size": 809888
       }
     },
     {

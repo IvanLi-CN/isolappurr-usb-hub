@@ -616,6 +616,14 @@ mod device_io_tests {
 }
 
 fn serial_jsonl_roundtrip(port_path: &str, request: Value) -> anyhow::Result<Value> {
+    serial_jsonl_roundtrip_with_timeout(port_path, request, None)
+}
+
+fn serial_jsonl_roundtrip_with_timeout(
+    port_path: &str,
+    request: Value,
+    timeout_ms_override: Option<u64>,
+) -> anyhow::Result<Value> {
     let mut port = serialport::new(port_path, SERIAL_BAUD)
         .timeout(Duration::from_millis(50))
         .open()
@@ -631,7 +639,10 @@ fn serial_jsonl_roundtrip(port_path: &str, request: Value) -> anyhow::Result<Val
         .get("method")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let deadline = Instant::now() + Duration::from_millis(serial_timeout_ms_for_method(method));
+    let deadline = Instant::now()
+        + Duration::from_millis(
+            timeout_ms_override.unwrap_or_else(|| serial_timeout_ms_for_method(method)),
+        );
     let mut raw = Vec::<u8>::new();
     let mut buf = [0_u8; 256];
     while Instant::now() < deadline {

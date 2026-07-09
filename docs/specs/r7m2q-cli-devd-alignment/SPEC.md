@@ -336,3 +336,15 @@ Real hardware `devd` / Local USB re-probe on the same page after flashing back
 to the latest stable bundled release `0.5.1`:
 
 ![Real hardware Local USB post-reprobe](./assets/flash-devd-real-post-reprobe-v051.png)
+
+Real hardware `Web Serial` recovery on the same `/flash` page, proving the
+page can rewrite the board to the bundled recovery-capable stable release
+`0.5.1` and refresh the rendered target values afterward:
+
+![Real hardware Web Serial post-recovery](./assets/flash-web-serial-real-post-recovery-v051.png)
+
+Real hardware `Web Serial` normal update on the same `/flash` page after the
+recovery write, proving the page can return the board to bundled app image
+`0.5.0` and keep the rendered hardware identity aligned:
+
+![Real hardware Web Serial post-normal](./assets/flash-web-serial-real-post-normal-v050.png)
