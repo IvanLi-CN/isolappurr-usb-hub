@@ -4,6 +4,7 @@ import {
   devdLocalUsbDeviceIdFromBaseUrl,
   filterEsp32SerialPorts,
   flashBundledWithLocalUsb,
+  flashWithWebSerial,
   isEsp32SerialPort,
   listLocalUsbSerialPorts,
   parseWebSerialJsonLine,
@@ -327,6 +328,111 @@ describe("probeWebSerialBoard", () => {
     expect(cleanupCalls.loaderAfter).toBe(1);
     expect(cleanupCalls.disconnect).toBe(1);
     expect(cleanupCalls.portClose).toBe(0);
+  });
+});
+
+describe("flashWithWebSerial", () => {
+  test("retries transient browser serial open failures during flash", async () => {
+    const file = new File([new Uint8Array([1, 2, 3, 4])], "firmware.bin", {
+      type: "application/octet-stream",
+    });
+    const fakePort = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+    const calls = {
+      disconnect: 0,
+      main: 0,
+      writeFlash: 0,
+      after: 0,
+      setDTR: 0,
+      setRTS: 0,
+    };
+
+    class FakeTransport {
+      constructor(
+        readonly _device: typeof fakePort,
+        readonly _enableTracing: boolean,
+      ) {}
+
+      async disconnect() {
+        calls.disconnect += 1;
+      }
+
+      async setDTR(_value: boolean) {
+        calls.setDTR += 1;
+      }
+
+      async setRTS(_value: boolean) {
+        calls.setRTS += 1;
+      }
+    }
+
+    class FakeLoader {
+      readonly ESP_MEM_END = 0;
+
+      constructor(readonly _options: unknown) {}
+
+      _appendArray(left: Uint8Array, right: Uint8Array) {
+        return new Uint8Array([...left, ...right]);
+      }
+
+      _intToByteArray(value: number) {
+        return new Uint8Array([value & 0xff, (value >> 8) & 0xff]);
+      }
+
+      async checkCommand() {
+        return undefined;
+      }
+
+      async memFinish() {
+        return undefined;
+      }
+
+      async main() {
+        calls.main += 1;
+        if (calls.main === 1) {
+          throw new DOMException(
+            "Failed to execute 'open' on 'SerialPort': Failed to open serial port.",
+          );
+        }
+        return "ESP32-S3";
+      }
+
+      async writeFlash() {
+        calls.writeFlash += 1;
+        return undefined;
+      }
+
+      async after() {
+        calls.after += 1;
+        return undefined;
+      }
+    }
+
+    mock.module("esptool-js", () => ({
+      ESPLoader: FakeLoader,
+      Transport: FakeTransport,
+    }));
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        serial: {},
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    await expect(
+      flashWithWebSerial(fakePort as never, file, 0x10000, () => undefined),
+    ).resolves.toBeUndefined();
+    expect(calls.main).toBe(2);
+    expect(calls.writeFlash).toBe(1);
+    expect(calls.after).toBe(1);
+    expect(calls.disconnect).toBe(2);
   });
 });
 

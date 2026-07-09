@@ -1335,52 +1335,76 @@ export async function flashWithWebSerial(
   if (!isWebSerialSupported()) {
     throw new Error("Web Serial is not supported by this browser");
   }
-
+  const data = new Uint8Array(await file.arrayBuffer());
   const { ESPLoader, Transport } = await import("esptool-js");
-  const transport = new Transport(port, true);
-  const terminal = {
-    clean() {},
-    writeLine(data: string) {
-      onProgress({ stage: "connecting", message: data });
-    },
-    write(data: string) {
-      onProgress({ stage: "connecting", message: data });
-    },
-  };
-  const loader = new ESPLoader({
-    transport,
-    baudrate: 115200,
-    terminal,
-    debugLogging: false,
-  });
-  patchEsp32S3UsbJtagStubStart(loader as EsptoolLoaderWithInternals);
 
-  onProgress({ stage: "connecting", message: "Connecting to bootloader" });
-  try {
-    await loader.main("usb_reset");
-    const data = new Uint8Array(await file.arrayBuffer());
-    await loader.writeFlash({
-      fileArray: [{ data, address }],
-      flashMode: "dio",
-      flashFreq: "40m",
-      flashSize: "4MB",
-      eraseAll: false,
-      compress: true,
-      reportProgress: (_fileIndex, written, total) => {
-        onProgress({
-          stage: "writing",
-          message: "Writing firmware",
-          written,
-          total,
-        });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const transport = new Transport(port, true);
+    const terminal = {
+      clean() {},
+      writeLine(message: string) {
+        onProgress({ stage: "connecting", message });
       },
+      write(message: string) {
+        onProgress({ stage: "connecting", message });
+      },
+    };
+    const loader = new ESPLoader({
+      transport,
+      baudrate: 115200,
+      terminal,
+      debugLogging: false,
     });
-    await loader.after("hard_reset");
-    await resetEsp32S3UsbJtagToApp(transport as EsptoolTransportWithSignals);
-    onProgress({ stage: "done", message: "Firmware written" });
-  } finally {
-    await transport.disconnect().catch(() => undefined);
+    patchEsp32S3UsbJtagStubStart(loader as EsptoolLoaderWithInternals);
+
+    onProgress({ stage: "connecting", message: "Connecting to bootloader" });
+    try {
+      await loader.main("usb_reset");
+      await loader.writeFlash({
+        fileArray: [{ data, address }],
+        flashMode: "dio",
+        flashFreq: "40m",
+        flashSize: "4MB",
+        eraseAll: false,
+        compress: true,
+        reportProgress: (_fileIndex, written, total) => {
+          onProgress({
+            stage: "writing",
+            message: "Writing firmware",
+            written,
+            total,
+          });
+        },
+      });
+      await loader.after("hard_reset");
+      await resetEsp32S3UsbJtagToApp(transport as EsptoolTransportWithSignals);
+      onProgress({ stage: "done", message: "Firmware written" });
+      return;
+    } catch (err) {
+      if (attempt < 2 && isRetryableWebSerialOpenError(err)) {
+        onProgress({
+          stage: "connecting",
+          message: "Web Serial port is reopening after reset, retrying…",
+        });
+        await delay(250 * (attempt + 1));
+        continue;
+      }
+      throw err;
+    } finally {
+      await transport.disconnect().catch(() => undefined);
+    }
   }
+}
+
+function isRetryableWebSerialOpenError(err: unknown): boolean {
+  if (!(err instanceof Error) && !(err instanceof DOMException)) {
+    return false;
+  }
+  const message = err.message.toLowerCase();
+  return (
+    message.includes("failed to open serial port") ||
+    message.includes("failed to execute 'open' on 'serialport'")
+  );
 }
 
 function patchEsp32S3UsbJtagStubStart(loader: EsptoolLoaderWithInternals) {

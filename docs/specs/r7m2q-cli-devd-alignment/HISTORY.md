@@ -20,6 +20,9 @@
 - Fixed the Local USB recovery closeout path so post-flash identity capture no
   longer deadlocks on the serial guard during reboot, and confirmed-target
   recovery no longer falsely requires the non-project strong-confirm path.
+- Hardened the Web Serial flash path against the browser's transient
+  `SerialPort.open` failure window after probe/reset by retrying the exact
+  browser-level open error before surfacing a write failure to the owner.
 - Clarified and implemented `isolapurr discover` so LAN results come from live
   mDNS discovery, USB results come from the current local scan, and saved
   device profiles only annotate matching live results instead of standing in for

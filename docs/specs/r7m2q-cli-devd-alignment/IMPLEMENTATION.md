@@ -81,6 +81,9 @@
   target trust: confirmed IsolaPurr targets may choose either a normal update
   or a bundled recovery image, while non-project or identity-unknown recovery
   targets still require the stronger confirmation dialog before write.
+- Web Serial flashing now retries the browser's transient `SerialPort.open`
+  failure window after probe/reset instead of failing the whole recovery or
+  normal-update action on the first reopening attempt.
 - Host-side recovery flashing now releases the serial lock before post-flash
   identity capture while preserving the exclusive flash guard, preventing the
   Local USB recovery path from self-blocking during the reboot/probe handoff.
