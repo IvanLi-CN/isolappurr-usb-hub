@@ -77,7 +77,7 @@ export type FirmwareFlashProgress = {
 };
 
 export type HardwareBoardInfo = {
-  source: "esptool-js" | "espflash";
+  source: "firmware" | "firmware-profile" | "esptool-js" | "espflash";
   chipType?: string;
   mcuModel?: string;
   chipRevision?: string;
@@ -159,6 +159,7 @@ function resolveGrantedWebSerialPort(
 
 export async function refreshGrantedWebSerialPort(
   preferred?: SerialLikePort | null,
+  options: { signal?: AbortSignal; deadlineAt?: number } = {},
 ): Promise<SerialLikePort> {
   if (!isWebSerialSupported()) {
     throw new Error("Web Serial is not supported by this browser");
@@ -175,6 +176,14 @@ export async function refreshGrantedWebSerialPort(
   let sawGrantedPorts = false;
   let sawAmbiguousPorts = false;
   for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (options.signal?.aborted) {
+      throw options.signal.reason instanceof Error
+        ? options.signal.reason
+        : new Error("Web Serial probe timed out.");
+    }
+    if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
+      throw new Error("Web Serial probe timed out.");
+    }
     const granted = (await navigator.serial.getPorts()) as SerialLikePort[];
     if (granted.length > 0) {
       sawGrantedPorts = true;
@@ -209,7 +218,15 @@ export async function refreshGrantedWebSerialPort(
     if (resolved) {
       return resolved;
     }
-    await delay(120 * (attempt + 1));
+    const retryDelay = 120 * (attempt + 1);
+    const remaining =
+      options.deadlineAt === undefined
+        ? retryDelay
+        : Math.max(0, options.deadlineAt - Date.now());
+    if (remaining === 0) {
+      throw new Error("Web Serial probe timed out.");
+    }
+    await delay(Math.min(retryDelay, remaining));
   }
 
   if (sawAmbiguousPorts) {

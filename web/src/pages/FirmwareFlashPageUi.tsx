@@ -185,32 +185,6 @@ export function TransportChoiceCard({
   );
 }
 
-export function FlashSummaryRow({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <>
-      <div className="font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
-        {label}
-      </div>
-      <div
-        className={[
-          "min-w-0 truncate font-bold text-[var(--text)]",
-          mono ? "font-mono" : "",
-        ].join(" ")}
-      >
-        {value}
-      </div>
-    </>
-  );
-}
-
 export function TargetInfoCell({
   label,
   value,

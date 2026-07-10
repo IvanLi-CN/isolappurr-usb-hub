@@ -78,13 +78,22 @@ test("renders devices list and mock dashboard", async ({ page }) => {
       };
     });
 
-  const lightColors = await selectionColors();
-  expect(
-    contrastRatio(lightColors.cardBorder, lightColors.cardBackground),
-  ).toBeGreaterThanOrEqual(3);
-  expect(
-    contrastRatio(lightColors.markerText, lightColors.markerBackground),
-  ).toBeGreaterThanOrEqual(4.5);
+  const expectSelectionContrast = async () => {
+    await expect
+      .poll(async () => {
+        const colors = await selectionColors();
+        return contrastRatio(colors.cardBorder, colors.cardBackground);
+      })
+      .toBeGreaterThanOrEqual(3);
+    await expect
+      .poll(async () => {
+        const colors = await selectionColors();
+        return contrastRatio(colors.markerText, colors.markerBackground);
+      })
+      .toBeGreaterThanOrEqual(4.5);
+  };
+
+  await expectSelectionContrast();
 
   await page.evaluate(() => {
     window.localStorage.setItem(
@@ -97,13 +106,7 @@ test("renders devices list and mock dashboard", async ({ page }) => {
     "data-theme",
     "isolapurr-dark",
   );
-  const darkColors = await selectionColors();
-  expect(
-    contrastRatio(darkColors.cardBorder, darkColors.cardBackground),
-  ).toBeGreaterThanOrEqual(3);
-  expect(
-    contrastRatio(darkColors.markerText, darkColors.markerBackground),
-  ).toBeGreaterThanOrEqual(4.5);
+  await expectSelectionContrast();
 
   await expect(page.getByTestId("port-card-port_a")).toBeVisible();
   await expect(page.getByTestId("port-card-port_c")).toBeVisible();
@@ -280,5 +283,23 @@ test("keeps the probe countdown hidden before a demo read starts", async ({
   await page.goto("/flash?demo=true&webUsb=authorized");
 
   await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
+  await expect(page.getByText("Probe window", { exact: true })).toHaveCount(0);
+});
+
+test("renders an actionable Web Serial timeout in the demo workbench", async ({
+  page,
+}) => {
+  await page.goto("/flash?demo=true&webUsb=authorized&probe=timeout");
+
+  await expect(
+    page.getByText("Probe timed out.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "The selected Web USB device did not respond within 5 seconds. Reconnect and try again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("Probing", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Probe window", { exact: true })).toHaveCount(0);
 });

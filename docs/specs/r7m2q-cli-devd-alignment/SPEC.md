@@ -32,12 +32,24 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST stop the IPC daemon after a bounded idle period when no clients remain connected, unless explicitly configured for a persistent development session.
 - MUST expose localhost HTTP only through an explicit bridge command for browser/debug UI clients.
 - MUST keep Web Serial available in the Web app as a formal supported channel.
+- MUST probe a selected Web Serial target within a five-second operational
+  deadline, excluding time spent in the browser-owned device picker. The probe
+  MUST read IsolaPurr firmware identity first. A recognized project target MUST
+  use firmware-reported hardware data or the matching legacy board profile and
+  MUST NOT enter bootloader mode merely to populate hardware fields. A
+  lower-level probe is reserved for targets without project identity, and the
+  page MUST fail explicitly when the deadline expires. Expired or superseded
+  work MUST not update the UI or reset the board later in the background.
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
 - MUST expose a standalone Web firmware flash workbench at `/flash`, with
   entry points from the Dashboard add-device area and the device Settings
   surface, while preserving the repository `?demo=true|false` contract instead
   of introducing ad hoc demo pages.
+- MUST show the connected target's installed firmware version immediately above
+  the selected version to be flashed. The two values MUST use distinct labels
+  and the installed value MUST come from the live target probe rather than the
+  selected release.
 - MUST keep maintainer-facing workflow truth in one detailed project doc, with `README.md` as human navigation and `AGENTS.md` as concise entry rules rather than parallel full workflow manuals.
 - MUST keep repo-managed Web verification guidance aligned with the repository
   Web demo-surface policy: production SPA routes stay as app-level pages,
@@ -209,6 +221,16 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given the desktop app needs native Local USB capabilities, when no devd is reachable, then the desktop app starts or connects to devd on demand instead of requiring a user-managed daemon.
 - Given `isolapurr-devd serve` is running, when localhost is scanned, then no HTTP devd API is exposed unless `isolapurr-devd bridge-http` was explicitly started.
 - Given a browser supports Web Serial, when the user connects through the Web app, then Web Serial remains a normal channel and can be promoted by the runtime without devd.
+- Given an authorized IsolaPurr Web Serial target is selected, when the owner
+  starts or repeats device detection, then firmware and hardware identity are
+  rendered within five seconds on repeated runs. If that deadline cannot be
+  met, the page leaves the probing state with an actionable timeout and ignores
+  any late completion from that probe generation. A recognized target remains
+  in application runtime throughout detection; no DTR/RTS reset or esptool sync
+  sequence is allowed after its firmware API has confirmed project identity.
+- Given a target reports firmware `0.5.0` and release `0.5.1` is selected, when
+  the flash summary is rendered, then `INSTALLED v0.5.0` appears immediately
+  above `TO FLASH v0.5.1`, with exactly one canonical `v` prefix on each value.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.
 - Given the user runs `isolapurr discover`, when LAN devices advertise the
   IsolaPurr HTTP service and Local USB candidates are currently attached, then
@@ -323,11 +345,31 @@ The countdown is intentionally absent before a read starts:
 
 ![Firmware flash workbench Web USB reading](./assets/flash-workbench-demo-reading-info-v2.png)
 
+Standalone `/flash?demo=true&webUsb=authorized&probe=timeout` workbench after
+the five-second operational deadline. The active countdown is gone, the target
+is explicitly unconfirmed, and the UI directs the owner to reconnect instead
+of accepting a late probe result:
+
+![Firmware flash workbench Web USB timeout](./assets/flash-workbench-demo-probe-timeout.png)
+
 Standalone `/flash?demo=true` workbench after selecting a demo Local USB
 target, showing the flattened target details without the redundant summary
 strip or nested info cards:
 
 ![Firmware flash workbench connected demo](./assets/flash-workbench-demo-connected-refined.png)
+
+Standalone `/flash?demo=true` workbench showing the live target version and the
+selected release as separate adjacent rows. `INSTALLED` comes from the target
+probe while `TO FLASH` follows the selected firmware source:
+
+- PR: include
+- source_type: `ui_demo`
+- target_program: `mock-only`
+- capture_scope: `browser-viewport`
+- sensitive_exclusion: `No real device, desktop, or unrelated application data`
+- submission_gate: `approved`
+
+![Firmware flash workbench version comparison](./assets/flash-workbench-demo-version-comparison.png)
 
 Standalone `/flash?demo=true` workbench on a confirmed IsolaPurr target after
 switching the right-rail mode toggle to `Recovery`, proving that ordinary

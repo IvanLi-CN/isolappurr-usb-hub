@@ -100,6 +100,21 @@
   read is running. The same state is reproducible without hardware at
   `/flash?demo=true&webUsb=authorized&probe=reading` and is covered by
   Playwright plus Storybook.
+- Web Serial probing now has one five-second operational budget after browser
+  device selection. The page reads project firmware identity first and never
+  enters bootloader mode for a recognized IsolaPurr target. New firmware
+  returns MCU, flash, RAM, and runtime-detected PSRAM capacity in `info`; older
+  `tps-sw` firmware uses a profile only after both project identity and the
+  ESP32-S3 USB VID/PID match. The lower-level `detectChip()` path is now
+  reserved for targets without project identity. Packet tracing is disabled.
+- The five-second deadline aborts port open, JSONL request, and esptool
+  operations, renders an actionable timeout state, and rejects every late or
+  superseded probe generation. Browser-picker time is deliberately excluded
+  and no countdown is rendered before hardware reading starts. Recognized
+  firmware detection performs no hard reset or DTR/RTS sequence. Probe
+  generation, cancellation, and timeout ownership live in the dedicated
+  `useFirmwareFlashProbeDeadline` hook so the connection orchestrator remains
+  below the repository source-length limit.
 - The right-side flash rail keeps its primary actions above the log and renders
   structured progress/log entries for both Local USB and Web Serial, while
   same-origin firmware remains excluded from install-time PWA precache.
@@ -157,11 +172,35 @@
 ## Final Validation
 
 - `just web-check`: passed
-- `cd web && bun test ./src`: 90 passed
-- `cd web && bun run test:e2e`: 6 passed, 1 hardware-in-loop test skipped
+- `cd web && bun test ./src`: 100 passed
+- `cd web && PLAYWRIGHT_PORT=13423 bun run test:e2e`: 11 passed, 2 opt-in
+  hardware-in-loop tests skipped; this includes eight repeated authorized
+  target probes under five seconds plus timeout/late-result rejection.
 - `just host-tools-test`: 77 passed
 - `python3 -m unittest discover -s .github/scripts -p 'test_*.py'`: 24 passed
 - `cd web && bun run build && bun run build-storybook && bun run test:storybook`:
-  passed, including 98 Storybook browser tests
+  passed, including 100 Storybook browser tests
+- Production JSONL transport against the owner-approved exact device
+  `/dev/cu.usbmodem21231401`: eight repeated API-first probes passed in
+  `14.2, 5.0, 5.2, 5.3, 4.7, 5.6, 4.5, 4.3 ms`, each confirming
+  `device_id=f293cc9c139e` and `mac=9c:13:9e:f2:93:cc` without a board reset.
+- Production `/flash` orchestration was exercised through the opt-in
+  Playwright serial HIL against only `/dev/cu.usbmodem21231401`. Five complete
+  runs produced 45 successful probes; every run completed below five seconds,
+  the slowest measured probe was `1440.7 ms`, and the bridge asserted zero
+  DTR/RTS `setSignals` calls. A post-run `info` response completed in `28.7 ms`
+  with `uptime_ms=470110`, proving the MCU had not been reset during the loop.
+  The final post-review run completed in `514.3, 142.5, 133.0, 138.6, 168.6,
+  139.9, 151.1, 139.5, 141.7 ms`.
+- Final read-only review against `origin/main` reported no discrete correctness
+  issues after the feature-gated PSRAM reporting fix.
+- The flash selection summary now renders the probed installed firmware above
+  the selected target release as `INSTALLED` and `TO FLASH`. The component has
+  dedicated Storybook connected/waiting states, and E2E verifies the
+  `v0.5.0 -> v0.5.1` distinction during repeated authorized probes. Both
+  firmware-returned and release-provided versions are normalized to exactly one
+  lowercase `v` prefix for display.
+- Post-change Web validation: 102 unit tests passed, 102 Storybook browser tests
+  passed, and the full E2E suite passed with 11 tests plus 2 opt-in HIL skips.
 - Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
   is present in the PWA precache list.

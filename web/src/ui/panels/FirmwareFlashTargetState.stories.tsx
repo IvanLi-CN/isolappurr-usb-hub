@@ -44,9 +44,11 @@ export const WaitingForBrowserPicker: Story = {
 
 export const SlowProbe: Story = {
   args: {
-    title: "Refreshing target identity…",
-    detail: "Waiting for the board to reboot after flashing.",
-    countdownSeconds: 0,
+    title: "Probe timed out.",
+    detail:
+      "The selected Web USB device did not respond within 5 seconds. Reconnect and try again.",
+    countdownSeconds: null,
+    busy: false,
   },
 };
 
