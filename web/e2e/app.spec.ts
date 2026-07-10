@@ -1,5 +1,29 @@
 import { expect, test } from "@playwright/test";
 
+function contrastRatio(foreground: string, background: string): number {
+  const luminance = (color: string): number => {
+    const channels = color
+      .match(/[\d.]+/g)
+      ?.slice(0, 3)
+      .map(Number);
+    if (!channels || channels.length !== 3) {
+      throw new Error(`Unsupported color: ${color}`);
+    }
+    const [red, green, blue] = channels.map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045
+        ? normalized / 12.92
+        : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+
+  const values = [luminance(foreground), luminance(background)].sort(
+    (left, right) => right - left,
+  );
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
 test("renders devices list and mock dashboard", async ({ page }) => {
   const storageKey = "isolapurr_usb_hub.devices";
   const device = {
@@ -21,9 +45,65 @@ test("renders devices list and mock dashboard", async ({ page }) => {
 
   await expect(page.getByTestId("device-list")).toBeVisible();
   await expect(page.getByTestId("device-card-aabbcc001122")).toBeVisible();
+  await expect(
+    page.getByTestId("device-card-aabbcc001122"),
+  ).not.toHaveAttribute("aria-current");
 
   await page.getByTestId("device-card-aabbcc001122").click();
   await expect(page.getByTestId("device-dashboard")).toBeVisible();
+  await expect(page.getByTestId("device-card-aabbcc001122")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(
+    page.getByTestId("device-selected-marker-aabbcc001122"),
+  ).toBeVisible();
+
+  const selectedCard = page.getByTestId("device-card-aabbcc001122");
+  const selectionColors = async () =>
+    selectedCard.evaluate((card) => {
+      const marker = card.querySelector(
+        '[data-testid="device-selected-marker-aabbcc001122"]',
+      );
+      if (!marker) {
+        throw new Error("Selected marker is missing");
+      }
+      const cardStyles = getComputedStyle(card);
+      const markerStyles = getComputedStyle(marker);
+      return {
+        cardBackground: cardStyles.backgroundColor,
+        cardBorder: cardStyles.borderColor,
+        markerBackground: markerStyles.backgroundColor,
+        markerText: markerStyles.color,
+      };
+    });
+
+  const lightColors = await selectionColors();
+  expect(
+    contrastRatio(lightColors.cardBorder, lightColors.cardBackground),
+  ).toBeGreaterThanOrEqual(3);
+  expect(
+    contrastRatio(lightColors.markerText, lightColors.markerBackground),
+  ).toBeGreaterThanOrEqual(4.5);
+
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      "isolapurr_usb_hub.theme",
+      JSON.stringify("isolapurr-dark"),
+    );
+  });
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-theme",
+    "isolapurr-dark",
+  );
+  const darkColors = await selectionColors();
+  expect(
+    contrastRatio(darkColors.cardBorder, darkColors.cardBackground),
+  ).toBeGreaterThanOrEqual(3);
+  expect(
+    contrastRatio(darkColors.markerText, darkColors.markerBackground),
+  ).toBeGreaterThanOrEqual(4.5);
 
   await expect(page.getByTestId("port-card-port_a")).toBeVisible();
   await expect(page.getByTestId("port-card-port_c")).toBeVisible();

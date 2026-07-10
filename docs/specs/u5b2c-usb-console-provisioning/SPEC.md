@@ -181,6 +181,7 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given `.esp32-port` is missing or lacks `device_id`/`mac`, when a developer runs a flash/reset/monitor command that depends on the confirmed port, then it fails with instructions to run `just ports` and `PORT=/dev/cu.xxx just identify`.
 - Given JSONL `info` returns a different `device_id` or `mac`, when Local USB flash runs, then it fails before writing flash.
 - Given UI changes are complete, when Storybook renders the console states, then desktop and mobile evidence show no text overlap, clipping, or incoherent layout.
+- Given a saved-device route is active, when the device list renders in either light or dark mode, then the current device is distinguishable from unselected devices through a high-contrast full-card boundary, a selected surface, and a non-color marker; the current card exposes `aria-current="page"`, while unselected cards do not.
 
 ## Visual Evidence
 
@@ -227,6 +228,14 @@ PR: include
 Device list Serial history-only badge:
 
 ![Device list Serial history-only badge](assets/device-card-serial-history-only.png)
+
+Device list selected state, light theme:
+
+![Device list selected state, light theme](assets/device-card-selected-light.png)
+
+Device list selected state, dark theme:
+
+![Device list selected state, dark theme](assets/device-card-selected-dark.png)
 
 Device Hardware Wi-Fi configuration:
 

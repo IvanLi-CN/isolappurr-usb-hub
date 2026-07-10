@@ -97,6 +97,9 @@ body {
 
   --add-placeholder-bg: rgba(248, 250, 252, 0.75);
   --tab-inactive-bg: rgba(248, 250, 252, 0.7);
+  --device-selected-bg: #eef4f0;
+  --device-selected-border: #3f6755;
+  --device-selected-ring: rgba(63, 103, 85, 0.2);
 
   --card-filter: drop-shadow(0 8px 18px var(--shadow));
   --popover-filter: drop-shadow(0 8px 18px var(--shadow));
@@ -169,6 +172,9 @@ body {
 
   --add-placeholder-bg: rgba(255, 255, 255, 0.03);
   --tab-inactive-bg: #1a2130;
+  --device-selected-bg: #223129;
+  --device-selected-border: #89a496;
+  --device-selected-ring: rgba(137, 164, 150, 0.28);
 
   --card-filter: drop-shadow(0 8px 18px var(--shadow));
   --popover-filter: drop-shadow(0 10px 20px var(--shadow));
@@ -242,6 +248,9 @@ body {
 
     --add-placeholder-bg: rgba(255, 255, 255, 0.03);
     --tab-inactive-bg: #1a2130;
+    --device-selected-bg: #223129;
+    --device-selected-border: #89a496;
+    --device-selected-ring: rgba(137, 164, 150, 0.28);
 
     --card-filter: drop-shadow(0 8px 18px var(--shadow));
     --popover-filter: drop-shadow(0 10px 20px var(--shadow));
@@ -269,6 +278,12 @@ body {
 
 .iso-modal {
   filter: var(--modal-filter);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device-card {
+    transition-duration: 0ms;
+  }
 }
 
 .protocol-card {
