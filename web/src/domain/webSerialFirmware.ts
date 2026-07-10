@@ -212,9 +212,10 @@ export class WebSerialJsonlTransport {
   ): Promise<void> {
     const maxAttempts = options.deadlineAt === undefined ? 6 : 4;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const openPromise = port.open({ baudRate: 115200 });
       try {
         await runWithinOperationDeadline(
-          () => port.open({ baudRate: 115200 }),
+          () => openPromise,
           options,
           () => port.close().catch(() => undefined),
         );
@@ -226,6 +227,12 @@ export class WebSerialJsonlTransport {
         void this.readSerialLoop();
         return;
       } catch (err) {
+        if (operationExpired(options)) {
+          void openPromise.then(
+            () => port.close().catch(() => undefined),
+            () => undefined,
+          );
+        }
         if (attempt < maxAttempts - 1 && isRetryableWebSerialOpenError(err)) {
           await operationDelay(
             options.deadlineAt === undefined

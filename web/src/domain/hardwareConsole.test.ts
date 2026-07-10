@@ -168,6 +168,44 @@ describe("WebSerialJsonlTransport probe deadlines", () => {
     expect(closeCalls).toBe(1);
   });
 
+  test("closes a port that finishes opening after the probe deadline", async () => {
+    let finishOpen: (() => void) | null = null;
+    let opened = false;
+    let closeCalls = 0;
+    const port = {
+      readable: null,
+      writable: null,
+      open: () =>
+        new Promise<void>((resolve) => {
+          finishOpen = () => {
+            opened = true;
+            resolve();
+          };
+        }),
+      close: async () => {
+        closeCalls += 1;
+        if (!opened) {
+          throw new Error("Port is still opening");
+        }
+        opened = false;
+      },
+    };
+    const transport = new WebSerialJsonlTransport();
+
+    await expect(
+      transport.connectToPort(port as never, {
+        deadlineAt: Date.now() + 50,
+      }),
+    ).rejects.toThrow("probe timed out");
+    expect(closeCalls).toBe(1);
+
+    finishOpen?.();
+    await Bun.sleep(0);
+
+    expect(closeCalls).toBe(2);
+    expect(opened).toBe(false);
+  });
+
   test("aborts a pending firmware request and ignores a late frame", async () => {
     let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
     const port = {

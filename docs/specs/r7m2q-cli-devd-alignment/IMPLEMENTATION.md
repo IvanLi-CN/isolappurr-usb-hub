@@ -197,7 +197,7 @@
   `v0.5.0 -> v0.5.1` distinction during repeated authorized probes. Both
   firmware-returned and release-provided versions are normalized to exactly one
   lowercase `v` prefix for display.
-- Post-change Web validation: 101 unit tests passed, 102 Storybook browser tests
+- Post-change Web validation: 102 unit tests passed, 102 Storybook browser tests
   passed, and the full E2E suite passed with 11 tests plus 2 opt-in HIL skips.
 - Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
   is present in the PWA precache list.
