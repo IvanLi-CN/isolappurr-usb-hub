@@ -111,7 +111,10 @@
   operations, renders an actionable timeout state, and rejects every late or
   superseded probe generation. Browser-picker time is deliberately excluded
   and no countdown is rendered before hardware reading starts. Recognized
-  firmware detection performs no hard reset or DTR/RTS sequence.
+  firmware detection performs no hard reset or DTR/RTS sequence. Probe
+  generation, cancellation, and timeout ownership live in the dedicated
+  `useFirmwareFlashProbeDeadline` hook so the connection orchestrator remains
+  below the repository source-length limit.
 - The right-side flash rail keeps its primary actions above the log and renders
   structured progress/log entries for both Local USB and Web Serial, while
   same-origin firmware remains excluded from install-time PWA precache.

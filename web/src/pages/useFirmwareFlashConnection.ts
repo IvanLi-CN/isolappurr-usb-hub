@@ -54,7 +54,6 @@ import {
   PROBE_READ_TIMEOUT_MS,
   PROBE_REFRESH_TIMEOUT_MS,
   type ProbeActivity,
-  type ProbeActivityStage,
   type ProbeState,
   resolveExpectedIdentity,
   splitLogLines,
@@ -63,6 +62,7 @@ import {
   type WebSerialProbeOptions,
   type WebSerialSelectionState,
 } from "./firmwareFlashShared";
+import { useFirmwareFlashProbeDeadline } from "./useFirmwareFlashProbeDeadline";
 
 export function useFirmwareFlashConnection({
   currentDevice,
@@ -158,16 +158,6 @@ export function useFirmwareFlashConnection({
   const flashLogSerialRef = useRef(0);
   const flashOperationStartedAtRef = useRef<number | null>(null);
   const pseudoFlashProgressTimerRef = useRef<number | null>(null);
-  const probeGenerationRef = useRef(0);
-  const activeProbeOperationRef = useRef<{
-    generation: number;
-    controller: AbortController;
-    deadlineAt: number;
-    timeoutId: number;
-  } | null>(null);
-  const expireProbeOperationRef = useRef<(generation: number) => void>(
-    () => undefined,
-  );
 
   const clearPseudoFlashProgress = () => {
     if (pseudoFlashProgressTimerRef.current !== null) {
@@ -201,62 +191,17 @@ export function useFirmwareFlashConnection({
     });
   };
 
-  const startProbeActivity = (
-    stage: ProbeActivityStage,
-    title: string,
-    detail: string,
-    timeoutMs: number,
-  ) => {
-    setProbeClock(Date.now());
-    setProbeActivity({
-      stage,
-      title,
-      detail,
-      deadlineAt: Date.now() + timeoutMs,
+  const { createProbeOperation, startProbeActivity } =
+    useFirmwareFlashProbeDeadline({
+      probeActivity,
+      setProbeActivity,
+      setProbeClock,
+      setProbe,
+      setProbing,
     });
-  };
-
-  const expireProbeOperation = (generation: number) => {
-    const active = activeProbeOperationRef.current;
-    if (!active || active.generation !== generation) {
-      return;
-    }
-    active.controller.abort(new Error("Web Serial probe timed out."));
-    setProbe({
-      kind: "unknown",
-      summary: "Probe timed out.",
-      detail:
-        "The selected Web USB device did not respond within 5 seconds. Reconnect and try again.",
-    });
-    setProbeActivity(null);
-    setProbing(false);
-  };
-  expireProbeOperationRef.current = expireProbeOperation;
-
-  useEffect(() => {
-    if (!probeActivity) {
-      return;
-    }
-    const intervalId = window.setInterval(() => {
-      const now = Date.now();
-      setProbeClock(now);
-      const active = activeProbeOperationRef.current;
-      if (active && now >= active.deadlineAt) {
-        expireProbeOperationRef.current(active.generation);
-      }
-    }, 250);
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [probeActivity]);
 
   useEffect(() => {
     return () => {
-      const activeProbe = activeProbeOperationRef.current;
-      if (activeProbe) {
-        window.clearTimeout(activeProbe.timeoutId);
-        activeProbe.controller.abort();
-      }
       if (pseudoFlashProgressTimerRef.current !== null) {
         window.clearInterval(pseudoFlashProgressTimerRef.current);
       }
@@ -1026,40 +971,7 @@ export function useFirmwareFlashConnection({
       });
       return;
     }
-    const generation = ++probeGenerationRef.current;
-    const controller = new AbortController();
-    activeProbeOperationRef.current?.controller.abort();
-    if (activeProbeOperationRef.current) {
-      window.clearTimeout(activeProbeOperationRef.current.timeoutId);
-    }
-    let deadlineAt = 0;
-    const beginWebSerialProbe = () => {
-      if (deadlineAt > 0 || nextTransport !== "web_serial") {
-        return;
-      }
-      deadlineAt = Date.now() + PROBE_READ_TIMEOUT_MS;
-      const timeoutId = window.setTimeout(
-        () => expireProbeOperationRef.current(generation),
-        PROBE_READ_TIMEOUT_MS,
-      );
-      activeProbeOperationRef.current = {
-        generation,
-        controller,
-        deadlineAt,
-        timeoutId,
-      };
-      startProbeActivity(
-        "probing",
-        "Reading target identity…",
-        "Waiting for the selected transport to respond.",
-        PROBE_READ_TIMEOUT_MS,
-      );
-      setProbe({
-        kind: "probing",
-        summary: "Reading target identity…",
-        detail: "Waiting for the selected transport to respond.",
-      });
-    };
+    const operation = createProbeOperation(nextTransport);
     setProbing(true);
     setFlashError(null);
     try {
@@ -1078,7 +990,7 @@ export function useFirmwareFlashConnection({
         });
       } else {
         if (nextTransport === "web_serial") {
-          beginWebSerialProbe();
+          operation.begin();
         } else {
           startProbeActivity(
             "probing",
@@ -1097,19 +1009,16 @@ export function useFirmwareFlashConnection({
         return await probeLocalUsb(nextPortPath);
       } else {
         return await probeWebSerial(webSerialMode, onWebSerialPortReady, {
-          signal: controller.signal,
-          deadlineAt: () => deadlineAt,
-          begin: beginWebSerialProbe,
+          signal: operation.controller.signal,
+          deadlineAt: operation.deadlineAt,
+          begin: operation.begin,
         });
       }
     } catch (err) {
       if (isWebSerialPickerCancelledError(err)) {
         throw err;
       }
-      if (
-        activeProbeOperationRef.current?.generation === generation &&
-        !controller.signal.aborted
-      ) {
+      if (operation.canPublishError()) {
         setProbe({
           kind: "unknown",
           summary: "Target identity could not be confirmed.",
@@ -1117,22 +1026,7 @@ export function useFirmwareFlashConnection({
         });
       }
     } finally {
-      const active = activeProbeOperationRef.current;
-      const ownsActiveProbe = active?.generation === generation;
-      const currentProbeEndedBeforeDeadline =
-        deadlineAt === 0 && probeGenerationRef.current === generation;
-      if (
-        nextTransport !== "web_serial" ||
-        ownsActiveProbe ||
-        currentProbeEndedBeforeDeadline
-      ) {
-        if (ownsActiveProbe) {
-          window.clearTimeout(active.timeoutId);
-          activeProbeOperationRef.current = null;
-        }
-        setProbeActivity(null);
-        setProbing(false);
-      }
+      operation.finish();
     }
   };
 
