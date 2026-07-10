@@ -362,6 +362,13 @@ Standalone `/flash?demo=true` workbench showing the live target version and the
 selected release as separate adjacent rows. `INSTALLED` comes from the target
 probe while `TO FLASH` follows the selected firmware source:
 
+- PR: include
+- source_type: `ui_demo`
+- target_program: `mock-only`
+- capture_scope: `browser-viewport`
+- sensitive_exclusion: `No real device, desktop, or unrelated application data`
+- submission_gate: `approved`
+
 ![Firmware flash workbench version comparison](./assets/flash-workbench-demo-version-comparison.png)
 
 Standalone `/flash?demo=true` workbench on a confirmed IsolaPurr target after
