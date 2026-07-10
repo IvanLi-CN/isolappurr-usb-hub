@@ -16,6 +16,7 @@ import {
   sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
   stableLocalUsbDeviceId,
+  WebSerialJsonlTransport,
 } from "./hardwareConsole";
 
 const originalFetch = globalThis.fetch;
@@ -143,6 +144,62 @@ describe("parseWebSerialJsonLine", () => {
   });
 });
 
+describe("WebSerialJsonlTransport probe deadlines", () => {
+  test("closes a port whose open call outlives the probe deadline", async () => {
+    let closeCalls = 0;
+    const port = {
+      readable: null,
+      writable: null,
+      open: () => new Promise<void>(() => undefined),
+      close: async () => {
+        closeCalls += 1;
+      },
+    };
+    const transport = new WebSerialJsonlTransport();
+    const startedAt = performance.now();
+
+    await expect(
+      transport.connectToPort(port as never, {
+        deadlineAt: Date.now() + 50,
+      }),
+    ).rejects.toThrow("probe timed out");
+
+    expect(performance.now() - startedAt).toBeLessThan(250);
+    expect(closeCalls).toBe(1);
+  });
+
+  test("aborts a pending firmware request and ignores a late frame", async () => {
+    let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const port = {
+      readable: null as ReadableStream<Uint8Array> | null,
+      writable: null as WritableStream<Uint8Array> | null,
+      open: async () => {
+        port.readable = new ReadableStream<Uint8Array>({
+          start(value) {
+            controller = value;
+          },
+        });
+        port.writable = new WritableStream<Uint8Array>();
+      },
+      close: async () => undefined,
+    };
+    const abort = new AbortController();
+    const transport = new WebSerialJsonlTransport();
+    await transport.connectToPort(port as never);
+    const request = transport.request(
+      { id: 7, method: "info", timeoutMs: 5_000 },
+      { signal: abort.signal, deadlineAt: Date.now() + 5_000 },
+    );
+
+    abort.abort(new Error("Probe timed out."));
+    await expect(request).rejects.toThrow("Probe timed out.");
+    expect(() => {
+      controller?.enqueue(new TextEncoder().encode('{"id":7,"result":{}}\n'));
+    }).not.toThrow();
+    await transport.disconnect();
+  });
+});
+
 describe("refreshGrantedWebSerialPort", () => {
   test("prefers the single granted port after probe reconnect", async () => {
     const stalePort = {
@@ -253,6 +310,34 @@ describe("refreshGrantedWebSerialPort", () => {
       freshPort,
     );
     expect(attempts).toBeGreaterThanOrEqual(3);
+  });
+
+  test("stops re-enumeration polling at the probe deadline", async () => {
+    const stalePort = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        serial: {
+          getPorts: async () => [stalePort],
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const startedAt = performance.now();
+    await expect(
+      refreshGrantedWebSerialPort(stalePort as never, {
+        deadlineAt: Date.now() + 60,
+      }),
+    ).rejects.toThrow("probe timed out");
+    expect(performance.now() - startedAt).toBeLessThan(250);
   });
 });
 
@@ -433,8 +518,11 @@ describe("probeWebSerialBoard", () => {
       disconnect: 0,
       portClose: 0,
       loaderAfter: 0,
+      detectChip: 0,
+      loaderMain: 0,
       setDTR: 0,
       setRTS: 0,
+      tracingEnabled: null as boolean | null,
     };
     const fakePort = {
       readable: null,
@@ -450,7 +538,9 @@ describe("probeWebSerialBoard", () => {
       constructor(
         readonly device: typeof fakePort,
         readonly _enableTracing: boolean,
-      ) {}
+      ) {
+        cleanupCalls.tracingEnabled = _enableTracing;
+      }
 
       async disconnect() {
         cleanupCalls.disconnect += 1;
@@ -471,6 +561,7 @@ describe("probeWebSerialBoard", () => {
         getChipFeatures: async () => ["Wi-Fi", "BLE"],
         readMac: async () => "9c:13:9e:f2:93:cc",
         getCrystalFreq: async () => 40,
+        postConnect: async () => undefined,
       };
       readonly ESP_MEM_END = 0;
 
@@ -492,8 +583,14 @@ describe("probeWebSerialBoard", () => {
         return undefined;
       }
 
-      async main() {
+      async detectChip() {
+        cleanupCalls.detectChip += 1;
         return "ESP32-S3";
+      }
+
+      async main() {
+        cleanupCalls.loaderMain += 1;
+        throw new Error("Full esptool initialization must not run for probe.");
       }
 
       async detectFlashSize() {
@@ -513,6 +610,9 @@ describe("probeWebSerialBoard", () => {
     const board = await probeWebSerialBoard(fakePort as never);
 
     expect(board.mcuModel).toBe("ESP32-S3");
+    expect(cleanupCalls.detectChip).toBe(1);
+    expect(cleanupCalls.loaderMain).toBe(0);
+    expect(cleanupCalls.tracingEnabled).toBe(false);
     expect(cleanupCalls.loaderAfter).toBe(1);
     expect(cleanupCalls.setDTR).toBeGreaterThan(0);
     expect(cleanupCalls.setRTS).toBeGreaterThan(0);

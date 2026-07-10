@@ -282,3 +282,21 @@ test("keeps the probe countdown hidden before a demo read starts", async ({
   await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
   await expect(page.getByText("Probe window", { exact: true })).toHaveCount(0);
 });
+
+test("renders an actionable Web Serial timeout in the demo workbench", async ({
+  page,
+}) => {
+  await page.goto("/flash?demo=true&webUsb=authorized&probe=timeout");
+
+  await expect(
+    page.getByText("Probe timed out.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "The selected Web USB device did not respond within 5 seconds. Reconnect and try again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("Probing", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Probe window", { exact: true })).toHaveCount(0);
+});

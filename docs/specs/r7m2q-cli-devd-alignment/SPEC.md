@@ -32,6 +32,12 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST stop the IPC daemon after a bounded idle period when no clients remain connected, unless explicitly configured for a persistent development session.
 - MUST expose localhost HTTP only through an explicit bridge command for browser/debug UI clients.
 - MUST keep Web Serial available in the Web app as a formal supported channel.
+- MUST probe a selected Web Serial target within a five-second operational
+  deadline, excluding time spent in the browser-owned device picker. The probe
+  MUST read IsolaPurr firmware identity before entering the lower-level
+  hardware probe, MUST restore the firmware runtime after that probe, and MUST
+  fail explicitly when the deadline expires. Expired or superseded work MUST
+  not update the UI or reset the board later in the background.
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
 - MUST expose a standalone Web firmware flash workbench at `/flash`, with
@@ -209,6 +215,11 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given the desktop app needs native Local USB capabilities, when no devd is reachable, then the desktop app starts or connects to devd on demand instead of requiring a user-managed daemon.
 - Given `isolapurr-devd serve` is running, when localhost is scanned, then no HTTP devd API is exposed unless `isolapurr-devd bridge-http` was explicitly started.
 - Given a browser supports Web Serial, when the user connects through the Web app, then Web Serial remains a normal channel and can be promoted by the runtime without devd.
+- Given an authorized IsolaPurr Web Serial target is selected, when the owner
+  starts or repeats device detection, then firmware and hardware identity are
+  rendered within five seconds on repeated runs. If that deadline cannot be
+  met, the page leaves the probing state with an actionable timeout and ignores
+  any late completion from that probe generation.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.
 - Given the user runs `isolapurr discover`, when LAN devices advertise the
   IsolaPurr HTTP service and Local USB candidates are currently attached, then
@@ -322,6 +333,13 @@ to firmware-identity progress cue, and a seconds-only right-side probe window.
 The countdown is intentionally absent before a read starts:
 
 ![Firmware flash workbench Web USB reading](./assets/flash-workbench-demo-reading-info-v2.png)
+
+Standalone `/flash?demo=true&webUsb=authorized&probe=timeout` workbench after
+the five-second operational deadline. The active countdown is gone, the target
+is explicitly unconfirmed, and the UI directs the owner to reconnect instead
+of accepting a late probe result:
+
+![Firmware flash workbench Web USB timeout](./assets/flash-workbench-demo-probe-timeout.png)
 
 Standalone `/flash?demo=true` workbench after selecting a demo Local USB
 target, showing the flattened target details without the redundant summary

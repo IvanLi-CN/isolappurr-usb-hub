@@ -73,7 +73,7 @@ export const DEMO_AUTHORIZED_WEB_USB_SELECTION: WebSerialSelectionState = {
   detail: "VID 303A · PID 1001 · Host path hidden by browser",
 };
 export const PROBE_PICKER_TIMEOUT_MS = 18_000;
-export const PROBE_READ_TIMEOUT_MS = 14_000;
+export const PROBE_READ_TIMEOUT_MS = 5_000;
 export const PROBE_REFRESH_TIMEOUT_MS = 18_000;
 
 export function cardClassName(extra = ""): string {
@@ -305,9 +305,14 @@ export function describeFlashProgress(
 }
 
 export function isWebSerialPickerCancelledError(err: unknown): boolean {
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  const candidate = err as { message?: unknown; name?: unknown };
   return (
-    err instanceof Error &&
-    err.message.toLowerCase().includes("no port selected by the user")
+    candidate.name === "NotFoundError" ||
+    (typeof candidate.message === "string" &&
+      candidate.message.toLowerCase().includes("no port selected by the user"))
   );
 }
 

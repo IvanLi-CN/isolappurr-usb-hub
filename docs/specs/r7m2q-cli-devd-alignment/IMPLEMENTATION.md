@@ -100,6 +100,17 @@
   read is running. The same state is reproducible without hardware at
   `/flash?demo=true&webUsb=authorized&probe=reading` and is covered by
   Playwright plus Storybook.
+- Web Serial probing now has one five-second operational budget after browser
+  device selection. The page reads project firmware identity first, reuses
+  hardware truth only when its cached MAC matches the live firmware MAC, and
+  runs the lower-level hardware probe only on a cache miss. The lower-level
+  path uses `detectChip()` plus the minimum required register reads instead of
+  the flashing-oriented `ESPLoader.main()` sequence, which previously uploaded
+  a stub and repeated chip, MAC, and flash work. Packet tracing is disabled.
+- The five-second deadline now aborts port open, JSONL request, and esptool
+  operations, renders an actionable timeout state, and rejects every late or
+  superseded probe generation. Browser-picker time is deliberately excluded
+  and no countdown is rendered before hardware reading starts.
 - The right-side flash rail keeps its primary actions above the log and renders
   structured progress/log entries for both Local USB and Web Serial, while
   same-origin firmware remains excluded from install-time PWA precache.
@@ -157,11 +168,17 @@
 ## Final Validation
 
 - `just web-check`: passed
-- `cd web && bun test ./src`: 90 passed
-- `cd web && bun run test:e2e`: 6 passed, 1 hardware-in-loop test skipped
+- `cd web && bun test ./src`: 96 passed
+- `cd web && PLAYWRIGHT_PORT=37510 bun run test:e2e`: 11 passed, 1
+  hardware-in-loop test skipped; this includes eight repeated authorized
+  target probes under five seconds plus timeout/late-result rejection.
 - `just host-tools-test`: 77 passed
 - `python3 -m unittest discover -s .github/scripts -p 'test_*.py'`: 24 passed
 - `cd web && bun run build && bun run build-storybook && bun run test:storybook`:
   passed, including 98 Storybook browser tests
+- Production JSONL transport against the owner-approved exact device
+  `/dev/cu.usbmodem21231401`: eight repeated API-first probes passed in
+  `14.2, 5.0, 5.2, 5.3, 4.7, 5.6, 4.5, 4.3 ms`, each confirming
+  `device_id=f293cc9c139e` and `mac=9c:13:9e:f2:93:cc` without a board reset.
 - Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
   is present in the PWA precache list.

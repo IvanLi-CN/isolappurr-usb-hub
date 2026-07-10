@@ -29,6 +29,14 @@
   the active probe view uses a compact loading rail with a seconds-only probe
   window. Added repeatable demo, Playwright, Storybook, and visual evidence
   coverage for these states.
+- Replaced the probe window's display-only countdown with an operational Web
+  Serial deadline after production behavior showed that stale-port polling and
+  serial retries could continue for tens of seconds, accept late results, and
+  reset the board after the visible timer reached zero.
+- Reduced first-time Web Serial hardware probing to the minimum esptool
+  register path, removed packet tracing and duplicate flashing-oriented stub
+  initialization, and added a MAC-bound hardware cache so repeat probes stay on
+  the firmware API path without resetting a known board.
 - Clarified and implemented `isolapurr discover` so LAN results come from live
   mDNS discovery, USB results come from the current local scan, and saved
   device profiles only annotate matching live results instead of standing in for

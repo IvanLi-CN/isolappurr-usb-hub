@@ -29,6 +29,10 @@ import {
   type SerialPortInfo,
   WebSerialJsonlTransport,
 } from "../domain/hardwareConsole";
+import {
+  cacheWebSerialHardware,
+  readCachedWebSerialHardware,
+} from "../domain/webSerialHardwareCache";
 import { readLocalUsbInfo } from "../ui/dialogs/AddDeviceDialog.helpers";
 import type { FirmwareFlashLogEntry } from "../ui/panels/FirmwareFlashLogPanel";
 import {
@@ -64,6 +68,7 @@ export function useFirmwareFlashConnection({
   currentLocalUsbPath,
   demoEnabled,
   demoProbeReading,
+  demoProbeTimeout,
   demoAuthorizedWebUsb,
   webSerialSupported,
 }: {
@@ -71,11 +76,12 @@ export function useFirmwareFlashConnection({
   currentLocalUsbPath?: string;
   demoEnabled: boolean;
   demoProbeReading: boolean;
+  demoProbeTimeout: boolean;
   demoAuthorizedWebUsb: boolean;
   webSerialSupported: boolean;
 }) {
   const [transportMode, setTransportMode] = useState<FlashTransportMode | null>(
-    demoProbeReading ? "web_serial" : null,
+    demoProbeReading || demoProbeTimeout ? "web_serial" : null,
   );
   const [sourceMode, setSourceMode] = useState<FirmwareSourceMode>("releases");
   const [flashMode, setFlashMode] = useState<FlashMode>("normal");
@@ -119,12 +125,19 @@ export function useFirmwareFlashConnection({
           summary: "Reading target identity…",
           detail: "Waiting for the selected transport to respond.",
         }
-      : {
-          kind: "idle",
-          summary: "Target probe is waiting for a usable USB path.",
-          detail:
-            "Choose USB device or Web USB first so the page can probe the board.",
-        },
+      : demoProbeTimeout
+        ? {
+            kind: "unknown",
+            summary: "Probe timed out.",
+            detail:
+              "The selected Web USB device did not respond within 5 seconds. Reconnect and try again.",
+          }
+        : {
+            kind: "idle",
+            summary: "Target probe is waiting for a usable USB path.",
+            detail:
+              "Choose USB device or Web USB first so the page can probe the board.",
+          },
   );
   const [localFile, setLocalFile] = useState<File | null>(null);
   const [manualAddress, setManualAddress] = useState("0x10000");
@@ -144,6 +157,16 @@ export function useFirmwareFlashConnection({
   const flashLogSerialRef = useRef(0);
   const flashOperationStartedAtRef = useRef<number | null>(null);
   const pseudoFlashProgressTimerRef = useRef<number | null>(null);
+  const probeGenerationRef = useRef(0);
+  const activeProbeOperationRef = useRef<{
+    generation: number;
+    controller: AbortController;
+    deadlineAt: number;
+    timeoutId: number;
+  } | null>(null);
+  const expireProbeOperationRef = useRef<(generation: number) => void>(
+    () => undefined,
+  );
 
   const clearPseudoFlashProgress = () => {
     if (pseudoFlashProgressTimerRef.current !== null) {
@@ -192,12 +215,34 @@ export function useFirmwareFlashConnection({
     });
   };
 
+  const expireProbeOperation = (generation: number) => {
+    const active = activeProbeOperationRef.current;
+    if (!active || active.generation !== generation) {
+      return;
+    }
+    active.controller.abort(new Error("Web Serial probe timed out."));
+    setProbe({
+      kind: "unknown",
+      summary: "Probe timed out.",
+      detail:
+        "The selected Web USB device did not respond within 5 seconds. Reconnect and try again.",
+    });
+    setProbeActivity(null);
+    setProbing(false);
+  };
+  expireProbeOperationRef.current = expireProbeOperation;
+
   useEffect(() => {
     if (!probeActivity) {
       return;
     }
     const intervalId = window.setInterval(() => {
-      setProbeClock(Date.now());
+      const now = Date.now();
+      setProbeClock(now);
+      const active = activeProbeOperationRef.current;
+      if (active && now >= active.deadlineAt) {
+        expireProbeOperationRef.current(active.generation);
+      }
     }, 250);
     return () => {
       window.clearInterval(intervalId);
@@ -206,6 +251,11 @@ export function useFirmwareFlashConnection({
 
   useEffect(() => {
     return () => {
+      const activeProbe = activeProbeOperationRef.current;
+      if (activeProbe) {
+        window.clearTimeout(activeProbe.timeoutId);
+        activeProbe.controller.abort();
+      }
       if (pseudoFlashProgressTimerRef.current !== null) {
         window.clearInterval(pseudoFlashProgressTimerRef.current);
       }
@@ -281,6 +331,22 @@ export function useFirmwareFlashConnection({
       deadlineAt: Date.now() + PROBE_READ_TIMEOUT_MS,
     });
   }, [demoProbeReading]);
+
+  useEffect(() => {
+    if (!demoProbeTimeout) {
+      return;
+    }
+    setTransportMode("web_serial");
+    setProbing(false);
+    setProbeActivity(null);
+    setSelectedWebSerialSelection(DEMO_AUTHORIZED_WEB_USB_SELECTION);
+    setProbe({
+      kind: "unknown",
+      summary: "Probe timed out.",
+      detail:
+        "The selected Web USB device did not respond within 5 seconds. Reconnect and try again.",
+    });
+  }, [demoProbeTimeout]);
 
   useEffect(() => {
     if (demoEnabled || !webSerialSupported || webSerialBootstrapRef.current) {
@@ -500,6 +566,11 @@ export function useFirmwareFlashConnection({
   const probeWebSerial = async (
     mode: WebSerialProbeMode,
     onPortReady?: () => void,
+    operation?: {
+      signal: AbortSignal;
+      deadlineAt: () => number;
+      begin: () => void;
+    },
   ) => {
     if (demoEnabled) {
       await delayMs(900);
@@ -547,19 +618,34 @@ export function useFirmwareFlashConnection({
       let lastError =
         "Web Serial target did not expose project firmware metadata.";
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (operation?.signal.aborted) {
+          throw operation.signal.reason;
+        }
         const transport = new WebSerialJsonlTransport();
         let tookPort = false;
         try {
-          await transport.connectToPort(candidatePort);
-          const value = await transport.request({
-            id: Math.floor(Math.random() * 1_000_000_000),
-            method: "info",
-            timeoutMs: timeoutMs + attempt * 600,
+          await transport.connectToPort(candidatePort, {
+            signal: operation?.signal,
+            deadlineAt: operation?.deadlineAt(),
           });
+          const value = await transport.request(
+            {
+              id: Math.floor(Math.random() * 1_000_000_000),
+              method: "info",
+              timeoutMs: timeoutMs + attempt * 600,
+            },
+            {
+              signal: operation?.signal,
+              deadlineAt: operation?.deadlineAt(),
+            },
+          );
           candidatePort = await transport.takePortForExclusiveUse();
           tookPort = true;
           return { ok: true, port: candidatePort, value };
         } catch (err) {
+          if (operation?.signal.aborted) {
+            throw operation.signal.reason;
+          }
           lastError =
             err instanceof Error
               ? err.message
@@ -569,10 +655,14 @@ export function useFirmwareFlashConnection({
             await transport.disconnect().catch(() => undefined);
           }
         }
-        candidatePort = await refreshGrantedWebSerialPort(candidatePort).catch(
-          () => candidatePort,
-        );
-        await delayMs(250 * (attempt + 1));
+        candidatePort =
+          (await getReusableGrantedWebSerialPort(candidatePort).catch(
+            () => null,
+          )) ?? candidatePort;
+        await delayMs(80 * (attempt + 1));
+        if (operation?.signal.aborted) {
+          throw operation.signal.reason;
+        }
       }
       return {
         ok: false,
@@ -585,20 +675,35 @@ export function useFirmwareFlashConnection({
       port: SerialLikePort,
       options: WebSerialProbeOptions,
     ) => {
-      let infoResult = await readInfoFromWebSerialPort(port, 2, 1_200);
+      let infoResult = await readInfoFromWebSerialPort(port, 2, 650);
       let activePort = infoResult.port;
-      let hardware = options.fallbackHardware;
-      if (options.refreshHardware) {
-        hardware = await probeWebSerialBoard(activePort).catch(() => undefined);
-        activePort = await refreshGrantedWebSerialPort(activePort).catch(
-          () => activePort,
-        );
+      const initialIdentity = infoResult.ok
+        ? classifyProbe(
+            infoResult.value,
+            "Web Serial target did not expose project firmware metadata.",
+          )
+        : null;
+      let hardware =
+        options.fallbackHardware ??
+        readCachedWebSerialHardware(initialIdentity?.mac);
+      if (options.refreshHardware && !hardware) {
+        try {
+          hardware = await probeWebSerialBoard(activePort, {
+            signal: operation?.signal,
+            deadlineAt: operation?.deadlineAt(),
+          });
+        } catch {
+          if (operation?.signal.aborted) {
+            throw operation.signal.reason;
+          }
+          hardware = undefined;
+        }
+        activePort = await refreshGrantedWebSerialPort(activePort, {
+          signal: operation?.signal,
+          deadlineAt: operation?.deadlineAt(),
+        });
         setSelectedWebSerialSelection(describeWebSerialSelection(activePort));
-        const resumedInfo = await readInfoFromWebSerialPort(
-          activePort,
-          4,
-          1_600,
-        );
+        const resumedInfo = await readInfoFromWebSerialPort(activePort, 3, 450);
         activePort = resumedInfo.port;
         if (resumedInfo.ok) {
           infoResult = resumedInfo;
@@ -616,16 +721,20 @@ export function useFirmwareFlashConnection({
         throw new Error(infoResult.error);
       }
       setSelectedWebSerialSelection(describeWebSerialSelection(activePort));
+      const nextProbe = classifyProbe(
+        infoResult.ok ? infoResult.value : null,
+        infoResult.ok
+          ? "Web Serial target did not expose project firmware metadata."
+          : (infoResult.error ??
+              "Web Serial target did not expose project firmware metadata."),
+        hardware,
+      );
+      if (hardware && nextProbe.kind === "recognized") {
+        cacheWebSerialHardware(nextProbe.mac, hardware);
+      }
       return {
         port: activePort,
-        probe: classifyProbe(
-          infoResult.ok ? infoResult.value : null,
-          infoResult.ok
-            ? "Web Serial target did not expose project firmware metadata."
-            : (infoResult.error ??
-                "Web Serial target did not expose project firmware metadata."),
-          hardware,
-        ),
+        probe: nextProbe,
       };
     };
 
@@ -636,12 +745,13 @@ export function useFirmwareFlashConnection({
           "Open Web USB first and choose the exact ESP32-S3 target.",
         );
       }
-      const candidate = await connectPort(
-        await refreshGrantedWebSerialPort(selectedPort),
-        {
-          refreshHardware: true,
-        },
-      );
+      operation?.begin();
+      const candidate = await connectPort(selectedPort, {
+        refreshHardware: true,
+      });
+      if (operation?.signal.aborted) {
+        throw operation.signal.reason;
+      }
       selectedWebSerialPortRef.current = candidate.port;
       setSelectedWebSerialSelection(describeWebSerialSelection(candidate.port));
       setProbe(candidate.probe);
@@ -658,13 +768,8 @@ export function useFirmwareFlashConnection({
         onPortReady();
       });
     }
+    operation?.begin();
     setSelectedWebSerialSelection(describeWebSerialSelection(port));
-    startProbeActivity(
-      "probing",
-      "Reading target identity…",
-      "Waiting for the selected transport to respond.",
-      PROBE_READ_TIMEOUT_MS,
-    );
     setProbe({
       kind: "probing",
       summary: "Reading target identity…",
@@ -673,6 +778,9 @@ export function useFirmwareFlashConnection({
     const candidate = await connectPort(port, {
       refreshHardware: true,
     });
+    if (operation?.signal.aborted) {
+      throw operation.signal.reason;
+    }
     selectedWebSerialPortRef.current = candidate.port;
     setSelectedWebSerialSelection(describeWebSerialSelection(candidate.port));
     setProbe(candidate.probe);
@@ -729,6 +837,7 @@ export function useFirmwareFlashConnection({
       return;
     }
     const previousTransport = transportMode;
+    const previousProbe = probe;
     let pickerResolved = false;
     const dismissPickerPrompt = () => {
       if (pickerResolved) {
@@ -754,11 +863,14 @@ export function useFirmwareFlashConnection({
       if (!isWebSerialPickerCancelledError(err)) {
         throw err;
       }
+      setProbe(previousProbe);
       if (previousTransport === "local_usb") {
         clearGlobalFlashTransportLock();
       }
     } finally {
       dismissPickerPrompt();
+      setProbeActivity(null);
+      setProbing(false);
       setPendingConnectionAction(null);
     }
   };
@@ -905,6 +1017,40 @@ export function useFirmwareFlashConnection({
       });
       return;
     }
+    const generation = ++probeGenerationRef.current;
+    const controller = new AbortController();
+    activeProbeOperationRef.current?.controller.abort();
+    if (activeProbeOperationRef.current) {
+      window.clearTimeout(activeProbeOperationRef.current.timeoutId);
+    }
+    let deadlineAt = 0;
+    const beginWebSerialProbe = () => {
+      if (deadlineAt > 0 || nextTransport !== "web_serial") {
+        return;
+      }
+      deadlineAt = Date.now() + PROBE_READ_TIMEOUT_MS;
+      const timeoutId = window.setTimeout(
+        () => expireProbeOperationRef.current(generation),
+        PROBE_READ_TIMEOUT_MS,
+      );
+      activeProbeOperationRef.current = {
+        generation,
+        controller,
+        deadlineAt,
+        timeoutId,
+      };
+      startProbeActivity(
+        "probing",
+        "Reading target identity…",
+        "Waiting for the selected transport to respond.",
+        PROBE_READ_TIMEOUT_MS,
+      );
+      setProbe({
+        kind: "probing",
+        summary: "Reading target identity…",
+        detail: "Waiting for the selected transport to respond.",
+      });
+    };
     setProbing(true);
     setFlashError(null);
     try {
@@ -922,35 +1068,62 @@ export function useFirmwareFlashConnection({
             "Choose the exact ESP32-S3 USB device in the browser dialog to start probing.",
         });
       } else {
-        startProbeActivity(
-          "probing",
-          "Reading target identity…",
-          "Waiting for the selected transport to respond.",
-          PROBE_READ_TIMEOUT_MS,
-        );
-        setProbe({
-          kind: "probing",
-          summary: "Reading target identity…",
-          detail: "Waiting for the selected transport to respond.",
-        });
+        if (nextTransport === "web_serial") {
+          beginWebSerialProbe();
+        } else {
+          startProbeActivity(
+            "probing",
+            "Reading target identity…",
+            "Waiting for the selected transport to respond.",
+            PROBE_READ_TIMEOUT_MS,
+          );
+          setProbe({
+            kind: "probing",
+            summary: "Reading target identity…",
+            detail: "Waiting for the selected transport to respond.",
+          });
+        }
       }
       if (nextTransport === "local_usb") {
-        await probeLocalUsb(nextPortPath);
+        return await probeLocalUsb(nextPortPath);
       } else {
-        await probeWebSerial(webSerialMode, onWebSerialPortReady);
+        return await probeWebSerial(webSerialMode, onWebSerialPortReady, {
+          signal: controller.signal,
+          deadlineAt: () => deadlineAt,
+          begin: beginWebSerialProbe,
+        });
       }
     } catch (err) {
       if (isWebSerialPickerCancelledError(err)) {
         throw err;
       }
-      setProbe({
-        kind: "unknown",
-        summary: "Target identity could not be confirmed.",
-        detail: err instanceof Error ? err.message : "Probe failed.",
-      });
+      if (
+        activeProbeOperationRef.current?.generation === generation &&
+        !controller.signal.aborted
+      ) {
+        setProbe({
+          kind: "unknown",
+          summary: "Target identity could not be confirmed.",
+          detail: err instanceof Error ? err.message : "Probe failed.",
+        });
+      }
     } finally {
-      setProbeActivity(null);
-      setProbing(false);
+      const active = activeProbeOperationRef.current;
+      const ownsActiveProbe = active?.generation === generation;
+      const currentProbeEndedBeforeDeadline =
+        deadlineAt === 0 && probeGenerationRef.current === generation;
+      if (
+        nextTransport !== "web_serial" ||
+        ownsActiveProbe ||
+        currentProbeEndedBeforeDeadline
+      ) {
+        if (ownsActiveProbe) {
+          window.clearTimeout(active.timeoutId);
+          activeProbeOperationRef.current = null;
+        }
+        setProbeActivity(null);
+        setProbing(false);
+      }
     }
   };
 
@@ -959,6 +1132,40 @@ export function useFirmwareFlashConnection({
   ) => {
     if (!nextTransport) {
       return;
+    }
+    if (nextTransport === "web_serial") {
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const refreshed = await runProbe("web_serial", undefined, "selected");
+          if (!refreshed) {
+            throw new Error("Target identity refresh failed after flashing.");
+          }
+          const expectedVersion =
+            sourceMode === "releases"
+              ? normalizeFirmwareVersion(selectedRelease?.version)
+              : null;
+          const observedVersion = normalizeFirmwareVersion(
+            refreshed.firmwareVersion,
+          );
+          if (expectedVersion && observedVersion !== expectedVersion) {
+            throw new Error(
+              observedVersion
+                ? `Target still reports firmware ${refreshed.firmwareVersion}.`
+                : "Target has not reported the flashed firmware version yet.",
+            );
+          }
+          return;
+        } catch (err) {
+          lastError = err;
+          if (attempt < 2) {
+            await delayMs(450 * (attempt + 1));
+          }
+        }
+      }
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("Target identity refresh failed after flashing.");
     }
     let lastError: unknown;
     try {
@@ -975,53 +1182,7 @@ export function useFirmwareFlashConnection({
             summary: "Refreshing target identity…",
             detail: "Waiting for the board to reboot after flashing.",
           });
-          const refreshed =
-            nextTransport === "local_usb"
-              ? await probeLocalUsb(selectedLocalUsbPort)
-              : await (async () => {
-                  const selectedPort = selectedWebSerialPortRef.current;
-                  if (!selectedPort) {
-                    throw new Error(
-                      "Open Web USB first and choose the exact ESP32-S3 target.",
-                    );
-                  }
-                  const transport = await refreshGrantedWebSerialPort(
-                    selectedPort,
-                  ).catch(() => selectedPort);
-                  const candidate = await (async () => {
-                    const transportResult = new WebSerialJsonlTransport();
-                    let tookPort = false;
-                    try {
-                      await transportResult.connectToPort(transport);
-                      const value = await transportResult.request({
-                        id: Math.floor(Math.random() * 1_000_000_000),
-                        method: "info",
-                        timeoutMs: 2_000 + attempt * 600,
-                      });
-                      const reusablePort =
-                        await transportResult.takePortForExclusiveUse();
-                      tookPort = true;
-                      selectedWebSerialPortRef.current = reusablePort;
-                      setSelectedWebSerialSelection(
-                        describeWebSerialSelection(reusablePort),
-                      );
-                      const refreshedProbe = classifyProbe(
-                        value,
-                        "Web Serial target did not expose project firmware metadata.",
-                        probe.hardware,
-                      );
-                      setProbe(refreshedProbe);
-                      return refreshedProbe;
-                    } finally {
-                      if (!tookPort) {
-                        await transportResult
-                          .disconnect()
-                          .catch(() => undefined);
-                      }
-                    }
-                  })();
-                  return candidate;
-                })();
+          const refreshed = await probeLocalUsb(selectedLocalUsbPort);
           if (!refreshed) {
             throw new Error("Target refresh did not return probe data.");
           }

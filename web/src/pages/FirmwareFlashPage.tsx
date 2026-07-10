@@ -36,9 +36,13 @@ export function FirmwareFlashPage() {
   const requestedDeviceId = searchParams.get("deviceId") ?? undefined;
   const demoProbeReading =
     demoEnabled && searchParams.get("probe") === "reading";
+  const demoProbeTimeout =
+    demoEnabled && searchParams.get("probe") === "timeout";
   const demoAuthorizedWebUsb =
     demoEnabled &&
-    (searchParams.get("webUsb") === "authorized" || demoProbeReading);
+    (searchParams.get("webUsb") === "authorized" ||
+      demoProbeReading ||
+      demoProbeTimeout);
   const currentDevice = requestedDeviceId
     ? getDevice(requestedDeviceId)
     : undefined;
@@ -52,6 +56,7 @@ export function FirmwareFlashPage() {
     currentLocalUsbPath,
     demoEnabled,
     demoProbeReading,
+    demoProbeTimeout,
     demoAuthorizedWebUsb,
     webSerialSupported,
   });

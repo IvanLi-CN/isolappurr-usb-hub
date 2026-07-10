@@ -9,6 +9,88 @@ import {
 
 const DEFAULT_JSONL_TIMEOUT_MS = 5_000;
 
+export type WebSerialOperationOptions = {
+  signal?: AbortSignal;
+  deadlineAt?: number;
+};
+
+function probeTimeoutError(): Error {
+  return new Error("Web Serial probe timed out.");
+}
+
+function throwIfOperationExpired(options: WebSerialOperationOptions): void {
+  if (options.signal?.aborted) {
+    throw options.signal.reason instanceof Error
+      ? options.signal.reason
+      : probeTimeoutError();
+  }
+  if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
+    throw probeTimeoutError();
+  }
+}
+
+async function runWithinOperationDeadline<T>(
+  operation: () => Promise<T>,
+  options: WebSerialOperationOptions,
+  cancel?: () => void | Promise<void>,
+): Promise<T> {
+  throwIfOperationExpired(options);
+  const remainingMs =
+    options.deadlineAt === undefined
+      ? null
+      : Math.max(1, options.deadlineAt - Date.now());
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let abortHandler: (() => void) | null = null;
+  const guards: Promise<never>[] = [];
+
+  if (remainingMs !== null) {
+    guards.push(
+      new Promise((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => {
+          void cancel?.();
+          reject(probeTimeoutError());
+        }, remainingMs);
+      }),
+    );
+  }
+  if (options.signal) {
+    guards.push(
+      new Promise((_, reject) => {
+        abortHandler = () => {
+          void cancel?.();
+          reject(
+            options.signal?.reason instanceof Error
+              ? options.signal.reason
+              : probeTimeoutError(),
+          );
+        };
+        options.signal?.addEventListener("abort", abortHandler, { once: true });
+      }),
+    );
+  }
+
+  try {
+    return await Promise.race([operation(), ...guards]);
+  } finally {
+    if (timeoutId !== null) {
+      globalThis.clearTimeout(timeoutId);
+    }
+    if (abortHandler && options.signal) {
+      options.signal.removeEventListener("abort", abortHandler);
+    }
+  }
+}
+
+async function operationDelay(
+  ms: number,
+  options: WebSerialOperationOptions,
+): Promise<void> {
+  await runWithinOperationDeadline(
+    () => new Promise((resolve) => globalThis.setTimeout(resolve, ms)),
+    options,
+  );
+}
+
 type EsptoolLoaderWithInternals = {
   ESP_MEM_END: number;
   _appendArray(left: Uint8Array, right: Uint8Array): Uint8Array;
@@ -59,23 +141,6 @@ function normalizeCapacityToken(value: string | undefined): string | undefined {
   return trimmed;
 }
 
-function extractFeatureCapacity(
-  features: string[],
-  label: "flash" | "psram",
-): string | undefined {
-  const pattern =
-    label === "flash"
-      ? /embedded flash\s+(\d+\s*MB)/i
-      : /embedded psram\s+(\d+\s*MB)/i;
-  for (const feature of features) {
-    const match = feature.match(pattern);
-    if (match) {
-      return normalizeCapacityToken(match[1]);
-    }
-  }
-  return undefined;
-}
-
 function normalizeChipDescription(
   description: string,
 ): Pick<HardwareBoardInfo, "chipType" | "mcuModel" | "chipRevision"> {
@@ -119,6 +184,7 @@ export class WebSerialJsonlTransport {
       resolve: (value: unknown) => void;
       reject: (err: Error) => void;
       timeoutId: number;
+      abortCleanup?: () => void;
     }
   >();
 
@@ -133,10 +199,18 @@ export class WebSerialJsonlTransport {
     await this.connectToPort(await requestWebSerialPort());
   }
 
-  async connectToPort(port: SerialLikePort): Promise<void> {
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+  async connectToPort(
+    port: SerialLikePort,
+    options: WebSerialOperationOptions = {},
+  ): Promise<void> {
+    const maxAttempts = options.deadlineAt === undefined ? 6 : 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       try {
-        await port.open({ baudRate: 115200 });
+        await runWithinOperationDeadline(
+          () => port.open({ baudRate: 115200 }),
+          options,
+          () => port.close().catch(() => undefined),
+        );
         this.reader = port.readable?.getReader() ?? null;
         this.writer = port.writable?.getWriter() ?? null;
         this.decoder = new TextDecoder();
@@ -145,8 +219,13 @@ export class WebSerialJsonlTransport {
         void this.readSerialLoop();
         return;
       } catch (err) {
-        if (attempt < 5 && isRetryableWebSerialOpenError(err)) {
-          await delay(250 * (attempt + 1));
+        if (attempt < maxAttempts - 1 && isRetryableWebSerialOpenError(err)) {
+          await operationDelay(
+            options.deadlineAt === undefined
+              ? 250 * (attempt + 1)
+              : 80 * (attempt + 1),
+            options,
+          );
           continue;
         }
         throw err;
@@ -163,8 +242,13 @@ export class WebSerialJsonlTransport {
     return port;
   }
 
-  async request(request: JsonlRequest): Promise<unknown> {
-    const run = this.requestQueue.then(() => this.performRequest(request));
+  async request(
+    request: JsonlRequest,
+    options: WebSerialOperationOptions = {},
+  ): Promise<unknown> {
+    const run = this.requestQueue.then(() =>
+      this.performRequest(request, options),
+    );
     this.requestQueue = run.then(
       () => undefined,
       () => undefined,
@@ -172,14 +256,24 @@ export class WebSerialJsonlTransport {
     return run;
   }
 
-  private async performRequest(request: JsonlRequest): Promise<unknown> {
+  private async performRequest(
+    request: JsonlRequest,
+    options: WebSerialOperationOptions,
+  ): Promise<unknown> {
     if (!this.reader || !this.writer) {
       throw new Error("Web Serial transport is not connected");
     }
     const payload = `${JSON.stringify(request)}\n`;
-    const response = this.waitForResponse(request);
+    const response = this.waitForResponse(request, options);
     try {
-      await this.writer.write(new TextEncoder().encode(payload));
+      await runWithinOperationDeadline(
+        () =>
+          this.writer?.write(
+            new TextEncoder().encode(payload),
+          ) as Promise<void>,
+        options,
+        () => this.disconnect().catch(() => undefined),
+      );
       return await response;
     } catch (err) {
       this.clearPendingRequest(request.id);
@@ -187,19 +281,52 @@ export class WebSerialJsonlTransport {
     }
   }
 
-  private waitForResponse(request: JsonlRequest): Promise<unknown> {
+  private waitForResponse(
+    request: JsonlRequest,
+    options: WebSerialOperationOptions,
+  ): Promise<unknown> {
     const key = String(request.id);
     this.clearPendingRequest(request.id);
     return new Promise((resolve, reject) => {
-      const timeoutId = globalThis.setTimeout(() => {
-        this.pending.delete(key);
-        reject(
-          new Error(
-            "No IsolaPurr JSONL response received from this serial device.",
-          ),
-        );
-      }, request.timeoutMs ?? DEFAULT_JSONL_TIMEOUT_MS);
-      this.pending.set(key, { resolve, reject, timeoutId });
+      const requestedTimeout = request.timeoutMs ?? DEFAULT_JSONL_TIMEOUT_MS;
+      const remainingMs =
+        options.deadlineAt === undefined
+          ? requestedTimeout
+          : Math.max(1, options.deadlineAt - Date.now());
+      const timeoutId = globalThis.setTimeout(
+        () => {
+          pending.abortCleanup?.();
+          this.pending.delete(key);
+          reject(
+            options.deadlineAt !== undefined && Date.now() >= options.deadlineAt
+              ? probeTimeoutError()
+              : new Error(
+                  "No IsolaPurr JSONL response received from this serial device.",
+                ),
+          );
+        },
+        Math.min(requestedTimeout, remainingMs),
+      );
+      const pending = { resolve, reject, timeoutId } as {
+        resolve: (value: unknown) => void;
+        reject: (err: Error) => void;
+        timeoutId: number;
+        abortCleanup?: () => void;
+      };
+      if (options.signal) {
+        const onAbort = () => {
+          this.clearPendingRequest(request.id);
+          reject(
+            options.signal?.reason instanceof Error
+              ? options.signal.reason
+              : probeTimeoutError(),
+          );
+        };
+        options.signal.addEventListener("abort", onAbort, { once: true });
+        pending.abortCleanup = () =>
+          options.signal?.removeEventListener("abort", onAbort);
+      }
+      this.pending.set(key, pending);
     });
   }
 
@@ -210,6 +337,7 @@ export class WebSerialJsonlTransport {
       return;
     }
     globalThis.clearTimeout(pending.timeoutId);
+    pending.abortCleanup?.();
     this.pending.delete(key);
   }
 
@@ -261,6 +389,7 @@ export class WebSerialJsonlTransport {
         continue;
       }
       globalThis.clearTimeout(pending.timeoutId);
+      pending.abortCleanup?.();
       this.pending.delete(id);
       pending.resolve(parsed);
     }
@@ -269,6 +398,7 @@ export class WebSerialJsonlTransport {
   private rejectPending(err: Error): void {
     for (const pending of this.pending.values()) {
       globalThis.clearTimeout(pending.timeoutId);
+      pending.abortCleanup?.();
       pending.reject(err);
     }
     this.pending.clear();
@@ -320,9 +450,10 @@ export class WebSerialJsonlTransport {
 
 export async function probeWebSerialBoard(
   port: SerialLikePort,
+  options: WebSerialOperationOptions = {},
 ): Promise<HardwareBoardInfo> {
   const { ESPLoader, Transport } = await import("esptool-js");
-  const transport = new Transport(port, true);
+  const transport = new Transport(port, false);
   const terminal = {
     clean() {},
     writeLine() {},
@@ -334,22 +465,39 @@ export async function probeWebSerialBoard(
     terminal,
     debugLogging: false,
   });
-  patchEsp32S3UsbJtagStubStart(loader as EsptoolLoaderWithInternals);
+  const runStep = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = await runWithinOperationDeadline(operation, options, () =>
+      transport.disconnect().catch(() => undefined),
+    );
+    throwIfOperationExpired(options);
+    return result;
+  };
 
   try {
-    await loader.main("usb_reset");
-    const chipDescription = await loader.chip.getChipDescription(loader);
-    const features = await loader.chip.getChipFeatures(loader);
-    const macAddress = await loader.chip.readMac(loader);
-    const crystalFrequency = await loader.chip.getCrystalFreq(loader);
-    const flashSize = normalizeCapacityToken(
-      await loader.detectFlashSize().catch(() => undefined),
+    await runStep(() => loader.detectChip("usb_reset"));
+    const postConnect = loader.chip.postConnect;
+    if (postConnect) {
+      await runStep(() => postConnect.call(loader.chip, loader));
+    }
+    const chipDescription = await runStep(() =>
+      loader.chip.getChipDescription(loader),
     );
+    const macAddress = await runStep(() => loader.chip.readMac(loader));
+    let detectedFlashSize: string | undefined;
+    try {
+      detectedFlashSize = await runStep(() => loader.detectFlashSize());
+    } catch (err) {
+      throwIfOperationExpired(options);
+      if (options.signal?.aborted) {
+        throw err;
+      }
+    }
+    const flashSize = normalizeCapacityToken(detectedFlashSize);
     const normalized = normalizeChipDescription(chipDescription);
     return {
       source: "esptool-js",
       ...normalized,
-      flashSize: flashSize ?? extractFeatureCapacity(features, "flash"),
+      flashSize,
       ramSize: inferRamSize(normalized.chipType),
       // `getChipFeatures()` reports chip/package capabilities rather than
       // always reflecting soldered PSRAM on the attached board. Keep Web
@@ -357,11 +505,6 @@ export async function probeWebSerialBoard(
       // Local USB hardware probe cannot confirm.
       psramSize: undefined,
       macAddress,
-      crystalFrequency:
-        typeof crystalFrequency === "number"
-          ? `${crystalFrequency} MHz`
-          : undefined,
-      features,
     };
   } finally {
     try {
@@ -520,16 +663,16 @@ async function resetEsp32S3UsbJtagToApp(
 ): Promise<void> {
   await transport.setDTR(false);
   await transport.setRTS(false);
-  await delay(100);
+  await delay(50);
   await transport.setDTR(true);
   await transport.setRTS(false);
-  await delay(100);
+  await delay(50);
   await transport.setDTR(false);
   await transport.setRTS(true);
-  await delay(100);
+  await delay(50);
   await transport.setDTR(false);
   await transport.setRTS(false);
-  await delay(500);
+  await delay(250);
 }
 
 function delay(ms: number): Promise<void> {
