@@ -218,10 +218,8 @@ export function DeviceCard({
   unselectedFill,
   onSelect,
 }: DeviceCardProps) {
-  const fill =
-    selected || unselectedFill === "panel"
-      ? "bg-[var(--panel)]"
-      : "bg-[var(--panel-2)]";
+  const restingFill =
+    unselectedFill === "panel" ? "bg-[var(--panel)]" : "bg-[var(--panel-2)]";
   const badge = badgeStyles(status);
   const transportRowRef = useRef<HTMLDivElement | null>(null);
   const transportMeasureRef = useRef<HTMLDivElement | null>(null);
@@ -254,18 +252,45 @@ export function DeviceCard({
   return (
     <button
       data-testid={`device-card-${device.id}`}
+      aria-current={selected ? "page" : undefined}
       className={[
-        "w-full rounded-[14px] border border-[var(--border)]",
+        "device-card w-full rounded-[14px] border text-[var(--text)]",
         "px-5 py-4 text-left",
-        fill,
-        selected ? "iso-card" : "",
+        "transition-colors duration-150 ease-out",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]",
+        selected
+          ? "border-[var(--device-selected-border)] bg-[var(--device-selected-bg)] ring-2 ring-[var(--device-selected-ring)] active:bg-[var(--device-selected-bg)]"
+          : `border-[var(--border)] ${restingFill} hover:border-[var(--primary)] hover:bg-[var(--panel-3)] active:bg-[var(--panel-3)]`,
       ].join(" ")}
       type="button"
       onClick={() => onSelect(device.id)}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-[14px] font-medium">{device.name}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="min-w-0 truncate text-[14px] font-medium">
+              {device.name}
+            </div>
+            {selected ? (
+              <span
+                aria-hidden="true"
+                className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-text)]"
+                data-testid={`device-selected-marker-${device.id}`}
+                title="Current device"
+              >
+                <svg aria-hidden="true" className="h-3 w-3" viewBox="0 0 12 12">
+                  <path
+                    d="m2.25 6.15 2.2 2.2 5.3-5.3"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="1.75"
+                  />
+                </svg>
+              </span>
+            ) : null}
+          </div>
           <div className="relative mt-3 min-w-0">
             <div
               ref={transportMeasureRef}

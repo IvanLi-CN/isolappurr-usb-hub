@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { expect, within } from "@storybook/test";
 import { MemoryRouter } from "react-router";
 
 import { AddDeviceUiProvider } from "../../app/add-device-ui";
@@ -41,7 +42,7 @@ const meta: Meta<typeof AppLayout> = {
                       })}
                     >
                       <div
-                        className="min-h-screen"
+                        className="min-h-screen bg-[var(--bg)] text-[var(--text)]"
                         data-theme={
                           context.parameters.isolapurrTheme ?? "isolapurr"
                         }
@@ -87,6 +88,16 @@ export const Desktop: Story = {
   ...Default,
   parameters: {
     viewport: { defaultViewport: "isolapurrDesktop" },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("device-card-demo-a")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(canvas.getByTestId("device-card-demo-b")).not.toHaveAttribute(
+      "aria-current",
+    );
   },
 };
 
