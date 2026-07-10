@@ -6,6 +6,9 @@
 - `isolapurr-devd serve` exposes a local IPC daemon by default: Unix domain socket on macOS/Linux and Windows named pipe on Windows. It tracks connected IPC clients and exits after the configured idle timeout when no clients remain.
 - `isolapurr-devd bridge-http` exposes the device-centric localhost HTTP bridge, token bootstrap, Local USB scanning, leases, session traces, storage import/list/save, Wi-Fi/ports/status/route/diagnostics/power-config proxy methods, firmware catalog validation, and guarded flash/reset endpoints.
 - `isolapurr` exposes released-style CLI entrypoints for hardware memory, discovery/devices/status, Wi-Fi, ports, flash, reset, monitor, and diagnostics over IPC, with sibling daemon auto-start when available.
+- The Web app now exposes a standalone `/flash` workbench with a
+  left-column/right-rail flashing layout, a bundled release picker, and entry
+  points from both the Dashboard add-device area and device Settings.
 - `isolapurr settings reset wifi|other`, IPC `device.settings.reset`, and `POST /api/v1/devices/{id}/settings/reset` are implemented with the same transport guardrails as the device firmware contract. Local USB `scope=other` now tolerates a brief serial drop during runtime default re-apply by re-reading route and power state after reconnect before returning success.
 - `isolapurr discover` now performs actual mixed discovery: LAN candidates come
   from mDNS/DNS-SD `_http._tcp.local` browsing plus verified `GET /api/v1/info`
@@ -61,6 +64,45 @@
   CLI and bridge expose, instead of relying only on mock Storybook coverage.
 - Local USB operations verify project firmware metadata from `info` before ordinary control paths. Non-project firmware, download-mode/no-JSONL targets, and incompatible firmware versions are rejected with corrective guidance; first-time full flash requires explicit confirmation.
 - Web Local USB discovery/request/flash code now targets the new `/api/v1/devices/*` and lease APIs while leaving Web Serial intact. Device profiles can retain HTTP and Local USB transports for one hardware identity, and the runtime prefers successful Local USB operations for unsupported or unreachable Wi-Fi/HTTP paths.
+- Bridge HTTP now also accepts `POST /api/v1/devices/{id}/flash-bundled`,
+  where the Web UI uploads a selected same-origin bundled asset plus its
+  catalog metadata. Host-side validation reuses the firmware catalog guardrails
+  for target, address, hash, and identity checks before writing.
+- Browser runtime flash selection now defaults to a same-origin bundled release
+  manifest under `web/public/firmware/`. Release builds replace the checked-in
+  empty manifest by downloading the most recent 50 non-draft GitHub Releases,
+  bundling app images for all 50 versions, and bundling recovery images only
+  for the latest stable plus latest prerelease, preferring `full_image`
+  artifacts. When a legacy release only ships an `elf` recovery artifact, the
+  bundler now synthesizes a merged same-origin `full_image` plus a matching
+  local catalog entry so Web Serial and Local USB recovery can share one
+  bundled recovery contract without falling back to the plain app image.
+- Recovery writes from the `/flash` workbench now separate flash mode from
+  target trust: confirmed IsolaPurr targets may choose either a normal update
+  or a bundled recovery image, while non-project or identity-unknown recovery
+  targets still require the stronger confirmation dialog before write.
+- Web Serial flashing now retries the browser's transient `SerialPort.open`
+  failure window after probe/reset instead of failing the whole recovery or
+  normal-update action on the first reopening attempt.
+- Host-side recovery flashing now releases the serial lock before post-flash
+  identity capture while preserving the exclusive flash guard, preventing the
+  Local USB recovery path from self-blocking during the reboot/probe handoff.
+- Local USB recovery writes no longer force the non-project confirmation path
+  for already confirmed IsolaPurr hardware. When the owner selects recovery on
+  a confirmed target, devd keeps the identity guard and allows the write
+  without pretending the board is unknown or foreign.
+- The `/flash` workbench restores previously authorized Web USB devices as a
+  deliberate reconnectable state, supports explicit browser authorization
+  release where the platform exposes `SerialPort.forget()`, and keeps the
+  browser picker separate from re-reading a known device.
+- Probe activity now uses a compact, repeatable loading state: it exposes a
+  live serial-link indicator and a seconds-only probe window only while a
+  read is running. The same state is reproducible without hardware at
+  `/flash?demo=true&webUsb=authorized&probe=reading` and is covered by
+  Playwright plus Storybook.
+- The right-side flash rail keeps its primary actions above the log and renders
+  structured progress/log entries for both Local USB and Web Serial, while
+  same-origin firmware remains excluded from install-time PWA precache.
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.
 - Repo-managed workflow truth is now split cleanly by responsibility: `isolapurr-user-operations` tracks the released CLI surface, `isolapurr-developer-operations` tracks source/developer flows, `isolapurr-maintainer-workflow` is the repo-private router, `docs/maintainer-workflow.md` is the detailed maintainer doc, `README.md` handles human navigation, and `AGENTS.md` stays as the concise entry contract.
 - Repo-managed Web verification guidance now also points to the dedicated
@@ -74,10 +116,52 @@
 - `host-tools.yml` builds/tests/packages host-tools archives for Linux, macOS, and Windows.
 - Official host-tools installers added for Unix and Windows. Tag builds publish the host-tools archives, `SHA256SUMS`, and installer scripts to the matching GitHub Release.
 - `firmware.yml` emits a firmware catalog artifact after firmware build.
+- `firmware.yml` and `release.yml` now also emit `isolapurr-usb-hub.full.bin`
+  plus recovery artifact metadata, with `app.bin` generated from the plain
+  app image and `full.bin` generated from a merged, skip-padding recovery
+  image. Release builds also run the Web firmware bundler before publishing
+  the Web distribution tarball.
 - Removed the repo-managed legacy command examples that still referenced old released forms such as `status --hardware`, `status --device`, and `hardware save --id/--transport`, and added contract tests plus CLI parser tests so that drift fails CI instead of silently reappearing.
 
 ## Remaining hardening
 
 - Complete removal of the legacy Tauri-owned hardware-control server once the desktop packaging flow can bundle or locate `isolapurr-devd` at runtime.
-- Expand firmware flashing from browser-selected files to release catalog selection in the Web UI.
 - Expand mock and hardware-in-loop coverage as physical devices are available.
+
+## Audit Task Checklist
+
+- `F1` Web Serial `probe -> flash` transport-release defect fixed: completed
+- `F2` Web Serial regression tests/build after the transport-release fix: completed
+- `F3` devd / Local USB page fixed to read project firmware identity from the registered device-status path instead of the legacy `serial/request info` fallback: completed
+- `F4` devd / Local USB regression tests/build after the identity-path fix: completed
+
+- `D1` devd / Local USB connection shows page fields aligned with `/serial/board-info` and `/devices/{id}/status`: completed
+- `D2` devd / Local USB recovery flash succeeds on real hardware: completed
+- `D3` devd / Local USB recovery same-page re-probe refreshes to the post-flash real values: completed
+- `D4` devd / Local USB normal update succeeds on real hardware: completed
+- `D5` devd / Local USB normal update same-page re-probe refreshes to the post-flash real values: completed
+- `D6` devd / Local USB audit materials written to disk (`JSON`, screenshots, bridge evidence, steps): completed
+
+- `W1` Web Serial connection shows page fields aligned with hardware / firmware truth: completed
+- `W2` Web Serial recovery flash succeeds on real hardware: completed
+- `W3` Web Serial recovery same-page re-probe refreshes to the post-flash real values: completed
+- `W4` Web Serial normal update succeeds on real hardware: completed
+- `W5` Web Serial normal update same-page re-probe refreshes to the post-flash real values: completed
+- `W6` Web Serial audit materials written to disk (`JSON`, screenshots, steps): completed
+
+- `A1` Repair notes, test evidence, and visual evidence synced into the audit/spec surfaces: completed
+- `A2` Final acceptance audit over every explicit requirement: completed
+- `A3` Local signed-off commit to lock the result: ready for the current
+  delivery commit
+
+## Final Validation
+
+- `just web-check`: passed
+- `cd web && bun test ./src`: 90 passed
+- `cd web && bun run test:e2e`: 6 passed, 1 hardware-in-loop test skipped
+- `just host-tools-test`: 77 passed
+- `python3 -m unittest discover -s .github/scripts -p 'test_*.py'`: 24 passed
+- `cd web && bun run build && bun run build-storybook && bun run test:storybook`:
+  passed, including 98 Storybook browser tests
+- Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
+  is present in the PWA precache list.

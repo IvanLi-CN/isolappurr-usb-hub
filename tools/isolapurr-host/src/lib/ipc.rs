@@ -648,6 +648,7 @@ async fn ipc_device_reset(
     require_lease_value(state, device_id, lease_id).await?;
     require_compatible_project_firmware(state, device_id).await?;
     let port_path = device_usb_port_path(state, device_id).await?;
+    let serial_guard = acquire_serial_port_guard(state, &port_path, None).await?;
     {
         let mut inner = state.inner.lock().await;
         if inner.exclusive_ports.contains_key(&port_path) {
@@ -660,6 +661,7 @@ async fn ipc_device_reset(
     let guard = ExclusiveGuard {
         state: state.clone(),
         port_path,
+        serial_guard: Some(serial_guard),
     };
     let result =
         usb_jsonl_request_with_exclusive(state, device_id, "reboot", None, Some("reset")).await;

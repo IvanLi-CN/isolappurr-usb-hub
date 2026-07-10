@@ -83,6 +83,11 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: "prompt",
+        // Static install icons are versioned above; do not let the PWA assets
+        // generator replace their manifest or HTML entries during the build.
+        pwaAssets: {
+          disabled: true,
+        },
         includeAssets: [
           "favicon.ico",
           "icons/isolapurr-mark.svg",
@@ -140,7 +145,10 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
-          globIgnores: ["**/brand/isolapurr-product-poster.png"],
+          globIgnores: [
+            "**/brand/isolapurr-product-poster.png",
+            "**/firmware/**/*",
+          ],
           navigateFallback: `${base}index.html`,
         },
       }),

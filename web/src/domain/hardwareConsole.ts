@@ -1,4 +1,15 @@
 import { agentFetch, type DesktopAgent } from "./desktopAgent";
+import type {
+  BundledFirmwareAsset,
+  BundledFirmwareRelease,
+} from "./firmwareBundle";
+
+export {
+  flashWithWebSerial,
+  parseWebSerialJsonLine,
+  probeWebSerialBoard,
+  WebSerialJsonlTransport,
+} from "./webSerialFirmware";
 
 export type JsonlRequest = {
   id: number;
@@ -15,12 +26,12 @@ export type SerialPortInfo = {
   serialNumber?: string | null;
   manufacturer?: string | null;
   product?: string | null;
+  probeInfo?: unknown;
 };
 
 const ESPRESSIF_USB_VENDOR_ID = 0x303a;
 const ESP32_USB_SERIAL_JTAG_PRODUCT_ID = 0x1001;
 export const DEFAULT_LOCAL_USB_FLASH_ADDRESS = 0x10000;
-const DEFAULT_JSONL_TIMEOUT_MS = 5_000;
 const LOCAL_USB_BUSY_RETRIES = 5;
 let jsonlRequestSeq = 1;
 const localUsbRequestQueues: Record<string, Promise<void>> = {};
@@ -65,36 +76,31 @@ export type FirmwareFlashProgress = {
   total?: number;
 };
 
+export type HardwareBoardInfo = {
+  source: "esptool-js" | "espflash";
+  chipType?: string;
+  mcuModel?: string;
+  chipRevision?: string;
+  flashSize?: string;
+  ramSize?: string;
+  psramSize?: string;
+  macAddress?: string;
+  crystalFrequency?: string;
+  features?: string[];
+  rawOutput?: string;
+};
+
 export type SerialLikePort = SerialPort & {
   readable: ReadableStream<Uint8Array> | null;
   writable: WritableStream<Uint8Array> | null;
   getInfo?: () => { usbVendorId?: number; usbProductId?: number };
 };
 
-type EsptoolLoaderWithInternals = {
-  ESP_MEM_END: number;
-  _appendArray(left: Uint8Array, right: Uint8Array): Uint8Array;
-  _intToByteArray(value: number): Uint8Array;
-  checkCommand(
-    opDescription: string,
-    op: number,
-    data: Uint8Array,
-    checksum?: number,
-    responseDataLength?: number,
-    timeout?: number,
-  ): Promise<unknown>;
-  memFinish(entrypoint: number): Promise<void>;
-};
-
-type EsptoolTransportWithSignals = {
-  setDTR(state: boolean): Promise<void>;
-  setRTS(state: boolean): Promise<void>;
-};
-
 declare global {
   type SerialPort = {
     readable: ReadableStream<Uint8Array> | null;
     writable: WritableStream<Uint8Array> | null;
+    forget?: () => Promise<void>;
     open(options: { baudRate: number }): Promise<void>;
     close(): Promise<void>;
   };
@@ -111,6 +117,163 @@ export function isWebSerialSupported(): boolean {
   return typeof navigator !== "undefined" && "serial" in navigator;
 }
 
+function sameWebSerialUsbInfo(
+  left: { usbVendorId?: number; usbProductId?: number } | undefined,
+  right: { usbVendorId?: number; usbProductId?: number } | undefined,
+): boolean {
+  return (
+    left?.usbVendorId !== undefined &&
+    left?.usbProductId !== undefined &&
+    left.usbVendorId === right?.usbVendorId &&
+    left.usbProductId === right?.usbProductId
+  );
+}
+
+function resolveGrantedWebSerialPort(
+  granted: SerialLikePort[],
+  preferred?: SerialLikePort | null,
+): SerialLikePort | null {
+  if (granted.length === 0) {
+    return null;
+  }
+  if (preferred) {
+    const sameObject = granted.find((port) => port === preferred);
+    if (sameObject) {
+      return sameObject;
+    }
+  }
+  if (granted.length === 1) {
+    return granted[0] ?? null;
+  }
+  const preferredInfo = preferred?.getInfo?.();
+  if (preferredInfo) {
+    const matches = granted.filter((port) =>
+      sameWebSerialUsbInfo(port.getInfo?.(), preferredInfo),
+    );
+    if (matches.length === 1) {
+      return matches[0] ?? null;
+    }
+  }
+  return null;
+}
+
+export async function refreshGrantedWebSerialPort(
+  preferred?: SerialLikePort | null,
+): Promise<SerialLikePort> {
+  if (!isWebSerialSupported()) {
+    throw new Error("Web Serial is not supported by this browser");
+  }
+  if (!navigator.serial.getPorts) {
+    if (preferred) {
+      return preferred;
+    }
+    throw new Error(
+      "No browser-authorized Web USB device is available. Re-open Web USB and choose the exact ESP32-S3 target.",
+    );
+  }
+
+  let sawGrantedPorts = false;
+  let sawAmbiguousPorts = false;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const granted = (await navigator.serial.getPorts()) as SerialLikePort[];
+    if (granted.length > 0) {
+      sawGrantedPorts = true;
+    }
+    let resolved: SerialLikePort | null = null;
+    if (preferred) {
+      const refreshedMatches = granted.filter((port) => {
+        if (port === preferred) {
+          return false;
+        }
+        return sameWebSerialUsbInfo(
+          typeof preferred.getInfo === "function"
+            ? preferred.getInfo()
+            : undefined,
+          typeof port.getInfo === "function" ? port.getInfo() : undefined,
+        );
+      });
+      if (refreshedMatches.length === 1) {
+        return refreshedMatches[0] ?? null;
+      }
+      if (refreshedMatches.length > 1) {
+        sawAmbiguousPorts = true;
+      }
+      if (!granted.some((port) => port === preferred)) {
+        resolved = resolveGrantedWebSerialPort(granted);
+      } else if (granted.length > 1) {
+        sawAmbiguousPorts = true;
+      }
+    } else {
+      resolved = resolveGrantedWebSerialPort(granted);
+    }
+    if (resolved) {
+      return resolved;
+    }
+    await delay(120 * (attempt + 1));
+  }
+
+  if (sawAmbiguousPorts) {
+    throw new Error(
+      "Browser granted Web USB ports are ambiguous or unavailable. Re-open Web USB and choose the exact ESP32-S3 target again.",
+    );
+  }
+  if (sawGrantedPorts && preferred) {
+    return preferred;
+  }
+  throw new Error(
+    "Browser granted Web USB ports are ambiguous or unavailable. Re-open Web USB and choose the exact ESP32-S3 target again.",
+  );
+}
+
+export async function getReusableGrantedWebSerialPort(
+  preferred?: SerialLikePort | null,
+): Promise<SerialLikePort | null> {
+  if (!isWebSerialSupported() || !navigator.serial.getPorts) {
+    return null;
+  }
+  const granted = (await navigator.serial.getPorts()) as SerialLikePort[];
+  return resolveGrantedWebSerialPort(granted, preferred);
+}
+
+export async function forgetGrantedWebSerialPort(
+  preferred?: SerialLikePort | null,
+): Promise<boolean> {
+  if (!isWebSerialSupported()) {
+    return false;
+  }
+
+  let target = preferred ?? null;
+  if (navigator.serial.getPorts) {
+    if (preferred) {
+      target = await refreshGrantedWebSerialPort(preferred).catch(
+        () => preferred,
+      );
+    } else {
+      target = await getReusableGrantedWebSerialPort();
+    }
+  }
+  if (!target) {
+    return false;
+  }
+
+  try {
+    await target.close();
+  } catch (err) {
+    if (
+      !(err instanceof DOMException) ||
+      !err.message.includes("already closed")
+    ) {
+      // Ignore close failures here and still attempt forget when supported.
+    }
+  }
+
+  if (typeof target.forget !== "function") {
+    return false;
+  }
+  await target.forget();
+  return true;
+}
+
 export function nextJsonlRequestId(): number {
   const id = jsonlRequestSeq;
   jsonlRequestSeq = jsonlRequestSeq >= 999_999 ? 1 : jsonlRequestSeq + 1;
@@ -120,50 +283,54 @@ export function nextJsonlRequestId(): number {
 export async function listLocalUsbSerialPorts(
   agent: DesktopAgent,
 ): Promise<SerialPortInfo[]> {
-  const res = await agentFetch(agent, "/api/v1/devices/scan", {
-    method: "POST",
-  });
-  if (!res.ok) {
-    if (shouldFallbackToLegacySerialApi(res.status)) {
-      return listLegacyLocalUsbSerialPorts(agent);
-    }
-    throw new Error(`Local USB port list failed (${res.status})`);
-  }
-  const json = (await res.json()) as {
-    devices?: Array<{
-      usb?: {
-        portPath?: string;
-        label?: string;
-        vendorId?: number | null;
-        productId?: number | null;
-        serialNumber?: string | null;
-      };
-    }>;
-  };
-  return Array.isArray(json.devices)
-    ? json.devices
-        .map((device) => device.usb)
-        .filter((usb): usb is NonNullable<typeof usb> => Boolean(usb))
-        .map((usb) => ({
-          path: usb.portPath ?? "",
-          label: usb.label ?? usb.portPath ?? "Local USB",
-          vendorId: usb.vendorId,
-          productId: usb.productId,
-          serialNumber: usb.serialNumber,
-        }))
-        .filter((port) => port.path.length > 0)
-    : [];
-}
-
-async function listLegacyLocalUsbSerialPorts(
-  agent: DesktopAgent,
-): Promise<SerialPortInfo[]> {
   const res = await agentFetch(agent, "/api/v1/serial/ports");
   if (!res.ok) {
     throw new Error(`Local USB port list failed (${res.status})`);
   }
-  const json = (await res.json()) as { ports?: SerialPortInfo[] };
-  return Array.isArray(json.ports) ? json.ports : [];
+  const json = (await res.json()) as {
+    ports?: Array<
+      SerialPortInfo & {
+        portPath?: string | null;
+      }
+    >;
+  };
+  if (!Array.isArray(json.ports)) {
+    return [];
+  }
+  return json.ports
+    .map((port) => {
+      const path = port.path || port.portPath || "";
+      if (!path) {
+        return null;
+      }
+      return {
+        ...port,
+        path,
+      };
+    })
+    .filter((port): port is SerialPortInfo => port !== null);
+}
+
+export async function readLocalUsbBoardInfo(
+  agent: DesktopAgent,
+  portPath: string,
+): Promise<HardwareBoardInfo> {
+  const res = await agentFetch(agent, "/api/v1/serial/board-info", {
+    method: "POST",
+    body: JSON.stringify({ portPath }),
+  });
+  const json = (await res.json().catch(() => null)) as {
+    ok?: boolean;
+    result?: HardwareBoardInfo;
+    error?: { message?: string };
+  } | null;
+  if (!res.ok || !json?.ok || !json.result) {
+    throw new Error(
+      json?.error?.message ??
+        `Local USB hardware probe failed (${res.status}).`,
+    );
+  }
+  return json.result;
 }
 
 export function filterEsp32SerialPorts(
@@ -448,31 +615,26 @@ async function ensureLocalUsbDeviceRegistered(
   deviceId: string,
   portPath: string,
 ): Promise<void> {
-  const res = await agentFetch(agent, "/api/v1/devices/scan", {
+  const res = await agentFetch(agent, "/api/v1/serial/register", {
     method: "POST",
+    body: JSON.stringify({ portPath }),
   });
   const json = (await res.json().catch(() => null)) as {
-    devices?: Array<{ id?: string; usb?: { portPath?: string } }>;
+    ok?: boolean;
+    device?: { id?: string; usb?: { portPath?: string } };
     error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!res.ok) {
-    if (shouldFallbackToLegacySerialApi(res.status)) {
-      const ports = await listLegacyLocalUsbSerialPorts(agent);
-      if (ports.some((port) => port.path === portPath)) {
-        return;
-      }
-      throw new Error(`Local USB device is not available: ${portPath}`);
-    }
     throw new LocalUsbAgentHttpError(
-      json?.error?.message ?? "Local USB scan failed",
+      json?.error?.message ?? "Local USB register failed",
       res.status,
       json?.error?.code,
       json?.error?.retryable,
     );
   }
-  const registered = json?.devices?.some(
-    (device) => device.id === deviceId || device.usb?.portPath === portPath,
-  );
+  const registered =
+    json?.ok === true &&
+    (json.device?.id === deviceId || json.device?.usb?.portPath === portPath);
   if (!registered) {
     throw new Error(`Local USB device is not available: ${portPath}`);
   }
@@ -701,6 +863,84 @@ export async function flashWithLocalUsb(
   }
 }
 
+export async function flashBundledWithLocalUsb(
+  agent: DesktopAgent,
+  portPath: string,
+  release: BundledFirmwareRelease,
+  asset: BundledFirmwareAsset,
+  firstTime: boolean,
+  expectedIdentity?: DeviceIdentityExpectation,
+  confirmNonProjectFirmware = false,
+): Promise<string> {
+  const deviceId = stableLocalUsbDeviceId(portPath);
+  const assetResponse = await fetch(asset.assetPath, { cache: "no-store" });
+  if (!assetResponse.ok) {
+    throw new Error(`Firmware asset request failed (${assetResponse.status}).`);
+  }
+  const firmware = await fileToBase64(
+    new File([await assetResponse.arrayBuffer()], asset.fileName, {
+      type: "application/octet-stream",
+    }),
+  );
+  const catalogResponse = await fetch(release.catalogPath, {
+    cache: "no-store",
+  });
+  if (!catalogResponse.ok) {
+    throw new Error(
+      `Firmware catalog request failed (${catalogResponse.status}).`,
+    );
+  }
+  const catalog = (await catalogResponse.json()) as Record<string, unknown>;
+  let lease: { lease_id: string } | null = null;
+  try {
+    await ensureLocalUsbDeviceRegistered(agent, deviceId, portPath);
+    lease = await createLocalUsbLease(agent, deviceId);
+    const res = await agentFetch(
+      agent,
+      `/api/v1/devices/${deviceId}/flash-bundled`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          catalog,
+          artifactId: asset.artifactId,
+          fileKind: asset.fileKind,
+          fileName: asset.fileName,
+          fileBase64: firmware,
+          firstTime,
+          confirmNonProjectFirmware,
+          expectedIdentity: expectedIdentity
+            ? {
+                deviceId: expectedIdentity.deviceId ?? undefined,
+                mac: expectedIdentity.mac ?? undefined,
+              }
+            : undefined,
+          leaseId: lease.lease_id,
+        }),
+      },
+    );
+    const json = (await res.json()) as {
+      ok?: boolean;
+      log?: string;
+      error?: { code?: string; message?: string; retryable?: boolean };
+    };
+    if (!res.ok || !json.ok) {
+      throw new LocalUsbAgentHttpError(
+        json.error?.message ||
+          json.log ||
+          `Local USB flash failed (${res.status})`,
+        res.status,
+        json.error?.code,
+        json.error?.retryable,
+      );
+    }
+    return json.log ?? "";
+  } finally {
+    if (lease) {
+      await releaseLocalUsbLease(agent, lease.lease_id);
+    }
+  }
+}
+
 async function legacyFlashWithLocalUsb(
   agent: DesktopAgent,
   portPath: string,
@@ -740,231 +980,17 @@ async function legacyFlashWithLocalUsb(
   return json.log ?? "";
 }
 
-export class WebSerialJsonlTransport {
-  private port: SerialLikePort | null = null;
-  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
-  private decoder = new TextDecoder();
-  private requestQueue: Promise<void> = Promise.resolve();
-  private buffered = "";
-  private pending = new Map<
-    string,
-    {
-      resolve: (value: unknown) => void;
-      reject: (err: Error) => void;
-      timeoutId: number;
-    }
-  >();
-
-  async connect(): Promise<void> {
-    if (!isWebSerialSupported()) {
-      throw new Error("Web Serial is not supported by this browser");
-    }
-    const grantedPort = await findGrantedWebSerialPort();
-    if (grantedPort) {
-      try {
-        await this.connectToPort(grantedPort);
-        return;
-      } catch {
-        await this.disconnect().catch(() => undefined);
-      }
-    }
-    await this.connectToPort(await requestWebSerialPort());
+export async function requestWebSerialPort(
+  preferred?: SerialLikePort | null,
+): Promise<SerialLikePort> {
+  const reusable = await getReusableGrantedWebSerialPort(preferred);
+  if (reusable) {
+    return reusable;
   }
-
-  async connectWithPicker(): Promise<void> {
-    if (!isWebSerialSupported()) {
-      throw new Error("Web Serial is not supported by this browser");
-    }
-    await this.connectToPort(await requestWebSerialPort());
-  }
-
-  async connectGranted(): Promise<void> {
-    if (!isWebSerialSupported()) {
-      throw new Error("Web Serial is not supported by this browser");
-    }
-    const port = await findGrantedWebSerialPort();
-    if (!port) {
-      throw new Error("No authorized ESP32-S3 Web Serial port is available.");
-    }
-    await this.connectToPort(port);
-  }
-
-  async connectToPort(port: SerialLikePort): Promise<void> {
-    await port.open({ baudRate: 115200 });
-    this.reader = port.readable?.getReader() ?? null;
-    this.writer = port.writable?.getWriter() ?? null;
-    this.decoder = new TextDecoder();
-    this.buffered = "";
-    this.port = port;
-    void this.readSerialLoop();
-  }
-
-  async takePortForExclusiveUse(): Promise<SerialLikePort> {
-    const port = this.port;
-    if (!port) {
-      throw new Error("Web Serial transport is not connected");
-    }
-    await this.disconnect();
-    return port;
-  }
-
-  async request(request: JsonlRequest): Promise<unknown> {
-    const run = this.requestQueue.then(() => this.performRequest(request));
-    this.requestQueue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
-  }
-
-  private async performRequest(request: JsonlRequest): Promise<unknown> {
-    if (!this.reader || !this.writer) {
-      throw new Error("Web Serial transport is not connected");
-    }
-    const payload = `${JSON.stringify(request)}\n`;
-    const response = this.waitForResponse(request);
-    try {
-      await this.writer.write(new TextEncoder().encode(payload));
-      return await response;
-    } catch (err) {
-      this.clearPendingRequest(request.id);
-      throw err;
-    }
-  }
-
-  private waitForResponse(request: JsonlRequest): Promise<unknown> {
-    const key = String(request.id);
-    this.clearPendingRequest(request.id);
-    return new Promise((resolve, reject) => {
-      const timeoutId = window.setTimeout(() => {
-        this.pending.delete(key);
-        reject(
-          new Error(
-            "No IsolaPurr JSONL response received from this serial device.",
-          ),
-        );
-      }, request.timeoutMs ?? DEFAULT_JSONL_TIMEOUT_MS);
-      this.pending.set(key, { resolve, reject, timeoutId });
-    });
-  }
-
-  private clearPendingRequest(requestId: number): void {
-    const key = String(requestId);
-    const pending = this.pending.get(key);
-    if (!pending) {
-      return;
-    }
-    window.clearTimeout(pending.timeoutId);
-    this.pending.delete(key);
-  }
-
-  private async readSerialLoop(): Promise<void> {
-    const reader = this.reader;
-    if (!reader) {
-      return;
-    }
-    try {
-      for (;;) {
-        const chunk = await reader.read();
-        if (chunk.done) {
-          throw new Error("Serial stream closed before a JSONL response");
-        }
-        this.buffered += this.decoder.decode(chunk.value, { stream: true });
-        this.drainBufferedLines();
-      }
-    } catch (err) {
-      if (this.reader === reader) {
-        this.rejectPending(
-          err instanceof Error ? err : new Error("Web Serial read failed"),
-        );
-      }
-    }
-  }
-
-  private drainBufferedLines(): void {
-    for (;;) {
-      const newline = this.buffered.indexOf("\n");
-      if (newline < 0) {
-        return;
-      }
-      const line = this.buffered.slice(0, newline).trim();
-      this.buffered = this.buffered.slice(newline + 1);
-      if (!line) {
-        continue;
-      }
-      try {
-        const parsed = JSON.parse(line) as unknown;
-        const id = jsonlResponseId(parsed);
-        if (id === null) {
-          continue;
-        }
-        const pending = this.pending.get(id);
-        if (!pending) {
-          continue;
-        }
-        window.clearTimeout(pending.timeoutId);
-        this.pending.delete(id);
-        pending.resolve(parsed);
-      } catch {
-        // Ignore boot logs or non-IsolaPurr serial output until a JSONL frame appears.
-      }
-    }
-  }
-
-  private rejectPending(err: Error): void {
-    for (const pending of this.pending.values()) {
-      window.clearTimeout(pending.timeoutId);
-      pending.reject(err);
-    }
-    this.pending.clear();
-  }
-
-  async disconnect(): Promise<void> {
-    const reader = this.reader;
-    const writer = this.writer;
-    const port = this.port;
-
-    this.reader = null;
-    this.writer = null;
-    this.port = null;
-    this.decoder = new TextDecoder();
-    this.buffered = "";
-    this.requestQueue = Promise.resolve();
-    this.rejectPending(new Error("Web Serial transport disconnected"));
-
-    try {
-      await reader?.cancel();
-    } catch {
-      // Ignore cancellation errors while tearing down the serial stream.
-    }
-
-    try {
-      reader?.releaseLock();
-    } catch {
-      // The reader may already be released after cancellation.
-    }
-
-    try {
-      writer?.releaseLock();
-    } catch {
-      // The writer may already be released if the port was closed externally.
-    }
-
-    try {
-      await port?.close();
-    } catch (err) {
-      if (
-        !(err instanceof DOMException) ||
-        !err.message.includes("already closed")
-      ) {
-        throw err;
-      }
-    }
-  }
+  return requestNewWebSerialPort();
 }
 
-async function requestWebSerialPort(): Promise<SerialLikePort> {
+export async function requestNewWebSerialPort(): Promise<SerialLikePort> {
   return (await navigator.serial.requestPort({
     filters: [
       {
@@ -976,126 +1002,8 @@ async function requestWebSerialPort(): Promise<SerialLikePort> {
   })) as SerialLikePort;
 }
 
-async function findGrantedWebSerialPort(): Promise<SerialLikePort | null> {
-  const ports = ((await navigator.serial.getPorts?.()) ??
-    []) as SerialLikePort[];
-  return ports.find(isEspressifWebSerialPort) ?? null;
-}
-
-function isEspressifWebSerialPort(port: SerialLikePort): boolean {
-  const info = port.getInfo?.();
-  if (!info) {
-    return false;
-  }
-  return (
-    info.usbVendorId === ESPRESSIF_USB_VENDOR_ID &&
-    (!info.usbProductId ||
-      info.usbProductId === ESP32_USB_SERIAL_JTAG_PRODUCT_ID)
-  );
-}
-
-function jsonlResponseId(value: unknown): string | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const id = (value as { id?: unknown }).id;
-  return id === undefined || id === null ? null : String(id);
-}
-
-export async function flashWithWebSerial(
-  port: SerialLikePort,
-  file: File,
-  address: number,
-  onProgress: (progress: FirmwareFlashProgress) => void,
-): Promise<void> {
-  if (!isWebSerialSupported()) {
-    throw new Error("Web Serial is not supported by this browser");
-  }
-
-  const { ESPLoader, Transport } = await import("esptool-js");
-  const transport = new Transport(port, true);
-  const terminal = {
-    clean() {},
-    writeLine(data: string) {
-      onProgress({ stage: "connecting", message: data });
-    },
-    write(data: string) {
-      onProgress({ stage: "connecting", message: data });
-    },
-  };
-  const loader = new ESPLoader({
-    transport,
-    baudrate: 115200,
-    terminal,
-    debugLogging: false,
-  });
-  patchEsp32S3UsbJtagStubStart(loader as EsptoolLoaderWithInternals);
-
-  onProgress({ stage: "connecting", message: "Connecting to bootloader" });
-  try {
-    await loader.main("usb_reset");
-    const data = new Uint8Array(await file.arrayBuffer());
-    await loader.writeFlash({
-      fileArray: [{ data, address }],
-      flashMode: "dio",
-      flashFreq: "40m",
-      flashSize: "4MB",
-      eraseAll: false,
-      compress: true,
-      reportProgress: (_fileIndex, written, total) => {
-        onProgress({
-          stage: "writing",
-          message: "Writing firmware",
-          written,
-          total,
-        });
-      },
-    });
-    await loader.after("hard_reset");
-    await resetEsp32S3UsbJtagToApp(transport as EsptoolTransportWithSignals);
-    onProgress({ stage: "done", message: "Firmware written" });
-  } finally {
-    await transport.disconnect().catch(() => undefined);
-  }
-}
-
-function patchEsp32S3UsbJtagStubStart(loader: EsptoolLoaderWithInternals) {
-  loader.memFinish = async (entrypoint: number) => {
-    const isEntry = entrypoint === 0 ? 1 : 0;
-    const packet = loader._appendArray(
-      loader._intToByteArray(isEntry),
-      loader._intToByteArray(entrypoint),
-    );
-    await loader.checkCommand(
-      "leave RAM download mode",
-      loader.ESP_MEM_END,
-      packet,
-      undefined,
-      undefined,
-      2_000,
-    );
-  };
-}
-
-async function resetEsp32S3UsbJtagToApp(
-  transport: EsptoolTransportWithSignals,
-): Promise<void> {
-  await transport.setDTR(false);
-  await transport.setRTS(false);
-  await delay(100);
-  await transport.setDTR(true);
-  await transport.setRTS(false);
-  await delay(100);
-  await transport.setDTR(false);
-  await transport.setRTS(true);
-  await delay(100);
-  await transport.setDTR(false);
-  await transport.setRTS(false);
-  await delay(500);
-}
-
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }
 
 async function fileToBase64(file: File): Promise<string> {

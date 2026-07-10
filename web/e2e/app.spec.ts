@@ -179,3 +179,26 @@ test("renders standalone 404 fallback for unknown routes", async ({ page }) => {
     "/about",
   );
 });
+
+test("renders the repeatable firmware probe state in the demo workbench", async ({
+  page,
+}) => {
+  await page.goto("/flash?demo=true&webUsb=authorized&probe=reading");
+
+  await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
+  await expect(page.getByText("Reading target identity…")).toBeVisible();
+  await expect(page.getByText("Serial link", { exact: true })).toBeVisible();
+  await expect(
+    page.getByTestId("firmware-flash-probe-countdown"),
+  ).toBeVisible();
+  await expect(page.getByText("Probe window", { exact: true })).toBeVisible();
+});
+
+test("keeps the probe countdown hidden before a demo read starts", async ({
+  page,
+}) => {
+  await page.goto("/flash?demo=true&webUsb=authorized");
+
+  await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
+  await expect(page.getByText("Probe window", { exact: true })).toHaveCount(0);
+});

@@ -1,6 +1,13 @@
 import { registerSW } from "virtual:pwa-register";
 import { toast } from "sonner";
 
+function suppressLifecycleToasts(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.location.search.includes("demo=true");
+}
+
 export function registerPwaUpdatePrompt() {
   if (import.meta.env.DEV) {
     return;
@@ -33,6 +40,9 @@ export function registerPwaUpdatePrompt() {
       });
     },
     onOfflineReady() {
+      if (suppressLifecycleToasts()) {
+        return;
+      }
       toast.success("IsolaPurr is ready for offline launch.", {
         duration: 3000,
       });

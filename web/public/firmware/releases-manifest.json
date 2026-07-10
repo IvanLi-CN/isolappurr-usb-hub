@@ -1,0 +1,229 @@
+{
+  "schemaVersion": "1",
+  "repo": "IvanLi-CN/isolappurr-usb-hub",
+  "generatedAt": "2026-07-08T20:26:48.537427+00:00",
+  "releaseCount": 12,
+  "recoveryTags": ["v0.5.0-dev.2", "v0.5.1"],
+  "releases": [
+    {
+      "tagName": "v0.5.1",
+      "version": "0.5.1",
+      "publishedAt": "2026-07-06T13:09:22Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.5.1/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-3550a0c263a8",
+        "assetPath": "firmware/releases/v0.5.1/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "5a56d02e3f6b9c425ab45358302935ec8b5aa7f2438130364984f6492ce21d41",
+        "size": 760160
+      },
+      "recovery": {
+        "artifactId": "isolapurr-3550a0c263a8-recovery",
+        "assetPath": "firmware/releases/v0.5.1/isolapurr-usb-hub.full.bin",
+        "fileName": "isolapurr-usb-hub.full.bin",
+        "fileKind": "full_image",
+        "flashAddress": 0,
+        "sha256": "83d8ce14e20a3af682a79b0636cf3dd07ac58da607344e5074d5432b2e7d6afa",
+        "size": 825696
+      }
+    },
+    {
+      "tagName": "v0.5.0",
+      "version": "0.5.0",
+      "publishedAt": "2026-06-29T11:05:46Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.5.0/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-5fe11fe24080",
+        "assetPath": "firmware/releases/v0.5.0/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "fb4d49ed8c98feff98192195924cb9ffcc78eb47118087c77da20aac89d3ceba",
+        "size": 760112
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.4.3",
+      "version": "0.4.3",
+      "publishedAt": "2026-06-26T17:11:54Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.4.3/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-a36dfd2c258d",
+        "assetPath": "firmware/releases/v0.4.3/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "1e4de7a63537fd18974c536672f3710d04736327f1b50e28fe51b1cb71ddf670",
+        "size": 757344
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.4.2",
+      "version": "0.4.2",
+      "publishedAt": "2026-06-21T04:48:13Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.4.2/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-4908c95d6ec7",
+        "assetPath": "firmware/releases/v0.4.2/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "8540b2ca1fb91c13ebfa12b2aa5b8e51ff0ebf59bae96b60bdec9e71bdab9684",
+        "size": 757344
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.5.0-dev.2",
+      "version": "0.5.0-dev.2",
+      "publishedAt": "2026-06-18T17:20:52Z",
+      "prerelease": true,
+      "catalogPath": "firmware/releases/v0.5.0-dev.2/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-9cd61c4d502e",
+        "assetPath": "firmware/releases/v0.5.0-dev.2/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "2f01d0773796144804198bf61c42e8aaa005f1408092d437a8a7aca209637cff",
+        "size": 744352
+      },
+      "recovery": {
+        "artifactId": "isolapurr-9cd61c4d502e-recovery",
+        "assetPath": "firmware/releases/v0.5.0-dev.2/isolapurr-usb-hub.full.bin",
+        "fileName": "isolapurr-usb-hub.full.bin",
+        "fileKind": "full_image",
+        "flashAddress": 0,
+        "sha256": "1809ff2b5d0e391b7e2bf8bca5342978eaecb204a0ec8bbfe9ce10baa477706e",
+        "size": 809888
+      }
+    },
+    {
+      "tagName": "v0.5.0-dev.1",
+      "version": "0.5.0-dev.1",
+      "publishedAt": "2026-06-18T09:49:06Z",
+      "prerelease": true,
+      "catalogPath": "firmware/releases/v0.5.0-dev.1/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-a6b88225a2f3",
+        "assetPath": "firmware/releases/v0.5.0-dev.1/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "d85ab54e2f91c1e89f8cb67a2f9508b1ee154ba55b976f4ede8776643662ae6f",
+        "size": 738944
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.4.1",
+      "version": "0.4.1",
+      "publishedAt": "2026-06-16T10:05:25Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.4.1/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-3d16d45d9e54",
+        "assetPath": "firmware/releases/v0.4.1/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "8862e9b8d8b2a645471e6f8639d479e9ab1a29e1cf403543db1a78ac0db8dc1d",
+        "size": 738944
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.4.0",
+      "version": "0.4.0",
+      "publishedAt": "2026-06-14T08:50:14Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.4.0/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-b360e882a00e",
+        "assetPath": "firmware/releases/v0.4.0/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "126ebe3d98ae95974afc269f25753bedbff47ed995e32e6fdb3214350aa326ff",
+        "size": 734912
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.4.0-dev.1",
+      "version": "0.4.0-dev.1",
+      "publishedAt": "2026-06-13T17:49:32Z",
+      "prerelease": true,
+      "catalogPath": "firmware/releases/v0.4.0-dev.1/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-b360e882a00e",
+        "assetPath": "firmware/releases/v0.4.0-dev.1/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "be4750c5983c82cefe275ad0974a502de93311b5bfefd42e9d081fb679c95de2",
+        "size": 734912
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.3.0",
+      "version": "0.3.0",
+      "publishedAt": "2026-06-12T21:03:33Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.3.0/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-e29ccdf6d9e5",
+        "assetPath": "firmware/releases/v0.3.0/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "8a240f3361c0462f1f27d7705e4ca6c2789e51d768bb261700e57a245dc33ed9",
+        "size": 734272
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.2.0",
+      "version": "0.2.0",
+      "publishedAt": "2026-06-12T09:09:46Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.2.0/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-f6372ed77b18",
+        "assetPath": "firmware/releases/v0.2.0/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "05c683fc06f6e1dbffa48b7a73771194521c40dbb8396b72f2e209814ffa454b",
+        "size": 715728
+      },
+      "recovery": null
+    },
+    {
+      "tagName": "v0.1.1",
+      "version": "0.1.1",
+      "publishedAt": "2026-06-07T18:24:39Z",
+      "prerelease": false,
+      "catalogPath": "firmware/releases/v0.1.1/isolapurr-firmware-catalog.json",
+      "app": {
+        "artifactId": "isolapurr-23f30ebee720",
+        "assetPath": "firmware/releases/v0.1.1/isolapurr-usb-hub.app.bin",
+        "fileName": "isolapurr-usb-hub.app.bin",
+        "fileKind": "app_bin",
+        "flashAddress": 65536,
+        "sha256": "5a8301edc7b2cd48329583853dcddca030eb76aa5eb3aa6ed780ba546a361d54",
+        "size": 708416
+      },
+      "recovery": null
+    }
+  ]
+}

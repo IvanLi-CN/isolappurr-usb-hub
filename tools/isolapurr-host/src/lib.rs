@@ -23,11 +23,11 @@ use std::{
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
     net::TcpListener,
-    sync::Mutex,
+    sync::{Mutex, OwnedMutexGuard},
 };
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
-    services::ServeDir,
+    services::{ServeDir, ServeFile},
 };
 
 pub const DEFAULT_BIND: &str = "127.0.0.1:51200";
@@ -182,6 +182,7 @@ struct DevdState {
     devices: HashMap<String, DeviceRecord>,
     leases: HashMap<String, LeaseRecord>,
     exclusive_ports: HashMap<String, String>,
+    serial_port_locks: HashMap<String, Arc<Mutex<()>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -446,6 +447,23 @@ struct FirmwareUploadFlashRequest {
     file_name: String,
     file_base64: String,
     expected_identity: DeviceIdentity,
+    lease_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BundledFirmwareFlashRequest {
+    catalog: FirmwareCatalog,
+    artifact_id: String,
+    file_kind: String,
+    file_name: String,
+    file_base64: String,
+    #[serde(default)]
+    first_time: bool,
+    #[serde(default)]
+    confirm_non_project_firmware: bool,
+    #[serde(default)]
+    expected_identity: Option<DeviceIdentity>,
     lease_id: String,
 }
 

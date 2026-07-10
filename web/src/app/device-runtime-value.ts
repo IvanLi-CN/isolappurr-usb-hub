@@ -1,4 +1,5 @@
 import type { StoredDevice } from "../domain/devices";
+import { isLocalUsbSuppressedForFlashDevice } from "../domain/flashTransportLocks";
 import { getLocalUsbDeviceLink } from "../domain/localUsbLinks";
 import type { PortId } from "../domain/ports";
 import { getWebSerialDeviceTransport } from "../domain/webSerialLinks";
@@ -99,6 +100,7 @@ export function buildDeviceRuntimeContextValue({
       localUsbPortPath: localUsbPortByDevice[deviceId],
       hasLocalUsbLink: Boolean(getLocalUsbDeviceLink(deviceId)),
       hasWebSerialLink: Boolean(getWebSerialDeviceTransport(deviceId)),
+      localUsbSuppressed: isLocalUsbSuppressedForFlashDevice(deviceId),
     });
 
   const wifiManagementTransport = (
@@ -113,9 +115,10 @@ export function buildDeviceRuntimeContextValue({
       return "web_serial";
     }
     if (
-      localUsbPortByDevice[deviceId] ||
-      getLocalUsbDeviceLink(deviceId) ||
-      (stored ? localUsbPortPathForDevice(stored) : null)
+      !isLocalUsbSuppressedForFlashDevice(deviceId) &&
+      (localUsbPortByDevice[deviceId] ||
+        getLocalUsbDeviceLink(deviceId) ||
+        (stored ? localUsbPortPathForDevice(stored) : null))
     ) {
       return "local_usb";
     }

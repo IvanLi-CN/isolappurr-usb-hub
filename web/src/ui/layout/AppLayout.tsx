@@ -19,6 +19,7 @@ export function AppLayout({
   const location = useLocation();
 
   const showTheme = location.pathname === "/" || location.pathname === "/about";
+  const showDemoControl = demoEnabled && location.pathname !== "/flash";
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -35,7 +36,7 @@ export function AppLayout({
             <span className="min-w-0 truncate">IsolaPurr USB Hub</span>
           </DemoLink>
           <div className="flex items-center gap-3">
-            {demoEnabled ? <DemoControlPanel /> : null}
+            {showDemoControl ? <DemoControlPanel /> : null}
             {showTheme ? (
               <div className="hidden sm:block">
                 <ThemeMenu value={theme} onChange={setTheme} />

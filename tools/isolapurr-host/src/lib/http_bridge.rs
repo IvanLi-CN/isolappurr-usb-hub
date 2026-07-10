@@ -90,6 +90,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             "/api/v1/devices/{id}/flash-upload",
             post(device_flash_upload),
         )
+        .route(
+            "/api/v1/devices/{id}/flash-bundled",
+            post(device_flash_bundled),
+        )
         .route("/api/v1/devices/{id}/reset", post(device_reset))
         .route("/api/v1/devices/{id}/diagnostics", get(device_diagnostics))
         .route(
@@ -100,6 +104,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             "/api/v1/serial/lease",
             post(http_bridge_storage::create_lease),
         )
+        .route("/api/v1/serial/ports", get(serial_ports))
+        .route("/api/v1/serial/register", post(serial_register))
+        .route("/api/v1/serial/request", post(serial_request))
+        .route("/api/v1/serial/board-info", post(serial_board_info))
         .route(
             "/api/v1/serial/lease/{lease_id}",
             post(http_bridge_storage::heartbeat_lease).delete(http_bridge_storage::release_lease),
@@ -138,7 +146,8 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024));
 
     if let Some(web_root) = web_root {
-        router = router.fallback_service(ServeDir::new(web_root));
+        let index = web_root.join("index.html");
+        router = router.fallback_service(ServeDir::new(web_root).fallback(ServeFile::new(index)));
     }
     if allow_dev_cors {
         router = router.layer(
@@ -208,28 +217,118 @@ async fn scan_devices(State(state): State<AppState>, headers: HeaderMap) -> Resp
     Json(json!({"devices": devices})).into_response()
 }
 
+async fn serial_ports(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match list_serial_ports() {
+        Ok(ports) => Json(json!({ "ports": ports })).into_response(),
+        Err(err) => internal_error(&format!("serial enumeration failed: {err}")),
+    }
+}
+
+async fn serial_register(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<SerialRegisterRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    let port = match find_serial_port_by_path(&req.port_path) {
+        Ok(Some(port)) => port,
+        Ok(None) => return not_found("serial port not found"),
+        Err(err) => return internal_error(&format!("serial enumeration failed: {err}")),
+    };
+    let device = {
+        let mut inner = state.inner.lock().await;
+        upsert_usb_device(&mut inner, port)
+    };
+    Json(json!({ "ok": true, "device": device })).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SerialBoardInfoRequest {
+    port_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SerialRegisterRequest {
+    port_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SerialRequestBody {
+    port_path: String,
+    request: Value,
+    timeout_ms: Option<u64>,
+}
+
+async fn serial_board_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<SerialBoardInfoRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = register_requested_usb_device(&state, &req.port_path).await {
+        return error_from_anyhow(err);
+    }
+    match local_usb_board_info(&state, &req.port_path).await {
+        Ok(result) => Json(json!({ "ok": true, "result": result })).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn serial_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<SerialRequestBody>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = register_requested_usb_device(&state, &req.port_path).await {
+        return error_from_anyhow(err);
+    }
+    let device_id = stable_usb_device_id(&req.port_path);
+    let request = req.request.clone();
+    let request_method = request
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or("request")
+        .to_string();
+    push_trace(&state, &device_id, "tx", &request_method, &request).await;
+    let port_path = req.port_path.clone();
+    let timeout_ms = req.timeout_ms;
+    let response_method = request_method.clone();
+    let result = async {
+        let _guard = acquire_serial_port_guard(&state, &port_path, None).await?;
+        tokio::task::spawn_blocking(move || {
+            serial_jsonl_roundtrip_with_timeout(&port_path, request, timeout_ms)
+        })
+        .await
+        .context("serial worker join")?
+    }
+    .await;
+    match result {
+        Ok(response) => {
+            push_trace(&state, &device_id, "rx", &response_method, &response).await;
+            Json(json!({ "response": response })).into_response()
+        }
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
 fn reconcile_scanned_usb_devices(inner: &mut DevdState, ports: Vec<UsbTarget>) {
     let mut scanned_ids = HashSet::new();
     for port in ports {
-        let id = stable_usb_device_id(&port.port_path);
-        scanned_ids.insert(id.clone());
-        inner
-            .devices
-            .entry(id.clone())
-            .and_modify(|device| {
-                device.display_name = port.label.clone();
-                device.connection = "available".to_string();
-                device.usb = Some(port.clone());
-            })
-            .or_insert(DeviceRecord {
-                id,
-                display_name: port.label.clone(),
-                connection: "available".to_string(),
-                usb: Some(port),
-                http: None,
-                identity: None,
-                session: DeviceSession::default(),
-            });
+        scanned_ids.insert(stable_usb_device_id(&port.port_path));
+        upsert_usb_device(inner, port);
     }
     inner.devices.retain(|id, device| {
         if device.usb.is_some() && !scanned_ids.contains(id) {
@@ -244,6 +343,42 @@ fn reconcile_scanned_usb_devices(inner: &mut DevdState, ports: Vec<UsbTarget>) {
             true
         }
     });
+}
+
+fn find_serial_port_by_path(port_path: &str) -> anyhow::Result<Option<UsbTarget>> {
+    Ok(list_serial_ports()?
+        .into_iter()
+        .find(|port| port.port_path == port_path))
+}
+
+fn upsert_usb_device(inner: &mut DevdState, port: UsbTarget) -> DeviceRecord {
+    let id = stable_usb_device_id(&port.port_path);
+    inner
+        .devices
+        .entry(id.clone())
+        .and_modify(|device| {
+            device.display_name = port.label.clone();
+            device.connection = "available".to_string();
+            device.usb = Some(port.clone());
+        })
+        .or_insert(DeviceRecord {
+            id,
+            display_name: port.label.clone(),
+            connection: "available".to_string(),
+            usb: Some(port),
+            http: None,
+            identity: None,
+            session: DeviceSession::default(),
+        })
+        .clone()
+}
+
+async fn register_requested_usb_device(state: &AppState, port_path: &str) -> anyhow::Result<()> {
+    let port = find_serial_port_by_path(port_path)?
+        .ok_or_else(|| anyhow!("serial port not found: {port_path}"))?;
+    let mut inner = state.inner.lock().await;
+    upsert_usb_device(&mut inner, port);
+    Ok(())
 }
 
 async fn device_status(
@@ -688,6 +823,25 @@ async fn device_flash_upload(
     }
 }
 
+async fn device_flash_bundled(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<BundledFirmwareFlashRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(response) = require_lease(&state, &id, Some(&req.lease_id)).await {
+        return *response;
+    }
+    let result = run_bundled_flash_request(&state, &id, req).await;
+    match result {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
 async fn device_reset(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -708,6 +862,10 @@ async fn device_reset(
         Ok(port_path) => port_path,
         Err(err) => return error_from_anyhow(err),
     };
+    let serial_guard = match acquire_serial_port_guard(&state, &port_path, None).await {
+        Ok(guard) => guard,
+        Err(err) => return error_from_anyhow(err),
+    };
     {
         let mut inner = state.inner.lock().await;
         if inner.exclusive_ports.contains_key(&port_path) {
@@ -720,6 +878,7 @@ async fn device_reset(
     let guard = ExclusiveGuard {
         state: state.clone(),
         port_path,
+        serial_guard: Some(serial_guard),
     };
     let result = usb_jsonl_request_with_exclusive(&state, &id, "reboot", None, Some("reset")).await;
     drop(guard);

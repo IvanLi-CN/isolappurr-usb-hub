@@ -276,6 +276,40 @@ export function resetLocalUsbRuntimeState(
   return changed ? next : runtimeById;
 }
 
+export function resetLocalUsbRuntimeStateForDevice(
+  runtimeById: Record<string, DeviceRuntime>,
+  deviceId: string,
+): Record<string, DeviceRuntime> {
+  const current = runtimeById[deviceId];
+  if (!current) {
+    return runtimeById;
+  }
+  const transport =
+    current.transport === "local_usb" ? null : current.transport;
+  const localUsbChannel =
+    current.channels.local_usb.lastOkAt === null &&
+    current.channels.local_usb.lastError === null
+      ? current.channels.local_usb
+      : { lastOkAt: null, lastError: null };
+  if (
+    transport === current.transport &&
+    localUsbChannel === current.channels.local_usb
+  ) {
+    return runtimeById;
+  }
+  return {
+    ...runtimeById,
+    [deviceId]: {
+      ...current,
+      transport,
+      channels: {
+        ...current.channels,
+        local_usb: localUsbChannel,
+      },
+    },
+  };
+}
+
 export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {
   if (err instanceof LocalUsbAgentHttpError) {
     if (err.status === 409 && err.code === "busy") {
@@ -449,6 +483,7 @@ export function resolveOrderedDeviceTransports({
   localUsbPortPath,
   hasLocalUsbLink,
   hasWebSerialLink,
+  localUsbSuppressed = false,
 }: {
   deviceId: string;
   devices: StoredDevice[];
@@ -457,6 +492,7 @@ export function resolveOrderedDeviceTransports({
   localUsbPortPath: string | null | undefined;
   hasLocalUsbLink: boolean;
   hasWebSerialLink: boolean;
+  localUsbSuppressed?: boolean;
 }): DeviceTransport[] {
   const stored = devices.find((device) => device.id === deviceId);
   const storedLocalUsbPortPath = stored
@@ -465,8 +501,10 @@ export function resolveOrderedDeviceTransports({
   const httpLinked =
     !!stored?.transports?.httpBaseUrl ||
     (stored ? !localUsbPortPathForDevice(stored) : false);
-  const localUsbReady = Boolean(localUsbPortPath) || hasLocalUsbLink;
-  const localUsbLinked = localUsbReady || Boolean(storedLocalUsbPortPath);
+  const localUsbReady =
+    !localUsbSuppressed && (Boolean(localUsbPortPath) || hasLocalUsbLink);
+  const localUsbLinked =
+    !localUsbSuppressed && (localUsbReady || Boolean(storedLocalUsbPortPath));
   return orderedDeviceTransports({
     preferred,
     runtimeTransport: runtime?.transport ?? null,
@@ -492,6 +530,7 @@ export function resolveActiveDeviceTransport({
   localUsbPortPath,
   hasLocalUsbLink,
   hasWebSerialLink,
+  localUsbSuppressed = false,
 }: {
   deviceId: string;
   devices: StoredDevice[];
@@ -500,6 +539,7 @@ export function resolveActiveDeviceTransport({
   localUsbPortPath: string | null | undefined;
   hasLocalUsbLink: boolean;
   hasWebSerialLink: boolean;
+  localUsbSuppressed?: boolean;
 }): DeviceTransport | null {
   const stored = devices.find((device) => device.id === deviceId);
   const storedLocalUsbPortPath = stored
@@ -508,8 +548,10 @@ export function resolveActiveDeviceTransport({
   const httpLinked =
     !!stored?.transports?.httpBaseUrl ||
     (stored ? !localUsbPortPathForDevice(stored) : false);
-  const localUsbReady = Boolean(localUsbPortPath) || hasLocalUsbLink;
-  const localUsbLinked = localUsbReady || Boolean(storedLocalUsbPortPath);
+  const localUsbReady =
+    !localUsbSuppressed && (Boolean(localUsbPortPath) || hasLocalUsbLink);
+  const localUsbLinked =
+    !localUsbSuppressed && (localUsbReady || Boolean(storedLocalUsbPortPath));
   const activeTransport = runtime?.transport ?? null;
   if (
     isLinkedTransportActive({

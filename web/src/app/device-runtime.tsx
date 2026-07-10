@@ -20,6 +20,11 @@ import type {
   WifiMutationResponse,
 } from "../domain/deviceApi";
 import {
+  FLASH_TRANSPORT_LOCK_ALL,
+  isLocalUsbSuppressedForFlashDevice,
+  subscribeFlashTransportLocks,
+} from "../domain/flashTransportLocks";
+import {
   nextJsonlRequestId,
   sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
@@ -57,6 +62,7 @@ import {
   localUsbPortPathForDevice,
   recoverWifiClearLikeTimeout,
   resetLocalUsbRuntimeState,
+  resetLocalUsbRuntimeStateForDevice,
   resolveActiveDeviceTransport,
   resolveLocalUsbTarget,
   resolveOrderedDeviceTransports,
@@ -381,6 +387,7 @@ export function DeviceRuntimeProvider({
         localUsbPortPath: localUsbPortByDevice.current[deviceId],
         hasLocalUsbLink: Boolean(getLocalUsbDeviceLink(deviceId)),
         hasWebSerialLink: Boolean(getWebSerialDeviceTransport(deviceId)),
+        localUsbSuppressed: isLocalUsbSuppressedForFlashDevice(deviceId),
       });
     },
     [devices, runtimeById],
@@ -465,10 +472,13 @@ export function DeviceRuntimeProvider({
           const httpLinked =
             !!stored?.transports?.httpBaseUrl ||
             (stored ? !localUsbPortPathForDevice(stored) : false);
+          const localUsbSuppressed =
+            isLocalUsbSuppressedForFlashDevice(deviceId);
           const localUsbLinked =
-            Boolean(localUsbPortByDevice.current[deviceId]) ||
-            hasLocalUsbLink ||
-            Boolean(stored ? localUsbPortPathForDevice(stored) : null);
+            !localUsbSuppressed &&
+            (Boolean(localUsbPortByDevice.current[deviceId]) ||
+              hasLocalUsbLink ||
+              Boolean(stored ? localUsbPortPathForDevice(stored) : null));
           const activeTransport = isLinkedTransportActive({
             transport: current.transport,
             httpLinked,
@@ -515,6 +525,35 @@ export function DeviceRuntimeProvider({
       const device = devices.find((d) => d.id === link.deviceId);
       if (device) {
         void pollDevice(link.deviceId, httpBaseUrlForDevice(device));
+      }
+    });
+  }, [devices, pollDevice]);
+
+  useEffect(() => {
+    return subscribeFlashTransportLocks((lock) => {
+      if (lock.deviceId === FLASH_TRANSPORT_LOCK_ALL) {
+        setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
+        for (const device of devices) {
+          void pollDevice(device.id, httpBaseUrlForDevice(device));
+        }
+        return;
+      }
+      delete localUsbPortByDevice.current[lock.deviceId];
+      if (lock.transport === "web_serial") {
+        preferredTransportByDevice.current[lock.deviceId] = "web_serial";
+      } else if (
+        preferredTransportByDevice.current[lock.deviceId] === "web_serial"
+      ) {
+        delete preferredTransportByDevice.current[lock.deviceId];
+      }
+      setRuntimeById((prev) =>
+        resetLocalUsbRuntimeStateForDevice(prev, lock.deviceId),
+      );
+      const device = devices.find(
+        (candidate) => candidate.id === lock.deviceId,
+      );
+      if (device) {
+        void pollDevice(lock.deviceId, httpBaseUrlForDevice(device));
       }
     });
   }, [devices, pollDevice]);

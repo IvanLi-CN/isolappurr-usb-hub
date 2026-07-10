@@ -19,6 +19,216 @@ async fn usb_jsonl_request(
     usb_jsonl_request_with_exclusive(state, device_id, method, params, None).await
 }
 
+async fn ensure_serial_port_lock(state: &AppState, port_path: &str) -> Arc<Mutex<()>> {
+    let mut inner = state.inner.lock().await;
+    inner
+        .serial_port_locks
+        .entry(port_path.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
+
+async fn acquire_serial_port_guard(
+    state: &AppState,
+    port_path: &str,
+    allowed_exclusive_reason: Option<&str>,
+) -> anyhow::Result<OwnedMutexGuard<()>> {
+    {
+        let inner = state.inner.lock().await;
+        if let Some(reason) = inner.exclusive_ports.get(port_path)
+            && allowed_exclusive_reason != Some(reason.as_str())
+        {
+            return Err(anyhow!("device busy: {reason}"));
+        }
+    }
+    let guard = ensure_serial_port_lock(state, port_path)
+        .await
+        .lock_owned()
+        .await;
+    {
+        let inner = state.inner.lock().await;
+        if let Some(reason) = inner.exclusive_ports.get(port_path)
+            && allowed_exclusive_reason != Some(reason.as_str())
+        {
+            drop(guard);
+            return Err(anyhow!("device busy: {reason}"));
+        }
+    }
+    Ok(guard)
+}
+
+fn parse_board_info_features(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn extract_capacity_from_features(features: &[String], needle: &str) -> Option<String> {
+    features.iter().find_map(|feature| {
+        let lower = feature.to_lowercase();
+        if !lower.contains(needle) {
+            return None;
+        }
+        feature.split_whitespace().find_map(|token| {
+            let upper = token.to_uppercase();
+            if upper.ends_with("MB") || upper.ends_with("KB") {
+                Some(upper.replace("MB", " MB").replace("KB", " KB"))
+            } else {
+                None
+            }
+        })
+    })
+}
+
+fn canonical_chip_label(value: &str) -> String {
+    let compact = value
+        .trim()
+        .to_ascii_uppercase()
+        .replace([' ', '_'], "")
+        .replace("ESP32-", "ESP32");
+    match compact.as_str() {
+        value if value.starts_with("ESP32S3") => "ESP32-S3".to_string(),
+        value if value.starts_with("ESP32S2") => "ESP32-S2".to_string(),
+        value if value.starts_with("ESP32C3") => "ESP32-C3".to_string(),
+        value if value.starts_with("ESP32C6") => "ESP32-C6".to_string(),
+        value if value.starts_with("ESP32H2") => "ESP32-H2".to_string(),
+        value if value.starts_with("ESP32P4") => "ESP32-P4".to_string(),
+        _ => value.trim().to_ascii_uppercase(),
+    }
+}
+
+fn infer_ram_size(chip_type: Option<&str>) -> Option<&'static str> {
+    let chip_type = canonical_chip_label(chip_type?).replace('-', "");
+    if chip_type.contains("ESP32S3") {
+        return Some("512 KB");
+    }
+    if chip_type.contains("ESP32S2") {
+        return Some("320 KB");
+    }
+    None
+}
+
+fn normalize_chip_description(value: &str) -> (String, Option<String>, Option<String>) {
+    let trimmed = value.trim();
+    let mut parts = trimmed.splitn(2, " (revision ");
+    let chip_type = parts.next().unwrap_or(trimmed).trim().to_string();
+    let chip_revision = parts
+        .next()
+        .map(|part| part.trim_end_matches(')').trim().to_string())
+        .filter(|part| !part.is_empty());
+    let mcu_model = chip_type
+        .split(|ch: char| ch == ' ' || ch == '(')
+        .find(|part| part.to_ascii_uppercase().starts_with("ESP32"))
+        .map(canonical_chip_label)
+        .or_else(|| (!chip_type.is_empty()).then(|| canonical_chip_label(&chip_type)));
+    let chip_type = canonical_chip_label(&chip_type);
+    (chip_type, mcu_model, chip_revision)
+}
+
+fn parse_espflash_board_info(raw_output: &str) -> Value {
+    let mut chip_type: Option<String> = None;
+    let mut mcu_model: Option<String> = None;
+    let mut chip_revision: Option<String> = None;
+    let mut flash_size: Option<String> = None;
+    let mut mac_address: Option<String> = None;
+    let mut crystal_frequency: Option<String> = None;
+    let mut features = Vec::new();
+
+    for line in raw_output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim().to_ascii_lowercase().as_str() {
+            "chip type" => {
+                let (next_chip_type, next_mcu_model, next_chip_revision) =
+                    normalize_chip_description(value);
+                chip_type = Some(next_chip_type);
+                mcu_model = next_mcu_model;
+                chip_revision = next_chip_revision;
+            }
+            "features" => {
+                features = parse_board_info_features(value);
+            }
+            "crystal frequency" => {
+                crystal_frequency = Some(value.to_string());
+            }
+            "flash size" => {
+                flash_size = Some(value.to_uppercase().replace("MB", " MB"));
+            }
+            "mac address" => {
+                mac_address = Some(value.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    let psram_size = extract_capacity_from_features(&features, "psram");
+    if flash_size.is_none() {
+        flash_size = extract_capacity_from_features(&features, "flash");
+    }
+
+    json!({
+        "source": "espflash",
+        "chipType": chip_type,
+        "mcuModel": mcu_model,
+        "chipRevision": chip_revision,
+        "flashSize": flash_size,
+        "ramSize": infer_ram_size(chip_type.as_deref()),
+        "psramSize": psram_size,
+        "macAddress": mac_address,
+        "crystalFrequency": crystal_frequency,
+        "features": features,
+        "rawOutput": raw_output,
+    })
+}
+
+fn run_espflash_board_info(port_path: &str, args: &[&str]) -> anyhow::Result<std::process::Output> {
+    Command::new("espflash")
+        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
+        .args(args)
+        .output()
+        .with_context(|| format!("start espflash board-info for {port_path}"))
+}
+
+fn local_usb_board_info_now(port_path: &str) -> anyhow::Result<Value> {
+    let candidates = [
+        ["board-info", "--port", port_path],
+        ["board-info", "-p", port_path],
+        ["--port", port_path, "board-info"],
+        ["-p", port_path, "board-info"],
+    ];
+    let mut last_error = String::new();
+    for args in candidates {
+        let output = run_espflash_board_info(port_path, &args)?;
+        let log = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if output.status.success() {
+            return Ok(parse_espflash_board_info(&log));
+        }
+        last_error = log;
+    }
+    Err(anyhow!("espflash board-info failed: {last_error}"))
+}
+
+async fn local_usb_board_info(state: &AppState, port_path: &str) -> anyhow::Result<Value> {
+    let _serial_guard = acquire_serial_port_guard(state, port_path, None).await?;
+    let port_path = port_path.to_string();
+    tokio::task::spawn_blocking(move || local_usb_board_info_now(&port_path))
+        .await
+        .context("serial board-info worker join")?
+}
+
 async fn usb_jsonl_request_with_exclusive(
     state: &AppState,
     device_id: &str,
@@ -36,13 +246,10 @@ async fn usb_jsonl_request_with_exclusive(
             .usb
             .as_ref()
             .ok_or_else(|| anyhow!("device has no Local USB target"))?;
-        if let Some(reason) = inner.exclusive_ports.get(&usb.port_path)
-            && allowed_exclusive_reason != Some(reason.as_str())
-        {
-            return Err(anyhow!("device busy: {reason}"));
-        }
         (usb.port_path.clone(), next_id())
     };
+    let _serial_guard =
+        acquire_serial_port_guard(state, &port_path, allowed_exclusive_reason).await?;
 
     let request = json!({
         "id": request_id,
@@ -367,9 +574,56 @@ mod device_io_tests {
             })
         ));
     }
+
+    #[tokio::test]
+    async fn serial_port_lock_is_reused_per_port() {
+        let state = AppState::new("test://devd");
+        let first = ensure_serial_port_lock(&state, "/dev/test-port").await;
+        let second = ensure_serial_port_lock(&state, "/dev/test-port").await;
+        let third = ensure_serial_port_lock(&state, "/dev/other-port").await;
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(!Arc::ptr_eq(&first, &third));
+    }
+
+    #[tokio::test]
+    async fn serial_port_guard_rechecks_exclusive_state_after_wait() {
+        let state = AppState::new("test://devd");
+        let port_path = "/dev/test-port";
+        let held = ensure_serial_port_lock(&state, port_path)
+            .await
+            .lock_owned()
+            .await;
+        let state_for_task = state.clone();
+        let task = tokio::spawn(async move {
+            acquire_serial_port_guard(&state_for_task, port_path, None)
+                .await
+                .map(|_| ())
+        });
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        {
+            let mut inner = state.inner.lock().await;
+            inner
+                .exclusive_ports
+                .insert(port_path.to_string(), "firmware flash".to_string());
+        }
+        drop(held);
+        let err = task
+            .await
+            .expect("serial guard task should join")
+            .expect_err("exclusive port should reject waiting request");
+        assert!(err.to_string().contains("device busy"));
+    }
 }
 
 fn serial_jsonl_roundtrip(port_path: &str, request: Value) -> anyhow::Result<Value> {
+    serial_jsonl_roundtrip_with_timeout(port_path, request, None)
+}
+
+fn serial_jsonl_roundtrip_with_timeout(
+    port_path: &str,
+    request: Value,
+    timeout_ms_override: Option<u64>,
+) -> anyhow::Result<Value> {
     let mut port = serialport::new(port_path, SERIAL_BAUD)
         .timeout(Duration::from_millis(50))
         .open()
@@ -385,7 +639,10 @@ fn serial_jsonl_roundtrip(port_path: &str, request: Value) -> anyhow::Result<Val
         .get("method")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let deadline = Instant::now() + Duration::from_millis(serial_timeout_ms_for_method(method));
+    let deadline = Instant::now()
+        + Duration::from_millis(
+            timeout_ms_override.unwrap_or_else(|| serial_timeout_ms_for_method(method)),
+        );
     let mut raw = Vec::<u8>::new();
     let mut buf = [0_u8; 256];
     while Instant::now() < deadline {
@@ -455,12 +712,6 @@ async fn run_flash_request(
         }));
     }
 
-    if req.first_time && !req.confirm_non_project_firmware {
-        return Err(anyhow!(
-            "first-time full flash may target download-mode or non-IsolaPurr firmware; pass explicit non-project firmware confirmation"
-        ));
-    }
-
     let port_path = {
         let inner = state.inner.lock().await;
         inner
@@ -474,7 +725,18 @@ async fn run_flash_request(
             .clone()
     };
 
-    if !req.first_time {
+    if req.first_time {
+        if !req.confirm_non_project_firmware {
+            let identity = require_project_firmware_for_upgrade(state, device_id)
+                .await
+                .context(
+                    "recovery flash without explicit non-project confirmation requires a confirmed IsolaPurr target",
+                )?;
+            if let Some(expected_identity) = req.expected_identity.as_ref() {
+                validate_device_identity(&identity, expected_identity)?;
+            }
+        }
+    } else {
         let expected_identity = req
             .expected_identity
             .as_ref()
@@ -483,19 +745,7 @@ async fn run_flash_request(
         validate_device_identity(&identity, expected_identity)?;
     }
 
-    {
-        let mut inner = state.inner.lock().await;
-        if inner.exclusive_ports.contains_key(&port_path) {
-            return Err(anyhow!("device busy"));
-        }
-        inner
-            .exclusive_ports
-            .insert(port_path.clone(), "firmware flash".to_string());
-    }
-    let guard = ExclusiveGuard {
-        state: state.clone(),
-        port_path: port_path.clone(),
-    };
+    let mut guard = acquire_flash_guard(state, &port_path).await?;
 
     let file_path = resolve_catalog_file_path(&req.catalog_path, &app_file.path);
     let output = if req.first_time && app_file.kind == "elf" {
@@ -538,6 +788,7 @@ async fn run_flash_request(
         drop(guard);
         return Err(anyhow!("espflash failed: {log}"));
     }
+    guard.release_serial_lock();
     let captured_identity = if req.first_time {
         Some(capture_first_time_identity_after_flash(state, device_id).await?)
     } else {
@@ -548,6 +799,147 @@ async fn run_flash_request(
         "ok": true,
         "exit_code": output.status.code(),
         "artifact_id": artifact.artifact_id,
+        "identity": captured_identity,
+        "log": log,
+    }))
+}
+
+async fn run_bundled_flash_request(
+    state: &AppState,
+    device_id: &str,
+    req: BundledFirmwareFlashRequest,
+) -> anyhow::Result<Value> {
+    let errors = validate_catalog_shape(&req.catalog);
+    if !errors.is_empty() {
+        return Err(anyhow!("invalid firmware catalog: {}", errors.join(", ")));
+    }
+    let artifact = req
+        .catalog
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.artifact_id == req.artifact_id)
+        .ok_or_else(|| anyhow!("artifact not found: {}", req.artifact_id))?;
+    let file = artifact
+        .files
+        .iter()
+        .find(|file| file.kind == req.file_kind)
+        .ok_or_else(|| anyhow!("artifact file not found: {}", req.file_kind))?;
+
+    if req.first_time {
+        let valid_recovery_asset = (artifact.target == "esp32s3_full" && file.kind == "full_image")
+            || (artifact.target == "esp32s3_app" && file.kind == "elf");
+        if !valid_recovery_asset {
+            return Err(anyhow!(
+                "recovery flash requires esp32s3_full/full_image or esp32s3_app/elf assets"
+            ));
+        }
+    } else if artifact.target != "esp32s3_app" || file.kind != "app_bin" {
+        return Err(anyhow!("normal flash requires esp32s3_app/app_bin assets"));
+    }
+
+    let bytes = decode_flash_payload(&req.file_base64)?;
+    if bytes.len() as u64 != file.size {
+        return Err(anyhow!(
+            "artifact size mismatch for {}: expected {}, got {}",
+            file.path,
+            file.size,
+            bytes.len()
+        ));
+    }
+    let actual = format!("{:x}", Sha256::digest(&bytes));
+    if actual != file.sha256.to_lowercase() {
+        return Err(anyhow!(
+            "artifact hash mismatch for {}: expected {}, got {actual}",
+            file.path,
+            file.sha256
+        ));
+    }
+
+    let port_path = {
+        let inner = state.inner.lock().await;
+        inner
+            .devices
+            .get(device_id)
+            .ok_or_else(|| anyhow!("device not found"))?
+            .usb
+            .as_ref()
+            .ok_or_else(|| anyhow!("device has no Local USB target"))?
+            .port_path
+            .clone()
+    };
+
+    if req.first_time {
+        if !req.confirm_non_project_firmware {
+            let identity = require_project_firmware_for_upgrade(state, device_id)
+                .await
+                .context(
+                    "recovery flash without explicit non-project confirmation requires a confirmed IsolaPurr target",
+                )?;
+            if let Some(expected_identity) = req.expected_identity.as_ref() {
+                validate_device_identity(&identity, expected_identity)?;
+            }
+        }
+    } else {
+        let expected_identity = req
+            .expected_identity
+            .as_ref()
+            .ok_or_else(|| anyhow!("normal flash requires expectedIdentity"))?;
+        let identity = require_project_firmware_for_upgrade(state, device_id).await?;
+        validate_device_identity(&identity, expected_identity)?;
+    }
+
+    let temp_file = write_temp_firmware_file(&req.file_name, bytes)?;
+    let mut guard = acquire_flash_guard(state, &port_path).await?;
+    let output = if req.first_time && file.kind == "elf" {
+        Command::new("espflash")
+            .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
+            .arg("flash")
+            .arg("--chip")
+            .arg("esp32s3")
+            .arg("--port")
+            .arg(&port_path)
+            .arg(&temp_file.0)
+            .output()
+            .context("start espflash flash")?
+    } else {
+        let address = file.flash_address.unwrap_or(if req.first_time {
+            0
+        } else {
+            DEFAULT_FLASH_ADDRESS
+        });
+        Command::new("espflash")
+            .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
+            .arg("write-bin")
+            .arg("--chip")
+            .arg("esp32s3")
+            .arg("--port")
+            .arg(&port_path)
+            .arg(format!("0x{address:x}"))
+            .arg(&temp_file.0)
+            .output()
+            .context("start espflash write-bin")?
+    };
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if !output.status.success() {
+        drop(guard);
+        return Err(anyhow!("espflash failed: {log}"));
+    }
+    guard.release_serial_lock();
+    let captured_identity = if req.first_time {
+        Some(capture_first_time_identity_after_flash(state, device_id).await?)
+    } else {
+        None
+    };
+    drop(guard);
+    Ok(json!({
+        "ok": true,
+        "exit_code": output.status.code(),
+        "artifact_id": artifact.artifact_id,
+        "target": artifact.target,
         "identity": captured_identity,
         "log": log,
     }))
@@ -578,39 +970,9 @@ async fn run_uploaded_flash_request(
     let identity = require_project_firmware_for_upgrade(state, device_id).await?;
     validate_device_identity(&identity, &req.expected_identity)?;
 
-    let bytes = {
-        use base64::Engine as _;
-        base64::engine::general_purpose::STANDARD
-            .decode(req.file_base64.trim())
-            .context("firmware payload was not valid base64")?
-    };
-    let file_name = FsPath::new(req.file_name.trim())
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("firmware.bin");
-    let temp_path = std::env::temp_dir().join(format!("isolapurr-flash-{}-{file_name}", next_id()));
-    fs::write(&temp_path, bytes).with_context(|| format!("write {}", temp_path.display()))?;
-    struct TempFirmwareFile(PathBuf);
-    impl Drop for TempFirmwareFile {
-        fn drop(&mut self) {
-            let _ = fs::remove_file(&self.0);
-        }
-    }
-    let _temp_file = TempFirmwareFile(temp_path.clone());
-
-    {
-        let mut inner = state.inner.lock().await;
-        if inner.exclusive_ports.contains_key(&port_path) {
-            return Err(anyhow!("device busy"));
-        }
-        inner
-            .exclusive_ports
-            .insert(port_path.clone(), "firmware flash".to_string());
-    }
-    let guard = ExclusiveGuard {
-        state: state.clone(),
-        port_path: port_path.clone(),
-    };
+    let bytes = decode_flash_payload(&req.file_base64)?;
+    let temp_file = write_temp_firmware_file(&req.file_name, bytes)?;
+    let guard = acquire_flash_guard(state, &port_path).await?;
     let output = Command::new("espflash")
         .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
         .arg("write-bin")
@@ -619,7 +981,7 @@ async fn run_uploaded_flash_request(
         .arg("--port")
         .arg(&port_path)
         .arg(format!("0x{:x}", req.address))
-        .arg(&temp_path)
+        .arg(&temp_file.0)
         .output()
         .context("start espflash write-bin")?;
     drop(guard);
@@ -638,14 +1000,64 @@ async fn run_uploaded_flash_request(
     }))
 }
 
-#[derive(Clone)]
+struct TempFirmwareFile(PathBuf);
+
+impl Drop for TempFirmwareFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+fn decode_flash_payload(file_base64: &str) -> anyhow::Result<Vec<u8>> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(file_base64.trim())
+        .context("firmware payload was not valid base64")
+}
+
+fn write_temp_firmware_file(file_name: &str, bytes: Vec<u8>) -> anyhow::Result<TempFirmwareFile> {
+    let file_name = FsPath::new(file_name.trim())
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("firmware.bin");
+    let temp_path = std::env::temp_dir().join(format!("isolapurr-flash-{}-{file_name}", next_id()));
+    fs::write(&temp_path, bytes).with_context(|| format!("write {}", temp_path.display()))?;
+    Ok(TempFirmwareFile(temp_path))
+}
+
+async fn acquire_flash_guard(state: &AppState, port_path: &str) -> anyhow::Result<ExclusiveGuard> {
+    let serial_guard = acquire_serial_port_guard(state, port_path, None).await?;
+    {
+        let mut inner = state.inner.lock().await;
+        if inner.exclusive_ports.contains_key(port_path) {
+            return Err(anyhow!("device busy"));
+        }
+        inner
+            .exclusive_ports
+            .insert(port_path.to_string(), "firmware flash".to_string());
+    }
+    Ok(ExclusiveGuard {
+        state: state.clone(),
+        port_path: port_path.to_string(),
+        serial_guard: Some(serial_guard),
+    })
+}
+
 struct ExclusiveGuard {
     state: AppState,
     port_path: String,
+    serial_guard: Option<OwnedMutexGuard<()>>,
+}
+
+impl ExclusiveGuard {
+    fn release_serial_lock(&mut self) {
+        self.serial_guard.take();
+    }
 }
 
 impl Drop for ExclusiveGuard {
     fn drop(&mut self) {
+        self.serial_guard.take();
         let state = self.state.clone();
         let port_path = self.port_path.clone();
         tokio::spawn(async move {

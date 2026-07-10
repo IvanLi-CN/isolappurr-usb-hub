@@ -272,34 +272,44 @@ export function parseDesktopDiscoverySnapshot(
 }
 
 export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+}
+
+async function readLocalUsbInfoDirect(
+  agent: DesktopAgent,
+  portPath: string,
+): Promise<unknown> {
+  return sendLocalUsbJsonlRequest(agent, portPath, {
+    id: nextJsonlRequestId(),
+    method: "info",
+    timeoutMs: 1_500,
+  });
 }
 
 export async function readLocalUsbInfo(
   agent: DesktopAgent,
   port: SerialPortInfo,
   onLog: (message: string, tone?: UsbLogEntry["tone"]) => void,
+  maxAttempts = 3,
 ): Promise<unknown> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       onLog(
-        `Sending info request over Local USB (attempt ${attempt + 1}/3)...`,
+        `Reading Local USB status (attempt ${attempt + 1}/${maxAttempts})...`,
       );
-      return await sendLocalUsbJsonlRequest(agent, port.path, {
-        id: nextJsonlRequestId(),
-        method: "info",
-        timeoutMs: 1_500,
-      });
-    } catch (err) {
-      lastError = err;
+      return await readLocalUsbInfoDirect(agent, port.path);
+    } catch (directErr) {
+      lastError = directErr;
       onLog(
-        err instanceof Error
-          ? `Local USB info attempt failed: ${err.message}`
+        directErr instanceof Error
+          ? `Local USB info attempt failed: ${directErr.message}`
           : "Local USB info attempt failed.",
         "warning",
       );
-      await delay(250 + attempt * 250);
+      if (attempt + 1 < maxAttempts) {
+        await delay(250 + attempt * 250);
+      }
     }
   }
   throw lastError instanceof Error

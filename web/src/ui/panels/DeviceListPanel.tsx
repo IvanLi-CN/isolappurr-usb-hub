@@ -16,12 +16,14 @@ export type DeviceListPanelProps = {
   devices: StoredDevice[];
   selectedDeviceId?: string;
   onSelect: (deviceId: string) => void;
+  forceEmptyState?: boolean;
 };
 
 export function DeviceListPanel({
   devices,
   selectedDeviceId,
   onSelect,
+  forceEmptyState = false,
 }: DeviceListPanelProps) {
   const { openAddDevice } = useAddDeviceUi();
   const { connectionState, transport, channelState, runtimeById } =
@@ -83,7 +85,7 @@ export function DeviceListPanel({
         </button>
       </div>
 
-      {devices.length === 0 ? (
+      {forceEmptyState || devices.length === 0 ? (
         <div className="mt-4 text-[12px] font-semibold text-[var(--muted)]">
           No devices yet.
         </div>

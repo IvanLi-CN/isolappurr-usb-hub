@@ -21,16 +21,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--artifact-id", required=True)
+    parser.add_argument("--recovery-artifact-id", type=str)
     parser.add_argument("--version", required=True)
     parser.add_argument("--git-sha", required=True)
     parser.add_argument("--build-id", required=True)
     parser.add_argument("--app-bin", type=Path)
     parser.add_argument("--elf", type=Path)
+    parser.add_argument("--full-image", type=Path)
     args = parser.parse_args()
 
-    files = []
+    app_files = []
     if args.app_bin:
-        files.append(
+        app_files.append(
             {
                 "kind": "app_bin",
                 "path": args.app_bin.name,
@@ -40,7 +42,7 @@ def main() -> int:
             }
         )
     if args.elf:
-        files.append(
+        app_files.append(
             {
                 "kind": "elf",
                 "path": args.elf.name,
@@ -49,21 +51,56 @@ def main() -> int:
             }
         )
 
-    if not files:
+    if not app_files:
         raise SystemExit("at least one of --app-bin or --elf is required")
 
-    catalog = {
-        "schemaVersion": "1",
-        "artifacts": [
+    recovery_files = []
+    if args.full_image:
+        recovery_files.append(
             {
-                "artifactId": args.artifact_id,
-                "target": "esp32s3_app",
+                "kind": "full_image",
+                "path": args.full_image.name,
+                "sha256": sha256(args.full_image),
+                "size": args.full_image.stat().st_size,
+                "flashAddress": 0x0,
+            }
+        )
+    if args.elf:
+        recovery_files.append(
+            {
+                "kind": "elf",
+                "path": args.elf.name,
+                "sha256": sha256(args.elf),
+                "size": args.elf.stat().st_size,
+            }
+        )
+
+    artifacts = [
+        {
+            "artifactId": args.artifact_id,
+            "target": "esp32s3_app",
+            "version": args.version,
+            "gitSha": args.git_sha,
+            "buildId": args.build_id,
+            "files": app_files,
+        }
+    ]
+    if recovery_files:
+        artifacts.append(
+            {
+                "artifactId": args.recovery_artifact_id
+                or f"{args.artifact_id}-recovery",
+                "target": "esp32s3_full",
                 "version": args.version,
                 "gitSha": args.git_sha,
                 "buildId": args.build_id,
-                "files": files,
+                "files": recovery_files,
             }
-        ],
+        )
+
+    catalog = {
+        "schemaVersion": "1",
+        "artifacts": artifacts,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(catalog, indent=2) + "\n", encoding="utf-8")

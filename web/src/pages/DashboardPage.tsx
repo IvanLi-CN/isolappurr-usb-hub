@@ -135,6 +135,29 @@ export function DashboardPage() {
             Create a new hub entry
           </div>
         </button>
+
+        <button
+          className={[
+            "iso-card flex h-[272px] w-full flex-col items-center justify-center",
+            "rounded-[18px] border border-solid border-[var(--border)]",
+            "bg-[var(--panel-3)] text-center",
+            addDeviceCardSpan,
+          ].join(" ")}
+          type="button"
+          onClick={() => navigate("/flash")}
+          data-testid="dashboard-flash-card"
+        >
+          <div className="rounded-full bg-[var(--panel)] px-4 py-2 text-[12px] font-bold text-[var(--primary)]">
+            USB-only workbench
+          </div>
+          <div className="mt-5 text-[22px] font-bold leading-7">
+            Flash firmware
+          </div>
+          <div className="mt-3 max-w-[30ch] text-[13px] font-semibold leading-6 text-[var(--muted)]">
+            Provision first-time boards, recover damaged firmware, or install a
+            bundled release without leaving the dashboard.
+          </div>
+        </button>
       </div>
 
       <div className="text-[12px] font-semibold text-[var(--muted)]">

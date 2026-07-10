@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1",
+  "artifacts": [
+    {
+      "artifactId": "isolapurr-a6b88225a2f3",
+      "target": "esp32s3_app",
+      "version": "0.5.0-dev.1",
+      "gitSha": "a6b88225a2f3eed8a85dde34769e9a8ff6b5112e",
+      "buildId": "27750265352",
+      "files": [
+        {
+          "kind": "app_bin",
+          "path": "isolapurr-usb-hub.app.bin",
+          "sha256": "d85ab54e2f91c1e89f8cb67a2f9508b1ee154ba55b976f4ede8776643662ae6f",
+          "size": 738944,
+          "flashAddress": 65536
+        },
+        {
+          "kind": "elf",
+          "path": "isolapurr-usb-hub.elf",
+          "sha256": "97502a8630766b3478e2a24ddea01432fa7a487d851ab117e60d3629687c77ba",
+          "size": 9396980
+        }
+      ]
+    }
+  ]
+}
