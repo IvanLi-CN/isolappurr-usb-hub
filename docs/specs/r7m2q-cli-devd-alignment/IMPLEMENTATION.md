@@ -182,10 +182,14 @@
   `14.2, 5.0, 5.2, 5.3, 4.7, 5.6, 4.5, 4.3 ms`, each confirming
   `device_id=f293cc9c139e` and `mac=9c:13:9e:f2:93:cc` without a board reset.
 - Production `/flash` orchestration was exercised through the opt-in
-  Playwright serial HIL against only `/dev/cu.usbmodem21231401`. Four complete
-  runs produced 36 successful probes; every run completed below five seconds,
+  Playwright serial HIL against only `/dev/cu.usbmodem21231401`. Five complete
+  runs produced 45 successful probes; every run completed below five seconds,
   the slowest measured probe was `1440.7 ms`, and the bridge asserted zero
   DTR/RTS `setSignals` calls. A post-run `info` response completed in `28.7 ms`
   with `uptime_ms=470110`, proving the MCU had not been reset during the loop.
+  The final post-review run completed in `514.3, 142.5, 133.0, 138.6, 168.6,
+  139.9, 151.1, 139.5, 141.7 ms`.
+- Final read-only review against `origin/main` reported no discrete correctness
+  issues after the feature-gated PSRAM reporting fix.
 - Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
   is present in the PWA precache list.

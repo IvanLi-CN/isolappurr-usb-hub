@@ -42,7 +42,7 @@
   identity succeeds. Recognized targets now use firmware-reported hardware or
   the VID/PID-bound legacy `tps-sw` profile, while new firmware reports runtime
   PSRAM capacity directly in USB `info`. Added an explicit-path Playwright HIL
-  that proved 36 consecutive real-device probes below five seconds without a
+  that proved 45 consecutive real-device probes below five seconds without a
   control-line reset.
 - Clarified and implemented `isolapurr discover` so LAN results come from live
   mDNS discovery, USB results come from the current local scan, and saved
