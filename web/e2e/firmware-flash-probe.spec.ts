@@ -333,11 +333,11 @@ test("confirms an authorized IsolaPurr target within five seconds repeatedly", a
     await expect(
       selection.getByText("installed", { exact: true }),
     ).toBeVisible();
-    await expect(selection.getByText("0.5.0", { exact: true })).toBeVisible();
+    await expect(selection.getByText("v0.5.0", { exact: true })).toBeVisible();
     await expect(
       selection.getByText("to flash", { exact: true }),
     ).toBeVisible();
-    await expect(selection.getByText("0.5.1", { exact: true })).toBeVisible();
+    await expect(selection.getByText("v0.5.1", { exact: true })).toBeVisible();
     expect(
       await page.evaluate(() =>
         (

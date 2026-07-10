@@ -229,8 +229,8 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   in application runtime throughout detection; no DTR/RTS reset or esptool sync
   sequence is allowed after its firmware API has confirmed project identity.
 - Given a target reports firmware `0.5.0` and release `0.5.1` is selected, when
-  the flash summary is rendered, then `INSTALLED 0.5.0` appears immediately
-  above `TO FLASH 0.5.1`.
+  the flash summary is rendered, then `INSTALLED v0.5.0` appears immediately
+  above `TO FLASH v0.5.1`, with exactly one canonical `v` prefix on each value.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.
 - Given the user runs `isolapurr discover`, when LAN devices advertise the
   IsolaPurr HTTP service and Local USB candidates are currently attached, then

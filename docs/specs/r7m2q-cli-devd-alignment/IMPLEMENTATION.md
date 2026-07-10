@@ -194,8 +194,10 @@
 - The flash selection summary now renders the probed installed firmware above
   the selected target release as `INSTALLED` and `TO FLASH`. The component has
   dedicated Storybook connected/waiting states, and E2E verifies the
-  `0.5.0 -> 0.5.1` distinction during repeated authorized probes.
-- Post-change Web validation: 100 unit tests passed, 102 Storybook browser tests
+  `v0.5.0 -> v0.5.1` distinction during repeated authorized probes. Both
+  firmware-returned and release-provided versions are normalized to exactly one
+  lowercase `v` prefix for display.
+- Post-change Web validation: 101 unit tests passed, 102 Storybook browser tests
   passed, and the full E2E suite passed with 11 tests plus 2 opt-in HIL skips.
 - Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
   is present in the PWA precache list.

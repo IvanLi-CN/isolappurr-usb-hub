@@ -21,7 +21,7 @@ import {
   boardValue,
   cardClassName,
   type FlashActivityStatus,
-  normalizeFirmwareVersion,
+  formatFirmwareVersion,
   probeToneClass,
   summaryValue,
   transportLabel,
@@ -117,10 +117,10 @@ export function FirmwareFlashPage() {
     transportMode === null ? "Not connected" : transportLabel(transportMode);
   const selectedVersionLabel =
     sourceMode === "releases"
-      ? summaryValue(selectedRelease?.version)
+      ? summaryValue(formatFirmwareVersion(selectedRelease?.version))
       : summaryValue(localFile?.name);
   const installedVersionLabel = summaryValue(
-    normalizeFirmwareVersion(probe.firmwareVersion),
+    formatFirmwareVersion(probe.firmwareVersion),
   );
   const selectedSourceLabel =
     sourceMode === "releases" ? "Bundled release" : "Local file";

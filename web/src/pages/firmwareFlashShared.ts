@@ -444,6 +444,13 @@ export function normalizeFirmwareVersion(
   return trimmed.replace(/^v/i, "");
 }
 
+export function formatFirmwareVersion(
+  value: string | undefined,
+): string | null {
+  const normalized = normalizeFirmwareVersion(value);
+  return normalized ? `v${normalized}` : null;
+}
+
 export function resolveExpectedIdentity(
   currentDevice: StoredDevice | undefined,
   probe: ProbeState,

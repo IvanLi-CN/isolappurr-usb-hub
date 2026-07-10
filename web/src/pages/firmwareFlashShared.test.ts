@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { SerialLikePort } from "../domain/hardwareConsole";
-import { hardwareFromFirmwareInfo } from "./firmwareFlashShared";
+import {
+  formatFirmwareVersion,
+  hardwareFromFirmwareInfo,
+} from "./firmwareFlashShared";
 
 const projectInfo = (hardware?: Record<string, unknown>) => ({
   id: 1,
@@ -19,6 +22,14 @@ const projectInfo = (hardware?: Record<string, unknown>) => ({
 const esp32S3Port = {
   getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
 } as SerialLikePort;
+
+describe("formatFirmwareVersion", () => {
+  test("adds one canonical v prefix", () => {
+    expect(formatFirmwareVersion("0.5.1")).toBe("v0.5.1");
+    expect(formatFirmwareVersion("v0.5.1")).toBe("v0.5.1");
+    expect(formatFirmwareVersion("V0.5.1")).toBe("v0.5.1");
+  });
+});
 
 describe("hardwareFromFirmwareInfo", () => {
   test("uses hardware values reported by project firmware", () => {
