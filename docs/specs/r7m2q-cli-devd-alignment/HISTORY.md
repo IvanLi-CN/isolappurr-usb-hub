@@ -32,7 +32,8 @@
 - Replaced the probe window's display-only countdown with an operational Web
   Serial deadline after production behavior showed that stale-port polling and
   serial retries could continue for tens of seconds, accept late results, and
-  reset the board after the visible timer reached zero.
+  reset the board after the visible timer reached zero. Expired low-level work
+  now skips every reset action and only releases the transport.
 - Reduced first-time Web Serial hardware probing to the minimum esptool
   register path, removed packet tracing and duplicate flashing-oriented stub
   initialization, and added a MAC-bound hardware cache so repeat probes stay on

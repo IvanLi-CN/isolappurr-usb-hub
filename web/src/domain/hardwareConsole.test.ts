@@ -619,6 +619,75 @@ describe("probeWebSerialBoard", () => {
     expect(cleanupCalls.disconnect).toBe(1);
     expect(cleanupCalls.portClose).toBe(0);
   });
+
+  test("does not reset the board after a low-level probe is cancelled", async () => {
+    const cleanupCalls = {
+      disconnect: 0,
+      loaderAfter: 0,
+      setDTR: 0,
+      setRTS: 0,
+    };
+    const fakePort = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+
+    class HangingTransport {
+      constructor(
+        readonly device: typeof fakePort,
+        readonly _enableTracing: boolean,
+      ) {}
+
+      async disconnect() {
+        cleanupCalls.disconnect += 1;
+      }
+
+      async setDTR(_value: boolean) {
+        cleanupCalls.setDTR += 1;
+      }
+
+      async setRTS(_value: boolean) {
+        cleanupCalls.setRTS += 1;
+      }
+    }
+
+    class HangingLoader {
+      readonly chip = {};
+
+      constructor(readonly _options: unknown) {}
+
+      async detectChip() {
+        return await new Promise<void>(() => undefined);
+      }
+
+      async after() {
+        cleanupCalls.loaderAfter += 1;
+      }
+    }
+
+    mock.module("esptool-js", () => ({
+      ESPLoader: HangingLoader,
+      Transport: HangingTransport,
+    }));
+
+    const controller = new AbortController();
+    const probe = probeWebSerialBoard(fakePort as never, {
+      signal: controller.signal,
+    });
+    setTimeout(
+      () => controller.abort(new Error("Web Serial probe timed out.")),
+      20,
+    );
+
+    await expect(probe).rejects.toThrow("probe timed out");
+    expect(cleanupCalls.loaderAfter).toBe(0);
+    expect(cleanupCalls.setDTR).toBe(0);
+    expect(cleanupCalls.setRTS).toBe(0);
+    expect(cleanupCalls.disconnect).toBeGreaterThan(0);
+  });
 });
 
 describe("flashWithWebSerial", () => {

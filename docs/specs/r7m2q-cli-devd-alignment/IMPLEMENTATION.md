@@ -110,7 +110,9 @@
 - The five-second deadline now aborts port open, JSONL request, and esptool
   operations, renders an actionable timeout state, and rejects every late or
   superseded probe generation. Browser-picker time is deliberately excluded
-  and no countdown is rendered before hardware reading starts.
+  and no countdown is rendered before hardware reading starts. An expired
+  low-level probe disconnects its transport without running any later hard
+  reset or DTR/RTS recovery sequence.
 - The right-side flash rail keeps its primary actions above the log and renders
   structured progress/log entries for both Local USB and Web Serial, while
   same-origin firmware remains excluded from install-time PWA precache.
@@ -168,7 +170,7 @@
 ## Final Validation
 
 - `just web-check`: passed
-- `cd web && bun test ./src`: 96 passed
+- `cd web && bun test ./src`: 97 passed
 - `cd web && PLAYWRIGHT_PORT=37510 bun run test:e2e`: 11 passed, 1
   hardware-in-loop test skipped; this includes eight repeated authorized
   target probes under five seconds plus timeout/late-result rejection.

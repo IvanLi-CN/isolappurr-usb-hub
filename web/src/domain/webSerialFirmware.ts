@@ -18,6 +18,13 @@ function probeTimeoutError(): Error {
   return new Error("Web Serial probe timed out.");
 }
 
+function operationExpired(options: WebSerialOperationOptions): boolean {
+  return (
+    options.signal?.aborted === true ||
+    (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt)
+  );
+}
+
 function throwIfOperationExpired(options: WebSerialOperationOptions): void {
   if (options.signal?.aborted) {
     throw options.signal.reason instanceof Error
@@ -507,16 +514,20 @@ export async function probeWebSerialBoard(
       macAddress,
     };
   } finally {
-    try {
-      await loader.after("hard_reset");
-    } catch {
-      // Ignore reset failures while returning to runtime mode.
-    }
-    try {
-      await resetEsp32S3UsbJtagToApp(transport as EsptoolTransportWithSignals);
-    } catch {
-      // Ignore control-line recovery failures; callers will re-check whether
-      // the firmware runtime actually resumed after the low-level probe.
+    if (!operationExpired(options)) {
+      try {
+        await loader.after("hard_reset");
+      } catch {
+        // Ignore reset failures while returning to runtime mode.
+      }
+      try {
+        await resetEsp32S3UsbJtagToApp(
+          transport as EsptoolTransportWithSignals,
+        );
+      } catch {
+        // Ignore control-line recovery failures; callers will re-check whether
+        // the firmware runtime actually resumed after the low-level probe.
+      }
     }
     try {
       await transport.disconnect();
