@@ -3,6 +3,8 @@
         .with_cpu_clock(CpuClock::max())
         .with_psram(esp_hal::psram::PsramConfig::default());
     let peripherals = esp_hal::init(config);
+    let (_, psram_size_bytes) = esp_hal::psram::psram_raw_parts(&peripherals.PSRAM);
+    PSRAM_SIZE_BYTES.store(psram_size_bytes, Ordering::Release);
 
     // Internal heap for firmware/runtime allocations; display framebuffers are explicitly placed
     // in PSRAM via `esp_alloc::ExternalMemory`.

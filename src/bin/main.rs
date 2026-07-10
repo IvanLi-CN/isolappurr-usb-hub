@@ -30,7 +30,7 @@ const BUILD_PROFILE: &str = env!("USB_HUB_BUILD_PROFILE");
 use core::cell::RefCell;
 #[cfg(feature = "net_http")]
 use core::fmt::Write as _;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use critical_section::Mutex;
 #[cfg(feature = "net_http")]
 use defmt::debug;
@@ -105,6 +105,8 @@ static mut DISPLAY_WORKBUF: [u8; WORKBUF_SIZE] = [0; WORKBUF_SIZE];
 
 static TPS_INT: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
 static TPS_INT_DIRTY: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "net_http")]
+static PSRAM_SIZE_BYTES: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "net_http")]
 #[derive(Clone, Copy)]

@@ -38,6 +38,12 @@
   register path, removed packet tracing and duplicate flashing-oriented stub
   initialization, and added a MAC-bound hardware cache so repeat probes stay on
   the firmware API path without resetting a known board.
+- Removed the remaining unconditional low-level probe after project firmware
+  identity succeeds. Recognized targets now use firmware-reported hardware or
+  the VID/PID-bound legacy `tps-sw` profile, while new firmware reports runtime
+  PSRAM capacity directly in USB `info`. Added an explicit-path Playwright HIL
+  that proved 36 consecutive real-device probes below five seconds without a
+  control-line reset.
 - Clarified and implemented `isolapurr discover` so LAN results come from live
   mDNS discovery, USB results come from the current local scan, and saved
   device profiles only annotate matching live results instead of standing in for

@@ -34,10 +34,12 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST keep Web Serial available in the Web app as a formal supported channel.
 - MUST probe a selected Web Serial target within a five-second operational
   deadline, excluding time spent in the browser-owned device picker. The probe
-  MUST read IsolaPurr firmware identity before entering the lower-level
-  hardware probe, MUST restore the firmware runtime after that probe, and MUST
-  fail explicitly when the deadline expires. Expired or superseded work MUST
-  not update the UI or reset the board later in the background.
+  MUST read IsolaPurr firmware identity first. A recognized project target MUST
+  use firmware-reported hardware data or the matching legacy board profile and
+  MUST NOT enter bootloader mode merely to populate hardware fields. A
+  lower-level probe is reserved for targets without project identity, and the
+  page MUST fail explicitly when the deadline expires. Expired or superseded
+  work MUST not update the UI or reset the board later in the background.
 - MUST have Web runtime arbitrate active channels across Web Serial, devd Local USB, and Wi-Fi/HTTP.
 - MUST keep Agent-driven hardware operation on released CLI/devd unless the owner explicitly asks for browser Web Serial operation.
 - MUST expose a standalone Web firmware flash workbench at `/flash`, with
@@ -219,7 +221,9 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   starts or repeats device detection, then firmware and hardware identity are
   rendered within five seconds on repeated runs. If that deadline cannot be
   met, the page leaves the probing state with an actionable timeout and ignores
-  any late completion from that probe generation.
+  any late completion from that probe generation. A recognized target remains
+  in application runtime throughout detection; no DTR/RTS reset or esptool sync
+  sequence is allowed after its firmware API has confirmed project identity.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.
 - Given the user runs `isolapurr discover`, when LAN devices advertise the
   IsolaPurr HTTP service and Local USB candidates are currently attached, then

@@ -219,6 +219,88 @@ export function classifyProbe(
   };
 }
 
+function probeDeviceRecord(value: unknown): Record<string, unknown> | null {
+  const root =
+    value && typeof value === "object"
+      ? ((value as { result?: unknown }).result ?? value)
+      : null;
+  const device =
+    root && typeof root === "object"
+      ? ((root as { device?: unknown }).device ?? root)
+      : null;
+  return device && typeof device === "object"
+    ? (device as Record<string, unknown>)
+    : null;
+}
+
+function capacityFromBytes(value: unknown): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  if (value === 0) {
+    return "Not detected";
+  }
+  const mib = value / (1024 * 1024);
+  if (Number.isInteger(mib)) {
+    return `${mib} MB`;
+  }
+  const kib = value / 1024;
+  return Number.isInteger(kib) ? `${kib} KB` : `${value} bytes`;
+}
+
+export function hardwareFromFirmwareInfo(
+  value: unknown,
+  port?: SerialLikePort | null,
+): HardwareBoardInfo | undefined {
+  const device = probeDeviceRecord(value);
+  if (!device) {
+    return undefined;
+  }
+  const firmware =
+    device.firmware && typeof device.firmware === "object"
+      ? (device.firmware as Record<string, unknown>)
+      : null;
+  if (firmware?.name !== "isolapurr-usb-hub") {
+    return undefined;
+  }
+  const macAddress = typeof device.mac === "string" ? device.mac : undefined;
+  const reported =
+    device.hardware && typeof device.hardware === "object"
+      ? (device.hardware as Record<string, unknown>)
+      : null;
+  if (reported) {
+    const mcuModel =
+      typeof reported.mcu === "string" ? reported.mcu : undefined;
+    return {
+      source: "firmware",
+      chipType: mcuModel,
+      mcuModel,
+      flashSize: capacityFromBytes(reported.flash_bytes),
+      ramSize: capacityFromBytes(reported.ram_bytes),
+      psramSize: capacityFromBytes(reported.psram_bytes),
+      macAddress,
+    };
+  }
+
+  const portInfo = port?.getInfo?.();
+  if (
+    device.variant === "tps-sw" &&
+    portInfo?.usbVendorId === 0x303a &&
+    portInfo.usbProductId === 0x1001
+  ) {
+    return {
+      source: "firmware-profile",
+      chipType: "ESP32-S3",
+      mcuModel: "ESP32-S3",
+      flashSize: "4 MB",
+      ramSize: "512 KB",
+      psramSize: "8 MB",
+      macAddress,
+    };
+  }
+  return undefined;
+}
+
 export function summaryValue(
   value: string | null | undefined,
   fallback = "—",

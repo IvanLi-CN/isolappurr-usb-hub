@@ -77,7 +77,7 @@ export type FirmwareFlashProgress = {
 };
 
 export type HardwareBoardInfo = {
-  source: "esptool-js" | "espflash";
+  source: "firmware" | "firmware-profile" | "esptool-js" | "espflash";
   chipType?: string;
   mcuModel?: string;
   chipRevision?: string;

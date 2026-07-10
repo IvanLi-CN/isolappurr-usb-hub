@@ -1025,9 +1025,10 @@ fn write_usb_info_json(
 
     let _ = write!(
         body,
-        "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}},\"uptime_ms\":{},",
+        "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}},\"hardware\":{{\"mcu\":\"ESP32-S3\",\"flash_bytes\":4194304,\"ram_bytes\":524288,\"psram_bytes\":{}}},\"uptime_ms\":{},",
         env!("CARGO_PKG_NAME"),
         release_version(),
+        PSRAM_SIZE_BYTES.load(Ordering::Acquire),
         firmware_uptime_ms()
     );
     write_usb_wifi_object(body, wifi);

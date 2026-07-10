@@ -244,6 +244,7 @@ test("confirms an authorized IsolaPurr target within five seconds repeatedly", a
 }) => {
   await page.addInitScript(() => {
     let openCount = 0;
+    let lowLevelSignalCount = 0;
     let readableController: ReadableStreamDefaultController<Uint8Array> | null =
       null;
     const port = {
@@ -278,6 +279,7 @@ test("confirms an authorized IsolaPurr target within five seconds repeatedly", a
                       device: {
                         device_id: "f293cc9c139e",
                         mac: "9c:13:9e:f2:93:cc",
+                        variant: "tps-sw",
                         hostname: "isolapurr-usb-hub-f293cc9c139e",
                         firmware: {
                           name: "isolapurr-usb-hub",
@@ -297,6 +299,9 @@ test("confirms an authorized IsolaPurr target within five seconds repeatedly", a
         port.writable = null;
         readableController = null;
       },
+      setSignals: async () => {
+        lowLevelSignalCount += 1;
+      },
     };
     Object.defineProperty(navigator, "serial", {
       configurable: true,
@@ -305,22 +310,11 @@ test("confirms an authorized IsolaPurr target within five seconds repeatedly", a
         requestPort: async () => port,
       },
     });
-    localStorage.setItem(
-      "isolapurr.web-serial-hardware.v1",
-      JSON.stringify({
-        "9c139ef293cc": {
-          source: "esptool-js",
-          chipType: "ESP32-S3",
-          mcuModel: "ESP32-S3",
-          chipRevision: "v0.2",
-          flashSize: "4 MB",
-          ramSize: "512 KB",
-          macAddress: "9c:13:9e:f2:93:cc",
-        },
-      }),
-    );
     Object.assign(window, {
-      __successfulProbe: { openCount: () => openCount },
+      __successfulProbe: {
+        openCount: () => openCount,
+        lowLevelSignalCount: () => lowLevelSignalCount,
+      },
     });
   });
 
@@ -339,10 +333,22 @@ test("confirms an authorized IsolaPurr target within five seconds repeatedly", a
       await page.evaluate(() =>
         (
           window as unknown as {
-            __successfulProbe: { openCount(): number };
+            __successfulProbe: {
+              openCount(): number;
+              lowLevelSignalCount(): number;
+            };
           }
         ).__successfulProbe.openCount(),
       ),
     ).toBe(1);
+    expect(
+      await page.evaluate(() =>
+        (
+          window as unknown as {
+            __successfulProbe: { lowLevelSignalCount(): number };
+          }
+        ).__successfulProbe.lowLevelSignalCount(),
+      ),
+    ).toBe(0);
   }
 });

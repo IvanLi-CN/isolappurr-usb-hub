@@ -46,6 +46,7 @@ import {
   type FlashModeReason,
   type FlashTransportMode,
   formatElapsedTimestamp,
+  hardwareFromFirmwareInfo,
   isWebSerialPickerCancelledError,
   normalizeFirmwareVersion,
   type PendingConnectionAction,
@@ -683,10 +684,18 @@ export function useFirmwareFlashConnection({
             "Web Serial target did not expose project firmware metadata.",
           )
         : null;
+      const firmwareHardware = infoResult.ok
+        ? hardwareFromFirmwareInfo(infoResult.value, activePort)
+        : undefined;
       let hardware =
         options.fallbackHardware ??
+        firmwareHardware ??
         readCachedWebSerialHardware(initialIdentity?.mac);
-      if (options.refreshHardware && !hardware) {
+      if (
+        options.refreshHardware &&
+        !hardware &&
+        initialIdentity?.kind !== "recognized"
+      ) {
         try {
           hardware = await probeWebSerialBoard(activePort, {
             signal: operation?.signal,
