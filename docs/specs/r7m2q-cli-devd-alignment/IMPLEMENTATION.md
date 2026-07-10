@@ -191,5 +191,11 @@
   139.9, 151.1, 139.5, 141.7 ms`.
 - Final read-only review against `origin/main` reported no discrete correctness
   issues after the feature-gated PSRAM reporting fix.
+- The flash selection summary now renders the probed installed firmware above
+  the selected target release as `INSTALLED` and `TO FLASH`. The component has
+  dedicated Storybook connected/waiting states, and E2E verifies the
+  `0.5.0 -> 0.5.1` distinction during repeated authorized probes.
+- Post-change Web validation: 100 unit tests passed, 102 Storybook browser tests
+  passed, and the full E2E suite passed with 11 tests plus 2 opt-in HIL skips.
 - Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
   is present in the PWA precache list.

@@ -5,10 +5,10 @@ import { useDevices } from "../app/devices-store";
 import { isWebSerialSupported } from "../domain/hardwareConsole";
 import { getLocalUsbDeviceLink } from "../domain/localUsbLinks";
 import { FirmwareFlashLogPanel } from "../ui/panels/FirmwareFlashLogPanel";
+import { FirmwareFlashSelectionSummary } from "../ui/panels/FirmwareFlashSelectionSummary";
 import { FirmwareFlashTargetState } from "../ui/panels/FirmwareFlashTargetState";
 import { FirmwareReleaseList } from "../ui/panels/FirmwareReleaseList";
 import {
-  FlashSummaryRow,
   outlineButtonClass,
   primaryButtonClass,
   ReconnectIcon,
@@ -21,6 +21,7 @@ import {
   boardValue,
   cardClassName,
   type FlashActivityStatus,
+  normalizeFirmwareVersion,
   probeToneClass,
   summaryValue,
   transportLabel,
@@ -118,6 +119,9 @@ export function FirmwareFlashPage() {
     sourceMode === "releases"
       ? summaryValue(selectedRelease?.version)
       : summaryValue(localFile?.name);
+  const installedVersionLabel = summaryValue(
+    normalizeFirmwareVersion(probe.firmwareVersion),
+  );
   const selectedSourceLabel =
     sourceMode === "releases" ? "Bundled release" : "Local file";
   const flashModeLabel = recoveryFlow ? "Recovery" : "Normal update";
@@ -607,17 +611,17 @@ export function FirmwareFlashPage() {
               ))}
             </div>
 
-            <div className="mt-4 border-t border-[var(--border)] pt-3">
-              <div className="text-[14px] font-bold">Current selection</div>
-              <div className="mt-2.5 grid grid-cols-[92px_minmax(0,1fr)] gap-x-3 gap-y-2 text-[12px] font-semibold leading-5">
-                <FlashSummaryRow label="transport" value={transportSummary} />
-                <FlashSummaryRow label="mode" value={flashModeLabel} />
-                <FlashSummaryRow label="source" value={selectedSourceLabel} />
-                <FlashSummaryRow label="version" value={selectedVersionLabel} />
-                <FlashSummaryRow label="confirm" value={confirmationLabel} />
-                <FlashSummaryRow label="address" value={addressLabel} mono />
-              </div>
-            </div>
+            <FirmwareFlashSelectionSummary
+              items={[
+                { label: "transport", value: transportSummary },
+                { label: "mode", value: flashModeLabel },
+                { label: "source", value: selectedSourceLabel },
+                { label: "installed", value: installedVersionLabel },
+                { label: "to flash", value: selectedVersionLabel },
+                { label: "confirm", value: confirmationLabel },
+                { label: "address", value: addressLabel, mono: true },
+              ]}
+            />
 
             <div className="mt-3 border-t border-[var(--border)] pt-3">
               <div className="text-[14px] font-bold">Safety check</div>

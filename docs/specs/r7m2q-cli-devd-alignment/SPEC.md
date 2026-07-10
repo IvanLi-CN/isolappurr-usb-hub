@@ -46,6 +46,10 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
   entry points from the Dashboard add-device area and the device Settings
   surface, while preserving the repository `?demo=true|false` contract instead
   of introducing ad hoc demo pages.
+- MUST show the connected target's installed firmware version immediately above
+  the selected version to be flashed. The two values MUST use distinct labels
+  and the installed value MUST come from the live target probe rather than the
+  selected release.
 - MUST keep maintainer-facing workflow truth in one detailed project doc, with `README.md` as human navigation and `AGENTS.md` as concise entry rules rather than parallel full workflow manuals.
 - MUST keep repo-managed Web verification guidance aligned with the repository
   Web demo-surface policy: production SPA routes stay as app-level pages,
@@ -224,6 +228,9 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   any late completion from that probe generation. A recognized target remains
   in application runtime throughout detection; no DTR/RTS reset or esptool sync
   sequence is allowed after its firmware API has confirmed project identity.
+- Given a target reports firmware `0.5.0` and release `0.5.1` is selected, when
+  the flash summary is rendered, then `INSTALLED 0.5.0` appears immediately
+  above `TO FLASH 0.5.1`.
 - Given the same device is reachable through Web Serial and Wi-Fi/HTTP, when the runtime receives matching identity, then it updates one saved profile instead of creating a duplicate.
 - Given the user runs `isolapurr discover`, when LAN devices advertise the
   IsolaPurr HTTP service and Local USB candidates are currently attached, then
@@ -350,6 +357,12 @@ target, showing the flattened target details without the redundant summary
 strip or nested info cards:
 
 ![Firmware flash workbench connected demo](./assets/flash-workbench-demo-connected-refined.png)
+
+Standalone `/flash?demo=true` workbench showing the live target version and the
+selected release as separate adjacent rows. `INSTALLED` comes from the target
+probe while `TO FLASH` follows the selected firmware source:
+
+![Firmware flash workbench version comparison](./assets/flash-workbench-demo-version-comparison.png)
 
 Standalone `/flash?demo=true` workbench on a confirmed IsolaPurr target after
 switching the right-rail mode toggle to `Recovery`, proving that ordinary

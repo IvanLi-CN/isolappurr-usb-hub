@@ -78,13 +78,22 @@ test("renders devices list and mock dashboard", async ({ page }) => {
       };
     });
 
-  const lightColors = await selectionColors();
-  expect(
-    contrastRatio(lightColors.cardBorder, lightColors.cardBackground),
-  ).toBeGreaterThanOrEqual(3);
-  expect(
-    contrastRatio(lightColors.markerText, lightColors.markerBackground),
-  ).toBeGreaterThanOrEqual(4.5);
+  const expectSelectionContrast = async () => {
+    await expect
+      .poll(async () => {
+        const colors = await selectionColors();
+        return contrastRatio(colors.cardBorder, colors.cardBackground);
+      })
+      .toBeGreaterThanOrEqual(3);
+    await expect
+      .poll(async () => {
+        const colors = await selectionColors();
+        return contrastRatio(colors.markerText, colors.markerBackground);
+      })
+      .toBeGreaterThanOrEqual(4.5);
+  };
+
+  await expectSelectionContrast();
 
   await page.evaluate(() => {
     window.localStorage.setItem(
@@ -97,13 +106,7 @@ test("renders devices list and mock dashboard", async ({ page }) => {
     "data-theme",
     "isolapurr-dark",
   );
-  const darkColors = await selectionColors();
-  expect(
-    contrastRatio(darkColors.cardBorder, darkColors.cardBackground),
-  ).toBeGreaterThanOrEqual(3);
-  expect(
-    contrastRatio(darkColors.markerText, darkColors.markerBackground),
-  ).toBeGreaterThanOrEqual(4.5);
+  await expectSelectionContrast();
 
   await expect(page.getByTestId("port-card-port_a")).toBeVisible();
   await expect(page.getByTestId("port-card-port_c")).toBeVisible();

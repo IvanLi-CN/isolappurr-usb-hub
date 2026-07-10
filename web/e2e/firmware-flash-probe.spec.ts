@@ -283,7 +283,7 @@ test("confirms an authorized IsolaPurr target within five seconds repeatedly", a
                         hostname: "isolapurr-usb-hub-f293cc9c139e",
                         firmware: {
                           name: "isolapurr-usb-hub",
-                          version: "0.5.1",
+                          version: "0.5.0",
                         },
                       },
                     },
@@ -329,6 +329,15 @@ test("confirms an authorized IsolaPurr target within five seconds repeatedly", a
     await expect(page.getByText("ESP32-S3", { exact: true })).toBeVisible();
     await expect(page.getByText("4 MB", { exact: true })).toBeVisible();
     await expect(page.getByText("512 KB", { exact: true })).toBeVisible();
+    const selection = page.getByTestId("firmware-flash-selection-summary");
+    await expect(
+      selection.getByText("installed", { exact: true }),
+    ).toBeVisible();
+    await expect(selection.getByText("0.5.0", { exact: true })).toBeVisible();
+    await expect(
+      selection.getByText("to flash", { exact: true }),
+    ).toBeVisible();
+    await expect(selection.getByText("0.5.1", { exact: true })).toBeVisible();
     expect(
       await page.evaluate(() =>
         (

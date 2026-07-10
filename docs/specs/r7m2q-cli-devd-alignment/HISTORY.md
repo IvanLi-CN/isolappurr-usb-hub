@@ -44,6 +44,9 @@
   PSRAM capacity directly in USB `info`. Added an explicit-path Playwright HIL
   that proved 45 consecutive real-device probes below five seconds without a
   control-line reset.
+- Split the flash summary's ambiguous version row into adjacent `INSTALLED` and
+  `TO FLASH` rows so owners can compare live device firmware with the selected
+  image before writing.
 - Clarified and implemented `isolapurr discover` so LAN results come from live
   mDNS discovery, USB results come from the current local scan, and saved
   device profiles only annotate matching live results instead of standing in for
