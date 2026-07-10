@@ -91,6 +91,18 @@
   for already confirmed IsolaPurr hardware. When the owner selects recovery on
   a confirmed target, devd keeps the identity guard and allows the write
   without pretending the board is unknown or foreign.
+- The `/flash` workbench restores previously authorized Web USB devices as a
+  deliberate reconnectable state, supports explicit browser authorization
+  release where the platform exposes `SerialPort.forget()`, and keeps the
+  browser picker separate from re-reading a known device.
+- Probe activity now uses a compact, repeatable loading state: it exposes a
+  live serial-link indicator and a seconds-only probe window only while a
+  read is running. The same state is reproducible without hardware at
+  `/flash?demo=true&webUsb=authorized&probe=reading` and is covered by
+  Playwright plus Storybook.
+- The right-side flash rail keeps its primary actions above the log and renders
+  structured progress/log entries for both Local USB and Web Serial, while
+  same-origin firmware remains excluded from install-time PWA precache.
 - Repository skills added under `skills/isolapurr-user-operations` and `skills/isolapurr-developer-operations`.
 - Repo-managed workflow truth is now split cleanly by responsibility: `isolapurr-user-operations` tracks the released CLI surface, `isolapurr-developer-operations` tracks source/developer flows, `isolapurr-maintainer-workflow` is the repo-private router, `docs/maintainer-workflow.md` is the detailed maintainer doc, `README.md` handles human navigation, and `AGENTS.md` stays as the concise entry contract.
 - Repo-managed Web verification guidance now also points to the dedicated
@@ -139,4 +151,17 @@
 
 - `A1` Repair notes, test evidence, and visual evidence synced into the audit/spec surfaces: completed
 - `A2` Final acceptance audit over every explicit requirement: completed
-- `A3` Local signed-off commit to lock the result: pending
+- `A3` Local signed-off commit to lock the result: ready for the current
+  delivery commit
+
+## Final Validation
+
+- `just web-check`: passed
+- `cd web && bun test ./src`: 90 passed
+- `cd web && bun run test:e2e`: 6 passed, 1 hardware-in-loop test skipped
+- `just host-tools-test`: 77 passed
+- `python3 -m unittest discover -s .github/scripts -p 'test_*.py'`: 24 passed
+- `cd web && bun run build && bun run build-storybook && bun run test:storybook`:
+  passed, including 98 Storybook browser tests
+- Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
+  is present in the PWA precache list.

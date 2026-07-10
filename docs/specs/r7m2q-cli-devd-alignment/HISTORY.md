@@ -23,6 +23,12 @@
 - Hardened the Web Serial flash path against the browser's transient
   `SerialPort.open` failure window after probe/reset by retrying the exact
   browser-level open error before surfacing a write failure to the owner.
+- Refined the `/flash` probe and authorization workflow: authorized Web USB
+  devices can be re-read without reopening the browser picker, explicit
+  release delegates to `SerialPort.forget()` when the browser supports it, and
+  the active probe view uses a compact loading rail with a seconds-only probe
+  window. Added repeatable demo, Playwright, Storybook, and visual evidence
+  coverage for these states.
 - Clarified and implemented `isolapurr discover` so LAN results come from live
   mDNS discovery, USB results come from the current local scan, and saved
   device profiles only annotate matching live results instead of standing in for

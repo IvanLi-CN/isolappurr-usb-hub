@@ -1,5 +1,6 @@
 const STORAGE_KEY = "isolapurr_usb_hub.flash_transport_locks";
 const EVENT_NAME = "isolapurr-flash-transport-lock";
+export const FLASH_TRANSPORT_LOCK_ALL = "__all__";
 
 export type FlashTransportLock = {
   deviceId: string;
@@ -63,8 +64,25 @@ export function clearFlashTransportLock(deviceId: string): void {
   setFlashTransportLock({ deviceId, transport: null });
 }
 
+export function setGlobalFlashTransportLock(
+  transport: "web_serial" | null,
+): void {
+  setFlashTransportLock({
+    deviceId: FLASH_TRANSPORT_LOCK_ALL,
+    transport,
+  });
+}
+
+export function clearGlobalFlashTransportLock(): void {
+  clearFlashTransportLock(FLASH_TRANSPORT_LOCK_ALL);
+}
+
 export function isLocalUsbSuppressedForFlashDevice(deviceId: string): boolean {
-  return readLocks()[deviceId] === "web_serial";
+  const locks = readLocks();
+  return (
+    locks[FLASH_TRANSPORT_LOCK_ALL] === "web_serial" ||
+    locks[deviceId] === "web_serial"
+  );
 }
 
 export function subscribeFlashTransportLocks(

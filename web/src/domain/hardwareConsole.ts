@@ -114,6 +114,7 @@ declare global {
   type SerialPort = {
     readable: ReadableStream<Uint8Array> | null;
     writable: WritableStream<Uint8Array> | null;
+    forget?: () => Promise<void>;
     open(options: { baudRate: number }): Promise<void>;
     close(): Promise<void>;
   };
@@ -236,6 +237,55 @@ export async function refreshGrantedWebSerialPort(
   throw new Error(
     "Browser granted Web USB ports are ambiguous or unavailable. Re-open Web USB and choose the exact ESP32-S3 target again.",
   );
+}
+
+export async function getReusableGrantedWebSerialPort(
+  preferred?: SerialLikePort | null,
+): Promise<SerialLikePort | null> {
+  if (!isWebSerialSupported() || !navigator.serial.getPorts) {
+    return null;
+  }
+  const granted = (await navigator.serial.getPorts()) as SerialLikePort[];
+  return resolveGrantedWebSerialPort(granted, preferred);
+}
+
+export async function forgetGrantedWebSerialPort(
+  preferred?: SerialLikePort | null,
+): Promise<boolean> {
+  if (!isWebSerialSupported()) {
+    return false;
+  }
+
+  let target = preferred ?? null;
+  if (navigator.serial.getPorts) {
+    if (preferred) {
+      target = await refreshGrantedWebSerialPort(preferred).catch(
+        () => preferred,
+      );
+    } else {
+      target = await getReusableGrantedWebSerialPort();
+    }
+  }
+  if (!target) {
+    return false;
+  }
+
+  try {
+    await target.close();
+  } catch (err) {
+    if (
+      !(err instanceof DOMException) ||
+      !err.message.includes("already closed")
+    ) {
+      // Ignore close failures here and still attempt forget when supported.
+    }
+  }
+
+  if (typeof target.forget !== "function") {
+    return false;
+  }
+  await target.forget();
+  return true;
 }
 
 function inferRamSize(chipType: string | undefined): string | undefined {
@@ -1049,13 +1099,24 @@ export class WebSerialJsonlTransport {
   }
 
   async connectToPort(port: SerialLikePort): Promise<void> {
-    await port.open({ baudRate: 115200 });
-    this.reader = port.readable?.getReader() ?? null;
-    this.writer = port.writable?.getWriter() ?? null;
-    this.decoder = new TextDecoder();
-    this.buffered = "";
-    this.port = port;
-    void this.readSerialLoop();
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      try {
+        await port.open({ baudRate: 115200 });
+        this.reader = port.readable?.getReader() ?? null;
+        this.writer = port.writable?.getWriter() ?? null;
+        this.decoder = new TextDecoder();
+        this.buffered = "";
+        this.port = port;
+        void this.readSerialLoop();
+        return;
+      } catch (err) {
+        if (attempt < 5 && isRetryableWebSerialOpenError(err)) {
+          await delay(250 * (attempt + 1));
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
   async takePortForExclusiveUse(): Promise<SerialLikePort> {
@@ -1274,6 +1335,12 @@ export async function probeWebSerialBoard(
       // Ignore reset failures while returning to runtime mode.
     }
     try {
+      await resetEsp32S3UsbJtagToApp(transport as EsptoolTransportWithSignals);
+    } catch {
+      // Ignore control-line recovery failures; callers will re-check whether
+      // the firmware runtime actually resumed after the low-level probe.
+    }
+    try {
       await transport.disconnect();
     } catch {
       try {
@@ -1285,7 +1352,17 @@ export async function probeWebSerialBoard(
   }
 }
 
-async function requestWebSerialPort(): Promise<SerialLikePort> {
+export async function requestWebSerialPort(
+  preferred?: SerialLikePort | null,
+): Promise<SerialLikePort> {
+  const reusable = await getReusableGrantedWebSerialPort(preferred);
+  if (reusable) {
+    return reusable;
+  }
+  return requestNewWebSerialPort();
+}
+
+export async function requestNewWebSerialPort(): Promise<SerialLikePort> {
   return (await navigator.serial.requestPort({
     filters: [
       {

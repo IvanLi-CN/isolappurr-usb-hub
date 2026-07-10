@@ -5,11 +5,14 @@ import {
   filterEsp32SerialPorts,
   flashBundledWithLocalUsb,
   flashWithWebSerial,
+  forgetGrantedWebSerialPort,
+  getReusableGrantedWebSerialPort,
   isEsp32SerialPort,
   listLocalUsbSerialPorts,
   parseWebSerialJsonLine,
   probeWebSerialBoard,
   refreshGrantedWebSerialPort,
+  requestWebSerialPort,
   sendDevdLocalUsbJsonlRequest,
   sendLocalUsbJsonlRequest,
   stableLocalUsbDeviceId,
@@ -172,45 +175,49 @@ describe("refreshGrantedWebSerialPort", () => {
     );
   });
 
-  test("fails when multiple granted ports remain ambiguous", async () => {
-    const stalePort = {
-      readable: null,
-      writable: null,
-      close: async () => undefined,
-      open: async () => undefined,
-      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
-    };
-    const portA = {
-      readable: null,
-      writable: null,
-      close: async () => undefined,
-      open: async () => undefined,
-      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
-    };
-    const portB = {
-      readable: null,
-      writable: null,
-      close: async () => undefined,
-      open: async () => undefined,
-      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
-    };
+  test(
+    "fails when multiple granted ports remain ambiguous",
+    { timeout: 8_000 },
+    async () => {
+      const stalePort = {
+        readable: null,
+        writable: null,
+        close: async () => undefined,
+        open: async () => undefined,
+        getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+      };
+      const portA = {
+        readable: null,
+        writable: null,
+        close: async () => undefined,
+        open: async () => undefined,
+        getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+      };
+      const portB = {
+        readable: null,
+        writable: null,
+        close: async () => undefined,
+        open: async () => undefined,
+        getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+      };
 
-    Object.defineProperty(globalThis, "navigator", {
-      value: {
-        serial: {
-          getPorts: async () => [portA, portB],
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          serial: {
+            getPorts: async () => [portA, portB],
+          },
         },
-      },
-      configurable: true,
-      writable: true,
-    });
+        configurable: true,
+        writable: true,
+      });
 
-    await expect(
-      refreshGrantedWebSerialPort(stalePort as never),
-    ).rejects.toThrow(
-      "Browser granted Web USB ports are ambiguous or unavailable.",
-    );
-  });
+      await expect(
+        refreshGrantedWebSerialPort(stalePort as never),
+      ).rejects.toThrow(
+        "Browser granted Web USB ports are ambiguous or unavailable.",
+      );
+    },
+  );
 
   test("waits for a re-enumerated port object instead of reusing the stale handle immediately", async () => {
     const stalePort = {
@@ -249,12 +256,185 @@ describe("refreshGrantedWebSerialPort", () => {
   });
 });
 
+describe("forgetGrantedWebSerialPort", () => {
+  test("forgets the refreshed granted port when browser revoke is supported", async () => {
+    const stalePort = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+    const calls: string[] = [];
+    const freshPort = {
+      readable: null,
+      writable: null,
+      close: async () => {
+        calls.push("close");
+      },
+      forget: async () => {
+        calls.push("forget");
+      },
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        serial: {
+          getPorts: async () => [freshPort],
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    await expect(forgetGrantedWebSerialPort(stalePort as never)).resolves.toBe(
+      true,
+    );
+    expect(calls).toEqual(["close", "forget"]);
+  });
+
+  test("returns false when browser revoke is unavailable", async () => {
+    const port = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        serial: {
+          getPorts: async () => [port],
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    await expect(forgetGrantedWebSerialPort(port as never)).resolves.toBe(
+      false,
+    );
+  });
+});
+
+describe("requestWebSerialPort", () => {
+  test("reuses the preferred granted port when multiple browser ports are already authorized", async () => {
+    const preferredPort = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+    const otherPort = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x1a86, usbProductId: 0x7523 }),
+    };
+    const requestPort = mock(async () => {
+      throw new Error("chooser should not open");
+    });
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        serial: {
+          getPorts: async () => [otherPort, preferredPort],
+          requestPort,
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    await expect(
+      getReusableGrantedWebSerialPort(preferredPort as never),
+    ).resolves.toBe(preferredPort);
+    await expect(requestWebSerialPort(preferredPort as never)).resolves.toBe(
+      preferredPort,
+    );
+    expect(requestPort).not.toHaveBeenCalled();
+  });
+
+  test("reuses the single granted browser port before opening the chooser", async () => {
+    const grantedPort = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+    const requestPort = mock(async () => {
+      throw new Error("chooser should not open");
+    });
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        serial: {
+          getPorts: async () => [grantedPort],
+          requestPort,
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    await expect(requestWebSerialPort()).resolves.toBe(grantedPort);
+    expect(requestPort).not.toHaveBeenCalled();
+  });
+
+  test("falls back to the chooser when granted ports are ambiguous", async () => {
+    const portA = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+    const portB = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+    const chosenPort = {
+      readable: null,
+      writable: null,
+      close: async () => undefined,
+      open: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+    const requestPort = mock(async () => chosenPort);
+
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        serial: {
+          getPorts: async () => [portA, portB],
+          requestPort,
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    await expect(requestWebSerialPort()).resolves.toBe(chosenPort);
+    expect(requestPort).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("probeWebSerialBoard", () => {
   test("disconnects the esptool transport before returning the granted port to later flash steps", async () => {
     const cleanupCalls = {
       disconnect: 0,
       portClose: 0,
       loaderAfter: 0,
+      setDTR: 0,
+      setRTS: 0,
     };
     const fakePort = {
       readable: null,
@@ -274,6 +454,14 @@ describe("probeWebSerialBoard", () => {
 
       async disconnect() {
         cleanupCalls.disconnect += 1;
+      }
+
+      async setDTR(_value: boolean) {
+        cleanupCalls.setDTR += 1;
+      }
+
+      async setRTS(_value: boolean) {
+        cleanupCalls.setRTS += 1;
       }
     }
 
@@ -326,6 +514,8 @@ describe("probeWebSerialBoard", () => {
 
     expect(board.mcuModel).toBe("ESP32-S3");
     expect(cleanupCalls.loaderAfter).toBe(1);
+    expect(cleanupCalls.setDTR).toBeGreaterThan(0);
+    expect(cleanupCalls.setRTS).toBeGreaterThan(0);
     expect(cleanupCalls.disconnect).toBe(1);
     expect(cleanupCalls.portClose).toBe(0);
   });

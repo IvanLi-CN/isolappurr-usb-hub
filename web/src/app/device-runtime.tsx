@@ -20,6 +20,7 @@ import type {
   WifiMutationResponse,
 } from "../domain/deviceApi";
 import {
+  FLASH_TRANSPORT_LOCK_ALL,
   isLocalUsbSuppressedForFlashDevice,
   subscribeFlashTransportLocks,
 } from "../domain/flashTransportLocks";
@@ -530,6 +531,13 @@ export function DeviceRuntimeProvider({
 
   useEffect(() => {
     return subscribeFlashTransportLocks((lock) => {
+      if (lock.deviceId === FLASH_TRANSPORT_LOCK_ALL) {
+        setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
+        for (const device of devices) {
+          void pollDevice(device.id, httpBaseUrlForDevice(device));
+        }
+        return;
+      }
       delete localUsbPortByDevice.current[lock.deviceId];
       if (lock.transport === "web_serial") {
         preferredTransportByDevice.current[lock.deviceId] = "web_serial";

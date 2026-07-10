@@ -16,11 +16,13 @@ export function FirmwareReleaseList({
   releases,
   selectedTag,
   recoveryOnly,
+  disabled = false,
   onSelect,
 }: {
   releases: BundledFirmwareRelease[];
   selectedTag: string | null;
   recoveryOnly: boolean;
+  disabled?: boolean;
   onSelect: (tagName: string) => void;
 }) {
   if (releases.length === 0) {
@@ -36,7 +38,8 @@ export function FirmwareReleaseList({
       {releases.map((release) => {
         const selected = release.tagName === selectedTag;
         const recoveryAvailable = Boolean(release.recovery);
-        const disabled = recoveryOnly && !recoveryAvailable;
+        const releaseDisabled =
+          disabled || (recoveryOnly && !recoveryAvailable);
         const sourceDescription = recoveryOnly
           ? "Recovery image bundled for first-time provisioning and damaged-firmware recovery."
           : recoveryAvailable
@@ -50,10 +53,12 @@ export function FirmwareReleaseList({
               selected
                 ? "border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] bg-[var(--panel)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary)_16%,transparent)]"
                 : "border-[var(--border)] bg-[var(--panel)]",
-              disabled ? "opacity-55" : "hover:bg-[var(--panel-2)]",
+              releaseDisabled
+                ? "cursor-not-allowed opacity-55"
+                : "hover:bg-[var(--panel-2)]",
             ].join(" ")}
             type="button"
-            disabled={disabled}
+            disabled={releaseDisabled}
             onClick={() => onSelect(release.tagName)}
           >
             <div className="flex items-start justify-between gap-4">

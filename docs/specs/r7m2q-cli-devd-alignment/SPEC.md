@@ -302,6 +302,27 @@ connection header rhythm and compact waiting placeholder:
 
 ![Firmware flash workbench idle demo](./assets/flash-workbench-demo-idle-refined.png)
 
+Standalone `/flash?demo=true` workbench revalidated on the current page flow,
+showing the default waiting target state and an empty flash log before any
+transport is chosen:
+
+![Firmware flash workbench idle waiting](./assets/flash-workbench-demo-idle-waiting.png)
+
+Standalone `/flash?demo=true` workbench while `Web USB` is entering the
+browser-picker stage, showing the centered prompt and waiting placeholder
+before the page starts reading board identity, without an early countdown or
+stale confirmed details:
+
+![Firmware flash workbench Web USB picker](./assets/flash-workbench-demo-webusb-picker.png)
+
+Standalone `/flash?demo=true&webUsb=authorized&probe=reading` workbench
+showing the repeatable true `READING / PROBING` state while board identity is
+being fetched. The compact target panel has a live loading rail, a serial-link
+to firmware-identity progress cue, and a seconds-only right-side probe window.
+The countdown is intentionally absent before a read starts:
+
+![Firmware flash workbench Web USB reading](./assets/flash-workbench-demo-reading-info-v2.png)
+
 Standalone `/flash?demo=true` workbench after selecting a demo Local USB
 target, showing the flattened target details without the redundant summary
 strip or nested info cards:
@@ -313,6 +334,18 @@ switching the right-rail mode toggle to `Recovery`, proving that ordinary
 hardware is no longer blocked from bundled recovery flashing:
 
 ![Firmware flash workbench confirmed recovery demo](./assets/flash-workbench-demo-confirmed-recovery.png)
+
+Standalone `/flash?demo=true` workbench during a mock bundled flash, proving
+the progress panel, live flash log, and disabled primary action appear inside
+the demo surface rather than only in implementation code:
+
+![Firmware flash workbench flash progress demo](./assets/flash-workbench-demo-flash-progress.png)
+
+Standalone `/flash?demo=true` right sidebar after layout refinement, proving
+the primary flash action and return action now sit above `Flash log` instead of
+below it:
+
+![Firmware flash sidebar buttons above log](./assets/flash-sidebar-buttons-above-log.png)
 
 Strong confirmation dialog for recovery on unconfirmed targets:
 
