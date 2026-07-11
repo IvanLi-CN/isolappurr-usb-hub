@@ -143,8 +143,8 @@ Out of scope:
 
 ## References
 
-- [`docs/mcu-pin-assignment-tps-fusb.md`](../../mcu-pin-assignment-tps-fusb.md)
-- [`docs/mcu-pin-assignment-tps-sw.md`](../../mcu-pin-assignment-tps-sw.md)
+- [`docs/mcu-resource-allocation-tps-fusb.md`](../../mcu-resource-allocation-tps-fusb.md)
+- [`docs/mcu-resource-allocation-tps-sw.md`](../../mcu-resource-allocation-tps-sw.md)
 - [`docs/tps-fusb-hardware-design.md`](../../tps-fusb-hardware-design.md)
 - [`docs/hardware-variants.md`](../../hardware-variants.md)
 - [`docs/datasheets/tps55288-datasheet.md`](../../datasheets/tps55288-datasheet.md)
