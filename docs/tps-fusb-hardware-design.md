@@ -91,6 +91,9 @@ VOUT leakage 指标，不能据此宣称支持任意外部反向供电工况。
 
 ## MCU 引脚合同
 
+完整、独立的 `tps-fusb` 引脚分配入口见
+[`docs/mcu-pin-assignment-tps-fusb.md`](mcu-pin-assignment-tps-fusb.md)。
+
 | GPIO | `tps-fusb` 网络 | 方向 / 约束 |
 | --- | --- | --- |
 | 1 | `VIN_DC_SENSE` / `ADC1_CH0` | 模拟输入 |

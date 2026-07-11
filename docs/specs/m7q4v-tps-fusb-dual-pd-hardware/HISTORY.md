@@ -17,3 +17,5 @@
 - 冻结 GPIO1、GPIO33 至 GPIO38 的 `tps-fusb` 分配；FUSB302B 总线归属
   和 GPIO39/40 用途留待正式网表。
 - 决定两版硬件分别构建独立编译期 firmware profile。
+- 将两版 MCU 引脚分配拆成独立文档：`tps-sw` 记录当前正式网表，
+  `tps-fusb` 区分已冻结变更、计划沿用项和待正式网表确认项。
