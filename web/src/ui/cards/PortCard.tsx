@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ActionButton } from "../actions/ActionButton";
 import type { PortCardProps } from "./types";
 
 function statusBadgeStyles(status: string): { bg: string; text: string } {
@@ -109,28 +110,30 @@ function ConfirmPopover({
           className="absolute left-[56px] top-[-6px] h-3 w-3 rotate-45 border border-[var(--border)] bg-[var(--panel)]"
           aria-hidden
         />
-        <div className="flex h-[44px] w-[252px] items-center gap-2 rounded-[14px] border border-[var(--border)] bg-[var(--panel)] px-4">
+        <div className="flex h-[44px] w-[252px] items-center gap-2 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4">
           <div className="text-[12px] font-semibold text-[var(--muted)]">
             Power off?
           </div>
           <div className="flex-1" />
-          <button
-            className="flex h-6 w-11 items-center justify-center rounded-[8px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
-            type="button"
+          <ActionButton
+            size="xs"
+            tone="secondary"
+            className="w-11"
             onClick={onClose}
           >
             No
-          </button>
-          <button
-            className="flex h-6 w-11 items-center justify-center rounded-[8px] bg-[var(--primary)] text-[12px] font-extrabold text-[var(--primary-text)]"
-            type="button"
+          </ActionButton>
+          <ActionButton
+            size="xs"
+            tone="warning"
+            className="w-11"
             onClick={() => {
               onConfirm();
               onClose();
             }}
           >
             Yes
-          </button>
+          </ActionButton>
         </div>
       </div>
     </div>
@@ -155,7 +158,7 @@ export function PortCard({
 
   return (
     <div
-      className="iso-card relative flex h-full min-h-[236px] flex-col rounded-[18px] bg-[var(--panel)] p-6 shadow-[inset_0_0_0_1px_var(--border)]"
+      className="iso-card relative flex h-full min-h-[236px] flex-col border border-[var(--border)] bg-[var(--panel)] p-6"
       data-testid={`port-card-${portId}`}
     >
       <div className="flex items-start justify-between gap-4">
@@ -234,14 +237,9 @@ export function PortCard({
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <div className="relative w-full sm:w-auto">
-          <button
-            className={[
-              "flex h-10 w-full items-center justify-center rounded-[10px] text-[12px] font-bold sm:w-[132px]",
-              actionDisabled
-                ? "bg-[var(--btn-disabled-fill)] text-[var(--btn-disabled-text)]"
-                : "bg-[var(--primary)] text-[var(--primary-text)]",
-            ].join(" ")}
-            type="button"
+          <ActionButton
+            className="w-full sm:w-[132px]"
+            tone="primary"
             disabled={actionDisabled}
             onClick={() => {
               if (actionDisabled) {
@@ -255,26 +253,21 @@ export function PortCard({
             }}
           >
             Power
-          </button>
+          </ActionButton>
           <ConfirmPopover
             open={confirmOffOpen}
             onClose={() => setConfirmOffOpen(false)}
             onConfirm={onTogglePower}
           />
         </div>
-        <button
-          className={[
-            "flex h-10 w-full items-center justify-center rounded-[10px] border border-[var(--border)] text-[12px] font-bold sm:w-[140px]",
-            actionDisabled
-              ? "bg-[var(--btn-disabled-fill-soft)] text-[var(--btn-disabled-text)]"
-              : "bg-transparent text-[var(--text)]",
-          ].join(" ")}
-          type="button"
+        <ActionButton
+          className="w-full sm:w-[140px]"
+          tone="secondary"
           disabled={actionDisabled}
           onClick={onReplug}
         >
           Replug
-        </button>
+        </ActionButton>
       </div>
     </div>
   );

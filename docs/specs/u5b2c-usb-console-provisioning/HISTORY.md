@@ -19,3 +19,11 @@ Development-stage hardware work now uses the project-local `isolapurr-desktop` L
 The communication model was clarified so Wi-Fi / LAN, Web Serial, and Local USB are documented as equal delivery paths with distinct capability boundaries. The spec now records why multiple schemes exist, each path's immediate availability prerequisites, intended use, and non-overlapping limitations. Default preference has an explicit product meaning: it only applies when multiple paths are immediately available, and it is selection logic rather than a quality ranking.
 
 On 2026-07-10, the device list selection contract moved from a subtle panel-fill difference to a dedicated selected surface, high-contrast full-card boundary, check marker, and `aria-current="page"`. The change keeps connection badges independent from navigation selection and makes the current saved device recognizable in dark mode without relying on color alone.
+
+## Action System
+
+The Web App action vocabulary is centralized around semantic primary, secondary, quiet, warning, and danger treatments. This replaces page-local button classes while keeping selection cards, tabs, and segmented controls separate because they describe current state rather than submit a command.
+
+The destructive confirmation path is shared so saved-device deletion, recovery flashing, and power-calibration confirmation have consistent focus behavior, cancel affordances, final-action emphasis, and keyboard dismissal. Reset and clear actions use warning rather than the same visual weight as normal task completion.
+
+Theme-owned input surfaces are explicit as well: disabled form controls retain the active panel token in dark and system-dark mode rather than inheriting a light framework fill. This keeps the action hierarchy legible across all supported theme choices.

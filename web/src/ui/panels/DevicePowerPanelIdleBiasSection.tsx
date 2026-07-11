@@ -10,6 +10,8 @@ import {
 } from "recharts";
 
 import type { IdleBiasResponse, Result } from "../../domain/deviceApi";
+import { ActionButton } from "../actions/ActionButton";
+import { ConfirmDialog } from "../actions/ConfirmDialog";
 
 const IDLE_BIAS_POLL_MS = 900;
 
@@ -777,36 +779,36 @@ export function DevicePowerPanelIdleBiasSection({
         ) : null}
 
         <div className="flex flex-col gap-3 lg:flex-row">
-          <button
-            className="flex h-11 min-w-[180px] items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
+          <ActionButton
+            className="min-w-[180px]"
+            tone="primary"
             disabled={idleBiasControlsDisabled}
             onClick={() => requestIdleBiasAction("run")}
-            type="button"
           >
             Run calibration
-          </button>
-          <button
-            className="flex h-11 min-w-[180px] items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          </ActionButton>
+          <ActionButton
+            className="min-w-[180px]"
+            tone="secondary"
             disabled={idleBiasControlsDisabled || !canToggleCorrection}
             onClick={() =>
               requestIdleBiasAction(
                 idleBias?.correction_enabled ? "disable" : "enable",
               )
             }
-            type="button"
           >
             {correctionButtonLabel}
-          </button>
-          <button
-            className="flex h-11 min-w-[180px] items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          </ActionButton>
+          <ActionButton
+            className="min-w-[180px]"
+            tone="warning"
             disabled={
               idleBiasControlsDisabled || idleBias?.dataset.status !== "valid"
             }
             onClick={() => requestIdleBiasAction("clear")}
-            type="button"
           >
             Clear dataset
-          </button>
+          </ActionButton>
         </div>
 
         {lockedByOtherHost ? (
@@ -832,51 +834,16 @@ export function DevicePowerPanelIdleBiasSection({
         ) : null}
       </section>
 
-      {idleBiasConfirm ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6"
-          role="presentation"
-        >
-          <div
-            aria-describedby="idle-bias-confirm-description"
-            aria-labelledby="idle-bias-confirm-title"
-            aria-modal="true"
-            className="w-full max-w-[480px] rounded-[14px] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-2xl"
-            role="alertdialog"
-          >
-            <div
-              className="text-[15px] font-bold text-[var(--text)]"
-              id="idle-bias-confirm-title"
-            >
-              {idleBiasConfirm.title}
-            </div>
-            <div
-              className="mt-3 text-[13px] font-semibold leading-6 text-[var(--muted)]"
-              id="idle-bias-confirm-description"
-            >
-              {idleBiasConfirm.description}
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button
-                className="btn btn-outline btn-sm min-h-10 justify-center"
-                disabled={idleBiasBusy}
-                onClick={() => setIdleBiasConfirm(null)}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary btn-sm min-h-10 justify-center"
-                disabled={idleBiasBusy}
-                onClick={() => void confirmIdleBiasAction()}
-                type="button"
-              >
-                {idleBiasBusy ? "Applying..." : idleBiasConfirm.confirmLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        busy={idleBiasBusy}
+        confirmLabel={idleBiasConfirm?.confirmLabel ?? "Confirm"}
+        description={idleBiasConfirm?.description ?? ""}
+        open={idleBiasConfirm !== null}
+        title={idleBiasConfirm?.title ?? "Confirm action"}
+        tone="warning"
+        onCancel={() => setIdleBiasConfirm(null)}
+        onConfirm={() => void confirmIdleBiasAction()}
+      />
     </>
   );
 }

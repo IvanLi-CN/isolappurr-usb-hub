@@ -1,37 +1,5 @@
 import type { ReactNode } from "react";
 
-export const primaryButtonClass =
-  "flex items-center justify-center rounded-[10px] bg-[var(--primary)] px-4 text-[12px] font-bold text-[var(--primary-text)] transition-colors hover:bg-[var(--primary-2)] disabled:bg-[var(--btn-disabled-fill)] disabled:text-[var(--btn-disabled-text)]";
-
-export const outlineButtonClass =
-  "flex items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent px-4 text-[12px] font-bold text-[var(--text)] transition-colors hover:bg-[var(--panel-2)] disabled:border-[var(--border)] disabled:bg-[var(--btn-disabled-fill-soft)] disabled:text-[var(--btn-disabled-text)]";
-
-export function SpinnerIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={`${className} animate-spin`}
-      viewBox="0 0 16 16"
-      fill="none"
-    >
-      <circle
-        cx="8"
-        cy="8"
-        r="5.25"
-        stroke="currentColor"
-        strokeOpacity="0.2"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M13.25 8A5.25 5.25 0 0 0 8 2.75"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-      />
-    </svg>
-  );
-}
-
 export function ReconnectIcon({
   className = "h-4 w-4",
 }: {

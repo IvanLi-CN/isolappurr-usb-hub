@@ -4,6 +4,7 @@ import { resolveTransportBadgeState } from "../../app/device-runtime-support";
 import type { StoredDevice } from "../../domain/devices";
 import { getLocalUsbDeviceLink } from "../../domain/localUsbLinks";
 import { getWebSerialDeviceTransport } from "../../domain/webSerialLinks";
+import { ActionButton } from "../actions/ActionButton";
 import { DeviceCard, type DeviceTransportBadge } from "../cards/DeviceCard";
 
 const TRANSPORT_ORDER: DeviceTransportBadge["transport"][] = [
@@ -76,13 +77,9 @@ export function DeviceListPanel({
     >
       <div className="ml-2 flex items-center justify-between">
         <h2 className="text-[16px] font-bold">Devices</h2>
-        <button
-          className="flex h-9 items-center justify-center rounded-[10px] bg-[var(--primary)] px-3 text-[12px] font-bold text-[var(--primary-text)]"
-          type="button"
-          onClick={openAddDevice}
-        >
+        <ActionButton size="sm" tone="primary" onClick={openAddDevice}>
           + Add
-        </button>
+        </ActionButton>
       </div>
 
       {forceEmptyState || devices.length === 0 ? (

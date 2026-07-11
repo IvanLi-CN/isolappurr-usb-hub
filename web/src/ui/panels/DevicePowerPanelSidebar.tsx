@@ -1,4 +1,5 @@
 import type { PortState, PortTelemetry } from "../../domain/ports";
+import { ActionButton } from "../actions/ActionButton";
 import {
   DiscreteSliderField,
   type FormState,
@@ -116,33 +117,25 @@ export function DevicePowerPanelSidebar({
           </div>
         </div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <button
-            className={`flex h-10 items-center justify-center rounded-[10px] text-[12px] font-bold sm:w-[132px] ${
-              usbCPowerActionDisabled
-                ? "bg-[var(--btn-disabled-fill)] text-[var(--btn-disabled-text)]"
-                : "bg-[var(--primary)] text-[var(--primary-text)]"
-            }`}
+          <ActionButton
+            className="sm:w-[132px]"
             data-testid="runtime-output-toggle"
+            tone="primary"
             disabled={usbCPowerActionDisabled}
             onClick={() =>
               void onToggleRuntime("output", !runtimeOutputEnabled)
             }
-            type="button"
           >
             Power
-          </button>
-          <button
-            className={`flex h-10 items-center justify-center rounded-[10px] border border-[var(--border)] text-[12px] font-bold sm:w-[140px] ${
-              usbCPowerActionDisabled
-                ? "bg-[var(--btn-disabled-fill-soft)] text-[var(--btn-disabled-text)]"
-                : "bg-transparent text-[var(--text)]"
-            }`}
+          </ActionButton>
+          <ActionButton
+            className="sm:w-[140px]"
+            tone="secondary"
             disabled={usbCPowerActionDisabled}
             onClick={() => void onReplugUsbC()}
-            type="button"
           >
             Replug
-          </button>
+          </ActionButton>
         </div>
       </section>
 

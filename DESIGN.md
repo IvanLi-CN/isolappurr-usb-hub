@@ -13,7 +13,7 @@ Current token direction:
 - Background: softly tinted near-neutral surface, currently `--bg`.
 - Panels: layered neutrals, currently `--panel` and `--panel-2`.
 - Borders: low-contrast structural lines, currently `--border`.
-- Primary: muted indigo accent, currently `--primary`.
+- Primary: muted green accent, currently `--primary`.
 - Success, warning, error: semantic status tokens only.
 
 Prefer OKLCH for new or revised tokens. Avoid pure black or pure white in new colors; tint neutrals subtly toward the system hue.
@@ -37,10 +37,12 @@ Cards are allowed for distinct repeated hardware units such as ports, devices, o
 
 Core components should share the same visual vocabulary:
 
+- a shared action hierarchy: `primary` for normal completion, `secondary` for cancellation and safe alternatives, `quiet` for low-emphasis disclosure, `warning` for reset/clear, and `danger` for deletion or irreversible confirmation;
+- fixed-size icon buttons with accessible labels and native tooltips;
+- confirmation dialogs that restore focus, keep focus within the decision while open, and make the final destructive action more prominent than cancellation;
 - status badges with text labels;
 - segmented or tab-like transport selection;
-- icon buttons for actions where icons are familiar;
-- forms with visible labels, helper text, validation states, and disabled/loading states;
+- forms with visible labels, helper text, validation states, and token-driven disabled/loading states in every supported theme;
 - inline confirmations before disruptive port power or flash actions;
 - log/output panes with monospace text and clear empty/error states.
 

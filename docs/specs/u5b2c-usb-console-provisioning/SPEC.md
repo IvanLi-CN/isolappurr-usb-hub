@@ -97,6 +97,8 @@ Default selection is only defined after more than one path is immediately usable
 - The saved-device Hardware page MUST provide a delete action with an in-app confirmation. Confirmed deletion MUST remove the saved profile, clear runtime USB/channel records, and leave the user on a valid device list route.
 - USB-only operations, including firmware update, MUST require a USB channel even when Wi-Fi / LAN is online.
 - Web UI MUST provide clear states for unsupported Web Serial, no device, connected, flashing/updating, update failed, Wi-Fi empty/configured/error, telemetry online/offline, busy action, and disruptive action confirmation.
+- Web UI command controls MUST use one shared action system: `primary` for normal task completion, `secondary` for cancellation or safe alternatives, `quiet` for low-emphasis disclosure, `warning` for reset/clear or disruptive actions, and `danger` for saved-device deletion and irreversible final confirmation.
+- Shared action and form surfaces MUST use theme tokens for resting, hover, focus-visible, disabled, and loading states in `isolapurr`, `isolapurr-dark`, and `system` themes. The `system` choice MUST remove the explicit theme attribute and follow the host color-scheme preference.
 - Storybook MUST cover the Add device and saved-device Hardware page states before visual evidence is accepted.
 
 ## JSONL Protocol
@@ -154,6 +156,8 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Scene: an engineer at a desk with the Hub physically connected, focused on connection state, update progress, port behavior, and power telemetry.
 - Layout: Add device modal owns device discovery and connection only; added device pages own firmware update, telemetry, Wi-Fi maintenance, and port controls.
 - Tone: dense, calm, precise, instrument-like.
+- Operation hierarchy: routine completion uses the muted green primary action; reset, clear, and potentially disruptive actions use the warning treatment; deletion and irreversible confirmation use the error treatment. Disabled actions retain their layout and label without implying availability.
+- Theme invariants: action buttons, icon buttons, confirmation dialogs, and form fields derive their surface, border, text, focus, disabled, and loading states from the active theme tokens rather than framework defaults.
 
 ## Acceptance Criteria
 
@@ -182,6 +186,9 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given JSONL `info` returns a different `device_id` or `mac`, when Local USB flash runs, then it fails before writing flash.
 - Given UI changes are complete, when Storybook renders the console states, then desktop and mobile evidence show no text overlap, clipping, or incoherent layout.
 - Given a saved-device route is active, when the device list renders in either light or dark mode, then the current device is distinguishable from unselected devices through a high-contrast full-card boundary, a selected surface, and a non-color marker; the current card exposes `aria-current="page"`, while unselected cards do not.
+- Given the saved-device Settings page renders on Wi-Fi / LAN, when Wi-Fi save/clear and Wi-Fi reset are unavailable, then they use the shared disabled action state while the available `Other` reset uses warning treatment and the firmware workbench keeps the primary action treatment.
+- Given a user opens saved-device deletion or an irreversible recovery action, when the confirmation layer renders, then cancellation is secondary and the final destructive command is visually distinct as a solid danger action.
+- Given an action or disabled form field renders in `isolapurr`, `isolapurr-dark`, or `system`, then it retains readable token-driven text, border, and fill contrast without a framework-default light surface leaking into dark mode.
 
 ## Visual Evidence
 
@@ -284,3 +291,27 @@ Device Hardware reset settings over Local USB:
 PR: include
 
 ![Device Hardware reset settings Local USB](assets/settings-reset-usb-flow.png)
+
+Action system evidence source: production SPA route `/devices/aabbcc001122/info?demo=true` with deterministic demo data. The `system` selection removes `data-theme` and follows the host dark preference used for this capture.
+
+Action system, light desktop:
+
+PR: include
+
+![Action system light desktop](assets/action-system-settings-desktop.png)
+
+Action system, dark desktop:
+
+PR: include
+
+![Action system dark desktop](assets/action-system-settings-dark.png)
+
+Action system, narrow layout:
+
+![Action system narrow layout](assets/action-system-settings-mobile.png)
+
+Action system, destructive confirmation:
+
+PR: include
+
+![Action system destructive confirmation](assets/action-system-delete-confirmation.png)

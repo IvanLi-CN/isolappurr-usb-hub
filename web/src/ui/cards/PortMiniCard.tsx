@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
+import { ActionButton } from "../actions/ActionButton";
 
 function formatValue(value: number | null, unit: "V" | "A" | "W"): string {
   if (value === null) {
@@ -42,34 +43,36 @@ function ConfirmPopover({
   }
 
   return (
-    <div className="iso-popover absolute left-0 top-full z-50 mt-2">
+    <div className="iso-popover absolute left-0 top-full z-50 mt-2" ref={ref}>
       <div className="relative">
         <div
           className="absolute left-[40px] top-[-6px] h-3 w-3 rotate-45 border border-[var(--border)] bg-[var(--panel)]"
           aria-hidden
         />
-        <div className="flex h-[44px] w-[260px] items-center gap-2 rounded-[14px] border border-[var(--border)] bg-[var(--panel)] px-4">
+        <div className="flex h-[44px] w-[260px] items-center gap-2 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4">
           <div className="text-[12px] font-semibold text-[var(--muted)]">
             Power off?
           </div>
           <div className="flex-1" />
-          <button
-            className="flex h-6 w-11 items-center justify-center rounded-[8px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
-            type="button"
+          <ActionButton
+            className="w-11"
+            size="xs"
+            tone="secondary"
             onClick={onClose}
           >
             No
-          </button>
-          <button
-            className="flex h-6 w-11 items-center justify-center rounded-[8px] bg-[var(--primary)] text-[12px] font-extrabold text-[var(--primary-text)]"
-            type="button"
+          </ActionButton>
+          <ActionButton
+            className="w-11"
+            size="xs"
+            tone="warning"
             onClick={() => {
               onConfirm();
               onClose();
             }}
           >
             Yes
-          </button>
+          </ActionButton>
         </div>
       </div>
     </div>
@@ -115,7 +118,7 @@ export function PortMiniCard({
   return (
     <div
       className={[
-        "relative h-[132px] rounded-[16px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4",
+        "iso-card relative h-[132px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4",
         className ?? "",
       ].join(" ")}
     >
@@ -135,15 +138,10 @@ export function PortMiniCard({
       </div>
       <div className="mt-[18px] flex items-center gap-2">
         <div className="relative">
-          <button
-            className={[
-              "flex h-[34px] items-center justify-center rounded-[10px] text-[12px] font-bold",
-              powerWidth,
-              actionDisabled
-                ? "bg-[var(--btn-disabled-fill)] text-[var(--btn-disabled-text)]"
-                : "bg-[var(--primary)] text-[var(--primary-text)]",
-            ].join(" ")}
-            type="button"
+          <ActionButton
+            className={powerWidth}
+            size="sm"
+            tone="primary"
             disabled={actionDisabled}
             onClick={() => {
               if (actionDisabled) {
@@ -157,27 +155,22 @@ export function PortMiniCard({
             }}
           >
             Power
-          </button>
+          </ActionButton>
           <ConfirmPopover
             open={confirmOffOpen}
             onClose={() => setConfirmOffOpen(false)}
             onConfirm={() => onSetPower(false)}
           />
         </div>
-        <button
-          className={[
-            "flex h-[34px] items-center justify-center rounded-[10px] border border-[var(--border)] text-[12px] font-bold",
-            replugWidth,
-            actionDisabled
-              ? "bg-[var(--btn-disabled-fill-soft)] text-[var(--btn-disabled-text)]"
-              : "bg-transparent text-[var(--text)]",
-          ].join(" ")}
-          type="button"
+        <ActionButton
+          className={replugWidth}
+          size="sm"
+          tone="secondary"
           disabled={actionDisabled}
           onClick={onReplug}
         >
           Replug
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
