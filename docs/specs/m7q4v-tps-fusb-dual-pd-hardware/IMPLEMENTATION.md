@@ -5,7 +5,8 @@ Status: 待设计
 ## Completed
 
 - 建立 `tps-fusb` topic spec 及面向维护者的硬件设计入口。
-- 建立 `tps-sw` 与 `tps-fusb` 两份独立 MCU 引脚分配文档。
+- 建立 `tps-sw` 与 `tps-fusb` 两份独立 MCU 资源分配文档，覆盖外设、
+  总线、中断、ADC、通信、内存与 GPIO。
 - 记录双 FUSB302B PHY 角色、PD 3.0 Fixed + PPS 目标和 TPS55288 职责。
 - 冻结输入 PMOS 选择器、SN74LVC1G3157 连接、测量策略、输出 PMOS、
   BSS138PS 双通道用途和 GPIO1/33-38 分配。
