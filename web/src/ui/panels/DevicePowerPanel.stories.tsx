@@ -485,8 +485,9 @@ export const ForcedPwmMode: Story = {
     await userEvent.click(
       await canvas.findByLabelText("TPS light-load mode help"),
     );
+    const popover = within(document.body);
     await expect(
-      await canvas.findByText(/PFM follows the board default/i),
+      await popover.findByText(/PFM follows the board default/i),
     ).toBeVisible();
   },
 };
