@@ -378,6 +378,26 @@ export const AutoFollowDefaults: Story = {
     savePowerConfig: () => ok(autoConfig),
     setPowerLock: () => ok(autoConfig),
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByLabelText("Auto-follow cable loop compensation help"),
+    );
+    await userEvent.type(
+      canvas.getByLabelText("Auto-follow cable loop compensation voltage drop"),
+      "300",
+    );
+    await userEvent.type(
+      canvas.getByLabelText("Auto-follow cable loop compensation load current"),
+      "3000",
+    );
+    await expect(await canvas.findByText(/now uses 100mΩ/i)).toBeVisible();
+    await expect(
+      canvas.getByRole("slider", {
+        name: "Auto-follow cable loop compensation",
+      }),
+    ).toHaveValue("3");
+  },
 };
 
 export const ManualTpsCdcSet: Story = {
@@ -391,6 +411,24 @@ export const ManualTpsCdcSet: Story = {
           tps_cdc_rise_mv: 700,
         },
       }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByLabelText("Manual cable loop compensation help"),
+    );
+    await userEvent.type(
+      canvas.getByLabelText("Manual cable loop compensation voltage drop"),
+      "300",
+    );
+    await userEvent.type(
+      canvas.getByLabelText("Manual cable loop compensation load current"),
+      "3000",
+    );
+    await expect(await canvas.findByText(/now uses 100mΩ/i)).toBeVisible();
+    await expect(
+      canvas.getByRole("slider", { name: "Cable loop compensation" }),
+    ).toHaveValue("5");
   },
 };
 

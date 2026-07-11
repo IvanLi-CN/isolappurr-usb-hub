@@ -1,6 +1,7 @@
 import type { PortState, PortTelemetry } from "../../domain/ports";
 import { ActionButton } from "../actions/ActionButton";
 import {
+  CableLoopCompensationCalculator,
   DiscreteSliderField,
   type FormState,
   formatTelemetryValue,
@@ -181,21 +182,35 @@ export function DevicePowerPanelSidebar({
       <section className="rounded-[10px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-4 py-4">
         <div className="flex items-center gap-2 border-b border-[var(--border)] pb-4">
           <div className="text-[14px] font-semibold">
-            SW2303 line compensation
+            Auto-follow cable loop compensation
           </div>
           <InlineHelpPopover
             lines={[
               "Applies in Auto follow.",
-              "Manual TPS saves the value for the next return to automatic tracking.",
+              "Enter the VBUS plus return-path resistance, not the resistance of one conductor.",
+              "Measure the voltage drop between the board output and the load while the load current is stable.",
+              "Manual TPS saves this value for the next return to automatic tracking.",
             ]}
-            title="SW2303 line compensation"
-          />
+            title="Auto-follow cable loop compensation"
+          >
+            <CableLoopCompensationCalculator
+              disabled={powerControlsDisabled}
+              label="Auto-follow cable loop compensation"
+              maxMohm={150}
+              onRecommend={(resistanceMohm) =>
+                onSetSw2303LineCompensation(
+                  `${resistanceMohm}mohm` as FormState["sw2303_line_compensation"],
+                )
+              }
+              stepMohm={50}
+            />
+          </InlineHelpPopover>
         </div>
         <div className="mt-3">
           <DiscreteSliderField
             disabled={powerControlsDisabled}
             hideLabel
-            label="SW2303 line compensation"
+            label="Auto-follow cable loop compensation"
             showValue={false}
             onChange={(value) =>
               onSetSw2303LineCompensation(
@@ -204,7 +219,7 @@ export function DevicePowerPanelSidebar({
             }
             options={[
               { label: "Off", value: "off" },
-              { label: "0", value: "0mohm" },
+              { label: "0mΩ", value: "0mohm" },
               { label: "50mΩ", value: "50mohm" },
               { label: "100mΩ", value: "100mohm" },
               { label: "150mΩ", value: "150mohm" },

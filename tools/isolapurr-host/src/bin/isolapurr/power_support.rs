@@ -144,6 +144,9 @@ fn apply_manual_output_args(config: &mut CliPowerConfig, args: &ManualOutputArgs
     if let Some(tps_cdc_rise_mv) = args.tps_cdc_rise_mv {
         config.manual.tps_cdc_rise_mv = tps_cdc_rise_mv;
     }
+    if let Some(cable_resistance_mohm) = args.cable_resistance_mohm {
+        config.manual.tps_cdc_rise_mv = cable_resistance_mohm * 5;
+    }
     if let Some(usb_c_path) = args.usb_c_path {
         config.manual.usb_c_path_mode = usb_c_path.as_config_value().to_string();
     }

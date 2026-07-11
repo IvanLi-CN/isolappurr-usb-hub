@@ -377,8 +377,18 @@ struct ManualOutputArgs {
     voltage_mv: Option<u16>,
     #[arg(long, value_parser = clap::value_parser!(u16).range(1..=6350))]
     current_limit_ma: Option<u16>,
-    #[arg(long, value_parser = parse_tps_cdc_rise_mv)]
+    #[arg(
+        long,
+        value_parser = parse_tps_cdc_rise_mv,
+        conflicts_with = "cable_resistance_mohm"
+    )]
     tps_cdc_rise_mv: Option<u16>,
+    #[arg(
+        long,
+        value_parser = parse_cable_resistance_mohm,
+        conflicts_with = "tps_cdc_rise_mv"
+    )]
+    cable_resistance_mohm: Option<u16>,
     #[arg(long, value_enum)]
     usb_c_path: Option<OutputUsbCPathArg>,
 }
@@ -911,6 +921,15 @@ fn parse_tps_cdc_rise_mv(raw: &str) -> Result<u16, String> {
     }
 }
 
+fn parse_cable_resistance_mohm(raw: &str) -> Result<u16, String> {
+    match raw {
+        "0" | "20" | "40" | "60" | "80" | "100" | "120" | "140" => raw
+            .parse::<u16>()
+            .map_err(|_| String::from("expected 0, 20, 40, 60, 80, 100, 120, or 140")),
+        _ => Err(String::from("expected 0, 20, 40, 60, 80, 100, 120, or 140")),
+    }
+}
+
 impl SourceCapabilitySetArgs {
     fn has_updates(&self) -> bool {
         self.power_watts.is_some()
@@ -945,6 +964,7 @@ impl PowerConfigSetArgs {
             || self.manual.voltage_mv.is_some()
             || self.manual.current_limit_ma.is_some()
             || self.manual.tps_cdc_rise_mv.is_some()
+            || self.manual.cable_resistance_mohm.is_some()
             || self.manual.usb_c_path.is_some()
             || self.source.has_updates()
     }

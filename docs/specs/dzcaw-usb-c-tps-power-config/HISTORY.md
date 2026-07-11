@@ -1,5 +1,17 @@
 # History
 
+## 2026-07-11
+
+- Reframed manual TPS CDC and Auto follow line compensation as cable loop
+  resistance for operators. The raw API and EEPROM encodings remain unchanged:
+  the board's `R29=10mΩ` maps TPS `0..700mV` to `0..140mΩ` in `20mΩ` steps.
+- Added independent Web help-popover calculators for the manual TPS and
+  Auto-follow ladders. They calculate loop resistance from measured voltage
+  drop and load current, update only the unsaved form, and warn when clamping
+  to a controller maximum.
+- Added the compatible CLI `--cable-resistance-mohm` input while retaining the
+  mutually exclusive `--tps-cdc-rise-mv` legacy flag.
+
 ## 2026-07-06
 
 - Fixed LAN Web manual-voltage saves by raising the firmware HTTP request

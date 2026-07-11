@@ -103,6 +103,10 @@
 - Updated human CLI rendering so the new controls are described in owner-facing
   semantics instead of leaking raw chip names, while still making clear that
   line compensation applies in Auto follow.
+- Added `--cable-resistance-mohm <0|20|...|140>` for manual output and power
+  config updates. It maps to the pre-existing raw TPS CDC field while keeping
+  `--tps-cdc-rise-mv` as a mutually exclusive compatibility input; human CLI
+  output now reports cable loop compensation in mΩ for both modes.
 - Extended owner-facing CLI source-capability read/modify/write and TUI flows
   to preserve and expose the new `fast_charge` capability fields instead of
   silently dropping them on save.
@@ -170,6 +174,13 @@
 - Added `SW2303 line compensation` as a separate right-rail card below
   `TPS light-load mode`, keeping the saved setting editable in Manual TPS while
   moving the applicability guidance into a compact help popover.
+- Reframed both compensation controls as cable loop resistance: Manual TPS
+  renders `0..140mΩ` in `20mΩ` steps, while Auto follow retains its
+  `off|0|50|100|150mΩ` ladder. The raw request fields stay unchanged.
+- Added separate interactive calculators inside the existing manual and
+  Auto-follow help popovers. They convert measured voltage drop and load
+  current into a downward-quantized local draft, clamp out-of-range results,
+  and never write the device until the existing save action is used.
 - Reworked the Power page so the right-side actions column now carries the
   live USB-C voltage/current/power readout plus `Power` and `Replug` actions,
   while the manual-only advanced `TPS discharge on output-off` control remains

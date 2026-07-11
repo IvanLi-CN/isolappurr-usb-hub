@@ -48,6 +48,25 @@ for diagnostics.
   `0|100|200|300|400|500|600|700`.
 - `sw2303_line_compensation` MUST accept only
   `off|0mohm|50mohm|100mohm|150mohm`.
+- The API and EEPROM MUST retain those existing raw fields and encodings. They
+  MUST NOT gain a second persisted cable-resistance field.
+- The owner-facing TPS manual-compensation value MUST be expressed as cable
+  loop resistance: the `R29=10mΩ` sense resistor maps the raw
+  `0|100|...|700mV` ladder to `0|20|...|140mΩ`.
+- The owner-facing Auto follow value MUST be expressed as cable loop
+  resistance using the existing `off|0|50|100|150mΩ` SW2303 choices.
+- Each Web compensation help popover MUST include an independent calculator
+  that accepts measured voltage drop in mV plus actual load current in mA and
+  calculates `R_loop(mΩ)=ΔV(mV)×1000/I(mA)`. It MUST describe the resistance
+  as the VBUS-plus-return-path loop, not a single conductor.
+- A valid calculator result MUST update only the corresponding unsaved Web
+  form value. TPS results MUST round down to `20mΩ` steps and clamp at
+  `140mΩ`; SW2303 results MUST round down to `50mΩ` steps and clamp at
+  `150mΩ`. Invalid inputs, including zero or negative current, MUST not alter
+  the form.
+- The owner-facing CLI MUST accept `--cable-resistance-mohm` for the TPS
+  manual ladder, preserve `--tps-cdc-rise-mv` as a mutually exclusive legacy
+  input, and render both manual and Auto follow compensation in mΩ.
 - Defaults MUST restore the full SW2303 profile: PD, PPS, QC2, QC3, FCP, AFC,
   SCP, PE2.0, BC1.2, SFCP, fixed 9/12/15/20 V PDOs, and 100 W cap.
 - Manual TPS voltage MUST stay in the 3 V to 21 V range.
@@ -260,6 +279,17 @@ for diagnostics.
 - Given `tps_mode=manual`, when firmware applies runtime power policy, then
   SW2303 line compensation is forced off while TPS55288 applies the saved
   `manual.tps_cdc_rise_mv` value using internal CDC mode only.
+- Given a Web operator enters `300mV` voltage drop and `3000mA` load current in
+  the manual TPS help calculator, then the unsaved TPS setting becomes
+  `100mΩ`, represented by `manual.tps_cdc_rise_mv=500` on save.
+- Given a Web operator enters `299mV` and `3000mA`, then the TPS calculator
+  selects `80mΩ` by rounding down to the supported ladder.
+- Given a calculator result exceeds a controller's maximum supported loop
+  resistance, then it selects `140mΩ` for TPS or `150mΩ` for SW2303 and warns
+  that voltage drop remains uncompensated.
+- Given a CLI operator provides `--cable-resistance-mohm 100`, then the CLI
+  sends the unchanged API field `manual.tps_cdc_rise_mv=500`; providing that
+  flag together with `--tps-cdc-rise-mv` fails validation.
 - Given a remote host lock, when another host attempts a config write, then the
   write is rejected as busy and the UI presents the locked state.
 - Given the runtime `Power` action turns output off, when the request

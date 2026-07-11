@@ -19,6 +19,31 @@ Expose only two owner-facing settings:
 
 Do not expose raw register fields.
 
+## Operator Mapping
+
+The `tps-sw` netlist places `R29=10mΩ` between `ISP_TPS` and `VOUT_TPS`.
+TPS55288's internal CDC ladder specifies its output rise at a `50mV` sense
+drop, so the owner-facing equivalent cable loop-resistance ladder is:
+
+- raw TPS `0|100|200|300|400|500|600|700mV`
+- loop resistance `0|20|40|60|80|100|120|140mΩ`
+
+For an installed cable or adapter chain, measure the board-output-to-load-end
+voltage drop under a stable real load, including VBUS and the return path:
+
+`R_loop(mΩ) = ΔV(mV) × 1000 / I(mA)`
+
+TPS must choose the next lower `20mΩ` setting to avoid overcompensation. The
+SW2303 auto-follow selection similarly uses the next lower supported
+`0|50|100|150mΩ` bucket. A measured result over the respective maximum can be
+clamped for best-effort compensation, but it still leaves residual voltage
+drop and must be reported as such.
+
+The Web calculator belongs in the existing help popover and only updates the
+unsaved draft. The CLI accepts exact TPS ladder values through
+`--cable-resistance-mohm`; `--tps-cdc-rise-mv` remains a mutually exclusive
+legacy interface. The persisted API fields remain raw for compatibility.
+
 ## Why SW2303 Needs Three Registers
 
 - `0x14 bit2` is the coarse runtime open/close switch for line compensation.
