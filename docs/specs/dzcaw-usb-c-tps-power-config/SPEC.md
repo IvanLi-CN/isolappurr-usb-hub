@@ -386,6 +386,8 @@ for diagnostics.
   viewport_strategy: `runtime-default`
   capture_scope: `viewport`
   target_program: `mock-only`
+  submission_gate: approved
+  PR: include
   evidence_note: verifies the Manual TPS help popover keeps the measurement
   calculator with its explanatory copy, maps the 100mΩ recommendation onto the
   manual cable-loop compensation draft, and leaves the save action explicit.
@@ -399,6 +401,8 @@ for diagnostics.
   viewport_strategy: `runtime-default`
   capture_scope: `viewport`
   target_program: `mock-only`
+  submission_gate: approved
+  PR: include
   evidence_note: verifies the independent Auto follow help popover recommends
   100mΩ from the same loop measurement and updates only its unsaved SW2303
   compensation draft.
