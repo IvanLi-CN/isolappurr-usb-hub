@@ -15,7 +15,7 @@ Status: 待设计
 ## Pending Hardware Work
 
 - 选择并校核 PMOS、VGS 钳位、gate driver 和保护器件。
-- 决定两颗 FUSB302B 的 I2C bus membership、地址变体和 PCB 位置。
+- 决定两颗 FUSB302B 的 I2C bus membership、精确地址、冲突处理和 PCB 位置。
 - 确认 GPIO39/40 最终用途与 `INT2` 共享设备集合。
 - 完成正式原理图、网表、PCB、BOM 及制造检查。
 
