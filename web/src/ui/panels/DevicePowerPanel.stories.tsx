@@ -383,15 +383,20 @@ export const AutoFollowDefaults: Story = {
     await userEvent.click(
       await canvas.findByLabelText("Auto-follow cable loop compensation help"),
     );
+    const popover = within(document.body);
     await userEvent.type(
-      canvas.getByLabelText("Auto-follow cable loop compensation voltage drop"),
+      popover.getByLabelText(
+        "Auto-follow cable loop compensation voltage drop",
+      ),
       "300",
     );
     await userEvent.type(
-      canvas.getByLabelText("Auto-follow cable loop compensation load current"),
+      popover.getByLabelText(
+        "Auto-follow cable loop compensation load current",
+      ),
       "3000",
     );
-    await expect(await canvas.findByText(/now uses 100mΩ/i)).toBeVisible();
+    await expect(await popover.findByText(/now uses 100mΩ/i)).toBeVisible();
     await expect(
       canvas.getByRole("slider", {
         name: "Auto-follow cable loop compensation",
@@ -417,15 +422,16 @@ export const ManualTpsCdcSet: Story = {
     await userEvent.click(
       await canvas.findByLabelText("Manual cable loop compensation help"),
     );
+    const popover = within(document.body);
     await userEvent.type(
-      canvas.getByLabelText("Manual cable loop compensation voltage drop"),
+      popover.getByLabelText("Manual cable loop compensation voltage drop"),
       "300",
     );
     await userEvent.type(
-      canvas.getByLabelText("Manual cable loop compensation load current"),
+      popover.getByLabelText("Manual cable loop compensation load current"),
       "3000",
     );
-    await expect(await canvas.findByText(/now uses 100mΩ/i)).toBeVisible();
+    await expect(await popover.findByText(/now uses 100mΩ/i)).toBeVisible();
     await expect(
       canvas.getByRole("slider", { name: "Cable loop compensation" }),
     ).toHaveValue("5");

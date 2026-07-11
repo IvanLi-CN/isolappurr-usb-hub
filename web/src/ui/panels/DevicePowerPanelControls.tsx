@@ -513,16 +513,22 @@ export function InlineHelpPopover({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const position = usePopoverPosition(open, triggerRef, {
+    height: 440,
+    width: 360,
+  });
 
   useEffect(() => {
     if (!open) {
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
-      if (!ref.current) {
-        return;
-      }
-      if (ref.current.contains(event.target as Node)) {
+      if (
+        ref.current?.contains(event.target as Node) ||
+        popoverRef.current?.contains(event.target as Node)
+      ) {
         return;
       }
       setOpen(false);
@@ -538,25 +544,33 @@ export function InlineHelpPopover({
         aria-label={`${title} help`}
         className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel)] text-[11px] font-bold text-[var(--muted)] transition hover:text-[var(--text)]"
         onClick={() => setOpen((current) => !current)}
+        ref={triggerRef}
         type="button"
       >
         ?
       </button>
-      {open ? (
-        <div className="iso-popover absolute left-0 top-full z-20 mt-2 w-[min(320px,calc(100vw-3rem))]">
-          <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] p-3">
-            <div className="text-[12px] font-semibold text-[var(--text)]">
-              {title}
-            </div>
-            <div className="mt-2 grid gap-2 text-[12px] leading-5 text-[var(--muted)]">
-              {lines.map((line) => (
-                <p key={line}>{line}</p>
-              ))}
-            </div>
-            {children}
-          </div>
-        </div>
-      ) : null}
+      {open && position
+        ? createPortal(
+            <div
+              className="iso-popover fixed z-50 w-[min(360px,calc(100vw-24px))]"
+              ref={popoverRef}
+              style={{ left: `${position.left}px`, top: `${position.top}px` }}
+            >
+              <div className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[10px] border border-[var(--border)] bg-[var(--panel)] p-3">
+                <div className="text-[12px] font-semibold text-[var(--text)]">
+                  {title}
+                </div>
+                <div className="mt-2 grid gap-2 text-[12px] leading-5 text-[var(--muted)]">
+                  {lines.map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
+                {children}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -569,6 +583,7 @@ type PopoverPosition = {
 function usePopoverPosition(
   open: boolean,
   anchorRef: RefObject<HTMLElement | null>,
+  viewportBounds?: { height?: number; width?: number },
 ) {
   const [position, setPosition] = useState<PopoverPosition | null>(null);
 
@@ -583,10 +598,20 @@ function usePopoverPosition(
         return;
       }
       const rect = anchor.getBoundingClientRect();
-      const maxLeft = Math.max(12, window.innerWidth - rect.width - 12);
+      const width = Math.min(
+        viewportBounds?.width ?? rect.width,
+        window.innerWidth - 24,
+      );
+      const maxLeft = Math.max(12, window.innerWidth - width - 12);
+      const preferredTop = rect.bottom + 6;
+      const height = viewportBounds?.height ?? 0;
+      const top =
+        height > 0 && preferredTop + height > window.innerHeight - 12
+          ? Math.max(12, rect.top - height - 6)
+          : preferredTop;
       setPosition({
-        left: Math.min(rect.left, maxLeft),
-        top: rect.bottom + 6,
+        left: Math.max(12, Math.min(rect.left, maxLeft)),
+        top,
       });
     };
     update();
@@ -596,7 +621,7 @@ function usePopoverPosition(
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [anchorRef, open]);
+  }, [anchorRef, open, viewportBounds?.height, viewportBounds?.width]);
 
   return position;
 }
