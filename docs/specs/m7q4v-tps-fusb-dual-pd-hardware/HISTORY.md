@@ -9,7 +9,8 @@
 - 冻结 `VIN_DC` / `VIN_USB` 单一使能一选一、DC 优先和至少 5 ms
   break-before-make 合同。
 - 冻结 `VIN_DC_SENSE` 1:16 分压、输入侧 FUSB302B VBUS 测量和 9 V
-  最低有效输入策略。
+  最低有效输入策略；明确 USB 电压验证使用 `MEAS_VBUS/MDAC + COMP`
+  阈值扫描，不使用固定 `VBUSOK`。
 - 冻结单 PMOS `VOUT_TPS -> VBUS_TPS` 开关；接受关断时
   `VBUS_TPS -> VOUT_TPS` 体二极管反灌，但限制在 TPS55288 25 V
   绝对最大边界内。

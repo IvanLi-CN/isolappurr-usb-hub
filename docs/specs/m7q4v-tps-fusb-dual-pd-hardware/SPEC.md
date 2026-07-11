@@ -71,7 +71,9 @@ Out of scope:
 
 - `VIN_DC_SENSE` MUST 使用 `3 x 100kΩ + 20kΩ` 的 1:16 分压并在 ADC
   节点放置 `100nF`，连接 `GPIO1/ADC1_CH0`，覆盖 40 V 边界。
-- `VIN_USB` MUST 使用输入侧 FUSB302B `MEAS_VBUS/MDAC` 判断。
+- `VIN_USB` MUST 使用输入侧 FUSB302B `MEAS_VBUS/MDAC` 比较器扫描判断；
+  固件 MUST 使用 `MEAS_VBUS=1`、MDAC 阈值和 `COMP` 结果，不得用固定
+  约 4 V 的 `VBUSOK` 代替 9 V 输入验证。
 - 输入选择 MUST 使用测量裕量和滞回；最低有效输入 MUST 为 9 V。
 - DC 有效时，固件 MUST 先把 USB 合同降到 5 V 并验证，再选择 DC。
 - 仅当 DC 无效时，固件 MUST 协商并验证至少 9 V 的 USB Fixed/PPS，
