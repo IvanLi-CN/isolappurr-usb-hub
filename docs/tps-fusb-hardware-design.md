@@ -11,7 +11,7 @@ BOM 或固件实现。规范真相源见
 - 输出侧 FUSB302B 连接 `VBUS_TPS` USB-C 口，作为 source PHY。
 - 两颗 FUSB302B 都只承担 Type-C/PD PHY 功能。ESP32-S3 固件必须实现
   PD 3.0 Fixed + PPS 协议与策略，TPS55288负责输出电压和限流。
-- 两颗 FUSB302B 的具体 I2C 总线、地址变体、共享设备和 PCB 位置等待
+- 两颗 FUSB302B 的具体 I2C 总线、精确地址、冲突处理、共享设备和 PCB 位置等待
   最终 Layout 与正式网表确认。不得从当前 `tps-sw` 总线分配直接推导。
 
 ## 输入电源选择
@@ -89,7 +89,7 @@ PMOS 关闭并禁用 TPS 输出。允许的反灌电压不得使 TPS55288 `VOUT/
 绝对最大值不是可持续工作目标。TPS55288 数据手册只给出特定关断条件下的
 VOUT leakage 指标，不能据此宣称支持任意外部反向供电工况。
 
-## MCU 引脚合同
+## MCU 资源合同
 
 完整、独立的 `tps-fusb` MCU 资源分配入口见
 [`docs/mcu-resource-allocation-tps-fusb.md`](mcu-resource-allocation-tps-fusb.md)。
@@ -106,7 +106,7 @@ VOUT leakage 指标，不能据此宣称支持任意外部反向供电工况。
 
 `INT2` 只允许开漏告警输出共享。中断触发后，固件必须轮询该总线上的全部
 候选设备识别来源。GPIO39/40 是否继续作为第二组 I2C SDA/SCL，以及两颗
-FUSB302B 的具体总线归属，均等待正式网表确认。
+FUSB302B 的具体总线归属、精确 7-bit 地址与冲突处理，均等待正式网表确认。
 
 ## 固件边界
 
