@@ -411,6 +411,9 @@ export const OutputOffManualHighVoltage: Story = {
     await expect(
       await canvas.findByTestId("runtime-discharge-toggle"),
     ).toHaveTextContent("Enabled");
+    await expect(
+      await canvas.findByTestId("runtime-discharge-toggle"),
+    ).toBeEnabled();
     await expect(await canvas.findByTestId("usb-c-voltage")).toHaveTextContent(
       "20.06V",
     );
@@ -567,16 +570,17 @@ export const RunConfirmation: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
     await userEvent.click(
       await canvas.findByRole("button", { name: "Run calibration" }),
     );
     await expect(
-      await canvas.findByRole("alertdialog", {
+      await page.findByRole("alertdialog", {
         name: "Run USB-C idle-bias calibration?",
       }),
     ).toBeVisible();
     await expect(
-      canvas.getByText(/Disconnect every USB-C device first/),
+      page.getByText(/Disconnect every USB-C device first/),
     ).toBeVisible();
   },
 };

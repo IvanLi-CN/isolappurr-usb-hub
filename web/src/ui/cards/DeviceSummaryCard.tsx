@@ -1,6 +1,7 @@
 import type { ConnectionState } from "../../app/device-runtime";
 import type { StoredDevice } from "../../domain/devices";
 import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
+import { ActionButton } from "../actions/ActionButton";
 import { formatTimeHms } from "../format/time";
 import { PortMiniCard } from "./PortMiniCard";
 
@@ -118,13 +119,15 @@ export function DeviceSummaryCard({
           />
         </div>
 
-        <button
-          className="mt-3 flex h-[34px] w-full flex-none items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[12px] font-bold text-[var(--text)]"
-          type="button"
+        <ActionButton
+          className="mt-3 flex-none"
+          fullWidth
+          size="sm"
+          tone="secondary"
           onClick={() => onOpenDetails(device.id)}
         >
           Open details →
-        </button>
+        </ActionButton>
       </div>
     </div>
   );

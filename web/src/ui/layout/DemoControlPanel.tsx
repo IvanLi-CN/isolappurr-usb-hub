@@ -5,6 +5,7 @@ import {
   useDemoMode,
 } from "../../app/demo-mode";
 import { useDemoNavigate } from "../../app/demo-navigation";
+import { ActionButton, IconButton } from "../actions/ActionButton";
 
 export function DemoControlPanel() {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -64,12 +65,13 @@ export function DemoControlPanel() {
 
   return (
     <>
-      <button
+      <ActionButton
         ref={triggerRef}
-        className="flex h-9 shrink-0 items-center gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-3 text-left text-[12px] font-bold text-[var(--text)] transition-colors hover:border-[var(--warning)] hover:text-[var(--warning)] sm:px-4"
-        type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
+        className="h-9 shrink-0 gap-2 px-3 sm:px-4"
+        size="sm"
+        tone="secondary"
         onClick={() => {
           refreshSummary();
           setOpen(true);
@@ -84,7 +86,7 @@ export function DemoControlPanel() {
         <span aria-hidden="true" className="text-[10px] text-[var(--muted)]">
           ▾
         </span>
-      </button>
+      </ActionButton>
 
       <dialog
         ref={dialogRef}
@@ -136,14 +138,15 @@ export function DemoControlPanel() {
                 are mocked; routes and page logic stay on the production SPA.
               </div>
             </div>
-            <button
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[18px] leading-none text-[var(--muted)] transition-colors hover:text-[var(--text)]"
-              type="button"
-              aria-label="Close demo control panel"
+            <IconButton
+              className="h-9 w-9 text-[18px] leading-none"
+              label="Close demo control panel"
+              size="sm"
+              tone="quiet"
               onClick={closePanel}
             >
               ×
-            </button>
+            </IconButton>
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -178,20 +181,12 @@ export function DemoControlPanel() {
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <button
-              className="flex min-h-11 items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent px-4 text-[14px] font-bold text-[var(--text)] transition-colors hover:bg-[var(--panel-2)]"
-              type="button"
-              onClick={handleReset}
-            >
+            <ActionButton fullWidth tone="secondary" onClick={handleReset}>
               Reset demo session
-            </button>
-            <button
-              className="flex min-h-11 items-center justify-center rounded-[10px] bg-[var(--primary)] px-4 text-[14px] font-bold text-[var(--primary-text)] transition-colors hover:bg-[var(--primary-2)]"
-              type="button"
-              onClick={handleExit}
-            >
+            </ActionButton>
+            <ActionButton fullWidth tone="primary" onClick={handleExit}>
               Exit demo
-            </button>
+            </ActionButton>
           </div>
         </div>
       </dialog>

@@ -8,6 +8,7 @@ import {
   isDiscoveredDeviceAdded,
   validateCidrInput,
 } from "../../domain/discovery";
+import { ActionButton } from "../actions/ActionButton";
 
 function Chevron({ direction }: { direction: "up" | "down" }) {
   const d = direction === "down" ? "M6 9l6 6 6-6" : "M6 15l6-6 6 6";
@@ -118,14 +119,14 @@ export function DeviceDiscoveryPanel({
             saved address.
           </div>
         </div>
-        <button
-          className="btn btn-sm"
-          type="button"
+        <ActionButton
+          size="sm"
+          tone="secondary"
           onClick={onRefresh}
           disabled={scanning}
         >
           Refresh
-        </button>
+        </ActionButton>
       </div>
 
       {snapshot.status === "unavailable" ? (
@@ -211,14 +212,14 @@ export function DeviceDiscoveryPanel({
                     </div>
                   </div>
 
-                  <button
-                    className="btn btn-sm"
-                    type="button"
+                  <ActionButton
+                    size="sm"
+                    tone="primary"
                     onClick={() => onSelect(d)}
                     disabled={added}
                   >
                     Add
-                  </button>
+                  </ActionButton>
                 </div>
               );
             })}
@@ -230,28 +231,28 @@ export function DeviceDiscoveryPanel({
         {!ipScanExpanded ? (
           <div className="flex items-center justify-between">
             <div className="text-[13px] font-bold">IP scan (advanced)</div>
-            <button
-              className="link link-hover flex items-center gap-2 text-[12px] font-bold"
-              type="button"
+            <ActionButton
+              size="sm"
+              tone="quiet"
               onClick={() => onToggleIpScan(true)}
             >
               <span>Show</span>
               <Chevron direction="down" />
-            </button>
+            </ActionButton>
           </div>
         ) : (
           <div>
             <div className="flex items-center justify-between">
               <div className="text-[13px] font-bold">IP scan (advanced)</div>
-              <button
-                className="link link-hover flex items-center gap-2 text-[12px] font-bold"
-                type="button"
+              <ActionButton
+                size="sm"
+                tone="quiet"
                 onClick={() => onToggleIpScan(false)}
                 disabled={scanning}
               >
                 <span>Hide</span>
                 <Chevron direction="up" />
-              </button>
+              </ActionButton>
             </div>
 
             <div className="mt-3 flex items-center gap-2">
@@ -301,14 +302,13 @@ export function DeviceDiscoveryPanel({
                   })}
                 </datalist>
               ) : null}
-              <button
-                className="btn btn-sm h-[40px]"
-                type="button"
+              <ActionButton
+                tone="primary"
                 onClick={startScan}
                 disabled={scanning}
               >
                 Scan
-              </button>
+              </ActionButton>
             </div>
 
             {ipScanCandidates &&
@@ -336,13 +336,9 @@ export function DeviceDiscoveryPanel({
                 <div>
                   {snapshot.scan.done}/{snapshot.scan.total} probed
                 </div>
-                <button
-                  className="link link-hover text-[12px] font-bold"
-                  type="button"
-                  onClick={onCancelScan}
-                >
+                <ActionButton size="sm" tone="quiet" onClick={onCancelScan}>
                   Cancel
-                </button>
+                </ActionButton>
               </div>
             ) : null}
           </div>

@@ -10,6 +10,7 @@ import type {
   Result,
 } from "../../domain/deviceApi";
 import type { PortState, PortTelemetry } from "../../domain/ports";
+import { ActionButton } from "../actions/ActionButton";
 import {
   activeProtocolLabel,
   badgeTone,
@@ -1082,17 +1083,15 @@ export function DevicePowerPanel({
                         title="TPS discharge"
                       />
                     </div>
-                    <button
-                      className={`inline-flex h-9 min-w-[104px] items-center justify-center rounded-[8px] px-3 text-[12px] font-semibold ${
-                        runtimeDischargeEnabled
-                          ? "bg-[var(--primary)] text-[var(--primary-text)]"
-                          : "border border-[var(--border)] bg-[var(--panel-2)] text-[var(--muted)]"
-                      } ${
-                        powerControlsDisabled || !runtimeOutputEnabled
-                          ? "opacity-60"
-                          : ""
-                      }`}
+                    <ActionButton
+                      className={
+                        runtimeOutputEnabled
+                          ? "min-w-[104px]"
+                          : "min-w-[104px] opacity-60"
+                      }
                       data-testid="runtime-discharge-toggle"
+                      size="sm"
+                      tone={runtimeDischargeEnabled ? "primary" : "secondary"}
                       disabled={powerControlsDisabled}
                       onClick={() =>
                         void toggleRuntime(
@@ -1100,10 +1099,9 @@ export function DevicePowerPanel({
                           !runtimeDischargeEnabled,
                         )
                       }
-                      type="button"
                     >
                       {runtimeDischargeEnabled ? "Enabled" : "Disabled"}
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
               ) : null}
@@ -1111,22 +1109,27 @@ export function DevicePowerPanel({
 
             <div className="grid gap-3 border-t border-[var(--border)] pt-4">
               <div className="flex flex-wrap justify-end gap-3">
-                <button
-                  className="flex h-11 min-w-[176px] items-center justify-center rounded-[8px] bg-[var(--primary)] px-4 text-[14px] font-semibold text-[var(--primary-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                <ActionButton
+                  className="min-w-[176px]"
+                  loading={
+                    busy &&
+                    status === "Saving and applying power configuration..."
+                  }
+                  tone="primary"
                   disabled={powerControlsDisabled || !dirty}
                   onClick={() => void submit()}
-                  type="button"
                 >
                   Save and apply
-                </button>
-                <button
-                  className="flex h-11 min-w-[176px] items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                </ActionButton>
+                <ActionButton
+                  className="min-w-[176px]"
+                  loading={busy && status === "Restoring defaults..."}
+                  tone="warning"
                   disabled={powerControlsDisabled}
                   onClick={() => void restore()}
-                  type="button"
                 >
                   Restore defaults
-                </button>
+                </ActionButton>
               </div>
               {status ? (
                 <div className="text-[12px] text-[var(--muted)]">{status}</div>

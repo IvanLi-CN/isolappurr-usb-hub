@@ -12,6 +12,8 @@ import type {
 } from "../../domain/deviceApi";
 import type { StoredDevice } from "../../domain/devices";
 import type { UsbCDownstreamRoute } from "../../domain/ports";
+import { ActionButton } from "../actions/ActionButton";
+import { ConfirmDialog } from "../actions/ConfirmDialog";
 import { DeviceSettingsResetPanel } from "./DeviceSettingsResetPanel";
 
 function unknown(value: string | null | undefined): string {
@@ -103,7 +105,9 @@ export function DeviceInfoPanel({
   const [wifiConfig, setWifiConfigState] = useState<WifiConfigResponse | null>(
     null,
   );
-  const [wifiBusy, setWifiBusy] = useState(false);
+  const [wifiBusyAction, setWifiBusyAction] = useState<
+    "save" | "clear" | "reboot" | null
+  >(null);
   const [wifiSsid, setWifiSsid] = useState("");
   const [wifiPsk, setWifiPsk] = useState("");
   const [wifiOpenNetwork, setWifiOpenNetwork] = useState(false);
@@ -270,6 +274,7 @@ export function DeviceInfoPanel({
   const wifiCanManage =
     wifiManagementTransport === "web_serial" ||
     wifiManagementTransport === "local_usb";
+  const wifiBusy = wifiBusyAction !== null;
   const wifiCanSubmit = wifiCanManage && !wifiBusy;
   const modeDisabled = !transport || routeBusy || modeBusy;
   const selectedMode = usbCDownstreamRoute === "mcu" ? "upgrade" : "normal";
@@ -312,7 +317,7 @@ export function DeviceInfoPanel({
       return;
     }
 
-    setWifiBusy(true);
+    setWifiBusyAction("save");
     setWifiError(null);
     setWifiStatus(null);
     try {
@@ -345,7 +350,7 @@ export function DeviceInfoPanel({
       }
       setWifiError(res.error.message);
     } finally {
-      setWifiBusy(false);
+      setWifiBusyAction(null);
     }
   };
 
@@ -361,7 +366,7 @@ export function DeviceInfoPanel({
   };
 
   const clearWifi = async () => {
-    setWifiBusy(true);
+    setWifiBusyAction("clear");
     setWifiError(null);
     setWifiStatus(null);
     setWifiClearConfirmOpen(false);
@@ -391,7 +396,7 @@ export function DeviceInfoPanel({
       }
       setWifiError(res.error.message);
     } finally {
-      setWifiBusy(false);
+      setWifiBusyAction(null);
     }
   };
 
@@ -419,7 +424,7 @@ export function DeviceInfoPanel({
       );
       return;
     }
-    setWifiBusy(true);
+    setWifiBusyAction("reboot");
     setWifiError(null);
     try {
       const res = await rebootDevice();
@@ -430,7 +435,7 @@ export function DeviceInfoPanel({
       }
       setWifiError(res.error.message);
     } finally {
-      setWifiBusy(false);
+      setWifiBusyAction(null);
     }
   };
 
@@ -652,31 +657,33 @@ export function DeviceInfoPanel({
               : "Wi-Fi/LAN is read-only for Wi-Fi settings. Connect with Web Serial or Local USB to change credentials."}
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:min-w-[260px]">
-            <button
-              className="btn btn-primary btn-sm min-h-10"
-              type="button"
+            <ActionButton
+              fullWidth
+              loading={wifiBusyAction === "save"}
+              tone="primary"
               disabled={!wifiCanSubmit}
               onClick={() => void saveWifi()}
             >
-              {wifiBusy ? "Saving..." : "Save Wi-Fi"}
-            </button>
-            <button
-              className="btn btn-outline btn-sm min-h-10"
-              type="button"
+              Save Wi-Fi
+            </ActionButton>
+            <ActionButton
+              fullWidth
+              tone="warning"
               disabled={!wifiCanSubmit}
               onClick={requestClearWifi}
             >
               Clear
-            </button>
+            </ActionButton>
             {wifiRebootRequired ? (
-              <button
-                className="btn btn-outline btn-sm min-h-10"
-                type="button"
+              <ActionButton
+                fullWidth
+                loading={wifiBusyAction === "reboot"}
+                tone="secondary"
                 disabled={!wifiCanSubmit}
                 onClick={() => void rebootForWifi()}
               >
                 Reboot
-              </button>
+              </ActionButton>
             ) : null}
           </div>
         </div>
@@ -697,99 +704,27 @@ export function DeviceInfoPanel({
         ) : null}
       </div>
 
-      {wifiClearConfirmOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6"
-          role="presentation"
-        >
-          <div
-            className="w-full max-w-[440px] rounded-[14px] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-2xl"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="wifi-clear-title"
-            aria-describedby="wifi-clear-description"
-          >
-            <div
-              id="wifi-clear-title"
-              className="text-[15px] font-bold text-[var(--text)]"
-            >
-              Clear stored Wi-Fi configuration?
-            </div>
-            <div
-              id="wifi-clear-description"
-              className="mt-3 text-[13px] font-semibold leading-6 text-[var(--muted)]"
-            >
-              The hub will forget the saved SSID and PSK, and Wi-Fi will stop
-              immediately.
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button
-                className="btn btn-outline btn-sm min-h-10 justify-center"
-                type="button"
-                disabled={wifiBusy}
-                onClick={() => setWifiClearConfirmOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary btn-sm min-h-10 justify-center"
-                type="button"
-                disabled={wifiBusy}
-                onClick={() => void clearWifi()}
-              >
-                Clear Wi-Fi
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        busy={wifiBusyAction === "clear"}
+        confirmLabel="Clear Wi-Fi"
+        description="The hub will forget the saved SSID and PSK, and Wi-Fi will stop immediately."
+        open={wifiClearConfirmOpen}
+        title="Clear stored Wi-Fi configuration?"
+        tone="warning"
+        onCancel={() => setWifiClearConfirmOpen(false)}
+        onConfirm={() => void clearWifi()}
+      />
 
-      {deleteConfirmOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6"
-          role="presentation"
-        >
-          <div
-            className="w-full max-w-[460px] rounded-[14px] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-2xl"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="device-delete-title"
-            aria-describedby="device-delete-description"
-          >
-            <div
-              id="device-delete-title"
-              className="text-[15px] font-bold text-[var(--text)]"
-            >
-              Delete this saved device?
-            </div>
-            <div
-              id="device-delete-description"
-              className="mt-3 text-[13px] font-semibold leading-6 text-[var(--muted)]"
-            >
-              This only removes the local saved profile for {device.name}. It
-              does not change hardware settings on the hub.
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <button
-                className="btn btn-outline btn-sm min-h-10 justify-center"
-                type="button"
-                disabled={deleteBusy}
-                onClick={() => setDeleteConfirmOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary btn-sm min-h-10 justify-center"
-                type="button"
-                disabled={deleteBusy}
-                onClick={() => void confirmDeleteDevice()}
-              >
-                {deleteBusy ? "Deleting..." : "Delete device"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        busy={deleteBusy}
+        confirmLabel="Delete device"
+        description={`This only removes the local saved profile for ${device.name}. It does not change hardware settings on the hub.`}
+        open={deleteConfirmOpen}
+        title="Delete this saved device?"
+        tone="danger"
+        onCancel={() => setDeleteConfirmOpen(false)}
+        onConfirm={() => void confirmDeleteDevice()}
+      />
 
       <DeviceSettingsResetPanel
         key={device.id}
@@ -811,13 +746,9 @@ export function DeviceInfoPanel({
               installs, recovery, and manual app-image flashing.
             </div>
           </div>
-          <button
-            className="btn btn-primary min-h-10"
-            type="button"
-            onClick={openFirmwareFlashPage}
-          >
+          <ActionButton tone="primary" onClick={openFirmwareFlashPage}>
             Open firmware flash
-          </button>
+          </ActionButton>
         </div>
         <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
           <InfoPill label="firmware" value={fwVersion} />
@@ -843,16 +774,15 @@ export function DeviceInfoPanel({
               Remove this hub from the local device list.
             </div>
           </div>
-          <button
-            className="btn btn-outline btn-sm min-h-10 justify-center border-[var(--error)] text-[var(--error)]"
-            type="button"
+          <ActionButton
+            tone="danger"
             onClick={() => {
               setDeleteError(null);
               setDeleteConfirmOpen(true);
             }}
           >
             Delete device
-          </button>
+          </ActionButton>
         </div>
         {deleteError ? (
           <div

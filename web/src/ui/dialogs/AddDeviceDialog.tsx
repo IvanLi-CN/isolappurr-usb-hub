@@ -30,6 +30,7 @@ import {
 import { announceLocalUsbDeviceLink } from "../../domain/localUsbLinks";
 import { announceNetworkDeviceLink } from "../../domain/networkLinks";
 import { announceWebSerialDeviceLink } from "../../domain/webSerialLinks";
+import { ActionButton } from "../actions/ActionButton";
 import { DeviceDiscoveryPanel } from "../panels/DeviceDiscoveryPanel";
 
 import {
@@ -779,16 +780,15 @@ export function AddDeviceDialog({
               Store locally; used for Dashboard and device pages.
             </div>
           </div>
-          <button
-            className="btn btn-outline min-h-10"
-            type="button"
+          <ActionButton
+            tone="secondary"
             onClick={() => {
               onClose();
               navigate("/flash");
             }}
           >
             Open firmware flash
-          </button>
+          </ActionButton>
         </div>
 
         <div
@@ -1014,14 +1014,14 @@ export function AddDeviceDialog({
                           }
                         />
                       </label>
-                      <button
-                        className="btn h-11 justify-center"
-                        type="button"
-                        disabled={manualBusy}
+                      <ActionButton
+                        fullWidth
+                        loading={manualBusy}
+                        tone="primary"
                         onClick={() => void saveManualDevice()}
                       >
-                        {manualBusy ? "Adding..." : "Add manually"}
-                      </button>
+                        Add manually
+                      </ActionButton>
                     </div>
                   </div>
                 </div>
@@ -1134,16 +1134,15 @@ export function AddDeviceDialog({
 
                 {method === "web_serial" ? (
                   <div className="mt-8 grid gap-3">
-                    <button
-                      className="btn h-12 justify-center"
-                      type="button"
-                      disabled={
-                        demoEnabled || usbBusy || !isWebSerialSupported()
-                      }
+                    <ActionButton
+                      fullWidth
+                      loading={usbBusy}
+                      tone="primary"
+                      disabled={demoEnabled || !isWebSerialSupported()}
                       onClick={() => void connectByWebSerial()}
                     >
-                      {usbBusy ? "Connecting..." : "Connect and add"}
-                    </button>
+                      Connect and add
+                    </ActionButton>
                   </div>
                 ) : null}
               </div>
@@ -1152,9 +1151,9 @@ export function AddDeviceDialog({
         </div>
 
         <div className="mt-6 flex items-center justify-end">
-          <button className="btn" type="button" onClick={onClose}>
+          <ActionButton tone="secondary" onClick={onClose}>
             Cancel
-          </button>
+          </ActionButton>
         </div>
       </div>
     </dialog>

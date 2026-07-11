@@ -4,16 +4,14 @@ import { useDemoNavigate } from "../app/demo-navigation";
 import { useDevices } from "../app/devices-store";
 import { isWebSerialSupported } from "../domain/hardwareConsole";
 import { getLocalUsbDeviceLink } from "../domain/localUsbLinks";
+import { ActionButton, IconButton } from "../ui/actions/ActionButton";
 import { FirmwareFlashLogPanel } from "../ui/panels/FirmwareFlashLogPanel";
 import { FirmwareFlashSelectionSummary } from "../ui/panels/FirmwareFlashSelectionSummary";
 import { FirmwareFlashTargetState } from "../ui/panels/FirmwareFlashTargetState";
 import { FirmwareReleaseList } from "../ui/panels/FirmwareReleaseList";
 import {
-  outlineButtonClass,
-  primaryButtonClass,
   ReconnectIcon,
   RemoveIcon,
-  SpinnerIcon,
   TargetInfoCell,
   TransportChoiceCard,
 } from "./FirmwareFlashPageUi";
@@ -259,21 +257,16 @@ export function FirmwareFlashPage() {
         (flashBusy ? "working" : ("idle" as FlashActivityStatus)));
   const targetAction =
     probeActivity !== null ? null : webSerialReadyForManualRead ? (
-      <button
-        className={`${outlineButtonClass} min-h-11 w-full gap-2`}
-        type="button"
+      <ActionButton
+        fullWidth
+        loading={reconnectButtonBusy}
+        tone="secondary"
         disabled={operationLocked}
         onClick={() => void readAuthorizedWebUsb()}
       >
-        {reconnectButtonBusy ? (
-          <ReconnectIcon className="h-4 w-4 animate-spin" />
-        ) : (
-          <ReconnectIcon />
-        )}
-        <span>
-          {reconnectButtonBusy ? "Reading device info…" : "Reconnect"}
-        </span>
-      </button>
+        <ReconnectIcon />
+        {reconnectButtonBusy ? "Reading device info..." : "Reconnect"}
+      </ActionButton>
     ) : null;
   const targetRows = [
     {
@@ -399,11 +392,10 @@ export function FirmwareFlashPage() {
                     selectedWebSerialSelection ? (
                       <>
                         {webSerialReadyForManualRead ? (
-                          <button
-                            aria-label="Reconnect device"
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--panel)] text-[var(--muted)] transition-colors hover:bg-[var(--panel)] hover:text-[var(--text)]"
-                            title="Reconnect device"
-                            type="button"
+                          <IconButton
+                            label="Reconnect device"
+                            loading={reconnectButtonBusy}
+                            tone="secondary"
                             disabled={operationLocked}
                             onMouseDown={(event) => {
                               event.stopPropagation();
@@ -414,20 +406,13 @@ export function FirmwareFlashPage() {
                               void readAuthorizedWebUsb();
                             }}
                           >
-                            <ReconnectIcon
-                              className={
-                                reconnectButtonBusy
-                                  ? "h-4 w-4 animate-spin"
-                                  : "h-4 w-4"
-                              }
-                            />
-                          </button>
+                            <ReconnectIcon />
+                          </IconButton>
                         ) : null}
-                        <button
-                          aria-label="Release Web USB authorization"
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--panel)] text-[var(--muted)] transition-colors hover:bg-[var(--panel)] hover:text-[var(--text)]"
-                          title="Release Web USB authorization"
-                          type="button"
+                        <IconButton
+                          label="Release Web USB authorization"
+                          loading={releaseButtonBusy}
+                          tone="warning"
                           disabled={operationLocked}
                           onMouseDown={(event) => {
                             event.stopPropagation();
@@ -438,14 +423,8 @@ export function FirmwareFlashPage() {
                             void releaseAuthorizedWebUsb();
                           }}
                         >
-                          <RemoveIcon
-                            className={
-                              releaseButtonBusy
-                                ? "h-4 w-4 animate-pulse"
-                                : "h-4 w-4"
-                            }
-                          />
-                        </button>
+                          <RemoveIcon />
+                        </IconButton>
                       </>
                     ) : null
                   }
@@ -635,31 +614,20 @@ export function FirmwareFlashPage() {
             </div>
 
             <div className="mt-4">
-              <button
-                className={`${primaryButtonClass} min-h-11 w-full gap-2`}
-                type="button"
+              <ActionButton
+                fullWidth
+                loading={flashBusy}
+                tone="primary"
                 disabled={!canFlash}
                 onClick={() => void onFlash()}
               >
-                {flashBusy ? (
-                  <>
-                    <SpinnerIcon />
-                    <span>
-                      {recoveryFlow
-                        ? "Flashing recovery..."
-                        : "Flashing firmware..."}
-                    </span>
-                  </>
-                ) : recoveryFlow ? (
-                  "Flash recovery firmware"
-                ) : (
-                  "Flash firmware"
-                )}
-              </button>
+                {recoveryFlow ? "Flash recovery firmware" : "Flash firmware"}
+              </ActionButton>
 
-              <button
-                className={`${outlineButtonClass} mt-3 min-h-11 w-full`}
-                type="button"
+              <ActionButton
+                className="mt-3"
+                fullWidth
+                tone="secondary"
                 disabled={operationLocked}
                 onClick={() =>
                   currentDevice
@@ -668,7 +636,7 @@ export function FirmwareFlashPage() {
                 }
               >
                 {currentDevice ? "Back to settings" : "Back to dashboard"}
-              </button>
+              </ActionButton>
             </div>
 
             <FirmwareFlashLogPanel
@@ -723,14 +691,13 @@ export function FirmwareFlashPage() {
                 board immediately.
               </div>
             </div>
-            <button
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[18px] leading-none text-[var(--muted)] transition-colors hover:text-[var(--text)]"
-              type="button"
-              aria-label="Close USB device picker"
+            <IconButton
+              label="Close USB device picker"
+              size="sm"
               onClick={() => setLocalUsbPickerOpen(false)}
             >
               ×
-            </button>
+            </IconButton>
           </div>
 
           {localUsbPorts.length > 0 ? (
@@ -820,19 +787,20 @@ export function FirmwareFlashPage() {
               placeholder="Type FLASH"
             />
             <div className="mt-5 grid grid-cols-2 gap-3">
-              <button
-                className={`${outlineButtonClass} min-h-11`}
-                type="button"
+              <ActionButton
+                fullWidth
+                tone="secondary"
                 onClick={() => {
                   setStrongConfirmOpen(false);
                   setStrongConfirmText("");
                 }}
               >
                 Cancel
-              </button>
-              <button
-                className={`${primaryButtonClass} min-h-11`}
-                type="button"
+              </ActionButton>
+              <ActionButton
+                emphasis="solid"
+                fullWidth
+                tone="danger"
                 disabled={strongConfirmText.trim() !== "FLASH"}
                 onClick={() => {
                   setStrongConfirmOpen(false);
@@ -841,7 +809,7 @@ export function FirmwareFlashPage() {
                 }}
               >
                 Confirm recovery flash
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>

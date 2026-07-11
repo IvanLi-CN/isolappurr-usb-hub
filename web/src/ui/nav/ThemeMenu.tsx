@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ThemeId } from "../../app/theme";
+import { ActionButton } from "../actions/ActionButton";
 
 const OPTIONS: Array<{ id: ThemeId; label: string }> = [
   { id: "isolapurr", label: "isolapurr" },
@@ -44,13 +45,15 @@ export function ThemeMenu({
   return (
     <div className="relative flex items-center gap-2" ref={ref}>
       <div className="text-[12px] font-semibold text-[var(--muted)]">Theme</div>
-      <button
-        className="flex h-9 w-[150px] items-center rounded-[10px] border border-[var(--border)] bg-transparent px-5 text-[12px] font-bold text-[var(--text)]"
-        type="button"
+      <ActionButton
+        align="between"
+        className="w-[150px] px-3"
+        size="sm"
+        tone="secondary"
         onClick={() => setOpen((v) => !v)}
       >
         {buttonLabel} ▾
-      </button>
+      </ActionButton>
       {open ? (
         <div
           className={[
@@ -60,13 +63,14 @@ export function ThemeMenu({
           role="menu"
         >
           {OPTIONS.map((opt) => (
-            <button
+            <ActionButton
+              align="between"
+              fullWidth
               key={opt.id}
-              className={[
-                "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[12px] font-semibold",
-                opt.id === value ? "bg-[var(--panel-2)]" : "bg-transparent",
-              ].join(" ")}
-              type="button"
+              role="menuitemradio"
+              aria-checked={opt.id === value}
+              size="sm"
+              tone={opt.id === value ? "secondary" : "quiet"}
               onClick={() => {
                 onChange(opt.id);
                 setOpen(false);
@@ -76,7 +80,7 @@ export function ThemeMenu({
               {opt.id === value ? (
                 <span className="text-[var(--muted)]">✓</span>
               ) : null}
-            </button>
+            </ActionButton>
           ))}
         </div>
       ) : null}

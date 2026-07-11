@@ -8,6 +8,7 @@
 - Firmware loads Wi-Fi credentials from EEPROM U21 `0x50` at boot and exposes a USB Serial/JTAG JSONL control task.
 - Local USB exposes token-protected serial port listing, JSONL request forwarding, and selected binary firmware flash execution through the desktop app. The same core logic is available through `isolapurr-desktop` CLI for development-stage hardware work.
 - Web UI keeps device connection inside the original Add device modal. Firmware update and Wi-Fi configuration live on the selected device's Hardware page. The standalone Hardware Console route and panel were removed so USB setup cannot bypass the add-device flow.
+- Web actions now use shared `ActionButton`, `IconButton`, and `ConfirmDialog` primitives. Normal commands, safe alternatives, reset/clear actions, and destructive final confirmation have explicit semantic treatments instead of page-local button classes.
 
 ## Coverage
 
@@ -38,6 +39,9 @@
 - Product docs: the entry README, interaction spec, and this topic spec now explain why three communication schemes exist, which capabilities each one covers, and why default preference only matters when more than one path is immediately usable.
 - Storybook and visual evidence: implemented for disconnected, connected, flashing, Wi-Fi configured, Wi-Fi empty/error, immediate apply, mobile, offline failover, add-device connection log, and delete confirmation states.
 - Device info identity layout: saved-device Hardware page now uses a shared two-column info-row layout so long `device_id`, `hostname`, and `fqdn` values truncate predictably instead of drifting off-grid; Storybook covers wide and narrow long-identity regressions.
+- Action-system coverage: migrated production command controls across discovery, saved-device settings, reset, firmware flash, port power, power calibration, device add, theme selection, and demo controls. Selection cards and segmented controls retain their distinct selection semantics.
+- Action-system accessibility: confirmation dialogs render above the app root, restore focus on close, trap keyboard focus while open, and support Escape dismissal when not busy. Storybook play coverage checks the portal-backed deletion and calibration confirmations.
+- Theme-surface coverage: shared action tokens now cover primary, secondary, quiet, warning, danger, disabled, and loading states; shared form-field overrides keep disabled text inputs on `--panel-2` rather than leaking a light framework default into dark or system-dark mode.
 
 ## Validation
 
@@ -60,3 +64,8 @@
 - Storybook visual evidence refreshed for `Cards/DeviceCard / SerialHistoryOnly` so the device list badge contract now proves that a historical Web Serial channel is rendered as history instead of a live connected Serial badge.
 - Device selection now uses theme-specific selected surface, border, and ring tokens plus a visible check marker and `aria-current="page"`; `Cards/DeviceCard` autodocs and the light, dark, and mobile `Layouts/AppLayout` stories cover the selected and unselected states together.
 - Storybook visual evidence refreshed for `Panels/DeviceInfoPanel / LongIdentityValues` and `Panels/DeviceInfoPanel / NarrowLongIdentityValues` so the Identity panel proves stable label/value alignment and predictable truncation for long identifiers and FQDNs on desktop and narrow layouts.
+- `cd web && bun run build`
+- `cd web && bun test ./src`
+- `cd web && bun run build-storybook`
+- `cd web && bun run test:storybook`
+- Production demo visual review at `/devices/aabbcc001122/info?demo=true` for desktop, narrow, `isolapurr-dark`, and `system` rendering.

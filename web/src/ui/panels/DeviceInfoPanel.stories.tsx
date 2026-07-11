@@ -270,14 +270,15 @@ export const ResetSettingsUsbFlow: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
     const resetButtons = await canvas.findAllByRole("button", {
       name: "Reset",
     });
     await userEvent.click(resetButtons[1]);
     await expect(
-      canvas.getByText(/Confirm this reset for other/),
+      await page.findByText(/Confirm this reset for other/),
     ).toBeVisible();
-    await userEvent.click(canvas.getByRole("button", { name: "Confirm" }));
+    await userEvent.click(page.getByRole("button", { name: "Confirm" }));
     await expect(await canvas.findByText(/Other settings reset/)).toBeVisible();
   },
 };
@@ -299,16 +300,17 @@ export const WebSerialFlashing: Story = {
 export const DeleteDeviceConfirmation: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
     await userEvent.click(
       canvas.getByRole("button", { name: "Delete device" }),
     );
     await expect(
-      await canvas.findByRole("alertdialog", {
+      await page.findByRole("alertdialog", {
         name: "Delete this saved device?",
       }),
     ).toBeVisible();
     await expect(
-      canvas.getByText(/does not change hardware settings/),
+      page.getByText(/does not change hardware settings/),
     ).toBeVisible();
   },
 };

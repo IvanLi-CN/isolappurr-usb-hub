@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useDesktopAgent } from "../app/desktop-agent-ui";
 import { resetStorage } from "../domain/desktopStorage";
+import { ActionButton } from "../ui/actions/ActionButton";
+import { ConfirmDialog } from "../ui/actions/ConfirmDialog";
 import { useToast } from "../ui/toast/ToastProvider";
 
 function buildInfo(): { sha: string; date: string; version: string } {
@@ -22,6 +24,7 @@ export function AboutPage() {
   const { sha, date, version } = buildInfo();
   const { agent, status } = useDesktopAgent();
   const { pushToast } = useToast();
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
 
   const repoUrl = envLink("VITE_REPO_URL");
@@ -30,12 +33,6 @@ export function AboutPage() {
 
   const onResetStorage = async () => {
     if (!agent || status !== "ready" || resetting) {
-      return;
-    }
-    const confirmed = window.confirm(
-      "Reset local data? This clears saved devices and theme on this desktop.",
-    );
-    if (!confirmed) {
       return;
     }
     setResetting(true);
@@ -164,17 +161,15 @@ export function AboutPage() {
             <div className="mt-2 text-[12px] font-semibold text-[var(--muted)]">
               Devices + theme are stored in the desktop app data directory.
             </div>
-            <button
-              className={[
-                "mt-4 h-9 rounded-[10px] border border-[var(--border)] px-4 text-[12px] font-bold",
-                "hover:bg-[var(--panel-2)]",
-              ].join(" ")}
-              type="button"
+            <ActionButton
+              className="mt-4"
+              loading={resetting}
+              tone="warning"
               disabled={resetting || status !== "ready"}
-              onClick={onResetStorage}
+              onClick={() => setResetConfirmOpen(true)}
             >
-              {resetting ? "Resetting..." : "Reset local data"}
-            </button>
+              Reset local data
+            </ActionButton>
           </div>
         ) : null}
       </div>
@@ -211,6 +206,19 @@ export function AboutPage() {
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        busy={resetting}
+        confirmLabel="Reset local data"
+        description="This clears saved devices and the theme stored by this desktop."
+        open={resetConfirmOpen}
+        title="Reset local data?"
+        tone="warning"
+        onCancel={() => setResetConfirmOpen(false)}
+        onConfirm={() => {
+          setResetConfirmOpen(false);
+          void onResetStorage();
+        }}
+      />
     </div>
   );
 }

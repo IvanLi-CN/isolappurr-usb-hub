@@ -5,6 +5,7 @@ import type {
   SettingsResetResponse,
   SettingsResetScope,
 } from "../../domain/deviceApi";
+import { ActionButton } from "../actions/ActionButton";
 
 export function DeviceSettingsResetPanel({
   transport,
@@ -163,32 +164,32 @@ function ResetSettingRow({
         </div>
         {active ? (
           <div className="grid min-w-[188px] grid-cols-2 gap-2">
-            <button
-              className="btn btn-outline btn-sm min-h-10 justify-center"
-              type="button"
+            <ActionButton
+              fullWidth
+              tone="secondary"
               disabled={busy}
               onClick={onCancel}
             >
               Cancel
-            </button>
-            <button
-              className="btn btn-primary btn-sm min-h-10 justify-center"
-              type="button"
-              disabled={busy}
+            </ActionButton>
+            <ActionButton
+              fullWidth
+              loading={busy}
+              tone="warning"
               onClick={onConfirm}
             >
-              {busy ? "Resetting..." : "Confirm"}
-            </button>
+              Confirm
+            </ActionButton>
           </div>
         ) : (
-          <button
-            className="btn btn-outline btn-sm min-h-10 min-w-[108px] justify-center"
-            type="button"
+          <ActionButton
+            className="min-w-[108px]"
+            tone="warning"
             disabled={disabled}
             onClick={onRequest}
           >
             Reset
-          </button>
+          </ActionButton>
         )}
       </div>
       {active ? (
