@@ -379,6 +379,32 @@ for diagnostics.
 
 ## Visual Evidence
 
+- source_type: web_demo
+  route: `/devices/aabbcc001122/power?demo=true`
+  state: Manual TPS help calculator, 300mV drop at 3000mA
+  requested_viewport: `1265x712`
+  viewport_strategy: `runtime-default`
+  capture_scope: `viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the Manual TPS help popover keeps the measurement
+  calculator with its explanatory copy, maps the 100mΩ recommendation onto the
+  manual cable-loop compensation draft, and leaves the save action explicit.
+
+![Manual TPS cable loop calculator](./assets/device-power-panel-manual-cable-loop-calculator.png)
+
+- source_type: web_demo
+  route: `/devices/aabbcc001122/power?demo=true`
+  state: Auto follow help calculator, 300mV drop at 3000mA
+  requested_viewport: `1265x712`
+  viewport_strategy: `runtime-default`
+  capture_scope: `viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the independent Auto follow help popover recommends
+  100mΩ from the same loop measurement and updates only its unsaved SW2303
+  compensation draft.
+
+![Auto follow cable loop calculator](./assets/device-power-panel-auto-follow-cable-loop-calculator.png)
+
 - source_type: storybook_canvas
   story_id_or_title: `Brand/ThemePalette/Review`
   state: light theme token review with warm-amber `secondary`
