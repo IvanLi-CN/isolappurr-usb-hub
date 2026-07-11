@@ -113,8 +113,8 @@ Out of scope:
 
 - Given `tps-sw` 仍是当前正式硬件，when 阅读 variant 入口，then
   `tps-sw` 与 `tps-fusb` 同时列出且后者明确标记为待设计。
-- Given 两路输入均可能插入，when MCU 切换来源，then 控制合同只允许
-  gate 控制只允许 `off/DC/USB` 三种主动增强状态并要求至少 5 ms
+- Given 两路输入均可能插入，when MCU 切换来源，then gate 控制只允许
+  `off/DC/USB` 三种主动增强状态并要求至少 5 ms
   break-before-make；体二极管的被动导通不属于 MCU 可关闭状态。
 - Given 40 V `VIN_DC` 边界，when 经过 1:16 分压，then ADC 节点约为
   2.50 V，且 GPIO1 不再分配给 `BTNL`。
