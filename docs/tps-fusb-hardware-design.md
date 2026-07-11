@@ -91,7 +91,7 @@ VOUT leakage 指标，不能据此宣称支持任意外部反向供电工况。
 
 ## MCU 资源合同
 
-完整、独立的 `tps-fusb` MCU 资源分配入口见
+完整、独立的 `tps-fusb` MCU 使用规范入口见
 [`docs/mcu-resource-allocation-tps-fusb.md`](mcu-resource-allocation-tps-fusb.md)。
 
 | GPIO | `tps-fusb` 网络 | 方向 / 约束 |
