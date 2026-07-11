@@ -64,8 +64,8 @@ fn power_config_human_output_avoids_chip_names() {
 
     assert!(rendered.contains("Output mode: Manual bench output"));
     assert!(rendered.contains("Light-load mode: FPWM"));
-    assert!(rendered.contains("Auto-follow line compensation: 50mΩ"));
-    assert!(rendered.contains("cable compensation 0.3 V rise"));
+    assert!(rendered.contains("Auto-follow cable loop compensation: 50mΩ"));
+    assert!(rendered.contains("cable loop compensation 60mΩ"));
     assert!(rendered.contains("Runtime 2mm output: enabled"));
     assert!(rendered.contains("Current profile: PPS3 5000 mA"));
     assert!(!rendered.to_ascii_lowercase().contains("sw2303"));
@@ -793,6 +793,7 @@ fn manual_output_updates_only_manual_section() {
             voltage_mv: Some(21_000),
             current_limit_ma: Some(6_350),
             tps_cdc_rise_mv: Some(700),
+            cable_resistance_mohm: None,
             usb_c_path: Some(OutputUsbCPathArg::Disconnected),
         },
     );
@@ -804,6 +805,15 @@ fn manual_output_updates_only_manual_section() {
     assert_eq!(updated.manual.tps_cdc_rise_mv, 700);
     assert_eq!(updated.manual.usb_c_path_mode, "disconnect");
     assert!(updated.manual.voltage_mv >= 3_000);
+    let mut mapped = original;
+    apply_manual_output_args(
+        &mut mapped,
+        &ManualOutputArgs {
+            cable_resistance_mohm: Some(100),
+            ..Default::default()
+        },
+    );
+    assert_eq!(mapped.manual.tps_cdc_rise_mv, 500);
 }
 
 include!("tests_power_config_tail.rs");

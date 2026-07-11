@@ -378,6 +378,31 @@ export const AutoFollowDefaults: Story = {
     savePowerConfig: () => ok(autoConfig),
     setPowerLock: () => ok(autoConfig),
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByLabelText("Auto-follow cable loop compensation help"),
+    );
+    const popover = within(document.body);
+    await userEvent.type(
+      popover.getByLabelText(
+        "Auto-follow cable loop compensation voltage drop",
+      ),
+      "300",
+    );
+    await userEvent.type(
+      popover.getByLabelText(
+        "Auto-follow cable loop compensation load current",
+      ),
+      "3000",
+    );
+    await expect(await popover.findByText(/now uses 100mΩ/i)).toBeVisible();
+    await expect(
+      canvas.getByRole("slider", {
+        name: "Auto-follow cable loop compensation",
+      }),
+    ).toHaveValue("3");
+  },
 };
 
 export const ManualTpsCdcSet: Story = {
@@ -391,6 +416,25 @@ export const ManualTpsCdcSet: Story = {
           tps_cdc_rise_mv: 700,
         },
       }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByLabelText("Manual cable loop compensation help"),
+    );
+    const popover = within(document.body);
+    await userEvent.type(
+      popover.getByLabelText("Manual cable loop compensation voltage drop"),
+      "300",
+    );
+    await userEvent.type(
+      popover.getByLabelText("Manual cable loop compensation load current"),
+      "3000",
+    );
+    await expect(await popover.findByText(/now uses 100mΩ/i)).toBeVisible();
+    await expect(
+      canvas.getByRole("slider", { name: "Cable loop compensation" }),
+    ).toHaveValue("5");
   },
 };
 
@@ -441,8 +485,9 @@ export const ForcedPwmMode: Story = {
     await userEvent.click(
       await canvas.findByLabelText("TPS light-load mode help"),
     );
+    const popover = within(document.body);
     await expect(
-      await canvas.findByText(/PFM follows the board default/i),
+      await popover.findByText(/PFM follows the board default/i),
     ).toBeVisible();
   },
 };

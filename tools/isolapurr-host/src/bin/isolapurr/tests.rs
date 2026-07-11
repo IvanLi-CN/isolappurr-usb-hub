@@ -699,6 +699,7 @@ mod power_output_tests {
                                     voltage_mv,
                                     current_limit_ma,
                                     tps_cdc_rise_mv,
+                                    cable_resistance_mohm,
                                     usb_c_path,
                                 },
                             ..
@@ -712,7 +713,64 @@ mod power_output_tests {
         assert_eq!(voltage_mv, Some(9000));
         assert_eq!(current_limit_ma, Some(3000));
         assert_eq!(tps_cdc_rise_mv, None);
+        assert_eq!(cable_resistance_mohm, None);
         assert!(matches!(usb_c_path, Some(OutputUsbCPathArg::ForcedOn)));
+    }
+
+    #[test]
+    fn power_output_manual_accepts_cable_loop_resistance() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "output",
+            "manual",
+            "--device-id",
+            "f293cc9c139e",
+            "--cable-resistance-mohm",
+            "100",
+        ])
+        .expect("cable resistance should parse");
+
+        let Command::Power {
+            command:
+                PowerCommand::Output {
+                    command:
+                        OutputCommand::Manual {
+                            args:
+                                ManualOutputArgs {
+                                    cable_resistance_mohm,
+                                    tps_cdc_rise_mv,
+                                    ..
+                                },
+                            ..
+                        },
+                },
+        } = cli.command
+        else {
+            panic!("expected power output manual command");
+        };
+
+        assert_eq!(cable_resistance_mohm, Some(100));
+        assert_eq!(tps_cdc_rise_mv, None);
+    }
+
+    #[test]
+    fn power_output_manual_rejects_both_cable_compensation_flags() {
+        let err = Cli::try_parse_from([
+            "isolapurr",
+            "power",
+            "output",
+            "manual",
+            "--device-id",
+            "f293cc9c139e",
+            "--cable-resistance-mohm",
+            "100",
+            "--tps-cdc-rise-mv",
+            "500",
+        ])
+        .expect_err("legacy and cable-resistance flags must be mutually exclusive");
+
+        assert!(err.to_string().contains("cannot be used with"));
     }
 
     #[test]

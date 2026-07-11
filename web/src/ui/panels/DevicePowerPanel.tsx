@@ -15,9 +15,11 @@ import {
   activeProtocolLabel,
   badgeTone,
   boolLabel,
+  CableLoopCompensationCalculator,
   CompactMultiSelectField,
   CompactOptionsRow,
   CompactSelectField,
+  cableLoopResistanceMohmToTpsCdcRise,
   cloneConfig,
   DiscreteSliderField,
   type FormState,
@@ -989,15 +991,30 @@ export function DevicePowerPanel({
               />
               <DiscreteSliderField
                 disabled={powerControlsDisabled || form.tps_mode !== "manual"}
-                label="TPS CDC"
+                label="Cable loop compensation"
                 labelAccessory={
                   <InlineHelpPopover
                     lines={[
-                      "Applies in Manual TPS.",
-                      "Auto follow forces TPS CDC off and uses the saved SW2303 line compensation.",
+                      "Applies in Manual TPS. Enter the VBUS plus return-path resistance, not the resistance of one conductor.",
+                      "Measure the voltage drop between the board output and the load while the load current is stable.",
+                      "Auto follow uses its own saved cable loop compensation.",
                     ]}
-                    title="TPS CDC"
-                  />
+                    title="Manual cable loop compensation"
+                  >
+                    <CableLoopCompensationCalculator
+                      disabled={
+                        powerControlsDisabled || form.tps_mode !== "manual"
+                      }
+                      label="Manual cable loop compensation"
+                      maxMohm={140}
+                      onRecommend={(resistanceMohm) =>
+                        setManualTpsCdcRise(
+                          cableLoopResistanceMohmToTpsCdcRise(resistanceMohm),
+                        )
+                      }
+                      stepMohm={20}
+                    />
+                  </InlineHelpPopover>
                 }
                 onChange={(value) =>
                   setManualTpsCdcRise(
@@ -1005,14 +1022,14 @@ export function DevicePowerPanel({
                   )
                 }
                 options={[
-                  { label: "Off", value: "0" },
-                  { label: "0.1V", value: "100" },
-                  { label: "0.2V", value: "200" },
-                  { label: "0.3V", value: "300" },
-                  { label: "0.4V", value: "400" },
-                  { label: "0.5V", value: "500" },
-                  { label: "0.6V", value: "600" },
-                  { label: "0.7V", value: "700" },
+                  { label: "0mΩ", value: "0" },
+                  { label: "20mΩ", value: "100" },
+                  { label: "40mΩ", value: "200" },
+                  { label: "60mΩ", value: "300" },
+                  { label: "80mΩ", value: "400" },
+                  { label: "100mΩ", value: "500" },
+                  { label: "120mΩ", value: "600" },
+                  { label: "140mΩ", value: "700" },
                 ]}
                 value={String(form.manual.tps_cdc_rise_mv)}
               />
@@ -1063,10 +1080,10 @@ export function DevicePowerPanel({
                 ))}
               </div>
               <div className="text-[12px] leading-5 text-[var(--muted)]">
-                Saved SW2303 line compensation:{" "}
+                Saved auto-follow cable loop compensation:{" "}
                 {formatSw2303LineCompensation(form.sw2303_line_compensation)}.
-                Auto follow applies that value and forces TPS cable compensation
-                off.
+                Auto follow applies that value and forces manual TPS cable loop
+                compensation off.
               </div>
               {form.tps_mode === "manual" ? (
                 <div className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-3 py-3">

@@ -299,7 +299,7 @@ fn format_power_config_output(output: &Value) -> String {
         format_light_load_mode(&config.light_load_mode)
     ));
     lines.push(format!(
-        "Auto-follow line compensation: {}",
+        "Auto-follow cable loop compensation: {}",
         format_sw2303_line_compensation(&config.sw2303_line_compensation)
     ));
     lines.push(format!(
@@ -342,7 +342,7 @@ fn format_power_config_output(output: &Value) -> String {
         )
     ));
     lines.push(format!(
-        "Manual output: {} mV, {} mA, cable compensation {}, USB-C path {}",
+        "Manual output: {} mV, {} mA, cable loop compensation {}, USB-C path {}",
         config.manual.voltage_mv,
         config.manual.current_limit_ma,
         format_tps_cdc_rise(config.manual.tps_cdc_rise_mv),
@@ -364,13 +364,13 @@ fn format_power_config_output(output: &Value) -> String {
 }
 
 fn format_tps_cdc_rise(value: u16) -> String {
-    format!("{} V rise", (value as f32) / 1000.0)
+    format!("{}mΩ", value / 5)
 }
 
 fn format_sw2303_line_compensation(value: &str) -> &'static str {
     match value {
         "off" => "Off",
-        "0mohm" => "0",
+        "0mohm" => "0mΩ",
         "50mohm" => "50mΩ",
         "100mohm" => "100mΩ",
         "150mohm" => "150mΩ",

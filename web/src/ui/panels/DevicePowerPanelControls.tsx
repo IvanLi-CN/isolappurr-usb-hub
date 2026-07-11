@@ -21,6 +21,15 @@ export type ActiveProtocol = NonNullable<
   PdDiagnosticsResponse["active_protocol"]
 >;
 
+export const TPS_CABLE_LOOP_COMPENSATION_MAX_MOHM = 140;
+export const SW2303_CABLE_LOOP_COMPENSATION_MAX_MOHM = 150;
+
+export type CableLoopCompensationRecommendation = {
+  measuredMohm: number;
+  recommendedMohm: number;
+  clamped: boolean;
+};
+
 export function cloneConfig(config: PowerConfigResponse): FormState {
   return {
     hardware: "sw2303",
@@ -150,7 +159,44 @@ export function formatCurrentInput(ma: number): string {
 }
 
 export function formatTpsCdcOption(mv: number): string {
-  return mv === 0 ? "Off" : `${(mv / 1000).toFixed(1)}V`;
+  return `${tpsCdcRiseToCableLoopResistanceMohm(mv)}mΩ`;
+}
+
+export function tpsCdcRiseToCableLoopResistanceMohm(riseMv: number): number {
+  return riseMv / 5;
+}
+
+export function cableLoopResistanceMohmToTpsCdcRise(
+  resistanceMohm: number,
+): FormState["manual"]["tps_cdc_rise_mv"] {
+  return (resistanceMohm * 5) as FormState["manual"]["tps_cdc_rise_mv"];
+}
+
+export function calculateCableLoopCompensation(
+  voltageDropMv: number,
+  loadCurrentMa: number,
+  stepMohm: number,
+  maxMohm: number,
+): CableLoopCompensationRecommendation | null {
+  if (
+    !Number.isFinite(voltageDropMv) ||
+    !Number.isFinite(loadCurrentMa) ||
+    voltageDropMv < 0 ||
+    loadCurrentMa <= 0
+  ) {
+    return null;
+  }
+
+  const measuredMohm = (voltageDropMv * 1000) / loadCurrentMa;
+  const clamped = measuredMohm > maxMohm;
+  return {
+    measuredMohm,
+    recommendedMohm: Math.min(
+      maxMohm,
+      Math.floor(measuredMohm / stepMohm) * stepMohm,
+    ),
+    clamped,
+  };
 }
 
 export function formatSw2303LineCompensation(
@@ -160,7 +206,7 @@ export function formatSw2303LineCompensation(
     case "off":
       return "Off";
     case "0mohm":
-      return "0";
+      return "0mΩ";
     case "100mohm":
       return "100mΩ";
     case "150mohm":
@@ -168,6 +214,107 @@ export function formatSw2303LineCompensation(
     default:
       return "50mΩ";
   }
+}
+
+export function CableLoopCompensationCalculator({
+  disabled = false,
+  label,
+  maxMohm,
+  onRecommend,
+  stepMohm,
+}: {
+  disabled?: boolean;
+  label: string;
+  maxMohm: number;
+  onRecommend: (resistanceMohm: number) => void;
+  stepMohm: number;
+}) {
+  const [voltageDropMv, setVoltageDropMv] = useState("");
+  const [loadCurrentMa, setLoadCurrentMa] = useState("");
+  const recommendationFor = (
+    nextVoltageDropMv: string,
+    nextLoadCurrentMa: string,
+  ) => {
+    if (nextVoltageDropMv.trim() === "" || nextLoadCurrentMa.trim() === "") {
+      return null;
+    }
+    return calculateCableLoopCompensation(
+      Number(nextVoltageDropMv),
+      Number(nextLoadCurrentMa),
+      stepMohm,
+      maxMohm,
+    );
+  };
+  const recommendation = recommendationFor(voltageDropMv, loadCurrentMa);
+
+  const updateValues = (
+    nextVoltageDropMv: string,
+    nextLoadCurrentMa: string,
+  ) => {
+    setVoltageDropMv(nextVoltageDropMv);
+    setLoadCurrentMa(nextLoadCurrentMa);
+    const nextRecommendation = recommendationFor(
+      nextVoltageDropMv,
+      nextLoadCurrentMa,
+    );
+    if (nextRecommendation) {
+      onRecommend(nextRecommendation.recommendedMohm);
+    }
+  };
+
+  return (
+    <div className="mt-3 grid gap-3 border-t border-[var(--border-subtle)] pt-3">
+      <div className="text-[12px] font-semibold text-[var(--text)]">
+        Measure cable loop resistance
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="grid gap-1 text-[11px] text-[var(--muted)]">
+          <span>Voltage drop (mV)</span>
+          <input
+            aria-label={`${label} voltage drop`}
+            className="h-9 rounded-[6px] border border-[var(--border)] bg-[var(--panel-3)] px-2 text-[12px] text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={disabled}
+            min="0"
+            onChange={(event) =>
+              updateValues(event.target.value, loadCurrentMa)
+            }
+            step="any"
+            type="number"
+            value={voltageDropMv}
+          />
+        </label>
+        <label className="grid gap-1 text-[11px] text-[var(--muted)]">
+          <span>Load current (mA)</span>
+          <input
+            aria-label={`${label} load current`}
+            className="h-9 rounded-[6px] border border-[var(--border)] bg-[var(--panel-3)] px-2 text-[12px] text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={disabled}
+            min="0"
+            onChange={(event) =>
+              updateValues(voltageDropMv, event.target.value)
+            }
+            step="any"
+            type="number"
+            value={loadCurrentMa}
+          />
+        </label>
+      </div>
+      <output
+        aria-live="polite"
+        className="text-[11px] leading-5 text-[var(--muted)]"
+      >
+        {recommendation
+          ? recommendation.clamped
+            ? `Measured ${formatResistance(recommendation.measuredMohm)}. Limited to ${recommendation.recommendedMohm}mΩ; some voltage drop remains uncompensated.`
+            : `Measured ${formatResistance(recommendation.measuredMohm)}. The unsaved setting now uses ${recommendation.recommendedMohm}mΩ.`
+          : "Enter a non-negative voltage drop and a positive load current. The unsaved setting updates automatically."}
+      </output>
+    </div>
+  );
+}
+
+function formatResistance(valueMohm: number): string {
+  return `${Number(valueMohm.toFixed(1))}mΩ`;
 }
 
 export function formatPowerInput(watts: number): string {
@@ -356,24 +503,32 @@ export function DiscreteSliderField({
 }
 
 export function InlineHelpPopover({
+  children,
   title,
   lines,
 }: {
+  children?: ReactNode;
   title: string;
   lines: string[];
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const position = usePopoverPosition(open, triggerRef, {
+    height: 440,
+    width: 360,
+  });
 
   useEffect(() => {
     if (!open) {
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
-      if (!ref.current) {
-        return;
-      }
-      if (ref.current.contains(event.target as Node)) {
+      if (
+        ref.current?.contains(event.target as Node) ||
+        popoverRef.current?.contains(event.target as Node)
+      ) {
         return;
       }
       setOpen(false);
@@ -389,24 +544,33 @@ export function InlineHelpPopover({
         aria-label={`${title} help`}
         className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--panel)] text-[11px] font-bold text-[var(--muted)] transition hover:text-[var(--text)]"
         onClick={() => setOpen((current) => !current)}
+        ref={triggerRef}
         type="button"
       >
         ?
       </button>
-      {open ? (
-        <div className="iso-popover absolute left-0 top-full z-20 mt-2 w-[min(320px,calc(100vw-3rem))]">
-          <div className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] p-3">
-            <div className="text-[12px] font-semibold text-[var(--text)]">
-              {title}
-            </div>
-            <div className="mt-2 grid gap-2 text-[12px] leading-5 text-[var(--muted)]">
-              {lines.map((line) => (
-                <p key={line}>{line}</p>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {open && position
+        ? createPortal(
+            <div
+              className="iso-popover fixed z-50 w-[min(360px,calc(100vw-24px))]"
+              ref={popoverRef}
+              style={{ left: `${position.left}px`, top: `${position.top}px` }}
+            >
+              <div className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[10px] border border-[var(--border)] bg-[var(--panel)] p-3">
+                <div className="text-[12px] font-semibold text-[var(--text)]">
+                  {title}
+                </div>
+                <div className="mt-2 grid gap-2 text-[12px] leading-5 text-[var(--muted)]">
+                  {lines.map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
+                {children}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -419,6 +583,7 @@ type PopoverPosition = {
 function usePopoverPosition(
   open: boolean,
   anchorRef: RefObject<HTMLElement | null>,
+  viewportBounds?: { height?: number; width?: number },
 ) {
   const [position, setPosition] = useState<PopoverPosition | null>(null);
 
@@ -433,10 +598,20 @@ function usePopoverPosition(
         return;
       }
       const rect = anchor.getBoundingClientRect();
-      const maxLeft = Math.max(12, window.innerWidth - rect.width - 12);
+      const width = Math.min(
+        viewportBounds?.width ?? rect.width,
+        window.innerWidth - 24,
+      );
+      const maxLeft = Math.max(12, window.innerWidth - width - 12);
+      const preferredTop = rect.bottom + 6;
+      const height = viewportBounds?.height ?? 0;
+      const top =
+        height > 0 && preferredTop + height > window.innerHeight - 12
+          ? Math.max(12, rect.top - height - 6)
+          : preferredTop;
       setPosition({
-        left: Math.min(rect.left, maxLeft),
-        top: rect.bottom + 6,
+        left: Math.max(12, Math.min(rect.left, maxLeft)),
+        top,
       });
     };
     update();
@@ -446,7 +621,7 @@ function usePopoverPosition(
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [anchorRef, open]);
+  }, [anchorRef, open, viewportBounds?.height, viewportBounds?.width]);
 
   return position;
 }
