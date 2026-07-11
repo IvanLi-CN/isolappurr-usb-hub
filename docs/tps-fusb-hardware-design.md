@@ -18,9 +18,13 @@ BOM 或固件实现。规范真相源见
 
 `VIN_DC` 和 `VIN_USB` 各通过一颗反向安装的 PMOS 接到 `VIN_SYS`：PMOS
 漏极接输入、源极接 `VIN_SYS`，体二极管方向为输入到 `VIN_SYS`。任一路
-插入后可先通过体二极管为 3.3 V/5 V 转换器冷启动供电，再由 MCU 只导通
-选中的一路。每颗 PMOS 的 Gate-Source 上拉和 VGS 钳位均以源极
+插入后可先通过体二极管为 3.3 V/5 V 转换器冷启动供电，再由 MCU 只对
+选中的一路施加主动增强导通。每颗 PMOS 的 Gate-Source 上拉和 VGS 钳位均以源极
 `VIN_SYS` 为基准，不接到各自输入端。
+
+单 PMOS 不提供输入隔离：未选输入若高于 `VIN_SYS`，仍可经体二极管向
+`VIN_SYS` 供电。本文的互斥合同只禁止两颗 PMOS 同时被 gate driver 主动增强，
+不承诺 EN=0 时输入与系统断开，也不承诺未选输入没有电流。
 
 SN74LVC1G3157 将单一 `PWR_INPUT_EN` 路由到两路 PMOS gate driver：
 
@@ -35,11 +39,11 @@ SN74LVC1G3157 将单一 `PWR_INPUT_EN` 路由到两路 PMOS gate driver：
 
 控制真值如下：
 
-| `PWR_INPUT_EN` | `PWR_INPUT_SEL` | 状态 |
+| `PWR_INPUT_EN` | `PWR_INPUT_SEL` | PMOS 主动增强状态 |
 | --- | --- | --- |
-| 0 | X | DC、USB 两路均关闭 |
-| 1 | 0 | 仅 DC 导通 |
-| 1 | 1 | 仅 USB 导通 |
+| 0 | X | 两路均不主动增强；体二极管路径仍存在 |
+| 1 | 0 | 仅 DC PMOS 主动增强 |
+| 1 | 1 | 仅 USB PMOS 主动增强 |
 
 切换必须执行 break-before-make：先置 `PWR_INPUT_EN=0`，等待至少 5 ms，
 再改变 `PWR_INPUT_SEL`，最后置 `PWR_INPUT_EN=1`。硬件不得再提供可被
