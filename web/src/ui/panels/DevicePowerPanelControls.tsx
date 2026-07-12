@@ -321,16 +321,6 @@ export function formatPowerInput(watts: number): string {
   return `${watts} W`;
 }
 
-export function formatTelemetryValue(
-  value: number | null,
-  unit: "V" | "A" | "W",
-): string {
-  if (value === null) {
-    return `--.-${unit}`;
-  }
-  return `${(value / 1000).toFixed(2)}${unit}`;
-}
-
 type UnitSliderFieldProps = {
   disabled?: boolean;
   label: string;

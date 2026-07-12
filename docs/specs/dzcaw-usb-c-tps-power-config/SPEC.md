@@ -228,6 +228,12 @@ for diagnostics.
   wide-screen optimized table view for exact point inspection.
 - Web UI and human CLI MUST show corrected USB-C telemetry by default and keep
   the raw INA226 reading on debug or JSON surfaces only.
+- Every Web UI surface that renders live port `V/A/W` telemetry MUST format its
+  integer `mV/mA/mW` API values with exactly three decimal places, including
+  trailing zeroes. Missing telemetry MUST use the matching `--.---V/A/W`
+  placeholder. This applies to Dashboard port cards, device summary cards, and
+  the USB-C Power sidebar, but not to configuration values, negotiated-state
+  badges, or output-current-limit badges.
 - `/api/v1/pd-diagnostics.usb_c_actual` MUST keep exposing the raw U17 INA226
   reading used by the PD diagnostics surface so HIL can distinguish control
   faults from idle-bias correction effects.
@@ -353,6 +359,10 @@ for diagnostics.
   `/api/v1/ports` reports USB-C telemetry, then `ports[].telemetry` is the
   corrected value, `ports[].telemetry_raw` remains the raw INA226 value, and
   corrected current never goes below zero.
+- Given a Web live port telemetry value of `9030mV`, `470mA`, or `4280mW`,
+  when it renders in a Dashboard port card, device summary card, or USB-C
+  Power sidebar, then it displays `9.030V`, `0.470A`, or `4.280W`
+  respectively; a missing value displays the corresponding `--.---` form.
 - Given a calibration run fails due to attach detection, controller readiness,
   telemetry gaps, or EEPROM write failure, when the job stops, then the prior
   dataset remains intact and the run state reports `failed` with a structured

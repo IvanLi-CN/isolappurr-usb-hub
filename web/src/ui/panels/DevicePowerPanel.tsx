@@ -603,7 +603,7 @@ export function DevicePowerPanel({
             step={1}
             value={form.capability.power_watts}
           />
-          <div className="protocol-grid grid items-start gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="protocol-grid grid items-start gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {[
               {
                 key: "pd",

@@ -581,7 +581,7 @@ export const ManualPathOffLive: Story = {
     await expect(
       await canvas.findByTestId("dashboard-usb-c-live-badge"),
     ).toHaveTextContent("OFF");
-    await expect(await canvas.findByText("0.00V")).toBeVisible();
+    await expect(await canvas.findByText("0.000V")).toBeVisible();
     await expect(
       canvas.queryByText("USB-C source state"),
     ).not.toBeInTheDocument();

@@ -459,14 +459,46 @@ export const OutputOffManualHighVoltage: Story = {
       await canvas.findByTestId("runtime-discharge-toggle"),
     ).toBeEnabled();
     await expect(await canvas.findByTestId("usb-c-voltage")).toHaveTextContent(
-      "20.06V",
+      "20.060V",
+    );
+    await expect(await canvas.findByTestId("usb-c-voltage")).toHaveClass(
+      "text-[var(--telemetry-voltage)]",
+    );
+    await expect(await canvas.findByTestId("usb-c-voltage-unit")).toHaveClass(
+      "text-[var(--telemetry-voltage)]",
     );
     await expect(await canvas.findByTestId("usb-c-current")).toHaveTextContent(
-      "0.03A",
+      "0.030A",
+    );
+    await expect(await canvas.findByTestId("usb-c-current")).toHaveClass(
+      "text-[var(--telemetry-current)]",
+    );
+    await expect(await canvas.findByTestId("usb-c-current-unit")).toHaveClass(
+      "text-[var(--telemetry-current)]",
     );
     await expect(await canvas.findByTestId("usb-c-power")).toHaveTextContent(
-      "0.54W",
+      "0.540W",
     );
+    await expect(await canvas.findByTestId("usb-c-power")).toHaveClass(
+      "text-[var(--telemetry-power)]",
+    );
+    await expect(await canvas.findByTestId("usb-c-power-unit")).toHaveClass(
+      "text-[var(--telemetry-power)]",
+    );
+  },
+};
+
+export const TelemetryTonesDark: Story = {
+  decorators: [
+    (Story) => (
+      <div data-theme="isolapurr-dark">
+        <Story />
+      </div>
+    ),
+  ],
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
   },
 };
 
@@ -697,6 +729,43 @@ export const MediumWideCards: Story = {
       await canvas.findByTestId("PD-negotiation-badge"),
     ).toBeVisible();
     await expect(canvas.getByTestId("QC2-negotiation-badge")).toBeVisible();
+  },
+};
+
+export const CompactDesktopCards: Story = {
+  parameters: {
+    viewport: { defaultViewport: "isolapurrLaptop" },
+  },
+  decorators: [
+    (Story) => (
+      <div className="mx-auto max-w-[800px]">
+        <Story />
+      </div>
+    ),
+  ],
+  args: {
+    ...defaultArgs,
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("PD");
+    const cards = Array.from(
+      canvasElement.querySelectorAll<HTMLElement>(".protocol-card"),
+    );
+    const firstRowTop = Math.min(
+      ...cards.map((card) => card.getBoundingClientRect().top),
+    );
+    const firstRow = cards.filter(
+      (card) =>
+        Math.round(card.getBoundingClientRect().top) ===
+        Math.round(firstRowTop),
+    );
+
+    await expect(firstRow).toHaveLength(4);
+    await expect(
+      Math.max(...cards.map((card) => card.getBoundingClientRect().height)),
+    ).toBeLessThanOrEqual(72);
   },
 };
 

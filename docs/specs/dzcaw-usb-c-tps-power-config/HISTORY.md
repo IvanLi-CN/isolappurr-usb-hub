@@ -2,6 +2,19 @@
 
 ## 2026-07-11
 
+- Standardized Web live port telemetry to fixed three-decimal `V/A/W` output
+  and matching unavailable placeholders, preserving the final digit already
+  supplied by the integer `mV/mA/mW` API without changing firmware sampling or
+  transport contracts.
+- Reworked the narrower Power sidebar into labelled telemetry rows, preserving
+  the complete fixed-precision values without crowding the state controls.
+- Added light and dark theme measurement rows to the Power sidebar so voltage,
+  current, and power retain distinct category cues through dividers, labels,
+  units, and valid readings without nesting cards; unavailable text remains
+  neutral.
+- Replaced the Power sidebar's heavy monospace telemetry text with proportional
+  tabular figures and a lighter unit treatment so three-decimal readings remain
+  precise without dominating the controls.
 - Reframed manual TPS CDC and Auto follow line compensation as cable loop
   resistance for operators. The raw API and EEPROM encodings remain unchanged:
   the board's `R29=10mΩ` maps TPS `0..700mV` to `0..140mΩ` in `20mΩ` steps.
