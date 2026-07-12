@@ -8,7 +8,7 @@
 | 方案 | 状态 | 关键芯片（核心差异） | 网表 / 设计入口 |
 | --- | --- | --- | --- |
 | `tps-sw` | 当前版 | `CH224Q + TPS55288 + SW2303` | `hardware/tps-sw/netlist.enet`；[MCU 使用规范](mcu-resource-allocation-tps-sw.md) |
-| `tps-fusb` | 待设计 | `FUSB302B ×2 + TPS55288`，MCU 实现 PD 3.0 Fixed + PPS | [硬件设计](tps-fusb-hardware-design.md)；[MCU 使用规范](mcu-resource-allocation-tps-fusb.md)；尚无正式网表 |
+| `tps-fusb` | 待设计 | `FUSB302B ×2 + TPS55288`，MCU 实现 PD 3.0 Fixed + PPS | [硬件设计](tps-fusb-hardware-design.md)；[输入电源路径](tps-fusb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-fusb.md)；尚无正式网表 |
 
 未显式标注 variant 的现有固件和网表文档仍按 `tps-sw` 维护。`tps-fusb`
 当前只冻结设计合同，不代表已有原理图、PCB、BOM 或固件支持。
@@ -45,5 +45,6 @@
 - `tps-sw` MCU 使用规范：[`docs/mcu-resource-allocation-tps-sw.md`](mcu-resource-allocation-tps-sw.md)
 - 含 `SW2303` / `TPS55288` 的设计文档均按 `tps-sw` 方案维护。
 - `tps-fusb` 设计入口：[`docs/tps-fusb-hardware-design.md`](tps-fusb-hardware-design.md)
+- `tps-fusb` 输入电源路径选择：[`docs/tps-fusb-input-power-path-selection.md`](tps-fusb-input-power-path-selection.md)
 - `tps-fusb` MCU 使用规范：[`docs/mcu-resource-allocation-tps-fusb.md`](mcu-resource-allocation-tps-fusb.md)
 - `tps-fusb` 长期规格：[`#m7q4v`](specs/m7q4v-tps-fusb-dual-pd-hardware/SPEC.md)

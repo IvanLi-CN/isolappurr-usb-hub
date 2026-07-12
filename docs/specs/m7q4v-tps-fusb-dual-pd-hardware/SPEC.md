@@ -146,6 +146,7 @@ Out of scope:
 
 ## References
 
+- [`docs/tps-fusb-input-power-path-selection.md`](../../tps-fusb-input-power-path-selection.md)
 - [`docs/mcu-resource-allocation-tps-fusb.md`](../../mcu-resource-allocation-tps-fusb.md)
 - [`docs/mcu-resource-allocation-tps-sw.md`](../../mcu-resource-allocation-tps-sw.md)
 - [`docs/tps-fusb-hardware-design.md`](../../tps-fusb-hardware-design.md)

@@ -5,6 +5,7 @@ Status: 待设计
 ## Completed
 
 - 建立 `tps-fusb` topic spec 及面向维护者的硬件设计入口。
+- 建立输入电源路径选择模块的独立设计与验证规范。
 - 建立 `tps-sw` 与 `tps-fusb` 两份独立 MCU 使用规范，覆盖器件与封装、
   完整引脚分配、外设初始化、用途、安全默认态和注意事项。
 - 记录双 FUSB302B PHY 角色、PD 3.0 Fixed + PPS 目标和 TPS55288 职责。

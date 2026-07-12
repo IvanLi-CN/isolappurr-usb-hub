@@ -16,53 +16,13 @@ BOM 或固件实现。规范真相源见
 
 ## 输入电源选择
 
-`VIN_DC` 和 `VIN_USB` 各通过一颗反向安装的 PMOS 接到 `VIN_SYS`：PMOS
-漏极接输入、源极接 `VIN_SYS`，体二极管方向为输入到 `VIN_SYS`。任一路
-插入后可先通过体二极管为 3.3 V/5 V 转换器冷启动供电，再由 MCU 只对
-选中的一路施加主动增强导通。每颗 PMOS 的 Gate-Source 上拉和 VGS 钳位均以源极
-`VIN_SYS` 为基准，不接到各自输入端。
+该功能是独立模块，完整拓扑、控制真值、测量、选源状态机、故障处理和
+bring-up 要求见
+[`docs/tps-fusb-input-power-path-selection.md`](tps-fusb-input-power-path-selection.md)。
 
-单 PMOS 不提供输入隔离：未选输入若高于 `VIN_SYS`，仍可经体二极管向
-`VIN_SYS` 供电。本文的互斥合同只禁止两颗 PMOS 同时被 gate driver 主动增强，
-不承诺 EN=0 时输入与系统断开，也不承诺未选输入没有电流。
-
-SN74LVC1G3157 将单一 `PWR_INPUT_EN` 路由到两路 PMOS gate driver：
-
-| Pin | 器件功能 | 网络 / 连接 |
-| --- | --- | --- |
-| 1 | `B2` | USB gate-driver enable；默认下拉 |
-| 2 | `GND` | `GND` |
-| 3 | `B1` | DC gate-driver enable；默认下拉 |
-| 4 | `A` | `PWR_INPUT_EN` |
-| 5 | `VCC` | `3V3`，就近 `100nF` 去耦 |
-| 6 | `S` | `PWR_INPUT_SEL` |
-
-控制真值如下：
-
-| `PWR_INPUT_EN` | `PWR_INPUT_SEL` | PMOS 主动增强状态 |
-| --- | --- | --- |
-| 0 | X | 两路均不主动增强；体二极管路径仍存在 |
-| 1 | 0 | 仅 DC PMOS 主动增强 |
-| 1 | 1 | 仅 USB PMOS 主动增强 |
-
-切换必须执行 break-before-make：先置 `PWR_INPUT_EN=0`，等待至少 5 ms，
-再改变 `PWR_INPUT_SEL`，最后置 `PWR_INPUT_EN=1`。硬件不得再提供可被
-MCU 同时置位的两根独立输入使能线。
-
-## 输入测量与选源
-
-- `VIN_DC` 通过 `3 x 100kΩ` 串联上臂和 `20kΩ` 下臂进入
-  `GPIO1/ADC1_CH0`，ADC 节点对地并联 `100nF`。分压比为 1:16：24 V、
-  36 V、40 V 分别约为 1.50 V、2.25 V、2.50 V。
-- `VIN_USB` 使用输入侧 FUSB302B 的 `MEAS_VBUS/MDAC` 比较器扫描读取。
-  `MEAS_VBUS=1` 时 MDAC 标称步进为 420 mV；固件必须扫描阈值并读取
-  `COMP`，不得把固定约 4 V 的 `VBUSOK` 当作 9 V 验证。离散测量的判定
-  必须留出裕量并使用滞回，不能把单个阈值附近的读数当作稳定输入。
-- 系统最低有效输入为 9 V。DC 有效时，固件先把 USB-PD 合同降到 5 V
-  并验证，再切换到 DC；仅当 DC 无效时，才协商 USB Fixed/PPS 到至少
-  9 V、验证稳定后选择 USB。
-- USB 输入是备用路径，选源策略偏好 DC；该偏好不得绕过输入有效性检查
-  或 break-before-make 时序。
+总体合同：两颗单 PMOS 允许输入通过体二极管冷启动；MCU 通过
+`PWR_INPUT_EN/PWR_INPUT_SEL` 和 SN74LVC1G3157 只互锁主动增强，切换使用
+至少 5 ms break-before-make，并在有效输入中优先选择 DC。
 
 ## TPS USB-C 输出开关
 
