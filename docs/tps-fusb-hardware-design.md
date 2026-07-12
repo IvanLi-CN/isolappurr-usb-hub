@@ -19,6 +19,7 @@ BOM 或固件实现。规范真相源见
 该功能是独立模块，完整拓扑、控制真值、测量、选源状态机、故障处理和
 bring-up 要求见
 [`docs/tps-fusb-input-power-path-selection.md`](tps-fusb-input-power-path-selection.md)。
+项目有效输入范围为 9 V 至 28 V，28 V 为额定最高输入。
 
 总体合同：两颗单 PMOS 允许输入通过体二极管冷启动；MCU 通过
 `PWR_INPUT_EN/PWR_INPUT_SEL` 和 SN74LVC1G3157 只互锁主动增强，切换使用

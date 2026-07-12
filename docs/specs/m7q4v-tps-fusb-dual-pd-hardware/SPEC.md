@@ -71,8 +71,12 @@ Out of scope:
 
 ### Measurement and source policy
 
-- `VIN_DC_SENSE` MUST 使用 `3 x 100kΩ + 20kΩ` 的 1:16 分压并在 ADC
-  节点放置 `100nF`，连接 `GPIO1/ADC1_CH0`，覆盖 40 V 边界。
+- 项目有效输入范围 MUST 为 9 V 至 28 V，28 V 为额定最高输入。
+- `VIN_DC_SENSE` MUST 使用单颗 `200kΩ` 上臂和 `20kΩ` 下臂的 1:11
+  分压，并在 ADC 节点放置 `100nF`，连接 `GPIO1/ADC1_CH0`。
+- ADC MUST 使用 11 dB 衰减配置并校准 9 V 至 28 V 范围；不要求
+  线性测量超过 28 V 的输入。ADC 初始化或输入连接后 MUST 等待至少
+  10 ms 再将采样结果用于选源决策。
 - `VIN_USB` MUST 使用输入侧 FUSB302B `MEAS_VBUS/MDAC` 比较器扫描判断；
   固件 MUST 使用 `MEAS_VBUS=1`、MDAC 阈值和 `COMP` 结果，不得用固定
   约 4 V 的 `VBUSOK` 代替 9 V 输入验证。
@@ -116,8 +120,8 @@ Out of scope:
 - Given 两路输入均可能插入，when MCU 切换来源，then gate 控制只允许
   `off/DC/USB` 三种主动增强状态并要求至少 5 ms
   break-before-make；体二极管的被动导通不属于 MCU 可关闭状态。
-- Given 40 V `VIN_DC` 边界，when 经过 1:16 分压，then ADC 节点约为
-  2.50 V，且 GPIO1 不再分配给 `BTNL`。
+- Given 28 V `VIN_DC` 额定最高输入，when 经过 1:11 分压，then ADC
+  节点约为 2.545 V，且 GPIO1 不再分配给 `BTNL`。
 - Given DC 输入有效，when 系统偏好 DC，then USB 合同先降至 5 V 并验证，
   再关闭、选择并启用 DC 路径。
 - Given 外部电压出现在 `VBUS_TPS`，when 输出 PMOS 处于关断状态，then
