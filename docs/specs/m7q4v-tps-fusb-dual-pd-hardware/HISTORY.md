@@ -10,8 +10,10 @@
   两侧均由 MCU 实现 PD 3.0 Fixed + PPS。
 - 冻结 `VIN_DC` / `VIN_USB` 单一使能的主动增强互斥、DC 优先和至少 5 ms
   break-before-make 合同；明确单 PMOS 体二极管路径不受该互锁关闭。
-- 冻结 `VIN_DC_SENSE` 1:16 分压、输入侧 FUSB302B VBUS 测量和 9 V
-  最低有效输入策略；明确 USB 电压验证使用 `MEAS_VBUS/MDAC + COMP`
+- 冻结 9 V 至 28 V 项目有效输入范围；`VIN_DC_SENSE` 使用单颗
+  `200kΩ` 上臂和 `20kΩ` 下臂的 1:11 分压，不要求 ADC 测量超过
+  28 V 的输入。
+- 输入侧 FUSB302B USB 电压验证使用 `MEAS_VBUS/MDAC + COMP`
   阈值扫描，不使用固定 `VBUSOK`。
 - 冻结单 PMOS `VOUT_TPS -> VBUS_TPS` 开关；接受关断时
   `VBUS_TPS -> VOUT_TPS` 体二极管反灌，但限制在 TPS55288 25 V
