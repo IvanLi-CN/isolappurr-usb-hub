@@ -69,7 +69,12 @@ function TelemetryReading({
           available ? toneClass : "text-[var(--muted)]"
         }`}
       >
-        {formatted.slice(0, -unit.length)}
+        <span
+          className={available ? toneClass : "text-[var(--muted)]"}
+          data-testid={`${testId}-value`}
+        >
+          {formatted.slice(0, -unit.length)}
+        </span>
         <span
           className={`ml-0.5 text-[0.65em] font-medium ${
             available ? toneClass : "text-[var(--muted)]"

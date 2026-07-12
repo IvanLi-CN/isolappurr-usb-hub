@@ -461,7 +461,7 @@ export const OutputOffManualHighVoltage: Story = {
     await expect(await canvas.findByTestId("usb-c-voltage")).toHaveTextContent(
       "20.060V",
     );
-    await expect(await canvas.findByTestId("usb-c-voltage")).toHaveClass(
+    await expect(await canvas.findByTestId("usb-c-voltage-value")).toHaveClass(
       "text-[var(--telemetry-voltage)]",
     );
     await expect(await canvas.findByTestId("usb-c-voltage-unit")).toHaveClass(
@@ -470,7 +470,7 @@ export const OutputOffManualHighVoltage: Story = {
     await expect(await canvas.findByTestId("usb-c-current")).toHaveTextContent(
       "0.030A",
     );
-    await expect(await canvas.findByTestId("usb-c-current")).toHaveClass(
+    await expect(await canvas.findByTestId("usb-c-current-value")).toHaveClass(
       "text-[var(--telemetry-current)]",
     );
     await expect(await canvas.findByTestId("usb-c-current-unit")).toHaveClass(
@@ -479,7 +479,7 @@ export const OutputOffManualHighVoltage: Story = {
     await expect(await canvas.findByTestId("usb-c-power")).toHaveTextContent(
       "0.540W",
     );
-    await expect(await canvas.findByTestId("usb-c-power")).toHaveClass(
+    await expect(await canvas.findByTestId("usb-c-power-value")).toHaveClass(
       "text-[var(--telemetry-power)]",
     );
     await expect(await canvas.findByTestId("usb-c-power-unit")).toHaveClass(
