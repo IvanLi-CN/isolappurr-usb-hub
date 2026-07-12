@@ -42,6 +42,11 @@
 - Added runtime-only power actions that map the owner-facing `Power`
   action to TPS55288 `OE` and the advanced output-off control to TPS55288
   `DISCHG`, while keeping both values out of the persisted EEPROM config.
+- Hardened Local USB runtime output and discharge writes against a lost serial
+  response: after the bounded verification delay, the host re-reads the live
+  runtime state and reports success only when it exactly matches the requested
+  boolean. This recovery never replays the write and never changes the saved
+  power-config payload, including `manual.tps_cdc_rise_mv`.
 - Added SW2303 path helpers for automatic control, force-close, and force-open.
 - Added TPS55288 `MODE` register light-load helpers so saved
   `light_load_mode=fpwm` immediately forces PWM while preserving the board's
