@@ -32,6 +32,30 @@ type Story = StoryObj<typeof PortCard>;
 
 export const PowerOn: Story = {};
 
+export const Precision: Story = {
+  args: {
+    telemetry: {
+      status: "ok",
+      voltage_mv: 9030,
+      current_ma: 470,
+      power_mw: 4280,
+      sample_uptime_ms: 123_456,
+    },
+  },
+};
+
+export const Unavailable: Story = {
+  args: {
+    telemetry: {
+      status: "not_inserted",
+      voltage_mv: null,
+      current_ma: null,
+      power_mw: null,
+      sample_uptime_ms: 123_456,
+    },
+  },
+};
+
 export const PowerOff: Story = {
   args: {
     state: {

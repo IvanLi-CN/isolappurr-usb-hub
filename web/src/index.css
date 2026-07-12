@@ -33,6 +33,12 @@ body {
   --error: #dc2626;
   --shadow: rgba(17, 24, 39, 0.08);
   --overlay: rgba(15, 23, 42, 0.32);
+  --telemetry-voltage: #80511f;
+  --telemetry-voltage-border: #e9d4b7;
+  --telemetry-current: #3d705a;
+  --telemetry-current-border: #c5dacd;
+  --telemetry-power: #4e6388;
+  --telemetry-power-border: #ccd7e8;
 
   --sidebar-bg: rgba(248, 250, 252, 0.85);
 
@@ -121,6 +127,12 @@ body {
   --warning: #d7a05d;
   --error: #e1848c;
   --shadow: rgba(1, 7, 14, 0.26);
+  --telemetry-voltage: #e0b274;
+  --telemetry-voltage-border: #59462e;
+  --telemetry-current: #a8cdbc;
+  --telemetry-current-border: #38584c;
+  --telemetry-power: #bdcaf0;
+  --telemetry-power-border: #3f4d6b;
 
   --sidebar-bg: #141b23;
 
@@ -194,6 +206,12 @@ body {
     --warning: #d7a05d;
     --error: #e1848c;
     --shadow: rgba(1, 7, 14, 0.26);
+    --telemetry-voltage: #e0b274;
+    --telemetry-voltage-border: #59462e;
+    --telemetry-current: #a8cdbc;
+    --telemetry-current-border: #38584c;
+    --telemetry-power: #bdcaf0;
+    --telemetry-power-border: #3f4d6b;
 
     --sidebar-bg: #141b23;
 

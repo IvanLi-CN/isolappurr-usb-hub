@@ -1,10 +1,10 @@
 import type { PortState, PortTelemetry } from "../../domain/ports";
 import { ActionButton } from "../actions/ActionButton";
+import { formatTelemetryValue } from "../format/telemetry";
 import {
   CableLoopCompensationCalculator,
   DiscreteSliderField,
   type FormState,
-  formatTelemetryValue,
   InlineHelpPopover,
 } from "./DevicePowerPanelControls";
 
@@ -27,6 +27,67 @@ type DevicePowerPanelSidebarProps = {
   usbCTelemetry: PortTelemetry | null;
 };
 
+function TelemetryReading({
+  available,
+  dividerClass,
+  isLast,
+  toneClass,
+  unit,
+  value,
+  testId,
+}: {
+  available: boolean;
+  dividerClass: string;
+  isLast?: boolean;
+  toneClass: string;
+  unit: "V" | "A" | "W";
+  value: number | null;
+  testId: string;
+}) {
+  const formatted = formatTelemetryValue(value, unit);
+
+  return (
+    <div
+      className={`flex min-h-11 items-baseline justify-between gap-3 py-2 ${
+        isLast
+          ? ""
+          : available
+            ? dividerClass
+            : "border-b border-[var(--border)]"
+      }`}
+      data-testid={testId}
+    >
+      <span
+        className={`text-[12px] font-semibold ${
+          available ? toneClass : "text-[var(--muted)]"
+        }`}
+      >
+        {unit === "V" ? "Voltage" : unit === "A" ? "Current" : "Power"}
+      </span>
+      <span
+        className={`whitespace-nowrap tabular-nums text-[1.125rem] font-medium leading-none sm:text-[1.25rem] ${
+          available ? toneClass : "text-[var(--muted)]"
+        }`}
+      >
+        <span
+          className={available ? toneClass : "text-[var(--muted)]"}
+          data-testid={`${testId}-value`}
+        >
+          {formatted.slice(0, -unit.length)}
+        </span>
+        <span
+          className={`ml-0.5 text-[0.65em] font-medium ${
+            available ? toneClass : "text-[var(--muted)]"
+          }`}
+          data-testid={`${testId}-unit`}
+        >
+          {unit}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 export function DevicePowerPanelSidebar({
   lightLoadMode,
   onSetSw2303LineCompensation,
@@ -42,6 +103,9 @@ export function DevicePowerPanelSidebar({
 }: DevicePowerPanelSidebarProps) {
   const usbCPowerActionDisabled = powerControlsDisabled || usbCPending;
   const usbCPowerEnabled = runtimeOutputEnabled;
+  const usbCVoltageAvailable = typeof usbCTelemetry?.voltage_mv === "number";
+  const usbCCurrentAvailable = typeof usbCTelemetry?.current_ma === "number";
+  const usbCPowerAvailable = typeof usbCTelemetry?.power_mw === "number";
   const usbCDataLinked =
     usbCState?.replugging === true
       ? "Replugging"
@@ -52,15 +116,10 @@ export function DevicePowerPanelSidebar({
   return (
     <aside className="grid gap-5">
       <section className="rounded-[10px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-4 py-4">
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] pb-4">
+        <div className="border-b border-[var(--border)] pb-3">
           <div className="text-[14px] font-semibold">USB-C</div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="flex h-6 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] px-3 text-[12px] font-semibold text-[var(--muted)]">
-              {formatTelemetryValue(usbCTelemetry?.current_ma ?? null, "A")}
-            </div>
-          </div>
         </div>
-        <div className="mt-4 grid h-7 grid-cols-2 gap-2">
+        <div className="mt-3 grid h-7 grid-cols-2 gap-2">
           <div
             className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
               usbCPowerEnabled
@@ -82,40 +141,32 @@ export function DevicePowerPanelSidebar({
             <span className="truncate">{usbCDataLinked}</span>
           </div>
         </div>
-        <div className="mt-5 grid grid-cols-3 gap-4">
-          <div>
-            <div className="text-[12px] font-semibold text-[var(--muted)]">
-              Voltage
-            </div>
-            <div
-              className="mt-2 font-mono text-[24px] font-bold"
-              data-testid="usb-c-voltage"
-            >
-              {formatTelemetryValue(usbCTelemetry?.voltage_mv ?? null, "V")}
-            </div>
-          </div>
-          <div>
-            <div className="text-[12px] font-semibold text-[var(--muted)]">
-              Current
-            </div>
-            <div
-              className="mt-2 font-mono text-[24px] font-bold"
-              data-testid="usb-c-current"
-            >
-              {formatTelemetryValue(usbCTelemetry?.current_ma ?? null, "A")}
-            </div>
-          </div>
-          <div>
-            <div className="text-[12px] font-semibold text-[var(--muted)]">
-              Power
-            </div>
-            <div
-              className="mt-2 font-mono text-[24px] font-bold"
-              data-testid="usb-c-power"
-            >
-              {formatTelemetryValue(usbCTelemetry?.power_mw ?? null, "W")}
-            </div>
-          </div>
+        <div className="mt-4 grid gap-2">
+          <TelemetryReading
+            available={usbCVoltageAvailable}
+            dividerClass="border-b border-[var(--telemetry-voltage-border)]"
+            testId="usb-c-voltage"
+            toneClass="text-[var(--telemetry-voltage)]"
+            unit="V"
+            value={usbCTelemetry?.voltage_mv ?? null}
+          />
+          <TelemetryReading
+            available={usbCCurrentAvailable}
+            dividerClass="border-b border-[var(--telemetry-current-border)]"
+            testId="usb-c-current"
+            toneClass="text-[var(--telemetry-current)]"
+            unit="A"
+            value={usbCTelemetry?.current_ma ?? null}
+          />
+          <TelemetryReading
+            available={usbCPowerAvailable}
+            dividerClass="border-b border-[var(--telemetry-power-border)]"
+            isLast
+            testId="usb-c-power"
+            toneClass="text-[var(--telemetry-power)]"
+            unit="W"
+            value={usbCTelemetry?.power_mw ?? null}
+          />
         </div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <ActionButton

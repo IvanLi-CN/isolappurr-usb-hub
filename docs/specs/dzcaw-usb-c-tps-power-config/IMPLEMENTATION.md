@@ -1,5 +1,25 @@
 # Implementation
 
+## Web Telemetry Formatting
+
+- Added one shared Web formatter for live `mV/mA/mW` telemetry and used it in
+  Dashboard port cards, device summary cards, and the USB-C Power sidebar.
+- Live values now retain the API's final milli-unit digit as fixed three-decimal
+  `V/A/W` text; unavailable fields use the matching three-decimal placeholder.
+- Restructured the Power sidebar telemetry into labelled, right-aligned rows so
+  fixed three-decimal values remain legible in its narrower column without
+  repeating the current reading.
+- Differentiated live Power sidebar voltage, current, and power as unframed
+  theme-scoped measurement rows: category-toned dividers, labels, and units
+  preserve distinction without nesting cards inside the USB-C control surface;
+  valid numerical readings use the same high-contrast category tones while
+  unavailable placeholders remain neutral.
+- Uses the product sans-serif with tabular figures for the live values rather
+  than the code font, preserving stable decimal alignment without the visual
+  weight of a terminal readout.
+- Configuration fields and negotiated/output-current badges retain their
+  existing formatting contracts.
+
 ## Firmware
 
 - Added `src/power_config.rs` with SW2303-only config types, validation,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "../actions/ActionButton";
+import { formatTelemetryValue } from "../format/telemetry";
 import type { PortCardProps } from "./types";
 
 function statusBadgeStyles(status: string): { bg: string; text: string } {
@@ -19,13 +20,6 @@ function statusBadgeStyles(status: string): { bg: string; text: string } {
     bg: "bg-[var(--badge-warning-bg)]",
     text: "text-[var(--badge-warning-text)]",
   };
-}
-
-function formatValue(value: number | null, unit: "V" | "A" | "W"): string {
-  if (value === null) {
-    return `--.-${unit}`;
-  }
-  return `${(value / 1000).toFixed(2)}${unit}`;
 }
 
 function PortStateSummary({
@@ -213,24 +207,24 @@ export function PortCard({
           <div className="text-[12px] font-semibold text-[var(--muted)]">
             Voltage
           </div>
-          <div className="mt-2 font-mono text-[24px] font-bold">
-            {formatValue(telemetry.voltage_mv, "V")}
+          <div className="mt-2 min-w-0 whitespace-nowrap font-mono text-[18px] font-bold sm:text-[24px]">
+            {formatTelemetryValue(telemetry.voltage_mv, "V")}
           </div>
         </div>
         <div>
           <div className="text-[12px] font-semibold text-[var(--muted)]">
             Current
           </div>
-          <div className="mt-2 font-mono text-[24px] font-bold">
-            {formatValue(telemetry.current_ma, "A")}
+          <div className="mt-2 min-w-0 whitespace-nowrap font-mono text-[18px] font-bold sm:text-[24px]">
+            {formatTelemetryValue(telemetry.current_ma, "A")}
           </div>
         </div>
         <div>
           <div className="text-[12px] font-semibold text-[var(--muted)]">
             Power
           </div>
-          <div className="mt-2 font-mono text-[24px] font-bold">
-            {formatValue(telemetry.power_mw, "W")}
+          <div className="mt-2 min-w-0 whitespace-nowrap font-mono text-[18px] font-bold sm:text-[24px]">
+            {formatTelemetryValue(telemetry.power_mw, "W")}
           </div>
         </div>
       </div>

@@ -2,13 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
 import { ActionButton } from "../actions/ActionButton";
-
-function formatValue(value: number | null, unit: "V" | "A" | "W"): string {
-  if (value === null) {
-    return `--.-${unit}`;
-  }
-  return `${(value / 1000).toFixed(2)}${unit}`;
-}
+import { formatTelemetryValue } from "../format/telemetry";
 
 function ConfirmPopover({
   open,
@@ -127,14 +121,16 @@ export function PortMiniCard({
           {label}
         </div>
       </div>
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <div className={valueClass}>
-          {formatValue(telemetry.voltage_mv, "V")}
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className={`${valueClass} min-w-0 whitespace-nowrap`}>
+          {formatTelemetryValue(telemetry.voltage_mv, "V")}
         </div>
-        <div className={valueClass}>
-          {formatValue(telemetry.current_ma, "A")}
+        <div className={`${valueClass} min-w-0 whitespace-nowrap`}>
+          {formatTelemetryValue(telemetry.current_ma, "A")}
         </div>
-        <div className={valueClass}>{formatValue(telemetry.power_mw, "W")}</div>
+        <div className={`${valueClass} min-w-0 whitespace-nowrap`}>
+          {formatTelemetryValue(telemetry.power_mw, "W")}
+        </div>
       </div>
       <div className="mt-[18px] flex items-center gap-2">
         <div className="relative">
