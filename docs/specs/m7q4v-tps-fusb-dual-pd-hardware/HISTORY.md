@@ -4,6 +4,8 @@
 
 - 新增与 `tps-sw` 并存的 `tps-fusb` variant，状态为待设计，不建立
   supersede 关系。
+- 将输入电源路径选择作为独立功能模块维护，由专用文档承载拓扑、接口、
+  状态机、故障处理和 bring-up 规范。
 - 决定以两颗 FUSB302B 作为 input sink 和 TPS output source 的 PD PHY，
   两侧均由 MCU 实现 PD 3.0 Fixed + PPS。
 - 冻结 `VIN_DC` / `VIN_USB` 单一使能的主动增强互斥、DC 优先和至少 5 ms
