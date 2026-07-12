@@ -389,6 +389,68 @@ for diagnostics.
 
 ## Visual Evidence
 
+- source_type: ui_demo
+  route: `/?demo=true`
+  state: Dashboard and device-summary live telemetry
+  requested_viewport: `1365x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  render_commit: `da56cdc`
+  submission_gate: approved
+  PR: include
+  evidence_note: verifies both dashboard devices render USB-A and USB-C live
+  telemetry with fixed three-decimal precision in the compact PortMiniCard
+  summary surface.
+
+![Dashboard live telemetry precision](./assets/web-telemetry-dashboard-desktop-light.png)
+
+- source_type: ui_demo
+  route: `/devices/ddeecc003344/power?demo=true`
+  state: Power sidebar, light theme
+  requested_viewport: `1365x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  render_commit: `da56cdc`
+  submission_gate: approved
+  PR: include
+  evidence_note: verifies the Power sidebar renders fixed three-decimal live
+  V/A/W telemetry with amber, green, and blue semantic values without nested
+  cards.
+
+![Power live telemetry light](./assets/web-telemetry-power-desktop-light.png)
+
+- source_type: ui_demo
+  route: `/devices/ddeecc003344/power?demo=true`
+  state: Power sidebar, dark theme
+  requested_viewport: `1365x900`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  render_commit: `da56cdc`
+  submission_gate: approved
+  PR: include
+  evidence_note: verifies the Power sidebar's semantic telemetry colors retain
+  hierarchy and legibility in the dark theme.
+
+![Power live telemetry dark](./assets/web-telemetry-power-desktop-dark.png)
+
+- source_type: ui_demo
+  route: `/devices/ddeecc003344/power?demo=true`
+  state: Power sidebar, light theme narrow layout
+  requested_viewport: `390x844`
+  viewport_strategy: `devtools-emulate`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  render_commit: `da56cdc`
+  submission_gate: approved
+  PR: include
+  evidence_note: verifies fixed three-decimal values remain readable with no
+  horizontal overflow in the narrow Power layout.
+
+![Power live telemetry narrow](./assets/web-telemetry-power-narrow-light.png)
+
 - source_type: web_demo
   route: `/devices/aabbcc001122/power?demo=true`
   state: Manual TPS help calculator, 300mV drop at 3000mA
