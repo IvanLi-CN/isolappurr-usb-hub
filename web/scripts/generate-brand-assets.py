@@ -13,11 +13,13 @@ PUBLIC_BRAND = ROOT / "public" / "brand"
 GH_DIR = ROOT.parent / ".github"
 
 POSTER_SOURCE = BRAND_SRC / "product-poster-source.png"
+PRODUCT_RENDER_SOURCE = BRAND_SRC / "product-render-source.png"
 SOCIAL_SOURCE = BRAND_SRC / "github-social-preview-source.png"
 LOGO_SVG = BRAND_SRC / "isolapurr-logo.svg"
 PUBLIC_LOGO_SVG = PUBLIC_BRAND / "isolapurr-logo.svg"
 LOGO_PNG = PUBLIC_BRAND / "isolapurr-logo.png"
 POSTER = PUBLIC_BRAND / "isolapurr-product-poster.png"
+PRODUCT_RENDER = PUBLIC_BRAND / "isolapurr-product-render.png"
 SOCIAL = GH_DIR / "social-preview.png"
 PUBLIC_SOCIAL = PUBLIC_BRAND / "github-social-preview.png"
 
@@ -79,12 +81,18 @@ def generate_poster() -> None:
     export_fixed_image(POSTER_SOURCE, (POSTER,), (1440, 1920))
 
 
+def generate_product_render() -> None:
+    export_fixed_image(PRODUCT_RENDER_SOURCE, (PRODUCT_RENDER,), (1774, 887))
+
+
 def main() -> None:
     generate_logo_png()
     generate_social()
     generate_poster()
+    generate_product_render()
     print(LOGO_PNG)
     print(POSTER)
+    print(PRODUCT_RENDER)
     print(SOCIAL)
 
 

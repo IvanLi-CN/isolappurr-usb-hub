@@ -22,7 +22,7 @@ React SPA (Vite + React + TypeScript) for the mock dual-port dashboard, designed
 - Install: `bun install`
 - Dev server: `bun dev` (default: `http://127.0.0.1:45173`)
 - Firmware bundle refresh: `bun run bundle-firmware` (release-maintainer path; requires GitHub access plus local `espflash`)
-- Brand assets: `bun run brand-assets` regenerates the product poster, GitHub Social preview, and PNG logo from the source images in `src/assets/brand/`
+- Brand assets: `bun run brand-assets` regenerates the product poster, standalone product render, GitHub Social preview, and PNG logo from the source images in `src/assets/brand/`
 - Icons: `bun run icons` regenerates brand assets plus favicon, Apple, regular PWA, maskable PWA, desktop-ready PNG assets, and the Tauri source PNG from `src/assets/brand/isolapurr-mark.svg`
 - Storybook: `bun run storybook` (default: `http://127.0.0.1:46006`)
 - Preview: `bun run preview` (default: `http://127.0.0.1:45175`)
@@ -41,7 +41,7 @@ Production social preview metadata uses an absolute image URL on GitHub Pages. F
 
 - `web/src/assets/brand/isolapurr-mark.svg` is the single source of truth for all install icons.
 - `web/src/assets/brand/isolapurr-logo.svg` is the source logo. `web/public/brand/isolapurr-logo.png` is the transparent PNG export for surfaces that need a raster logo.
-- `web/src/assets/brand/product-poster-source.png` and `web/src/assets/brand/github-social-preview-source.png` are the source marketing images. `bun run brand-assets` exports `web/public/brand/isolapurr-product-poster.png`, `web/public/brand/github-social-preview.png`, and `.github/social-preview.png`.
+- `web/src/assets/brand/product-poster-source.png`, `web/src/assets/brand/product-render-source.png`, and `web/src/assets/brand/github-social-preview-source.png` are the source marketing images. `bun run brand-assets` exports `web/public/brand/isolapurr-product-poster.png`, `web/public/brand/isolapurr-product-render.png`, `web/public/brand/github-social-preview.png`, and `.github/social-preview.png`.
 - Build-time HTML and manifest metadata append a shared content-hash query to install-facing icon URLs so Chrome/macOS PWA installs refetch icon assets when the artwork changes.
 - Regular install icons (`favicon`, `pwa-*`, `apple-touch-icon`, `desktop-*`, `tauri-source-1024.png`) are exported with a visible safe zone for Chrome/macOS, Apple touch surfaces, and Tauri desktop bundles.
 - Maskable icons (`maskable-*`) stay full-bleed for Android/PWA maskable install slots.
