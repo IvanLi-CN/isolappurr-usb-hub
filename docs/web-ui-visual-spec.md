@@ -79,7 +79,8 @@ Web 控制台使用圆角方形隔离 hub 作为产品 mark：外轮廓呼应硬
 
 - 图标源文件以 `web/src/assets/brand/isolapurr-mark.svg` 为 master，单色版本为 `web/src/assets/brand/isolapurr-mark-mono.svg`。
 - 横向 logo 源文件为 `web/src/assets/brand/isolapurr-logo.svg`，派生 PNG 为 `web/public/brand/isolapurr-logo.png`。
-- 产品营销母图为 `web/src/assets/brand/product-poster-source.png` 与 `web/src/assets/brand/github-social-preview-source.png`，派生输出包括 `web/public/brand/isolapurr-product-poster.png`、`web/public/brand/github-social-preview.png` 与 `.github/social-preview.png`。
+- 产品营销母图为 `web/src/assets/brand/product-poster-source.png`、`web/src/assets/brand/product-render-source.png` 与 `web/src/assets/brand/github-social-preview-source.png`，派生输出包括 `web/public/brand/isolapurr-product-poster.png`、`web/public/brand/isolapurr-product-render.png`、`web/public/brand/github-social-preview.png` 与 `.github/social-preview.png`。
+- `product-render-source.png` 是无文案的产品棚拍源图，必须保持 `1774×887` 的横向画幅，并保留海报所示白色设备、透明顶板、顶置显示屏与前面板端口布局。
 - favicon、Apple touch icon、PWA any/maskable icon、desktop-ready PNG、Tauri install source PNG 均从 master 派生；更新 master 后运行 `cd web && bun run icons` 重新生成。
 - GitHub Social preview 固定为 `1280×640`，产品海报固定为 `1440×1920`；二者从已确认的本地 source image 导出，避免图内文字拼写漂移。
 - 安装图标采用双轨导出：

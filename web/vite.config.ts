@@ -147,6 +147,7 @@ export default defineConfig(() => {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
           globIgnores: [
             "**/brand/isolapurr-product-poster.png",
+            "**/brand/isolapurr-product-render.png",
             "**/firmware/**/*",
           ],
           navigateFallback: `${base}index.html`,

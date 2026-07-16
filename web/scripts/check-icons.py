@@ -36,6 +36,7 @@ DESKTOP_PNGS: Final = [
 MARKETING_ASSETS: Final = {
     BRAND_ASSETS / "isolapurr-logo.png": (1520, 480),
     BRAND_ASSETS / "isolapurr-product-poster.png": (1440, 1920),
+    BRAND_ASSETS / "isolapurr-product-render.png": (1774, 887),
     BRAND_ASSETS / "github-social-preview.png": (1280, 640),
     GITHUB_ASSETS / "social-preview.png": (1280, 640),
 }
