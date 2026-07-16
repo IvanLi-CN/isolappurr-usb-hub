@@ -14,12 +14,14 @@ GH_DIR = ROOT.parent / ".github"
 
 POSTER_SOURCE = BRAND_SRC / "product-poster-source.png"
 PRODUCT_RENDER_SOURCE = BRAND_SRC / "product-render-source.png"
+FULL_PRODUCT_RENDER_SOURCE = BRAND_SRC / "product-render-full-source.png"
 SOCIAL_SOURCE = BRAND_SRC / "github-social-preview-source.png"
 LOGO_SVG = BRAND_SRC / "isolapurr-logo.svg"
 PUBLIC_LOGO_SVG = PUBLIC_BRAND / "isolapurr-logo.svg"
 LOGO_PNG = PUBLIC_BRAND / "isolapurr-logo.png"
 POSTER = PUBLIC_BRAND / "isolapurr-product-poster.png"
 PRODUCT_RENDER = PUBLIC_BRAND / "isolapurr-product-render.png"
+FULL_PRODUCT_RENDER = PUBLIC_BRAND / "isolapurr-product-render-full.png"
 SOCIAL = GH_DIR / "social-preview.png"
 PUBLIC_SOCIAL = PUBLIC_BRAND / "github-social-preview.png"
 
@@ -72,6 +74,14 @@ def export_fixed_image(source_path: Path, output_paths: tuple[Path, ...], size: 
         image.save(output_path, quality=95)
 
 
+def export_exact_copy(source_path: Path, output_paths: tuple[Path, ...]) -> None:
+    if not source_path.exists():
+        raise SystemExit(f"missing marketing source: {source_path}")
+    for output_path in output_paths:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        copyfile(source_path, output_path)
+
+
 def generate_social() -> None:
     GH_DIR.mkdir(parents=True, exist_ok=True)
     export_fixed_image(SOCIAL_SOURCE, (SOCIAL, PUBLIC_SOCIAL), (1280, 640))
@@ -85,14 +95,20 @@ def generate_product_render() -> None:
     export_fixed_image(PRODUCT_RENDER_SOURCE, (PRODUCT_RENDER,), (1774, 887))
 
 
+def generate_full_product_render() -> None:
+    export_exact_copy(FULL_PRODUCT_RENDER_SOURCE, (FULL_PRODUCT_RENDER,))
+
+
 def main() -> None:
     generate_logo_png()
     generate_social()
     generate_poster()
     generate_product_render()
+    generate_full_product_render()
     print(LOGO_PNG)
     print(POSTER)
     print(PRODUCT_RENDER)
+    print(FULL_PRODUCT_RENDER)
     print(SOCIAL)
 
 

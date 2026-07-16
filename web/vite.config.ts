@@ -148,6 +148,7 @@ export default defineConfig(() => {
           globIgnores: [
             "**/brand/isolapurr-product-poster.png",
             "**/brand/isolapurr-product-render.png",
+            "**/brand/isolapurr-product-render-full.png",
             "**/firmware/**/*",
           ],
           navigateFallback: `${base}index.html`,
