@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Final
+import hashlib
 
 from PIL import Image
 
@@ -10,6 +11,7 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 WEB_ICONS: Final = ROOT / "public" / "icons"
 DESKTOP_ICONS: Final = ROOT.parent / "desktop" / "src-tauri" / "icons"
 BRAND_ASSETS: Final = ROOT / "public" / "brand"
+BRAND_SOURCES: Final = ROOT / "src" / "assets" / "brand"
 GITHUB_ASSETS: Final = ROOT.parent / ".github"
 
 REGULAR_ICONS: Final = [
@@ -41,6 +43,9 @@ MARKETING_ASSETS: Final = {
     GITHUB_ASSETS / "social-preview.png": (1280, 640),
 }
 
+FULL_RENDER_SOURCE: Final = BRAND_SOURCES / "product-render-full-source.png"
+FULL_RENDER_EXPORT: Final = BRAND_ASSETS / "isolapurr-product-render-full.png"
+
 
 def visible_bounds(path: Path) -> tuple[int, int, int, int] | None:
     image = Image.open(path).convert("RGBA")
@@ -51,6 +56,10 @@ def visible_bounds(path: Path) -> tuple[int, int, int, int] | None:
 def ensure_exists(path: Path) -> None:
     if not path.exists():
         raise SystemExit(f"missing icon asset: {path}")
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def margin_ratio(path: Path) -> float:
@@ -93,6 +102,20 @@ def main() -> None:
             raise SystemExit(
                 f"marketing asset must be {size[0]}x{size[1]}, got {image.size}: {path}"
             )
+
+    ensure_exists(FULL_RENDER_SOURCE)
+    ensure_exists(FULL_RENDER_EXPORT)
+    source_image = Image.open(FULL_RENDER_SOURCE)
+    export_image = Image.open(FULL_RENDER_EXPORT)
+    if export_image.size != source_image.size:
+        raise SystemExit(
+            "full product render must preserve source dimensions, "
+            f"got {export_image.size} from {FULL_RENDER_SOURCE.name} {source_image.size}"
+        )
+    if sha256(FULL_RENDER_EXPORT) != sha256(FULL_RENDER_SOURCE):
+        raise SystemExit(
+            "full product render export must be an exact copy of the approved source image"
+        )
 
     print("icon geometry checks passed")
 
