@@ -67,6 +67,8 @@ export function DeviceInfoPanel({
   device,
   transport,
   wifiManagementTransport,
+  canControlHardware,
+  requestControlTakeover,
   loadInfo,
   loadWifiConfig,
   saveWifiConfig,
@@ -83,6 +85,8 @@ export function DeviceInfoPanel({
   device: StoredDevice;
   transport: DeviceTransport | null;
   wifiManagementTransport: DeviceTransport | null;
+  canControlHardware: boolean;
+  requestControlTakeover: () => void;
   loadInfo: () => Promise<Result<DeviceInfoResponse>>;
   loadWifiConfig: () => Promise<Result<WifiConfigResponse>>;
   saveWifiConfig: (
@@ -275,11 +279,18 @@ export function DeviceInfoPanel({
     wifiManagementTransport === "web_serial" ||
     wifiManagementTransport === "local_usb";
   const wifiBusy = wifiBusyAction !== null;
-  const wifiCanSubmit = wifiCanManage && !wifiBusy;
-  const modeDisabled = !transport || routeBusy || modeBusy;
+  const wifiCanSubmit = canControlHardware && wifiCanManage && !wifiBusy;
+  const modeDisabled =
+    !canControlHardware || !transport || routeBusy || modeBusy;
   const selectedMode = usbCDownstreamRoute === "mcu" ? "upgrade" : "normal";
 
   const setMode = async (mode: "normal" | "upgrade") => {
+    if (!canControlHardware) {
+      setWifiError(
+        "Another browser tab is controlling this hub. Take over control here before changing USB-C mode.",
+      );
+      return;
+    }
     const route = mode === "upgrade" ? "mcu" : "usb_c";
     if (modeDisabled || route === usbCDownstreamRoute) {
       return;
@@ -293,6 +304,12 @@ export function DeviceInfoPanel({
   };
 
   const saveWifi = async () => {
+    if (!canControlHardware) {
+      setWifiError(
+        "Another browser tab is controlling this hub. Take over control here before changing Wi-Fi configuration.",
+      );
+      return;
+    }
     const nextPsk = wifiOpenNetwork ? "" : wifiPsk;
     const nextSsid = wifiSsid;
     if (!wifiCanManage) {
@@ -355,6 +372,12 @@ export function DeviceInfoPanel({
   };
 
   const requestClearWifi = () => {
+    if (!canControlHardware) {
+      setWifiError(
+        "Another browser tab is controlling this hub. Take over control here before changing Wi-Fi configuration.",
+      );
+      return;
+    }
     if (!wifiCanManage) {
       setWifiError(
         "Connect with Web Serial or Local USB before changing Wi-Fi configuration.",
@@ -418,6 +441,12 @@ export function DeviceInfoPanel({
   };
 
   const rebootForWifi = async () => {
+    if (!canControlHardware) {
+      setWifiError(
+        "Another browser tab is controlling this hub. Take over control here before rebooting this hub.",
+      );
+      return;
+    }
     if (!wifiCanManage) {
       setWifiError(
         "Connect with Web Serial or Local USB before applying Wi-Fi configuration changes.",
@@ -454,6 +483,17 @@ export function DeviceInfoPanel({
 
   return (
     <div className="flex flex-col gap-6" data-testid="device-info">
+      {!canControlHardware ? (
+        <div className="flex flex-col gap-3 rounded-[16px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-[12px] font-semibold leading-5 text-[var(--muted)]">
+            Another browser tab currently owns live hardware control. Settings
+            on this page stay read-only until you take over control here.
+          </div>
+          <ActionButton tone="secondary" onClick={requestControlTakeover}>
+            Take over control
+          </ActionButton>
+        </div>
+      ) : null}
       <div className="iso-card min-h-[168px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
         <div className="text-[16px] font-bold leading-5">Identity</div>
         <div className="mt-[14px] grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,564px)_minmax(0,1fr)]">
@@ -599,7 +639,7 @@ export function DeviceInfoPanel({
               className="input input-sm w-full font-mono"
               autoComplete="off"
               value={wifiSsid}
-              disabled={!wifiCanManage || wifiBusy}
+              disabled={!canControlHardware || !wifiCanManage || wifiBusy}
               onChange={(event) => {
                 wifiFormDirtyRef.current = true;
                 setWifiSsid(event.target.value);
@@ -619,7 +659,12 @@ export function DeviceInfoPanel({
                 type="password"
                 autoComplete="new-password"
                 value={wifiPsk}
-                disabled={!wifiCanManage || wifiBusy || wifiOpenNetwork}
+                disabled={
+                  !canControlHardware ||
+                  !wifiCanManage ||
+                  wifiBusy ||
+                  wifiOpenNetwork
+                }
                 onChange={(event) => {
                   wifiFormDirtyRef.current = true;
                   setWifiPsk(event.target.value);
@@ -635,7 +680,7 @@ export function DeviceInfoPanel({
                 className="checkbox checkbox-xs"
                 type="checkbox"
                 checked={wifiOpenNetwork}
-                disabled={!wifiCanManage || wifiBusy}
+                disabled={!canControlHardware || !wifiCanManage || wifiBusy}
                 onChange={(event) => {
                   const checked = event.target.checked;
                   wifiFormDirtyRef.current = true;
@@ -652,9 +697,11 @@ export function DeviceInfoPanel({
 
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="text-[12px] font-semibold leading-5 text-[var(--muted)]">
-            {wifiCanManage
-              ? "Existing PSK is never shown. Re-enter it before saving a secured network, or choose Open network to replace it."
-              : "Wi-Fi/LAN is read-only for Wi-Fi settings. Connect with Web Serial or Local USB to change credentials."}
+            {!canControlHardware
+              ? "Another browser tab currently owns live hardware control. Take over in this tab before changing Wi-Fi settings."
+              : wifiCanManage
+                ? "Existing PSK is never shown. Re-enter it before saving a secured network, or choose Open network to replace it."
+                : "Wi-Fi/LAN is read-only for Wi-Fi settings. Connect with Web Serial or Local USB to change credentials."}
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:min-w-[260px]">
             <ActionButton
@@ -728,6 +775,8 @@ export function DeviceInfoPanel({
 
       <DeviceSettingsResetPanel
         key={device.id}
+        canControlHardware={canControlHardware}
+        requestControlTakeover={requestControlTakeover}
         transport={transport}
         transportLabel={transportLabel(transport)}
         wifiCanManage={wifiCanManage}
@@ -776,6 +825,7 @@ export function DeviceInfoPanel({
           </div>
           <ActionButton
             tone="danger"
+            disabled={deleteBusy}
             onClick={() => {
               setDeleteError(null);
               setDeleteConfirmOpen(true);

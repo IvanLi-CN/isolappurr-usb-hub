@@ -25,6 +25,17 @@
 - Added the compatible CLI `--cable-resistance-mohm` input while retaining the
   mutually exclusive `--tps-cdc-rise-mv` legacy flag.
 
+## 2026-07-17
+
+- Moved Web power control from a per-tab lock owner and per-tab poller to a
+  same-origin single-writer runtime leader with shared snapshots and explicit
+  takeover for follower tabs.
+- Persisted one browser-scoped power-lock owner per device and aligned the
+  local resume window to the existing 15-second device TTL so refresh and short
+  reopen can continue renewing the same owner instead of self-locking.
+- Split the Power surface lock state into explicit `Unlocked`, `Controlled
+  here`, `Controlled in another tab`, and `Locked by another host` UI states.
+
 ## 2026-07-06
 
 - Fixed LAN Web manual-voltage saves by raising the firmware HTTP request

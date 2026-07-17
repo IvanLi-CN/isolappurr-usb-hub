@@ -10,6 +10,8 @@ import type {
 import type { PortState, PortTelemetry } from "../../domain/ports";
 import { DevicePowerPanel } from "./DevicePowerPanel";
 
+const stableOwner = 7;
+
 const manualConfig: PowerConfigResponse = {
   hardware: "sw2303",
   persisted: true,
@@ -85,6 +87,11 @@ const manualOutputOffConfig: PowerConfigResponse = {
 const hostLockedConfig: PowerConfigResponse = {
   ...manualConfig,
   lock: { owner: 42, expires_at_ms: Date.now() + 15_000 },
+};
+
+const controlledHereConfig: PowerConfigResponse = {
+  ...manualConfig,
+  lock: { owner: stableOwner, expires_at_ms: Date.now() + 15_000 },
 };
 
 const manualForceConfig: PowerConfigResponse = {
@@ -304,6 +311,15 @@ const defaultArgs: Story["args"] = {
   deviceKey: "bench-hub",
   deviceName: "Bench Hub",
   transportLabel: "local_usb",
+  coordination: {
+    role: "leader",
+    currentTabId: "tab-a",
+    leaderTabId: "tab-a",
+    leaseExpiresAt: new Date(Date.now() + 15_000).toISOString(),
+  },
+  canControlHardware: true,
+  powerLockOwner: stableOwner,
+  requestControlTakeover: () => undefined,
   localAdvancedLocked: false,
   loadPowerConfig: () => ok(manualConfig),
   loadIdleBias: () => okIdle(idleBiasMissing),
@@ -326,6 +342,10 @@ export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const portal = within(canvasElement.ownerDocument.body);
+    await expect(await canvas.findByText("Unlocked")).toBeVisible();
+    await expect(
+      await canvas.findByRole("button", { name: "Acquire control" }),
+    ).toBeVisible();
     await expect(
       await canvas.findByTestId("PD-negotiation-badge"),
     ).toBeVisible();
@@ -350,7 +370,50 @@ export const Default: Story = {
   },
 };
 
-export const HostLocked: Story = {
+export const ControlledHere: Story = {
+  args: {
+    ...defaultArgs,
+    loadPowerConfig: () => ok(controlledHereConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+    setPowerLock: () => ok(controlledHereConfig),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Controlled here")).toBeVisible();
+    await expect(
+      canvas.queryByRole("button", { name: "Acquire control" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const ControlledInAnotherTab: Story = {
+  args: {
+    ...defaultArgs,
+    coordination: {
+      role: "follower",
+      currentTabId: "tab-b",
+      leaderTabId: "tab-a",
+      leaseExpiresAt: new Date(Date.now() + 15_000).toISOString(),
+    },
+    canControlHardware: false,
+    loadPowerConfig: () => ok(controlledHereConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText("Controlled in another tab"),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Take over control" }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("slider", { name: /Voltage/ }),
+    ).toBeDisabled();
+  },
+};
+
+export const LockedByAnotherHost: Story = {
   args: {
     ...defaultArgs,
     loadPowerConfig: () => ok(hostLockedConfig),
@@ -360,7 +423,9 @@ export const HostLocked: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByText("Host lock active")).toBeVisible();
+    await expect(
+      await canvas.findByText("Locked by another host"),
+    ).toBeVisible();
     await expect(
       canvas.getByRole("slider", { name: /Voltage/ }),
     ).toBeDisabled();

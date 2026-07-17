@@ -50,6 +50,8 @@ const meta: Meta<typeof DeviceInfoPanel> = {
     device: demoDevice,
     transport: "http",
     wifiManagementTransport: null,
+    canControlHardware: true,
+    requestControlTakeover: () => undefined,
     loadInfo: async () => ({ ok: true, value: mockInfo }),
     loadWifiConfig: async () => ({ ok: true, value: mockWifiConfigured }),
     saveWifiConfig: async () => ({
@@ -280,6 +282,28 @@ export const ResetSettingsUsbFlow: Story = {
     ).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Confirm" }));
     await expect(await canvas.findByText(/Other settings reset/)).toBeVisible();
+  },
+};
+
+export const ControlledInAnotherTab: Story = {
+  args: {
+    transport: "local_usb",
+    wifiManagementTransport: "local_usb",
+    canControlHardware: false,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(
+        /another browser tab currently owns live hardware control/i,
+      ),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Take over control" }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Save Wi-Fi" }),
+    ).toBeDisabled();
   },
 };
 

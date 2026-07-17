@@ -19,6 +19,7 @@ export type DeviceSummaryCardProps = {
   onOpenDetails: (deviceId: string) => void;
   onSetPower: (deviceId: string, portId: PortId, enabled: boolean) => void;
   onDataReplug: (deviceId: string, portId: PortId) => void;
+  actionsDisabled?: boolean;
 };
 
 function connectionBadge(state: ConnectionState): {
@@ -59,6 +60,7 @@ export function DeviceSummaryCard({
   onOpenDetails,
   onSetPower,
   onDataReplug,
+  actionsDisabled = false,
 }: DeviceSummaryCardProps) {
   const shortId = device.id.length > 8 ? device.id.slice(0, 8) : device.id;
   const lastOkLabel = connection.lastOkAt
@@ -66,7 +68,7 @@ export function DeviceSummaryCard({
     : "—";
   const hostLabel =
     hostConnected === null ? "—" : hostConnected ? "link" : "no link";
-  const writeDisabled = connection.state !== "online";
+  const writeDisabled = connection.state !== "online" || actionsDisabled;
   const badge = connectionBadge(connection.state);
 
   return (

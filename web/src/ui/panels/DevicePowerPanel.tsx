@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getStablePowerLockOwner } from "../../app/device-runtime-support";
+import type { CrossTabRuntimeLeaseState } from "../../app/cross-tab-runtime";
+import { canResumePowerLock } from "../../app/device-runtime-support";
 import type {
   IdleBiasResponse,
   PdDiagnosticsResponse,
@@ -47,6 +48,10 @@ type DevicePowerPanelProps = {
   deviceKey: string;
   deviceName: string;
   transportLabel: string;
+  coordination: CrossTabRuntimeLeaseState;
+  canControlHardware: boolean;
+  powerLockOwner: number;
+  requestControlTakeover: () => void;
   localAdvancedLocked: boolean;
   loadPowerConfig: () => Promise<Result<PowerConfigResponse>>;
   loadIdleBias: () => Promise<Result<IdleBiasResponse>>;
@@ -83,6 +88,10 @@ export function DevicePowerPanel({
   deviceKey,
   deviceName,
   transportLabel,
+  coordination,
+  canControlHardware,
+  powerLockOwner,
+  requestControlTakeover,
   localAdvancedLocked,
   loadPowerConfig,
   loadIdleBias,
@@ -104,6 +113,7 @@ export function DevicePowerPanel({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lockBusy, setLockBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [idleBiasSnapshot, setIdleBiasSnapshot] =
     useState<IdleBiasResponse | null>(null);
@@ -117,7 +127,7 @@ export function DevicePowerPanel({
   const loadPdDiagnosticsRef = useRef(loadPdDiagnostics);
   const setPowerLockRef = useRef(setPowerLock);
   const setPowerRuntimeRef = useRef(setPowerRuntime);
-  const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
+  const ownerRef = useRef(powerLockOwner);
 
   const initializeLoadedConfig = useCallback(
     (nextConfig: PowerConfigResponse) => {
@@ -147,6 +157,10 @@ export function DevicePowerPanel({
   useEffect(() => {
     setPowerRuntimeRef.current = setPowerRuntime;
   }, [setPowerRuntime]);
+
+  useEffect(() => {
+    ownerRef.current = powerLockOwner;
+  }, [powerLockOwner]);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,9 +226,18 @@ export function DevicePowerPanel({
   }, [form, initializeLoadedConfig, transportLabel]);
 
   useEffect(() => {
+    lockedRef.current = Boolean(
+      canControlHardware &&
+        config?.lock !== null &&
+        config?.lock !== undefined &&
+        config.lock.owner === ownerRef.current,
+    );
+  }, [canControlHardware, config]);
+
+  useEffect(() => {
     let cancelled = false;
     const tick = async () => {
-      if (!lockedRef.current) {
+      if (!canControlHardware || !lockedRef.current) {
         return;
       }
       const res = await setPowerLockRef.current(ownerRef.current, true);
@@ -225,6 +248,7 @@ export function DevicePowerPanel({
         setError(res.error.message);
       } else {
         setConfig(res.value);
+        setStatus("Control renewed in this tab.");
       }
     };
 
@@ -232,15 +256,26 @@ export function DevicePowerPanel({
     return () => {
       cancelled = true;
       window.clearInterval(id);
-      if (lockedRef.current) {
-        void setPowerLockRef.current(ownerRef.current, false);
-      }
     };
-  }, []);
+  }, [canControlHardware]);
 
   useEffect(() => {
+    if (!canControlHardware || !config) {
+      return;
+    }
+    if (config.lock?.owner === ownerRef.current) {
+      setError(null);
+      setStatus("Control active in this tab.");
+      return;
+    }
+    if (config.lock && config.lock.owner !== ownerRef.current) {
+      return;
+    }
+    if (!canResumePowerLock(deviceKey)) {
+      return;
+    }
     let cancelled = false;
-    const acquire = async () => {
+    const resumeLock = async () => {
       const res = await setPowerLockRef.current(ownerRef.current, true);
       if (cancelled) {
         return;
@@ -250,23 +285,61 @@ export function DevicePowerPanel({
         setConfig(res.value);
         setForm((current) => current ?? cloneConfig(res.value));
         setError(null);
+        setStatus("Control resumed after reload.");
       } else {
         setError(res.error.message);
       }
     };
-    void acquire();
+    void resumeLock();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canControlHardware, config, deviceKey]);
 
+  const controlledInThisTab =
+    canControlHardware &&
+    config?.lock !== null &&
+    config?.lock !== undefined &&
+    config.lock.owner === ownerRef.current;
+  const controlledInAnotherTab =
+    !canControlHardware &&
+    config?.lock !== null &&
+    config?.lock !== undefined &&
+    config.lock.owner === ownerRef.current;
   const lockedByOtherHost =
     config?.lock !== null &&
     config?.lock !== undefined &&
     config.lock.owner !== ownerRef.current;
+  const crossTabSyncUnavailable = coordination.role === "unsupported";
+  const lockStatusLabel = controlledInThisTab
+    ? "Controlled here"
+    : controlledInAnotherTab
+      ? "Controlled in another tab"
+      : lockedByOtherHost
+        ? "Locked by another host"
+        : "Unlocked";
+  const lockStatusTone = controlledInThisTab
+    ? "border-[var(--badge-success-border)] bg-[var(--badge-success-bg)] text-[var(--badge-success-text)]"
+    : controlledInAnotherTab || lockedByOtherHost
+      ? "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]"
+      : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]";
+  const lockBanner = controlledInAnotherTab
+    ? "Another browser tab in this browser is renewing the hardware lock. Take over control here to edit from this tab."
+    : lockedByOtherHost
+      ? "Another host owns the hardware lock. This page stays read-only until that lock expires or is released."
+      : controlledInThisTab
+        ? "This tab is the active hardware controller and will keep renewing the lock while it stays open."
+        : crossTabSyncUnavailable
+          ? "Settings are currently unlocked. This browser cannot coordinate multiple tabs here, so control stays local to this tab."
+          : "Settings are currently unlocked. Review the live configuration, then acquire control before writing changes.";
   const advancedDisabled =
-    localAdvancedLocked || lockedByOtherHost || idleBiasRunning;
-  const powerControlsDisabled = advancedDisabled || busy || idleBiasBusy;
+    localAdvancedLocked ||
+    lockedByOtherHost ||
+    controlledInAnotherTab ||
+    idleBiasRunning ||
+    !controlledInThisTab;
+  const powerControlsDisabled =
+    advancedDisabled || busy || idleBiasBusy || lockBusy;
 
   if (!form && error) {
     return (
@@ -290,6 +363,21 @@ export function DevicePowerPanel({
       </section>
     );
   }
+
+  const acquireControl = async () => {
+    setLockBusy(true);
+    const res = await setPowerLockRef.current(ownerRef.current, true);
+    setLockBusy(false);
+    if (res.ok) {
+      lockedRef.current = true;
+      setConfig(res.value);
+      setForm((current) => current ?? cloneConfig(res.value));
+      setError(null);
+      setStatus("Control acquired in this tab.");
+      return;
+    }
+    setError(res.error.message);
+  };
 
   const setTpsMode = (mode: FormState["tps_mode"]) => {
     setForm((current) => (current ? { ...current, tps_mode: mode } : current));
@@ -569,9 +657,9 @@ export function DevicePowerPanel({
             {config?.persisted ? "EEPROM saved" : "Unsaved default"}
           </span>
           <span
-            className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${lockedByOtherHost ? "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
+            className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${lockStatusTone}`}
           >
-            {lockedByOtherHost ? "Host lock active" : "Host lock idle"}
+            {lockStatusLabel}
           </span>
           <span
             className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${idleBiasRunning ? "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
@@ -580,6 +668,31 @@ export function DevicePowerPanel({
           </span>
         </div>
       </header>
+
+      <div className="flex flex-col gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-[12px] font-semibold leading-5 text-[var(--muted)]">
+          {lockBanner}
+        </div>
+        {!canControlHardware ? (
+          <ActionButton
+            tone="secondary"
+            onClick={requestControlTakeover}
+            data-testid="device-power-takeover-control"
+          >
+            Take over control
+          </ActionButton>
+        ) : !controlledInThisTab && !lockedByOtherHost ? (
+          <ActionButton
+            tone="primary"
+            loading={lockBusy}
+            disabled={lockBusy}
+            onClick={() => void acquireControl()}
+            data-testid="device-power-acquire-control"
+          >
+            Acquire control
+          </ActionButton>
+        ) : null}
+      </div>
 
       <div className="grid gap-5">
         <section className="grid gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">

@@ -8,12 +8,16 @@ import type {
 import { ActionButton } from "../actions/ActionButton";
 
 export function DeviceSettingsResetPanel({
+  canControlHardware,
+  requestControlTakeover,
   transport,
   transportLabel,
   wifiCanManage,
   resetSettings,
   onWifiResetSuccess,
 }: {
+  canControlHardware: boolean;
+  requestControlTakeover: () => void;
   transport: DeviceTransport | null;
   transportLabel: string;
   wifiCanManage: boolean;
@@ -28,6 +32,12 @@ export function DeviceSettingsResetPanel({
   const [error, setError] = useState<string | null>(null);
 
   const requestReset = (scope: SettingsResetScope) => {
+    if (!canControlHardware) {
+      setError(
+        "Another browser tab is controlling this hub. Take over control here before resetting settings.",
+      );
+      return;
+    }
     if (scope === "wifi" && !wifiCanManage) {
       setError(
         "Connect with Web Serial or Local USB before resetting Wi-Fi settings.",
@@ -73,6 +83,17 @@ export function DeviceSettingsResetPanel({
 
   return (
     <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
+      {!canControlHardware ? (
+        <div className="mb-4 flex flex-col gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-[12px] font-semibold leading-5 text-[var(--muted)]">
+            Reset actions stay read-only while another browser tab owns live
+            hardware control.
+          </div>
+          <ActionButton tone="secondary" onClick={requestControlTakeover}>
+            Take over control
+          </ActionButton>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="text-[16px] font-bold leading-5">Reset settings</div>
@@ -89,7 +110,7 @@ export function DeviceSettingsResetPanel({
         <ResetSettingRow
           title="Wi-Fi"
           detail="Clear saved SSID and PSK. Requires Web Serial or Local USB."
-          disabled={!wifiCanManage || busy}
+          disabled={!canControlHardware || !wifiCanManage || busy}
           active={confirm === "wifi"}
           busy={busy && confirm === "wifi"}
           onRequest={() => requestReset("wifi")}
@@ -99,7 +120,7 @@ export function DeviceSettingsResetPanel({
         <ResetSettingRow
           title="Other"
           detail="Clear USB-C mode and power settings while keeping Wi-Fi credentials."
-          disabled={!transport || busy}
+          disabled={!canControlHardware || !transport || busy}
           active={confirm === "other"}
           busy={busy && confirm === "other"}
           onRequest={() => requestReset("other")}

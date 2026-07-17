@@ -28,6 +28,7 @@ import type {
   PortsResponse,
   UsbCDownstreamRoute,
 } from "../domain/ports";
+import type { CrossTabRuntimeLeaseState } from "./cross-tab-runtime";
 
 export type ConnectionState = "online" | "offline" | "unknown";
 export type DeviceTransport = "http" | "web_serial" | "local_usb";
@@ -50,6 +51,8 @@ export type DeviceRuntime = {
 export type DeviceRuntimeContextValue = {
   now: number;
   runtimeById: Record<string, DeviceRuntime>;
+  coordination: CrossTabRuntimeLeaseState;
+  canControlHardware: boolean;
   connectionState: (deviceId: string) => ConnectionState;
   lastOkAt: (deviceId: string) => number | null;
   lastErrorLabel: (deviceId: string) => string | null;
@@ -62,6 +65,8 @@ export type DeviceRuntimeContextValue = {
   hub: (deviceId: string) => HubState | null;
   port: (deviceId: string, portId: PortId) => Port | null;
   pending: (deviceId: string, portId: PortId) => boolean;
+  powerLockOwner: (deviceId: string) => number;
+  requestControlTakeover: () => void;
   refreshDevice: (deviceId: string) => Promise<void>;
   deviceInfo: (deviceId: string) => Promise<Result<DeviceInfoResponse>>;
   wifiConfig: (deviceId: string) => Promise<Result<WifiConfigResponse>>;
@@ -126,6 +131,14 @@ export type DeviceRuntimeContextValue = {
 const TRANSPORTS: DeviceTransport[] = ["http", "web_serial", "local_usb"];
 const JSONL_POWER_IDLE_BIAS_RUN_TIMEOUT_MS = 178_000;
 const JSONL_POWER_CONFIG_TIMEOUT_MS = 20_000;
+const POWER_LOCK_OWNER_STORAGE_KEY = "isolapurr.runtime.power-lock-owners.v1";
+const POWER_LOCK_RESUME_WINDOW_MS = 15_000;
+
+type PowerLockOwnerRecord = {
+  ownerId: number;
+  resumeUntilMs: number;
+  updatedAtMs: number;
+};
 
 export function httpBaseUrlForDevice(device: StoredDevice): string {
   return device.transports?.httpBaseUrl ?? device.baseUrl;
@@ -209,14 +222,120 @@ function createPowerLockOwner(): number {
 
 const powerLockOwners = new Map<string, number>();
 
+function readPowerLockOwnerRecords(): Record<string, PowerLockOwnerRecord> {
+  if (
+    typeof window === "undefined" ||
+    typeof window.localStorage === "undefined"
+  ) {
+    return {};
+  }
+  const raw = window.localStorage.getItem(POWER_LOCK_OWNER_STORAGE_KEY);
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<
+      string,
+      Partial<PowerLockOwnerRecord>
+    >;
+    const next: Record<string, PowerLockOwnerRecord> = {};
+    for (const [deviceKey, record] of Object.entries(parsed)) {
+      if (
+        typeof record.ownerId !== "number" ||
+        !Number.isInteger(record.ownerId) ||
+        record.ownerId <= 0 ||
+        typeof record.resumeUntilMs !== "number" ||
+        typeof record.updatedAtMs !== "number"
+      ) {
+        continue;
+      }
+      next[deviceKey] = {
+        ownerId: record.ownerId,
+        resumeUntilMs: record.resumeUntilMs,
+        updatedAtMs: record.updatedAtMs,
+      };
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function writePowerLockOwnerRecords(
+  records: Record<string, PowerLockOwnerRecord>,
+): void {
+  if (
+    typeof window === "undefined" ||
+    typeof window.localStorage === "undefined"
+  ) {
+    return;
+  }
+  window.localStorage.setItem(
+    POWER_LOCK_OWNER_STORAGE_KEY,
+    JSON.stringify(records),
+  );
+}
+
+function updatePowerLockOwnerRecord(
+  deviceKey: string,
+  update: (current: PowerLockOwnerRecord | null) => PowerLockOwnerRecord | null,
+): PowerLockOwnerRecord | null {
+  const records = readPowerLockOwnerRecords();
+  const current = records[deviceKey] ?? null;
+  const next = update(current);
+  if (next) {
+    records[deviceKey] = next;
+  } else {
+    delete records[deviceKey];
+  }
+  writePowerLockOwnerRecords(records);
+  return next;
+}
+
 export function getStablePowerLockOwner(deviceKey: string): number {
   const existing = powerLockOwners.get(deviceKey);
   if (existing) {
     return existing;
   }
+  const stored = readPowerLockOwnerRecords()[deviceKey];
+  if (stored?.ownerId) {
+    powerLockOwners.set(deviceKey, stored.ownerId);
+    return stored.ownerId;
+  }
   const owner = createPowerLockOwner();
   powerLockOwners.set(deviceKey, owner);
+  updatePowerLockOwnerRecord(deviceKey, (current) => ({
+    ownerId: owner,
+    resumeUntilMs: current?.resumeUntilMs ?? 0,
+    updatedAtMs: Date.now(),
+  }));
   return owner;
+}
+
+export function canResumePowerLock(
+  deviceKey: string,
+  now = Date.now(),
+): boolean {
+  const record = readPowerLockOwnerRecords()[deviceKey];
+  return Boolean(record && record.resumeUntilMs > now);
+}
+
+export function markPowerLockHeld(deviceKey: string, now = Date.now()): void {
+  const ownerId = getStablePowerLockOwner(deviceKey);
+  updatePowerLockOwnerRecord(deviceKey, () => ({
+    ownerId,
+    resumeUntilMs: now + POWER_LOCK_RESUME_WINDOW_MS,
+    updatedAtMs: now,
+  }));
+}
+
+export function clearPowerLockResume(deviceKey: string): void {
+  const ownerId = getStablePowerLockOwner(deviceKey);
+  updatePowerLockOwnerRecord(deviceKey, () => ({
+    ownerId,
+    resumeUntilMs: 0,
+    updatedAtMs: Date.now(),
+  }));
 }
 
 export function createEmptyChannels(): Record<DeviceTransport, ChannelRuntime> {

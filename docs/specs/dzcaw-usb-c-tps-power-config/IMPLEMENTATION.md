@@ -160,6 +160,17 @@
   readback fields so `setPowerConfig()` strips read-only response data such as
   `manual.path_policy` before issuing `PUT /power/config`.
 - Added host-lock heartbeat handling with per-panel owner IDs.
+- Replaced the per-tab in-memory power-lock owner with a browser-persistent
+  per-device owner store, including a local resume window aligned to the
+  existing firmware/device TTL so refresh and short reopen flows reuse the same
+  owner instead of self-locking behind a fresh random host id.
+- Added a same-origin cross-tab runtime coordinator so one browser tab leads
+  transport bootstrap, polling, command serialization, and lock heartbeat while
+  follower tabs consume shared runtime snapshots and must explicitly take over
+  before issuing power writes.
+- Updated the Power panel to expose explicit `Unlocked`, `Controlled here`,
+  `Controlled in another tab`, and `Locked by another host` states, with write
+  actions disabling immediately when local control authority is lost.
 - Added a typed `/api/v1/pd-diagnostics` read path plus inline Dashboard
   USB-C card badges that render the shared firmware display contract directly:
   auto-follow keeps `PD` / `PPS` / `DC`, while manual output renders the

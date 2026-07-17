@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  canResumePowerLock,
+  clearPowerLockResume,
   type DeviceRuntime,
+  getStablePowerLockOwner,
+  markPowerLockHeld,
   resolveActiveDeviceTransport,
   resolveOrderedDeviceTransports,
 } from "./device-runtime-support";
@@ -33,7 +37,38 @@ function runtimeWithVerifiedHttp(): DeviceRuntime {
   };
 }
 
+function mockPowerLockStorage() {
+  const store = new Map<string, string>();
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => void store.set(key, value),
+        removeItem: (key: string) => void store.delete(key),
+      },
+    },
+  });
+}
+
 describe("historical local usb bindings", () => {
+  test("reuses the same persisted power lock owner across reads", () => {
+    mockPowerLockStorage();
+    const first = getStablePowerLockOwner("device-a");
+    const second = getStablePowerLockOwner("device-a");
+    expect(second).toBe(first);
+  });
+
+  test("tracks and clears resumable power lock ownership", () => {
+    mockPowerLockStorage();
+    expect(canResumePowerLock("device-a", 1_000)).toBe(false);
+    markPowerLockHeld("device-a", 1_000);
+    expect(canResumePowerLock("device-a", 1_001)).toBe(true);
+    expect(canResumePowerLock("device-a", 16_001)).toBe(false);
+    clearPowerLockResume("device-a");
+    expect(canResumePowerLock("device-a", 1_001)).toBe(false);
+  });
+
   test("keep verified http ahead of a stored-but-not-live local usb binding", () => {
     expect(
       resolveOrderedDeviceTransports({

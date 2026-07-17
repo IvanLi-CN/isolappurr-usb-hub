@@ -41,6 +41,8 @@ export function DeviceInfoPage() {
           device={device}
           transport={runtime.transport(device.id)}
           wifiManagementTransport={runtime.wifiManagementTransport(device.id)}
+          canControlHardware={runtime.canControlHardware}
+          requestControlTakeover={runtime.requestControlTakeover}
           loadInfo={() => runtime.deviceInfo(device.id)}
           loadWifiConfig={() => runtime.wifiConfig(device.id)}
           saveWifiConfig={(input) => runtime.saveWifiConfig(device.id, input)}

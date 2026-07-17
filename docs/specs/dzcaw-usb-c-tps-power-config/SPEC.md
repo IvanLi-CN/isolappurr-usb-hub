@@ -162,6 +162,18 @@ for diagnostics.
   EEPROM record and force `correction_enabled=false`.
 - Host lock MUST use a TTL heartbeat. A host holding the lock MAY refresh it;
   other hosts MUST be rejected until the lock expires or is released.
+- The browser Power surface MUST persist one browser-scoped `owner` value per
+  device and keep a local resume window aligned with the existing device TTL so
+  refresh or short reopen can resume the same lock owner without inventing a
+  new host identity.
+- Automatic browser lock renewal MUST only happen when the same browser has a
+  recent local record that it previously held that device lock. First entry,
+  expired local history, or an observed foreign owner MUST stay read-only until
+  the operator explicitly acquires or takes over control.
+- Same-browser tabs MUST share one single-writer runtime leader for polling,
+  lock heartbeat, and hardware writes. Follower tabs MUST render the shared
+  snapshot, remain read-only, and use explicit takeover before issuing power
+  mutations.
 - Local advanced controls MUST be blocked while a host lock is active, except
   existing USB-C power on/off behavior.
 - Web UI MUST show write/read errors instead of staying in a loading state.
@@ -238,11 +250,16 @@ for diagnostics.
   reading used by the PD diagnostics surface so HIL can distinguish control
   faults from idle-bias correction effects.
 - Storybook coverage MUST include normal, host-locked, failure, save, restore,
-  and narrow states for the power panel; power-panel idle-bias uncalibrated,
+  controlled-here, controlled-in-another-tab, locked-by-another-host, and
+  narrow states for the power panel; power-panel idle-bias uncalibrated,
   correction off, correction on, running, confirmation, and failure states;
   plus Dashboard USB-C card inline live-badge states for auto-follow, `FOCUS`,
   `ON`, and `OFF`, the legacy no-diagnostics fallback, and the telemetry-error
   regression where a real error status chip must remain visible.
+- Power lock UI MUST distinguish at least `Unlocked`, `Controlled here`,
+  `Controlled in another tab`, and `Locked by another host`, and MUST disable
+  write actions immediately when the observed owner or browser leader role no
+  longer permits control.
 - Power visual verification MUST NOT rely on page-level Storybook route stories.
   Route-level proof belongs to the production `/devices/:deviceId/power` page
   and this spec's live or mock-only evidence entries.
@@ -298,6 +315,22 @@ for diagnostics.
   flag together with `--tps-cdc-rise-mv` fails validation.
 - Given a remote host lock, when another host attempts a config write, then the
   write is rejected as busy and the UI presents the locked state.
+- Given the browser previously held the device lock, when the operator refreshes
+  the Power page before the lock TTL expires, then the browser resumes the same
+  `owner` and the page returns to `Controlled here` instead of showing itself
+  as locked by another host.
+- Given the browser previously held the device lock, when the tab closes and
+  the operator reopens the page before the TTL expires, then the browser can
+  resume the same `owner`; after the TTL expires, the page stays `Unlocked`
+  until the operator explicitly acquires control again.
+- Given a second same-origin tab opens while the first tab controls the device,
+  when the Power page loads, then it shows `Controlled in another tab`, keeps
+  write actions disabled, and reflects shared live state without starting a
+  second lock heartbeat or transport owner.
+- Given another host currently holds the device lock, when the Power page
+  refreshes, then the browser shows `Locked by another host`, keeps writes
+  disabled, and MUST NOT restore write access only because of stale local lock
+  history.
 - Given the runtime `Power` action turns output off, when the request
   succeeds, then TPS55288 clears `OE`, the API reports
   `runtime.output_enabled=false`, and the saved power config remains unchanged.
@@ -388,6 +421,54 @@ for diagnostics.
   job, host/CLI/Web contracts, and calibration UI.
 
 ## Visual Evidence
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/Default`
+  state: unlocked power panel
+  requested_viewport: `1365x1700`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the unlocked state keeps the page read-only until
+  explicit acquire and no longer uses the ambiguous legacy host-lock wording.
+
+![Device Power unlocked](./assets/device-power-unlocked.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ControlledHere`
+  state: same browser tab currently owns the lock
+  requested_viewport: `1365x1700`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the browser-resumed or actively-held state renders
+  `Controlled here` and keeps this tab as the renewing controller.
+
+![Device Power controlled here](./assets/device-power-controlled-here.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ControlledInAnotherTab`
+  state: follower tab read-only
+  requested_viewport: `1365x1700`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies a follower tab renders the shared live state, shows
+  `Controlled in another tab`, disables writes, and exposes explicit takeover.
+
+![Device Power controlled in another tab](./assets/device-power-controlled-in-another-tab.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/LockedByAnotherHost`
+  state: foreign host lock
+  requested_viewport: `1365x1700`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the Power page distinguishes a foreign host owner
+  from same-browser lock reuse and keeps the surface read-only.
+
+![Device Power locked by another host](./assets/device-power-locked-by-another-host.png)
 
 - source_type: ui_demo
   route: `/?demo=true`

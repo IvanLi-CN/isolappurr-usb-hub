@@ -45,9 +45,16 @@ import {
   subscribeWebSerialDeviceLinks,
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
+import {
+  getSharedCrossTabRuntimeCoordinator,
+  type RuntimeChannelMessage,
+  type RuntimeRpcMethod,
+  type RuntimeRpcResultMap,
+} from "./cross-tab-runtime";
 import { useDemoMode } from "./demo-mode";
 import { DeviceRuntimeContext } from "./device-runtime-context";
 import {
+  clearPowerLockResume,
   createEmptyChannels,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
@@ -60,6 +67,7 @@ import {
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
+  markPowerLockHeld,
   recoverWifiClearLikeTimeout,
   resetLocalUsbRuntimeState,
   resetLocalUsbRuntimeStateForDevice,
@@ -87,12 +95,16 @@ export function DeviceRuntimeProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const coordinator = useMemo(() => getSharedCrossTabRuntimeCoordinator(), []);
   const { devices, rebindHttpBaseUrl } = useDevices();
   const { enabled: demoEnabled } = useDemoMode();
   const { pushToast } = useToast();
   const [now, setNow] = useState(() => Date.now());
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(
     {},
+  );
+  const [coordination, setCoordination] = useState(() =>
+    coordinator.getLeaseState(),
   );
   const inflight = useRef<Set<string>>(new Set());
   const localUsbAgent = useRef<DesktopAgent | null>(null);
@@ -103,6 +115,93 @@ export function DeviceRuntimeProvider({
   const preferredTransportByDevice = useRef<Record<string, DeviceTransport>>(
     {},
   );
+  const pendingRpc = useRef<
+    Record<
+      string,
+      {
+        resolve: (value: unknown) => void;
+        reject: (reason?: unknown) => void;
+        timeoutId: number;
+      }
+    >
+  >({});
+  const rpcRequestHandlerRef = useRef<
+    | ((
+        message: Extract<
+          RuntimeChannelMessage,
+          { type: "runtime-rpc-request" }
+        >,
+      ) => Promise<void>)
+    | null
+  >(null);
+  const wasLeaderRef = useRef(coordination.role !== "follower");
+  const isLeader = coordination.role !== "follower";
+
+  useEffect(() => {
+    coordinator.start();
+    const cachedSnapshot = coordinator.readSnapshot();
+    if (cachedSnapshot) {
+      setNow(cachedSnapshot.now);
+      setRuntimeById(cachedSnapshot.runtimeById);
+    }
+    const unsubscribeLease = coordinator.subscribeLease(setCoordination);
+    const unsubscribeMessages = coordinator.subscribeMessages((message) => {
+      if (
+        message.type === "runtime-snapshot" &&
+        message.originTabId !== coordination.currentTabId &&
+        !isLeader
+      ) {
+        setNow(message.snapshot.now);
+        setRuntimeById(message.snapshot.runtimeById);
+        return;
+      }
+      if (
+        message.type === "runtime-rpc-response" &&
+        message.targetTabId === coordination.currentTabId
+      ) {
+        const pending = pendingRpc.current[message.requestId];
+        if (!pending) {
+          return;
+        }
+        window.clearTimeout(pending.timeoutId);
+        delete pendingRpc.current[message.requestId];
+        pending.resolve(message.result);
+        return;
+      }
+      if (message.type === "runtime-rpc-request" && isLeader) {
+        void rpcRequestHandlerRef.current?.(message);
+      }
+    });
+    return () => {
+      unsubscribeMessages();
+      unsubscribeLease();
+      coordinator.stop();
+    };
+  }, [coordinator, coordination.currentTabId, isLeader]);
+
+  useEffect(() => {
+    if (!isLeader) {
+      return;
+    }
+    coordinator.publishSnapshot({
+      at: new Date().toISOString(),
+      originTabId: coordination.currentTabId,
+      now,
+      runtimeById,
+    });
+  }, [coordinator, coordination.currentTabId, isLeader, now, runtimeById]);
+
+  useEffect(() => {
+    if (wasLeaderRef.current && !isLeader) {
+      localUsbAgent.current = null;
+      localUsbPortByDevice.current = {};
+      for (const device of devices) {
+        forgetWebSerialDeviceTransport(device.id);
+      }
+      setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
+    }
+    wasLeaderRef.current = isLeader;
+  }, [devices, isLeader]);
 
   useEffect(() => {
     setRuntimeById((prev) => {
@@ -133,6 +232,84 @@ export function DeviceRuntimeProvider({
       return next;
     });
   }, [devices]);
+
+  const createRpcRequestId = useCallback(() => {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
+      return crypto.randomUUID();
+    }
+    return `rpc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }, []);
+
+  const requestLeaderRpc = useCallback(
+    async <TMethod extends RuntimeRpcMethod>(
+      method: TMethod,
+      args: unknown[],
+    ): Promise<RuntimeRpcResultMap[TMethod]> => {
+      const requestId = createRpcRequestId();
+      return new Promise<RuntimeRpcResultMap[TMethod]>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+          delete pendingRpc.current[requestId];
+          reject(new Error(`Cross-tab runtime request timed out: ${method}`));
+        }, 8_000);
+        pendingRpc.current[requestId] = {
+          resolve: (value) => resolve(value as RuntimeRpcResultMap[TMethod]),
+          reject,
+          timeoutId,
+        };
+        coordinator.postMessage({
+          type: "runtime-rpc-request",
+          originTabId: coordination.currentTabId,
+          requestId,
+          method,
+          args,
+        });
+      });
+    },
+    [coordinator, coordination.currentTabId, createRpcRequestId],
+  );
+
+  const followerControlError = useCallback(
+    (): DeviceApiError => ({
+      kind: "busy",
+      message:
+        "Hardware control is active in another browser tab. Take over control in this tab before sending commands.",
+      retryable: true,
+    }),
+    [],
+  );
+
+  const warnFollowerControlBlocked = useCallback(() => {
+    pushToast({
+      message:
+        "Hardware control is active in another browser tab. Use Take over control in this tab before sending commands.",
+      variant: "warning",
+    });
+  }, [pushToast]);
+
+  const requestControlTakeover = useCallback(() => {
+    coordinator.requestTakeover();
+  }, [coordinator]);
+
+  const syncObservedPowerLock = useCallback(
+    (
+      deviceId: string,
+      lock: PowerConfigResponse["lock"] | null | undefined,
+      owner = getStablePowerLockOwner(deviceId),
+    ) => {
+      if (!lock) {
+        return;
+      }
+      if (lock.owner === owner) {
+        markPowerLockHeld(deviceId);
+        return;
+      }
+      clearPowerLockResume(deviceId);
+    },
+    [],
+  );
 
   const getLocalUsbAgent =
     useCallback(async (): Promise<DesktopAgent | null> => {
@@ -509,6 +686,9 @@ export function DeviceRuntimeProvider({
   }, [pollDevice]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     return subscribeLocalUsbDeviceLinks((link) => {
       localUsbPortByDevice.current[link.deviceId] = link.portPath;
       preferredTransportByDevice.current[link.deviceId] = "local_usb";
@@ -517,9 +697,12 @@ export function DeviceRuntimeProvider({
         void pollDevice(link.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, pollDevice]);
+  }, [devices, isLeader, pollDevice]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     return subscribeWebSerialDeviceLinks((link) => {
       preferredTransportByDevice.current[link.deviceId] = "web_serial";
       const device = devices.find((d) => d.id === link.deviceId);
@@ -527,9 +710,12 @@ export function DeviceRuntimeProvider({
         void pollDevice(link.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, pollDevice]);
+  }, [devices, isLeader, pollDevice]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     return subscribeFlashTransportLocks((lock) => {
       if (lock.deviceId === FLASH_TRANSPORT_LOCK_ALL) {
         setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
@@ -556,9 +742,12 @@ export function DeviceRuntimeProvider({
         void pollDevice(lock.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, pollDevice]);
+  }, [devices, isLeader, pollDevice]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     return subscribeNetworkDeviceLinks((link) => {
       markChannelResult(link.deviceId, "http", {
         ok: true,
@@ -570,9 +759,12 @@ export function DeviceRuntimeProvider({
       }
       void pollDevice(link.deviceId, link.baseUrl);
     });
-  }, [markChannelResult, pollDevice, runtimeById]);
+  }, [isLeader, markChannelResult, pollDevice, runtimeById]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     let cancelled = false;
     const tick = async () => {
       const nextNow = Date.now();
@@ -593,7 +785,7 @@ export function DeviceRuntimeProvider({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [devices]);
+  }, [devices, isLeader]);
 
   const setPending = useCallback(
     (deviceId: string, portId: PortId, value: boolean) => {
@@ -616,17 +808,24 @@ export function DeviceRuntimeProvider({
 
   const refreshDevice = useCallback(
     async (deviceId: string) => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        await requestLeaderRpc("refreshDevice", [deviceId]);
+        return;
+      }
       const device = devices.find((d) => d.id === deviceId);
       if (!device) {
         return;
       }
       await pollDevice(deviceId, httpBaseUrlForDevice(device));
     },
-    [devices, pollDevice],
+    [coordination.role, devices, isLeader, pollDevice, requestLeaderRpc],
   );
 
   const deviceInfo = useCallback(
     async (deviceId: string): Promise<Result<DeviceInfoResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        return requestLeaderRpc("deviceInfo", [deviceId]);
+      }
       const device = devices.find((d) => d.id === deviceId);
       const activeTransport = resolveActiveDeviceTransport({
         deviceId,
@@ -677,9 +876,12 @@ export function DeviceRuntimeProvider({
       return checked;
     },
     [
+      coordination.role,
       devices,
+      isLeader,
       markChannelResult,
       rebindHttpBaseUrl,
+      requestLeaderRpc,
       requestTransport,
       runtimeById,
     ],
@@ -753,9 +955,12 @@ export function DeviceRuntimeProvider({
 
   const wifiConfig = useCallback(
     async (deviceId: string): Promise<Result<WifiConfigResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        return requestLeaderRpc("wifiConfig", [deviceId]);
+      }
       return runDeviceCommand<WifiConfigResponse>(deviceId, "wifi.get");
     },
-    [runDeviceCommand],
+    [coordination.role, isLeader, requestLeaderRpc, runDeviceCommand],
   );
 
   const saveWifiConfig = useCallback(
@@ -763,6 +968,10 @@ export function DeviceRuntimeProvider({
       deviceId: string,
       input: WifiConfigInput,
     ): Promise<Result<WifiMutationResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       const res = await runDeviceCommand<WifiMutationResponse>(
         deviceId,
         "wifi.set",
@@ -774,11 +983,22 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [refreshDevice, runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      refreshDevice,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const clearWifi = useCallback(
     async (deviceId: string): Promise<Result<WifiMutationResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       const res = await runDeviceCommand<WifiMutationResponse>(
         deviceId,
         "wifi.clear",
@@ -790,7 +1010,14 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [refreshDevice, runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      refreshDevice,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const resetSettings = useCallback(
@@ -798,6 +1025,10 @@ export function DeviceRuntimeProvider({
       deviceId: string,
       scope: SettingsResetScope,
     ): Promise<Result<SettingsResetResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       const preferred: DeviceTransport[] | undefined =
         scope === "wifi" ? ["web_serial", "local_usb"] : undefined;
       const res = await runDeviceCommand<SettingsResetResponse>(
@@ -813,47 +1044,83 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [refreshDevice, runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      refreshDevice,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const reboot = useCallback(
     async (deviceId: string): Promise<Result<RebootResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       return runDeviceCommand<RebootResponse>(deviceId, "reboot", undefined, [
         "web_serial",
         "local_usb",
       ]);
     },
-    [runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const powerConfig = useCallback(
     async (deviceId: string): Promise<Result<PowerConfigResponse>> => {
-      return runDeviceCommand<PowerConfigResponse>(
+      if (!isLeader && coordination.role !== "unsupported") {
+        return requestLeaderRpc("powerConfig", [deviceId]);
+      }
+      const res = await runDeviceCommand<PowerConfigResponse>(
         deviceId,
         "power.config_get",
       );
+      if (res.ok) {
+        syncObservedPowerLock(deviceId, res.value.lock);
+      }
+      return res;
     },
-    [runDeviceCommand],
+    [
+      coordination.role,
+      isLeader,
+      requestLeaderRpc,
+      runDeviceCommand,
+      syncObservedPowerLock,
+    ],
   );
 
   const pdDiagnostics = useCallback(
     async (deviceId: string): Promise<Result<PdDiagnosticsResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        return requestLeaderRpc("pdDiagnostics", [deviceId]);
+      }
       return runDeviceCommand<PdDiagnosticsResponse>(
         deviceId,
         "pd.diagnostics_get",
       );
     },
-    [runDeviceCommand],
+    [coordination.role, isLeader, requestLeaderRpc, runDeviceCommand],
   );
 
   const idleBias = useCallback(
     async (deviceId: string): Promise<Result<IdleBiasResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        return requestLeaderRpc("idleBias", [deviceId]);
+      }
       return runDeviceCommand<IdleBiasResponse>(
         deviceId,
         "power.idle_bias_get",
       );
     },
-    [runDeviceCommand],
+    [coordination.role, isLeader, requestLeaderRpc, runDeviceCommand],
   );
 
   const savePowerConfig = useCallback(
@@ -862,6 +1129,10 @@ export function DeviceRuntimeProvider({
       input: PowerConfigInput,
       owner: number,
     ): Promise<Result<PowerConfigResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       const res = await runDeviceCommand<PowerConfigResponse>(
         deviceId,
         "power.config_set",
@@ -872,7 +1143,14 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [refreshDevice, runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      refreshDevice,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const restoreDefaults = useCallback(
@@ -880,6 +1158,10 @@ export function DeviceRuntimeProvider({
       deviceId: string,
       owner: number,
     ): Promise<Result<PowerConfigResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       const res = await runDeviceCommand<PowerConfigResponse>(
         deviceId,
         "power.config_defaults",
@@ -890,7 +1172,14 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [refreshDevice, runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      refreshDevice,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const setLock = useCallback(
@@ -899,12 +1188,37 @@ export function DeviceRuntimeProvider({
       owner: number,
       acquire: boolean,
     ): Promise<Result<PowerConfigResponse>> => {
-      return runDeviceCommand<PowerConfigResponse>(deviceId, "power.lock", {
-        owner,
-        acquire,
-      });
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
+      const res = await runDeviceCommand<PowerConfigResponse>(
+        deviceId,
+        "power.lock",
+        {
+          owner,
+          acquire,
+        },
+      );
+      if (res.ok) {
+        if (acquire && res.value.lock?.owner === owner) {
+          markPowerLockHeld(deviceId);
+        } else if (!acquire) {
+          clearPowerLockResume(deviceId);
+        } else {
+          syncObservedPowerLock(deviceId, res.value.lock, owner);
+        }
+      }
+      return res;
     },
-    [runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      runDeviceCommand,
+      syncObservedPowerLock,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const setIdleBias = useCallback(
@@ -913,6 +1227,10 @@ export function DeviceRuntimeProvider({
       correctionEnabled: boolean,
       owner: number,
     ): Promise<Result<IdleBiasResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       const res = await runDeviceCommand<IdleBiasResponse>(
         deviceId,
         "power.idle_bias_set",
@@ -923,7 +1241,14 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [refreshDevice, runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      refreshDevice,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const runIdleBias = useCallback(
@@ -931,6 +1256,10 @@ export function DeviceRuntimeProvider({
       deviceId: string,
       owner: number,
     ): Promise<Result<IdleBiasResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       return runDeviceCommand<IdleBiasResponse>(
         deviceId,
         "power.idle_bias_run",
@@ -939,7 +1268,13 @@ export function DeviceRuntimeProvider({
         },
       );
     },
-    [runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const clearIdleBias = useCallback(
@@ -947,6 +1282,10 @@ export function DeviceRuntimeProvider({
       deviceId: string,
       owner: number,
     ): Promise<Result<IdleBiasResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       const res = await runDeviceCommand<IdleBiasResponse>(
         deviceId,
         "power.idle_bias_clear",
@@ -957,7 +1296,14 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [refreshDevice, runDeviceCommand],
+    [
+      coordination.role,
+      followerControlError,
+      isLeader,
+      refreshDevice,
+      runDeviceCommand,
+      warnFollowerControlBlocked,
+    ],
   );
 
   const handleApiErrorToast = useCallback(
@@ -995,6 +1341,10 @@ export function DeviceRuntimeProvider({
       successMessage: (deviceName: string, result: T) => string;
       allowedTransports?: DeviceTransport[];
     }): Promise<Result<T> | null> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        warnFollowerControlBlocked();
+        return { ok: false, error: followerControlError() };
+      }
       const device = devices.find((d) => d.id === deviceId);
       if (!device) {
         return null;
@@ -1023,12 +1373,16 @@ export function DeviceRuntimeProvider({
       }
     },
     [
+      coordination.role,
       devices,
+      followerControlError,
       handleApiErrorToast,
+      isLeader,
       pushToast,
       refreshDevice,
       runDeviceCommand,
       setPending,
+      warnFollowerControlBlocked,
     ],
   );
 
@@ -1126,12 +1480,75 @@ export function DeviceRuntimeProvider({
     [runPendingMutation],
   );
 
+  rpcRequestHandlerRef.current = async (message) => {
+    const deviceId = String(message.args[0] ?? "");
+    try {
+      let result:
+        | Result<{ ok: true }>
+        | Result<DeviceInfoResponse>
+        | Result<WifiConfigResponse>
+        | Result<PowerConfigResponse>
+        | Result<IdleBiasResponse>
+        | Result<PdDiagnosticsResponse>;
+      switch (message.method) {
+        case "refreshDevice":
+          await refreshDevice(deviceId);
+          result = { ok: true, value: { ok: true } };
+          break;
+        case "deviceInfo":
+          result = await deviceInfo(deviceId);
+          break;
+        case "wifiConfig":
+          result = await wifiConfig(deviceId);
+          break;
+        case "powerConfig":
+          result = await powerConfig(deviceId);
+          break;
+        case "idleBias":
+          result = await idleBias(deviceId);
+          break;
+        case "pdDiagnostics":
+          result = await pdDiagnostics(deviceId);
+          break;
+      }
+      coordinator.postMessage({
+        type: "runtime-rpc-response",
+        originTabId: coordination.currentTabId,
+        targetTabId: message.originTabId,
+        requestId: message.requestId,
+        result,
+      });
+    } catch (err) {
+      coordinator.postMessage({
+        type: "runtime-rpc-response",
+        originTabId: coordination.currentTabId,
+        targetTabId: message.originTabId,
+        requestId: message.requestId,
+        result: {
+          ok: false,
+          error: {
+            kind: "api_error",
+            status: 500,
+            code: "cross_tab_runtime_error",
+            message:
+              err instanceof Error
+                ? err.message
+                : "Cross-tab runtime request failed",
+            retryable: true,
+          },
+        },
+      });
+    }
+  };
+
   const value = useMemo<DeviceRuntimeContextValue>(() => {
     return buildDeviceRuntimeContextValue({
       now,
       runtimeById,
-      devices,
-      localUsbPortByDevice: localUsbPortByDevice.current,
+      coordination,
+      canControlHardware: isLeader,
+      powerLockOwner: getStablePowerLockOwner,
+      requestControlTakeover,
       refreshDevice,
       deviceInfo,
       wifiConfig,
@@ -1155,9 +1572,10 @@ export function DeviceRuntimeProvider({
     });
   }, [
     clearWifi,
+    coordination,
     deviceInfo,
-    devices,
     idleBias,
+    isLeader,
     now,
     pdDiagnostics,
     powerConfig,
@@ -1176,6 +1594,7 @@ export function DeviceRuntimeProvider({
     setRoute,
     setPower,
     runIdleBias,
+    requestControlTakeover,
     wifiConfig,
   ]);
 

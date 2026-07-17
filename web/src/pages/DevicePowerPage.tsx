@@ -37,13 +37,17 @@ export function DevicePowerPage() {
         key={deviceId}
         deviceKey={deviceId}
         deviceName={device.name}
+        coordination={runtime.coordination}
+        canControlHardware={runtime.canControlHardware}
+        powerLockOwner={runtime.powerLockOwner(deviceId)}
+        requestControlTakeover={runtime.requestControlTakeover}
         clearIdleBiasCalibration={(owner) =>
           runtime.clearIdleBiasCalibration(deviceId, owner)
         }
         loadIdleBias={() => runtime.idleBias(deviceId)}
         loadPdDiagnostics={() => runtime.pdDiagnostics(deviceId)}
         loadPowerConfig={() => runtime.powerConfig(deviceId)}
-        localAdvancedLocked={false}
+        localAdvancedLocked={!runtime.canControlHardware}
         restorePowerDefaults={(owner) =>
           runtime.restorePowerDefaults(deviceId, owner)
         }
