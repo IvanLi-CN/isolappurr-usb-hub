@@ -15,6 +15,7 @@ GH_DIR = ROOT.parent / ".github"
 POSTER_SOURCE = BRAND_SRC / "product-poster-source.png"
 PRODUCT_RENDER_SOURCE = BRAND_SRC / "product-render-source.png"
 FULL_PRODUCT_RENDER_SOURCE = BRAND_SRC / "product-render-full-source.png"
+PRODUCT_RENDER_CUTOUT_SOURCE = BRAND_SRC / "product-render-cutout-source.png"
 SOCIAL_SOURCE = BRAND_SRC / "github-social-preview-source.png"
 LOGO_SVG = BRAND_SRC / "isolapurr-logo.svg"
 PUBLIC_LOGO_SVG = PUBLIC_BRAND / "isolapurr-logo.svg"
@@ -22,6 +23,7 @@ LOGO_PNG = PUBLIC_BRAND / "isolapurr-logo.png"
 POSTER = PUBLIC_BRAND / "isolapurr-product-poster.png"
 PRODUCT_RENDER = PUBLIC_BRAND / "isolapurr-product-render.png"
 FULL_PRODUCT_RENDER = PUBLIC_BRAND / "isolapurr-product-render-full.png"
+PRODUCT_RENDER_CUTOUT = PUBLIC_BRAND / "isolapurr-product-render-cutout.png"
 SOCIAL = GH_DIR / "social-preview.png"
 PUBLIC_SOCIAL = PUBLIC_BRAND / "github-social-preview.png"
 
@@ -99,16 +101,22 @@ def generate_full_product_render() -> None:
     export_exact_copy(FULL_PRODUCT_RENDER_SOURCE, (FULL_PRODUCT_RENDER,))
 
 
+def generate_product_render_cutout() -> None:
+    export_exact_copy(PRODUCT_RENDER_CUTOUT_SOURCE, (PRODUCT_RENDER_CUTOUT,))
+
+
 def main() -> None:
     generate_logo_png()
     generate_social()
     generate_poster()
     generate_product_render()
     generate_full_product_render()
+    generate_product_render_cutout()
     print(LOGO_PNG)
     print(POSTER)
     print(PRODUCT_RENDER)
     print(FULL_PRODUCT_RENDER)
+    print(PRODUCT_RENDER_CUTOUT)
     print(SOCIAL)
 
 
