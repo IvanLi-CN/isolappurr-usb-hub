@@ -46,6 +46,9 @@ export type DeviceRuntime = {
   hub: HubState | null;
   ports: Record<PortId, Port> | null;
   pending: Record<PortId, boolean>;
+  powerConfig: PowerConfigResponse | null;
+  idleBias: IdleBiasResponse | null;
+  pdDiagnostics: PdDiagnosticsResponse | null;
 };
 
 export type DeviceRuntimeContextValue = {

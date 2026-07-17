@@ -193,6 +193,8 @@ export class CrossTabRuntimeCoordinator {
     }
 
     window.addEventListener("storage", this.handleStorageEvent);
+    window.addEventListener("pagehide", this.handlePageHide);
+    window.addEventListener("beforeunload", this.handlePageHide);
     this.refreshLeaseState(true);
     this.heartbeatTimer = window.setInterval(() => {
       this.refreshLeaseState(true);
@@ -206,6 +208,8 @@ export class CrossTabRuntimeCoordinator {
     this.started = false;
     if (typeof window !== "undefined") {
       window.removeEventListener("storage", this.handleStorageEvent);
+      window.removeEventListener("pagehide", this.handlePageHide);
+      window.removeEventListener("beforeunload", this.handlePageHide);
       if (this.heartbeatTimer !== null) {
         window.clearInterval(this.heartbeatTimer);
       }
@@ -296,7 +300,17 @@ export class CrossTabRuntimeCoordinator {
 
   private readonly handleStorageEvent = (event: StorageEvent) => {
     if (event.key === LEASE_STORAGE_KEY) {
-      this.refreshLeaseState();
+      const lease = parseLeaseRecord(event.newValue);
+      if (lease && !isLeaseExpired(lease) && lease.tabId === this.tabId) {
+        this.setLeaseState({
+          role: "leader",
+          currentTabId: this.tabId,
+          leaderTabId: lease.tabId,
+          leaseExpiresAt: lease.expiresAt,
+        });
+        return;
+      }
+      this.refreshLeaseState(true);
       return;
     }
     if (event.key === SNAPSHOT_STORAGE_KEY) {
@@ -320,6 +334,10 @@ export class CrossTabRuntimeCoordinator {
     }
   };
 
+  private readonly handlePageHide = () => {
+    this.releaseLeaseIfLeader();
+  };
+
   private readLease(): LeaseRecord | null {
     if (
       typeof window === "undefined" ||
@@ -338,6 +356,26 @@ export class CrossTabRuntimeCoordinator {
     };
     window.localStorage.setItem(LEASE_STORAGE_KEY, JSON.stringify(record));
     return record;
+  }
+
+  private releaseLeaseIfLeader(): void {
+    if (
+      typeof window === "undefined" ||
+      typeof window.localStorage === "undefined"
+    ) {
+      return;
+    }
+    const lease = this.readLease();
+    if (!lease || lease.tabId !== this.tabId) {
+      return;
+    }
+    window.localStorage.removeItem(LEASE_STORAGE_KEY);
+    this.setLeaseState({
+      role: "follower",
+      currentTabId: this.tabId,
+      leaderTabId: null,
+      leaseExpiresAt: null,
+    });
   }
 
   private refreshLeaseState(preferAcquire = false): void {

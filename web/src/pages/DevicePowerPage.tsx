@@ -20,6 +20,7 @@ export function DevicePowerPage() {
     return <MissingDeviceState />;
   }
 
+  const deviceRuntime = runtime.runtimeById[deviceId];
   const usbCPort = runtime.port(deviceId, "port_c");
 
   return (
@@ -48,6 +49,9 @@ export function DevicePowerPage() {
         loadPdDiagnostics={() => runtime.pdDiagnostics(deviceId)}
         loadPowerConfig={() => runtime.powerConfig(deviceId)}
         localAdvancedLocked={!runtime.canControlHardware}
+        sharedIdleBiasSnapshot={deviceRuntime?.idleBias ?? null}
+        sharedPdDiagnostics={deviceRuntime?.pdDiagnostics ?? null}
+        sharedPowerConfig={deviceRuntime?.powerConfig ?? null}
         restorePowerDefaults={(owner) =>
           runtime.restorePowerDefaults(deviceId, owner)
         }

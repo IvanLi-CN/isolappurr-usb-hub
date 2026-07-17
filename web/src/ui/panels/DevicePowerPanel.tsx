@@ -53,6 +53,9 @@ type DevicePowerPanelProps = {
   powerLockOwner: number;
   requestControlTakeover: () => void;
   localAdvancedLocked: boolean;
+  sharedPowerConfig: PowerConfigResponse | null;
+  sharedIdleBiasSnapshot: IdleBiasResponse | null;
+  sharedPdDiagnostics: PdDiagnosticsResponse | null;
   loadPowerConfig: () => Promise<Result<PowerConfigResponse>>;
   loadIdleBias: () => Promise<Result<IdleBiasResponse>>;
   savePowerConfig: (
@@ -93,6 +96,9 @@ export function DevicePowerPanel({
   powerLockOwner,
   requestControlTakeover,
   localAdvancedLocked,
+  sharedPowerConfig,
+  sharedIdleBiasSnapshot,
+  sharedPdDiagnostics,
   loadPowerConfig,
   loadIdleBias,
   savePowerConfig,
@@ -161,6 +167,34 @@ export function DevicePowerPanel({
   useEffect(() => {
     ownerRef.current = powerLockOwner;
   }, [powerLockOwner]);
+
+  useEffect(() => {
+    if (!sharedPowerConfig) {
+      return;
+    }
+    setConfig(sharedPowerConfig);
+    setForm((current) =>
+      current && dirty && canControlHardware
+        ? current
+        : cloneConfig(sharedPowerConfig),
+    );
+    setError(null);
+  }, [canControlHardware, dirty, sharedPowerConfig]);
+
+  useEffect(() => {
+    if (!sharedIdleBiasSnapshot) {
+      return;
+    }
+    setIdleBiasSnapshot(sharedIdleBiasSnapshot);
+    setIdleBiasRunning(sharedIdleBiasSnapshot.run.state === "running");
+  }, [sharedIdleBiasSnapshot]);
+
+  useEffect(() => {
+    if (!sharedPdDiagnostics) {
+      return;
+    }
+    setPdDiagnostics(sharedPdDiagnostics);
+  }, [sharedPdDiagnostics]);
 
   useEffect(() => {
     let cancelled = false;

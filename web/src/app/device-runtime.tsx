@@ -226,6 +226,9 @@ export function DeviceRuntimeProvider({
             hub: null,
             ports: null,
             pending: { port_a: false, port_c: false },
+            powerConfig: null,
+            idleBias: null,
+            pdDiagnostics: null,
           };
         }
       }
@@ -547,6 +550,63 @@ export function DeviceRuntimeProvider({
                 lastError: res.ok ? null : res.error,
               },
             },
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const syncPowerConfigSnapshot = useCallback(
+    (deviceId: string, nextConfig: PowerConfigResponse) => {
+      setRuntimeById((prev) => {
+        const current = prev[deviceId];
+        if (!current) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [deviceId]: {
+            ...current,
+            powerConfig: nextConfig,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const syncIdleBiasSnapshot = useCallback(
+    (deviceId: string, nextIdleBias: IdleBiasResponse) => {
+      setRuntimeById((prev) => {
+        const current = prev[deviceId];
+        if (!current) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [deviceId]: {
+            ...current,
+            idleBias: nextIdleBias,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const syncPdDiagnosticsSnapshot = useCallback(
+    (deviceId: string, nextPdDiagnostics: PdDiagnosticsResponse) => {
+      setRuntimeById((prev) => {
+        const current = prev[deviceId];
+        if (!current) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [deviceId]: {
+            ...current,
+            pdDiagnostics: nextPdDiagnostics,
           },
         };
       });
@@ -1085,6 +1145,7 @@ export function DeviceRuntimeProvider({
       );
       if (res.ok) {
         syncObservedPowerLock(deviceId, res.value.lock);
+        syncPowerConfigSnapshot(deviceId, res.value);
       }
       return res;
     },
@@ -1093,6 +1154,7 @@ export function DeviceRuntimeProvider({
       isLeader,
       requestLeaderRpc,
       runDeviceCommand,
+      syncPowerConfigSnapshot,
       syncObservedPowerLock,
     ],
   );
@@ -1102,12 +1164,22 @@ export function DeviceRuntimeProvider({
       if (!isLeader && coordination.role !== "unsupported") {
         return requestLeaderRpc("pdDiagnostics", [deviceId]);
       }
-      return runDeviceCommand<PdDiagnosticsResponse>(
+      const res = await runDeviceCommand<PdDiagnosticsResponse>(
         deviceId,
         "pd.diagnostics_get",
       );
+      if (res.ok) {
+        syncPdDiagnosticsSnapshot(deviceId, res.value);
+      }
+      return res;
     },
-    [coordination.role, isLeader, requestLeaderRpc, runDeviceCommand],
+    [
+      coordination.role,
+      isLeader,
+      requestLeaderRpc,
+      runDeviceCommand,
+      syncPdDiagnosticsSnapshot,
+    ],
   );
 
   const idleBias = useCallback(
@@ -1115,12 +1187,22 @@ export function DeviceRuntimeProvider({
       if (!isLeader && coordination.role !== "unsupported") {
         return requestLeaderRpc("idleBias", [deviceId]);
       }
-      return runDeviceCommand<IdleBiasResponse>(
+      const res = await runDeviceCommand<IdleBiasResponse>(
         deviceId,
         "power.idle_bias_get",
       );
+      if (res.ok) {
+        syncIdleBiasSnapshot(deviceId, res.value);
+      }
+      return res;
     },
-    [coordination.role, isLeader, requestLeaderRpc, runDeviceCommand],
+    [
+      coordination.role,
+      isLeader,
+      requestLeaderRpc,
+      runDeviceCommand,
+      syncIdleBiasSnapshot,
+    ],
   );
 
   const savePowerConfig = useCallback(
@@ -1139,6 +1221,8 @@ export function DeviceRuntimeProvider({
         { config: input, owner },
       );
       if (res.ok) {
+        syncObservedPowerLock(deviceId, res.value.lock, owner);
+        syncPowerConfigSnapshot(deviceId, res.value);
         await refreshDevice(deviceId);
       }
       return res;
@@ -1149,6 +1233,8 @@ export function DeviceRuntimeProvider({
       isLeader,
       refreshDevice,
       runDeviceCommand,
+      syncPowerConfigSnapshot,
+      syncObservedPowerLock,
       warnFollowerControlBlocked,
     ],
   );
@@ -1168,6 +1254,8 @@ export function DeviceRuntimeProvider({
         { owner },
       );
       if (res.ok) {
+        syncObservedPowerLock(deviceId, res.value.lock, owner);
+        syncPowerConfigSnapshot(deviceId, res.value);
         await refreshDevice(deviceId);
       }
       return res;
@@ -1178,6 +1266,8 @@ export function DeviceRuntimeProvider({
       isLeader,
       refreshDevice,
       runDeviceCommand,
+      syncPowerConfigSnapshot,
+      syncObservedPowerLock,
       warnFollowerControlBlocked,
     ],
   );
@@ -1208,6 +1298,7 @@ export function DeviceRuntimeProvider({
         } else {
           syncObservedPowerLock(deviceId, res.value.lock, owner);
         }
+        syncPowerConfigSnapshot(deviceId, res.value);
       }
       return res;
     },
@@ -1216,6 +1307,7 @@ export function DeviceRuntimeProvider({
       followerControlError,
       isLeader,
       runDeviceCommand,
+      syncPowerConfigSnapshot,
       syncObservedPowerLock,
       warnFollowerControlBlocked,
     ],
@@ -1237,6 +1329,7 @@ export function DeviceRuntimeProvider({
         { correction_enabled: correctionEnabled, owner },
       );
       if (res.ok) {
+        syncIdleBiasSnapshot(deviceId, res.value);
         await refreshDevice(deviceId);
       }
       return res;
@@ -1247,6 +1340,7 @@ export function DeviceRuntimeProvider({
       isLeader,
       refreshDevice,
       runDeviceCommand,
+      syncIdleBiasSnapshot,
       warnFollowerControlBlocked,
     ],
   );
@@ -1260,19 +1354,24 @@ export function DeviceRuntimeProvider({
         warnFollowerControlBlocked();
         return { ok: false, error: followerControlError() };
       }
-      return runDeviceCommand<IdleBiasResponse>(
+      const res = await runDeviceCommand<IdleBiasResponse>(
         deviceId,
         "power.idle_bias_run",
         {
           owner,
         },
       );
+      if (res.ok) {
+        syncIdleBiasSnapshot(deviceId, res.value);
+      }
+      return res;
     },
     [
       coordination.role,
       followerControlError,
       isLeader,
       runDeviceCommand,
+      syncIdleBiasSnapshot,
       warnFollowerControlBlocked,
     ],
   );
@@ -1292,6 +1391,7 @@ export function DeviceRuntimeProvider({
         { owner },
       );
       if (res.ok) {
+        syncIdleBiasSnapshot(deviceId, res.value);
         await refreshDevice(deviceId);
       }
       return res;
@@ -1302,6 +1402,7 @@ export function DeviceRuntimeProvider({
       isLeader,
       refreshDevice,
       runDeviceCommand,
+      syncIdleBiasSnapshot,
       warnFollowerControlBlocked,
     ],
   );
@@ -1433,9 +1534,13 @@ export function DeviceRuntimeProvider({
           },
         };
       }
+      if (result.ok) {
+        syncObservedPowerLock(deviceId, result.value.lock, owner);
+        syncPowerConfigSnapshot(deviceId, result.value);
+      }
       return result;
     },
-    [runPendingMutation],
+    [runPendingMutation, syncObservedPowerLock, syncPowerConfigSnapshot],
   );
 
   const replug = useCallback(
