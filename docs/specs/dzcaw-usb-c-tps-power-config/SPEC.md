@@ -361,10 +361,11 @@ for diagnostics.
   when the local tab receives that newer snapshot, then the older draft stays
   visible, `Save and apply` becomes disabled, and the operator must refresh
   the page before saving again.
-- Given a shared Power save remains queued or running past the optimistic
-  threshold, when that threshold is crossed, then the page temporarily pauses
-  Power controls until the device confirms the update while keeping feedback on
-  toast surfaces instead of shifting the panel layout.
+- Given a same-origin Power save from the current tab remains running past the
+  optimistic thresholds, when about `3 s` elapse after the save actually starts,
+  then the page shows toast feedback without shifting layout and still lets the
+  operator keep editing; only when the same save is still running at about `6 s`
+  do Power controls temporarily pause until the device confirms the update.
 - Given another host currently holds the device lock, when the Power page
   refreshes, then the browser shows `Locked by another host`, keeps writes
   disabled, and MUST NOT restore write access only because of stale local lock

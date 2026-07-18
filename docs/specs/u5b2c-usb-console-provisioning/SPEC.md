@@ -182,7 +182,8 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
   runtime, when another same-origin tab is still open on that device, then both
   tabs keep the same canonical live state, toast-based feedback does not shift
   layout, and non-`Output mode` editing can continue during short background
-  saves.
+  saves because slow-save warning/lock state is keyed to the initiating tab's
+  actual running save rather than a shared queue timestamp.
 - Given one same-origin tab holds an unsaved `Output mode` draft and another
   same-origin tab submits a newer `Output mode` write on that device, when the
   shared runtime serializes the newer mutation, then the first tab keeps its

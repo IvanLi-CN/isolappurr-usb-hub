@@ -50,6 +50,10 @@
 - Kept non-blocking save feedback on toast surfaces and only pauses controls
   when a shared Power save runs past the optimistic window, so the page layout
   stays stable.
+- Rebased the slow-save timer onto the current tab's actual shared save start
+  instead of queue time, moved the first toast to about `3 s`, and delayed the
+  control lock to about `6 s` so normal LAN writes do not look like abnormal
+  slow saves.
 
 ## 2026-07-06
 

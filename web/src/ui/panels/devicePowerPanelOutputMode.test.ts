@@ -8,6 +8,14 @@ import {
   mergeNonOutputModeFields,
   serializeOutputModeDraft,
 } from "./devicePowerPanelOutputMode";
+import {
+  AUTO_APPLY_LOCK_DELAY_MS,
+  AUTO_APPLY_TOAST_DELAY_MS,
+  isOwnSharedSaveCommand,
+  resolveNextSlowSaveDelayMs,
+  resolveSlowSavePhase,
+  resolveSlowSaveReferenceStartedAtMs,
+} from "./devicePowerPanelSaveStatus";
 
 const baseConfig: PowerConfigResponse = {
   hardware: "sw2303",
@@ -130,5 +138,102 @@ describe("device power output mode drafts", () => {
       tps_cdc_rise_mv: 300,
       usb_c_path_mode: "default",
     });
+  });
+});
+
+describe("device power slow-save status", () => {
+  test("does not start the slow-save timer while the shared save is still queued", () => {
+    expect(
+      resolveSlowSaveReferenceStartedAtMs({
+        saveInFlight: true,
+        currentTabId: "tab-a",
+        localStartedAtMs: Date.now() - 2_000,
+        sharedCommand: {
+          requestId: "cmd-1",
+          deviceId: "856a141cdbd4",
+          sourceTabId: "tab-a",
+          kind: "mutation",
+          method: "savePowerConfig",
+          state: "queued",
+          queuedAt: new Date().toISOString(),
+          startedAt: null,
+          finishedAt: null,
+          revision: 1,
+          errorMessage: null,
+        },
+      }),
+    ).toBeNull();
+  });
+
+  test("uses the shared running timestamp for the current tab once the save starts", () => {
+    const startedAt = new Date(Date.now() - 1_000).toISOString();
+    expect(
+      resolveSlowSaveReferenceStartedAtMs({
+        saveInFlight: true,
+        currentTabId: "tab-a",
+        localStartedAtMs: Date.now() - 5_000,
+        sharedCommand: {
+          requestId: "cmd-2",
+          deviceId: "856a141cdbd4",
+          sourceTabId: "tab-a",
+          kind: "mutation",
+          method: "savePowerConfig",
+          state: "running",
+          queuedAt: new Date().toISOString(),
+          startedAt,
+          finishedAt: null,
+          revision: 1,
+          errorMessage: null,
+        },
+      }),
+    ).toBe(Date.parse(startedAt));
+  });
+
+  test("ignores another tab's shared save when deciding the local slow-save state", () => {
+    expect(
+      isOwnSharedSaveCommand(
+        {
+          requestId: "cmd-3",
+          deviceId: "856a141cdbd4",
+          sourceTabId: "tab-b",
+          kind: "mutation",
+          method: "savePowerConfig",
+          state: "running",
+          queuedAt: new Date().toISOString(),
+          startedAt: new Date().toISOString(),
+          finishedAt: null,
+          revision: 1,
+          errorMessage: null,
+        },
+        "tab-a",
+      ),
+    ).toBeFalse();
+  });
+
+  test("keeps unsupported cross-tab saves on the local timer", () => {
+    const localStartedAtMs = Date.now() - 500;
+    expect(
+      resolveSlowSaveReferenceStartedAtMs({
+        saveInFlight: true,
+        currentTabId: "tab-a",
+        localStartedAtMs,
+        sharedCommand: null,
+      }),
+    ).toBe(localStartedAtMs);
+  });
+
+  test("shows a toast before controls are locked", () => {
+    expect(resolveSlowSavePhase(AUTO_APPLY_TOAST_DELAY_MS - 1)).toBe("pending");
+    expect(resolveSlowSavePhase(AUTO_APPLY_TOAST_DELAY_MS)).toBe("toast");
+    expect(resolveSlowSavePhase(AUTO_APPLY_LOCK_DELAY_MS - 1)).toBe("toast");
+    expect(resolveSlowSavePhase(AUTO_APPLY_LOCK_DELAY_MS)).toBe("lock");
+  });
+
+  test("schedules the next slow-save transition against the correct threshold", () => {
+    expect(resolveNextSlowSaveDelayMs(0)).toBe(AUTO_APPLY_TOAST_DELAY_MS);
+    expect(resolveNextSlowSaveDelayMs(AUTO_APPLY_TOAST_DELAY_MS)).toBe(
+      AUTO_APPLY_LOCK_DELAY_MS - AUTO_APPLY_TOAST_DELAY_MS,
+    );
+    expect(resolveNextSlowSaveDelayMs(AUTO_APPLY_LOCK_DELAY_MS)).toBeNull();
   });
 });

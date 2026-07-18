@@ -50,6 +50,13 @@ import {
   type OutputModeDraft,
   serializeOutputModeDraft,
 } from "./devicePowerPanelOutputMode";
+import {
+  isOwnSharedSaveCommand,
+  resolveNextSlowSaveDelayMs,
+  resolveSlowSavePhase,
+  resolveSlowSaveReferenceStartedAtMs,
+  type SlowSavePhase,
+} from "./devicePowerPanelSaveStatus";
 
 type DevicePowerPanelProps = {
   deviceKey: string;
@@ -96,7 +103,6 @@ type DevicePowerPanelProps = {
 };
 
 const AUTO_APPLY_DELAY_MS = 400;
-const AUTO_APPLY_LOCK_DELAY_MS = 1_500;
 
 function serializeAutoApplyForm(form: FormState): string {
   return JSON.stringify(form);
@@ -139,7 +145,7 @@ export function DevicePowerPanel({
   const [dirty, setDirty] = useState(false);
   const [autoApplyFailed, setAutoApplyFailed] = useState(false);
   const [saveInFlight, setSaveInFlight] = useState(false);
-  const [slowAutoApplyLock, setSlowAutoApplyLock] = useState(false);
+  const [slowSavePhase, setSlowSavePhase] = useState<SlowSavePhase>("idle");
   const [outputModeDraft, setOutputModeDraft] =
     useState<OutputModeDraft | null>(null);
   const [outputModeConflict, setOutputModeConflict] = useState(false);
@@ -462,11 +468,12 @@ export function DevicePowerPanel({
   const crossTabSyncUnavailable = coordination.role === "unsupported";
   const sharedCommandBusy =
     sharedCommand?.state === "queued" || sharedCommand?.state === "running";
-  const saveCommandBusy =
-    sharedCommandBusy && sharedCommand?.method === "savePowerConfig";
+  const ownSharedSaveBusy =
+    sharedCommandBusy &&
+    isOwnSharedSaveCommand(sharedCommand, coordination.currentTabId);
   const blockingSharedCommandBusy =
     sharedCommandBusy && sharedCommand?.method !== "savePowerConfig";
-  const optimisticSaveActive = saveInFlight || saveCommandBusy;
+  const optimisticSaveActive = saveInFlight || ownSharedSaveBusy;
   const outputModeDirty = outputModeDraft !== null;
   const showAcquireControl =
     !controlledInThisTab &&
@@ -488,7 +495,7 @@ export function DevicePowerPanel({
     idleBiasRunning ||
     !controlledInThisTab ||
     blockingSharedCommandBusy ||
-    (saveCommandBusy && slowAutoApplyLock);
+    (optimisticSaveActive && slowSavePhase === "lock");
   const powerControlsDisabled =
     advancedDisabled || busy || idleBiasBusy || lockBusy;
   const outputModeSaveDisabled =
@@ -689,7 +696,7 @@ export function DevicePowerPanel({
       const submittedSnapshot = serializeAutoApplyForm(nextForm);
       saveStartedAtRef.current = Date.now();
       setSaveInFlight(true);
-      setSlowAutoApplyLock(false);
+      setSlowSavePhase("idle");
       setError(null);
       const res = await savePowerConfig(nextForm, ownerRef.current);
       if (!mountedRef.current) {
@@ -862,31 +869,44 @@ export function DevicePowerPanel({
 
   useEffect(() => {
     if (!optimisticSaveActive) {
-      setSlowAutoApplyLock(false);
+      setSlowSavePhase("idle");
       slowLockToastShownRef.current = false;
       return;
     }
-    const sharedQueuedAt = sharedCommand?.queuedAt
-      ? Date.parse(sharedCommand.queuedAt)
-      : Number.NaN;
-    const referenceStartedAt = Number.isFinite(sharedQueuedAt)
-      ? sharedQueuedAt
-      : (saveStartedAtRef.current ?? Date.now());
+    const referenceStartedAt = resolveSlowSaveReferenceStartedAtMs({
+      saveInFlight,
+      sharedCommand,
+      currentTabId: coordination.currentTabId,
+      localStartedAtMs: saveStartedAtRef.current,
+    });
+    if (referenceStartedAt === null) {
+      setSlowSavePhase("pending");
+      return;
+    }
     const elapsed = Math.max(0, Date.now() - referenceStartedAt);
-    if (elapsed >= AUTO_APPLY_LOCK_DELAY_MS) {
-      setSlowAutoApplyLock(true);
+    const nextPhase = resolveSlowSavePhase(elapsed);
+    setSlowSavePhase(nextPhase);
+    const nextDelay = resolveNextSlowSaveDelayMs(elapsed);
+    if (nextDelay === null) {
       return;
     }
     const timeoutId = window.setTimeout(() => {
-      setSlowAutoApplyLock(true);
-    }, AUTO_APPLY_LOCK_DELAY_MS - elapsed);
+      setSlowSavePhase(
+        resolveSlowSavePhase(Math.max(0, Date.now() - referenceStartedAt)),
+      );
+    }, nextDelay);
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [optimisticSaveActive, sharedCommand?.queuedAt]);
+  }, [
+    coordination.currentTabId,
+    optimisticSaveActive,
+    saveInFlight,
+    sharedCommand,
+  ]);
 
   useEffect(() => {
-    if (!slowAutoApplyLock) {
+    if (slowSavePhase === "idle" || slowSavePhase === "pending") {
       slowLockToastShownRef.current = false;
       return;
     }
@@ -897,11 +917,13 @@ export function DevicePowerPanel({
     pushToast({
       id: `${deviceKey}:slow-save`,
       message:
-        "Saving is taking longer than usual. Controls pause until the device confirms the update.",
+        slowSavePhase === "lock"
+          ? "Saving is taking longer than usual. Controls pause until the device confirms the update."
+          : "Saving is still in progress. You can keep editing while the device confirms the update.",
       variant: "info",
       durationMs: 3200,
     });
-  }, [deviceKey, pushToast, slowAutoApplyLock]);
+  }, [deviceKey, pushToast, slowSavePhase]);
 
   useEffect(() => {
     if (!blockingSharedCommandBusy || !sharedCommand) {

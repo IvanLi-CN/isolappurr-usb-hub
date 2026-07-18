@@ -175,6 +175,10 @@
   shifting panel layout, and restore an explicit `Save and apply` action for
   the `Output mode` persisted draft while leaving the rest of the page on the
   existing background-save path.
+- Tightened slow-save feedback so it starts from the current tab's actual shared
+  save `startedAt` rather than queue time. The panel now shows a non-blocking
+  toast after about `3 s`, only pauses controls after about `6 s`, and ignores
+  another tab's shared save when deciding whether this tab should warn or lock.
 - Changed ordinary same-origin Power pages so an observed `Unlocked` device now
   auto-acquires control for the browser-scoped owner instead of waiting for a
   separate owner-facing acquire step; only foreign host locks remain read-only.
