@@ -76,6 +76,14 @@ def margin_ratio(path: Path) -> float:
     return min(margins) / min(width, height)
 
 
+def ensure_transparent_pixels(path: Path, image: Image.Image) -> None:
+    rgba_image = image.convert("RGBA")
+    alpha = rgba_image.getchannel("A")
+    min_alpha, _ = alpha.getextrema()
+    if min_alpha == 255:
+        raise SystemExit(f"cutout asset must include transparent pixels: {path}")
+
+
 def main() -> None:
     for path in REGULAR_ICONS + MASKABLE_ICONS + DESKTOP_PNGS:
         ensure_exists(path)
@@ -123,6 +131,8 @@ def main() -> None:
     ensure_exists(CUTOUT_EXPORT)
     cutout_source = Image.open(CUTOUT_SOURCE)
     cutout_export = Image.open(CUTOUT_EXPORT)
+    ensure_transparent_pixels(CUTOUT_SOURCE, cutout_source)
+    ensure_transparent_pixels(CUTOUT_EXPORT, cutout_export)
     if cutout_export.size != cutout_source.size:
         raise SystemExit(
             "product render cutout export must preserve source dimensions, "
