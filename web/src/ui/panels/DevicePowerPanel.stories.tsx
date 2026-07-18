@@ -468,11 +468,11 @@ export const RunningSharedSave: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const powerCapInput = await canvas.findByDisplayValue("100 W");
-    await userEvent.clear(powerCapInput);
-    await userEvent.type(powerCapInput, "90 W");
     await expect(
-      canvas.getByRole("slider", { name: /Voltage/ }),
+      await canvas.findByRole("slider", { name: /Voltage/ }),
+    ).toBeDisabled();
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
     ).toBeDisabled();
   },
 };
@@ -767,7 +767,8 @@ export const LocalDraftSaveAction: Story = {
       canvas.getByRole("button", { name: "Save and apply" }),
     ).toBeDisabled();
     await userEvent.clear(voltageInput);
-    await userEvent.type(voltageInput, "9 V");
+    await userEvent.type(voltageInput, "12 V");
+    await expect(await canvas.findByDisplayValue("12 V")).toBeVisible();
     await expect(
       canvas.getByRole("button", { name: "Save and apply" }),
     ).toBeEnabled();
