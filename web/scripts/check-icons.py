@@ -45,6 +45,8 @@ MARKETING_ASSETS: Final = {
 
 FULL_RENDER_SOURCE: Final = BRAND_SOURCES / "product-render-full-source.png"
 FULL_RENDER_EXPORT: Final = BRAND_ASSETS / "isolapurr-product-render-full.png"
+CUTOUT_SOURCE: Final = BRAND_SOURCES / "product-render-cutout-source.png"
+CUTOUT_EXPORT: Final = BRAND_ASSETS / "isolapurr-product-render-cutout.png"
 
 
 def visible_bounds(path: Path) -> tuple[int, int, int, int] | None:
@@ -72,6 +74,14 @@ def margin_ratio(path: Path) -> float:
     left, top, right, bottom = bounds
     margins = [left, top, width - right, height - bottom]
     return min(margins) / min(width, height)
+
+
+def ensure_transparent_pixels(path: Path, image: Image.Image) -> None:
+    rgba_image = image.convert("RGBA")
+    alpha = rgba_image.getchannel("A")
+    min_alpha, _ = alpha.getextrema()
+    if min_alpha == 255:
+        raise SystemExit(f"cutout asset must include transparent pixels: {path}")
 
 
 def main() -> None:
@@ -115,6 +125,22 @@ def main() -> None:
     if sha256(FULL_RENDER_EXPORT) != sha256(FULL_RENDER_SOURCE):
         raise SystemExit(
             "full product render export must be an exact copy of the approved source image"
+        )
+
+    ensure_exists(CUTOUT_SOURCE)
+    ensure_exists(CUTOUT_EXPORT)
+    cutout_source = Image.open(CUTOUT_SOURCE)
+    cutout_export = Image.open(CUTOUT_EXPORT)
+    ensure_transparent_pixels(CUTOUT_SOURCE, cutout_source)
+    ensure_transparent_pixels(CUTOUT_EXPORT, cutout_export)
+    if cutout_export.size != cutout_source.size:
+        raise SystemExit(
+            "product render cutout export must preserve source dimensions, "
+            f"got {cutout_export.size} from {CUTOUT_SOURCE.name} {cutout_source.size}"
+        )
+    if sha256(CUTOUT_EXPORT) != sha256(CUTOUT_SOURCE):
+        raise SystemExit(
+            "product render cutout export must be an exact copy of the approved source image"
         )
 
     print("icon geometry checks passed")

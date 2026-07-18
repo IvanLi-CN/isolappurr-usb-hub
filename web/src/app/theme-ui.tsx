@@ -18,7 +18,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { agent, status } = useDesktopAgent();
-  const [theme, setTheme] = useState<ThemeId>("isolapurr");
+  const [theme, setTheme] = useState<ThemeId>(() => loadThemePreference());
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
