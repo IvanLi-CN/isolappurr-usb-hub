@@ -26,13 +26,8 @@ export function DevicePowerPage() {
   return (
     <div className="flex flex-col gap-4" data-testid="device-power-page">
       <div>
-        <div className="text-[24px] font-bold">{device.name}</div>
-        <div className="mt-2 truncate font-mono text-[12px] font-semibold text-[var(--muted)]">
-          power settings · {device.baseUrl}
-        </div>
+        <DevicePageTabs deviceId={deviceId} />
       </div>
-
-      <DevicePageTabs deviceId={deviceId} />
 
       <DevicePowerPanel
         key={deviceId}

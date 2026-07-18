@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useAddDeviceUi } from "../../app/add-device-ui";
 import { useDeviceRuntime } from "../../app/device-runtime";
 import { resolveTransportBadgeState } from "../../app/device-runtime-support";
@@ -18,6 +19,9 @@ export type DeviceListPanelProps = {
   selectedDeviceId?: string;
   onSelect: (deviceId: string) => void;
   forceEmptyState?: boolean;
+  footer?: ReactNode;
+  headerAccessory?: ReactNode;
+  onBeforeAddDevice?: () => void;
 };
 
 export function DeviceListPanel({
@@ -25,6 +29,9 @@ export function DeviceListPanel({
   selectedDeviceId,
   onSelect,
   forceEmptyState = false,
+  footer,
+  headerAccessory,
+  onBeforeAddDevice,
 }: DeviceListPanelProps) {
   const { openAddDevice } = useAddDeviceUi();
   const { connectionState, transport, channelState, runtimeById } =
@@ -75,32 +82,56 @@ export function DeviceListPanel({
       className="flex h-full min-h-0 flex-col px-6 py-6"
       data-testid="device-list"
     >
-      <div className="ml-2 flex items-center justify-between">
+      <div className="ml-2 flex items-center justify-between gap-3">
         <h2 className="text-[16px] font-bold">Devices</h2>
-        <ActionButton size="sm" tone="primary" onClick={openAddDevice}>
-          + Add
-        </ActionButton>
+        <div className="flex items-center gap-2">
+          {headerAccessory}
+          <ActionButton
+            size="sm"
+            tone="primary"
+            onClick={() => {
+              onBeforeAddDevice?.();
+              openAddDevice();
+            }}
+          >
+            + Add
+          </ActionButton>
+        </div>
       </div>
 
       {forceEmptyState || devices.length === 0 ? (
-        <div className="mt-4 text-[12px] font-semibold text-[var(--muted)]">
-          No devices yet.
+        <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="text-[12px] font-semibold text-[var(--muted)]">
+            No devices yet.
+          </div>
+          {footer ? (
+            <div className="mt-auto border-t border-[var(--border)] pt-4">
+              {footer}
+            </div>
+          ) : null}
         </div>
       ) : (
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-[14px] pr-1">
-            {devices.map((d) => (
-              <DeviceCard
-                key={d.id}
-                device={d}
-                selected={d.id === selectedDeviceId}
-                status={connectionState(d.id)}
-                transportBadges={transportBadges(d.id)}
-                unselectedFill={selectedDeviceId ? "panel-2" : "panel"}
-                onSelect={onSelect}
-              />
-            ))}
+        <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="flex flex-col gap-[14px] pr-1">
+              {devices.map((d) => (
+                <DeviceCard
+                  key={d.id}
+                  device={d}
+                  selected={d.id === selectedDeviceId}
+                  status={connectionState(d.id)}
+                  transportBadges={transportBadges(d.id)}
+                  unselectedFill={selectedDeviceId ? "panel-2" : "panel"}
+                  onSelect={onSelect}
+                />
+              ))}
+            </div>
           </div>
+          {footer ? (
+            <div className="mt-4 border-t border-[var(--border)] pt-4">
+              {footer}
+            </div>
+          ) : null}
         </div>
       )}
     </div>

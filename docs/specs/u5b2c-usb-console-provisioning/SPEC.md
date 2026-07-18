@@ -103,6 +103,9 @@ Default selection is only defined after more than one path is immediately usable
 - Web UI MUST provide clear states for unsupported Web Serial, no device, connected, flashing/updating, update failed, Wi-Fi empty/configured/error, telemetry online/offline, busy action, and disruptive action confirmation.
 - Web UI command controls MUST use one shared action system: `primary` for normal task completion, `secondary` for cancellation or safe alternatives, `quiet` for low-emphasis disclosure, `warning` for reset/clear or disruptive actions, and `danger` for saved-device deletion and irreversible final confirmation.
 - Shared action and form surfaces MUST use theme tokens for resting, hover, focus-visible, disabled, and loading states in `isolapurr`, `isolapurr-dark`, and `system` themes. The `system` choice MUST remove the explicit theme attribute and follow the host color-scheme preference.
+- Saved-device detail routes (`Overview`, `Settings`, `Power`) MUST promote the selected device identity into the shared app-shell header on `lg` and wider viewports. The header MUST show the saved device name plus a compact subtitle `id: <short-id> • <baseUrl>`, aligned to the main content column, and the route body MUST NOT duplicate that same identity block above the tabs.
+- On viewports narrower than `lg`, the Dashboard and saved-device detail routes MUST replace the inline device list with a right-side device drawer opened from the header. That drawer MUST reuse the saved-device list panel, include `+ Add`, expose an `About` entry, and close before opening Add device, navigating to `About`, or selecting another saved device.
+- The app-shell sidebar breakpoint MUST switch to the left-column layout at `lg` rather than `xl`, so `lg` and wider viewports keep the stable two-column saved-device shell while narrower viewports use the header-triggered drawer contract.
 - Storybook MUST cover the Add device and saved-device Hardware page states before visual evidence is accepted.
 
 ## JSONL Protocol
@@ -202,6 +205,9 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given JSONL `info` returns a different `device_id` or `mac`, when Local USB flash runs, then it fails before writing flash.
 - Given UI changes are complete, when Storybook renders the console states, then desktop and mobile evidence show no text overlap, clipping, or incoherent layout.
 - Given a saved-device route is active, when the device list renders in either light or dark mode, then the current device is distinguishable from unselected devices through a high-contrast full-card boundary, a selected surface, and a non-color marker; the current card exposes `aria-current="page"`, while unselected cards do not.
+- Given a saved-device detail route renders on a `lg` or wider viewport, when the shell header is visible, then the selected device name and compact `id/baseUrl` subtitle appear in the shared header aligned with the main content column, and the body starts with tabs instead of a duplicated identity block.
+- Given the Dashboard or a saved-device detail route renders below `lg`, when the owner opens the device drawer from the header, then the inline device list is absent, the drawer slides in from the right, and `+ Add`, saved-device cards, and `About` remain reachable from that drawer.
+- Given the narrow device drawer is open, when the owner selects another device, opens `About`, or launches Add device, then the drawer closes before the next navigation state or modal takes focus.
 - Given the saved-device Settings page renders on Wi-Fi / LAN, when Wi-Fi save/clear and Wi-Fi reset are unavailable, then they use the shared disabled action state while the available `Other` reset uses warning treatment and the firmware workbench keeps the primary action treatment.
 - Given a user opens saved-device deletion or an irreversible recovery action, when the confirmation layer renders, then cancellation is secondary and the final destructive command is visually distinct as a solid danger action.
 - Given an action or disabled form field renders in `isolapurr`, `isolapurr-dark`, or `system`, then it retains readable token-driven text, border, and fill contrast without a framework-default light surface leaking into dark mode.
@@ -331,3 +337,17 @@ Action system, destructive confirmation:
 PR: include
 
 ![Action system destructive confirmation](assets/action-system-delete-confirmation.png)
+
+Saved-device Power shell header on desktop: production SPA route `/devices/aabbcc001122/power?demo=true`, showing the selected device identity promoted into the shared app shell instead of repeating the title above tabs.
+
+PR: include
+
+![Saved-device Power shell header desktop](assets/saved-device-power-shell-header-desktop.png)
+
+Dashboard mobile device drawer: production SPA route `/?demo=true`, showing the header-triggered right-side drawer with saved-device cards, `+ Add`, and `About`.
+
+![Dashboard mobile device drawer](assets/dashboard-mobile-device-drawer.png)
+
+Saved-device detail mobile drawer: production SPA route `/devices/aabbcc001122?demo=true`, showing the same right-side drawer contract from a saved-device detail route.
+
+![Saved-device detail mobile drawer](assets/device-detail-mobile-header-drawer.png)

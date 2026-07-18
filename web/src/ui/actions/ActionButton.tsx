@@ -86,40 +86,46 @@ export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(
   },
 );
 
-export function IconButton({
-  children,
-  className,
-  disabled = false,
-  label,
-  loading = false,
-  size = "md",
-  title,
-  tone = "quiet",
-  type = "button",
-  ...props
-}: IconButtonProps) {
-  const unavailable = disabled || loading;
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
+  function IconButton(
+    {
+      children,
+      className,
+      disabled = false,
+      label,
+      loading = false,
+      size = "md",
+      title,
+      tone = "quiet",
+      type = "button",
+      ...props
+    },
+    ref,
+  ) {
+    const unavailable = disabled || loading;
 
-  return (
-    <button
-      {...props}
-      aria-busy={loading || undefined}
-      aria-label={label}
-      className={joinClasses("iso-icon-action", className)}
-      data-loading={loading || undefined}
-      data-size={size}
-      data-tone={tone}
-      disabled={unavailable}
-      title={title ?? label}
-      type={type}
-    >
-      <span aria-hidden className="iso-icon-action__glyph">
-        {children}
-      </span>
-      {loading ? <span aria-hidden className="iso-action__spinner" /> : null}
-    </button>
-  );
-}
+    return (
+      <button
+        {...props}
+        ref={ref}
+        aria-busy={loading || undefined}
+        aria-label={label}
+        className={joinClasses("iso-icon-action", className)}
+        data-loading={loading || undefined}
+        data-size={size}
+        data-tone={tone}
+        disabled={unavailable}
+        title={title ?? label}
+        type={type}
+      >
+        <span aria-hidden className="iso-icon-action__glyph">
+          {children}
+        </span>
+        {loading ? <span aria-hidden className="iso-action__spinner" /> : null}
+      </button>
+    );
+  },
+);
 
 export function ActionGroup({
   children,
