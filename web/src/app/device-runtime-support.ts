@@ -74,6 +74,37 @@ export type DeviceRuntime = {
   command: SharedRuntimeCommandState | null;
 };
 
+export function applyOptimisticPowerConfig(
+  current: PowerConfigResponse | null | undefined,
+  input: PowerConfigInput,
+): PowerConfigResponse | null {
+  if (!current) {
+    return null;
+  }
+  return {
+    ...current,
+    hardware: input.hardware,
+    persisted: true,
+    tps_mode: input.tps_mode,
+    light_load_mode: input.light_load_mode,
+    sw2303_line_compensation: input.sw2303_line_compensation,
+    capability: {
+      ...input.capability,
+      protocols: { ...input.capability.protocols },
+      pd: {
+        ...input.capability.pd,
+        fixed_voltages_mv: [...input.capability.pd.fixed_voltages_mv],
+      },
+      current: { ...input.capability.current },
+      fast_charge: { ...input.capability.fast_charge },
+    },
+    manual: {
+      ...current.manual,
+      ...input.manual,
+    },
+  };
+}
+
 export type DeviceRuntimeContextValue = {
   now: number;
   runtimeById: Record<string, DeviceRuntime>;

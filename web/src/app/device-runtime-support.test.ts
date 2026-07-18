@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  applyOptimisticPowerConfig,
   canResumePowerLock,
   clearPowerLockResume,
   type DeviceRuntime,
@@ -37,6 +38,61 @@ function runtimeWithVerifiedHttp(): DeviceRuntime {
   };
 }
 
+const BASE_POWER_CONFIG = {
+  hardware: "sw2303",
+  persisted: true,
+  tps_mode: "auto_follow" as const,
+  light_load_mode: "pfm" as const,
+  sw2303_line_compensation: "50mohm" as const,
+  runtime: {
+    output_enabled: true,
+    discharge_enabled: false,
+  },
+  capability: {
+    profile: "full",
+    power_watts: 100,
+    protocols: {
+      pd: true,
+      qc20: true,
+      qc30: true,
+      fcp: true,
+      afc: true,
+      scp: true,
+      pe20: true,
+      bc12: true,
+      sfcp: true,
+    },
+    pd: {
+      pps: true,
+      fixed_voltages_mv: [9000, 12000, 15000, 20000],
+    },
+    current: {
+      pps3_limit_ma: 5000,
+      pd_pps_5a: false,
+      type_c_broadcast_ma: 500,
+      scp_limit_ma: 5000,
+      fcp_afc_sfcp_limit_ma: 3250,
+    },
+    fast_charge: {
+      qc20_20v_enabled: true,
+      qc30_20v_enabled: true,
+      pe20_20v_enabled: true,
+      non_pd_12v_enabled: true,
+    },
+  },
+  manual: {
+    voltage_mv: 5000,
+    current_limit_ma: 3000,
+    usb_c_path_mode: "default" as const,
+    tps_cdc_rise_mv: 0 as const,
+    path_policy: "auto",
+  },
+  lock: {
+    owner: 7,
+    expires_at_ms: 123456,
+  },
+};
+
 function mockPowerLockStorage() {
   const store = new Map<string, string>();
   Object.defineProperty(globalThis, "window", {
@@ -53,6 +109,49 @@ function mockPowerLockStorage() {
 }
 
 describe("historical local usb bindings", () => {
+  test("applies optimistic power-config writes without dropping runtime-only fields", () => {
+    const next = applyOptimisticPowerConfig(BASE_POWER_CONFIG, {
+      hardware: "sw2303",
+      tps_mode: "manual",
+      light_load_mode: "fpwm",
+      sw2303_line_compensation: "100mohm",
+      capability: {
+        ...BASE_POWER_CONFIG.capability,
+        power_watts: 67,
+      },
+      manual: {
+        voltage_mv: 9000,
+        current_limit_ma: 5200,
+        usb_c_path_mode: "force",
+        tps_cdc_rise_mv: 500,
+      },
+    });
+
+    expect(next).not.toBeNull();
+    expect(next?.capability.power_watts).toBe(67);
+    expect(next?.manual.path_policy).toBe("auto");
+    expect(next?.runtime).toEqual(BASE_POWER_CONFIG.runtime);
+    expect(next?.lock).toEqual(BASE_POWER_CONFIG.lock);
+  });
+
+  test("returns null when no canonical power config exists yet", () => {
+    expect(
+      applyOptimisticPowerConfig(null, {
+        hardware: "sw2303",
+        tps_mode: "auto_follow",
+        light_load_mode: "pfm",
+        sw2303_line_compensation: "50mohm",
+        capability: BASE_POWER_CONFIG.capability,
+        manual: {
+          voltage_mv: 5000,
+          current_limit_ma: 3000,
+          usb_c_path_mode: "default",
+          tps_cdc_rise_mv: 0,
+        },
+      }),
+    ).toBeNull();
+  });
+
   test("reuses the same persisted power lock owner across reads", () => {
     mockPowerLockStorage();
     const first = getStablePowerLockOwner("device-a");

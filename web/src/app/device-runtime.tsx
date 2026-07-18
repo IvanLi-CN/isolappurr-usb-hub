@@ -55,6 +55,7 @@ import {
 import { useDemoMode } from "./demo-mode";
 import { DeviceRuntimeContext } from "./device-runtime-context";
 import {
+  applyOptimisticPowerConfig,
   canResumePowerLock,
   clearPowerLockResume,
   createEmptyChannels,
@@ -1510,6 +1511,16 @@ export function DeviceRuntimeProvider({
         requestId: options?.requestId,
         sourceTabId: options?.sourceTabId,
         invoke: async () => {
+          const previousPowerConfig =
+            runtimeByIdRef.current[deviceId]?.powerConfig ?? null;
+          const optimisticPowerConfig = applyOptimisticPowerConfig(
+            previousPowerConfig,
+            input,
+          );
+          if (optimisticPowerConfig) {
+            syncObservedPowerLock(deviceId, optimisticPowerConfig.lock, owner);
+            syncPowerConfigSnapshot(deviceId, optimisticPowerConfig);
+          }
           const res = await runDeviceCommand<PowerConfigResponse>(
             deviceId,
             "power.config_set",
@@ -1524,6 +1535,9 @@ export function DeviceRuntimeProvider({
             await refreshDevice(deviceId);
             return canonical;
           }
+          if (previousPowerConfig) {
+            syncPowerConfigSnapshot(deviceId, previousPowerConfig);
+          }
           return res;
         },
       });
@@ -1536,6 +1550,8 @@ export function DeviceRuntimeProvider({
       requestLeaderRpc,
       runDeviceCommand,
       runSharedMutation,
+      syncObservedPowerLock,
+      syncPowerConfigSnapshot,
     ],
   );
 
