@@ -9,7 +9,7 @@ import {
 } from "react-router";
 import { AddDeviceUiProvider } from "./app/add-device-ui";
 import { DemoModeProvider, useDemoMode } from "./app/demo-mode";
-import { useDemoNavigate } from "./app/demo-navigation";
+import { DemoLink, useDemoNavigate } from "./app/demo-navigation";
 import { DesktopAgentProvider } from "./app/desktop-agent-ui";
 import { DeviceRuntimeProvider } from "./app/device-runtime";
 import { DevicesProvider, useDevices } from "./app/devices-store";
@@ -30,9 +30,33 @@ function RootLayout() {
   const { deviceId } = useParams();
   const location = useLocation();
   const { enabled: demoEnabled } = useDemoMode();
-  const { devices, addDevice, upsertDevice } = useDevices();
+  const { devices, addDevice, getDevice, upsertDevice } = useDevices();
   const navigate = useDemoNavigate();
   const forceEmptySidebar = demoEnabled && location.pathname === "/flash";
+  const isDashboardRoute = location.pathname === "/";
+  const isDeviceDetailRoute = Boolean(
+    deviceId &&
+      [
+        `/devices/${deviceId}`,
+        `/devices/${deviceId}/info`,
+        `/devices/${deviceId}/power`,
+      ].includes(location.pathname),
+  );
+  const showMobileSidebarDrawer =
+    !forceEmptySidebar && (isDashboardRoute || isDeviceDetailRoute);
+  const selectedDevice = deviceId ? getDevice(deviceId) : undefined;
+  const shortId =
+    selectedDevice && selectedDevice.id.length > 6
+      ? selectedDevice.id.slice(0, 6)
+      : selectedDevice?.id;
+  const headerInfo =
+    isDeviceDetailRoute && selectedDevice
+      ? {
+          mobileTitle: selectedDevice.name,
+          subtitle: `id: ${shortId} • ${selectedDevice.baseUrl}`,
+          title: selectedDevice.name,
+        }
+      : null;
 
   const existingIds = devices.map((d) => d.id);
   const existingBaseUrls = devices.map((d) => d.baseUrl);
@@ -58,14 +82,46 @@ function RootLayout() {
       onUpsert={upsertDevice}
     >
       <AppLayout
-        sidebar={
+        headerInfo={headerInfo}
+        showMobileSidebarDrawer={showMobileSidebarDrawer}
+        sidebar={({ closeMobileSidebar, forMobileDrawer }) => (
           <DeviceListPanel
             devices={devices}
-            selectedDeviceId={deviceId}
-            onSelect={(id) => navigate(`/devices/${id}`)}
+            footer={
+              forMobileDrawer ? (
+                <DemoLink
+                  className="flex h-10 items-center justify-center rounded-[12px] border border-[var(--border)] bg-transparent px-4 text-[13px] font-bold text-[var(--text)]"
+                  to="/about"
+                  onClick={closeMobileSidebar}
+                  data-testid="mobile-device-drawer-about"
+                >
+                  About
+                </DemoLink>
+              ) : undefined
+            }
             forceEmptyState={forceEmptySidebar}
+            headerAccessory={
+              forMobileDrawer ? (
+                <button
+                  aria-label="Close devices"
+                  className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent text-[18px] font-semibold text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+                  type="button"
+                  onClick={closeMobileSidebar}
+                >
+                  ×
+                </button>
+              ) : undefined
+            }
+            onBeforeAddDevice={forMobileDrawer ? closeMobileSidebar : undefined}
+            onSelect={(id) => {
+              if (forMobileDrawer) {
+                closeMobileSidebar();
+              }
+              navigate(`/devices/${id}`);
+            }}
+            selectedDeviceId={deviceId}
           />
-        }
+        )}
       >
         <Outlet />
       </AppLayout>

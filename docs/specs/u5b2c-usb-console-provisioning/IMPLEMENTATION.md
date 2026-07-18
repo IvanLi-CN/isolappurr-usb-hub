@@ -54,6 +54,7 @@
 - Action-system coverage: migrated production command controls across discovery, saved-device settings, reset, firmware flash, port power, power calibration, device add, theme selection, and demo controls. Selection cards and segmented controls retain their distinct selection semantics.
 - Action-system accessibility: confirmation dialogs render above the app root, restore focus on close, trap keyboard focus while open, and support Escape dismissal when not busy. Storybook play coverage checks the portal-backed deletion and calibration confirmations.
 - Theme-surface coverage: shared action tokens now cover primary, secondary, quiet, warning, danger, disabled, and loading states; shared form-field overrides keep disabled text inputs on `--panel-2` rather than leaking a light framework default into dark or system-dark mode.
+- Saved-device shell header and drawer: `AppLayout` now derives shell state from the current route, promotes selected-device identity into the shared desktop header for `Overview`, `Settings`, and `Power`, moves the saved-device sidebar breakpoint to `lg`, and replaces the narrow inline device list with a right-side drawer on Dashboard plus saved-device detail routes. The drawer reuses `DeviceListPanel`, keeps `+ Add`, appends `About`, and closes before select/add/navigation transitions.
 
 ## Validation
 
@@ -76,8 +77,10 @@
 - Storybook visual evidence refreshed for `Cards/DeviceCard / SerialHistoryOnly` so the device list badge contract now proves that a historical Web Serial channel is rendered as history instead of a live connected Serial badge.
 - Device selection now uses theme-specific selected surface, border, and ring tokens plus a visible check marker and `aria-current="page"`; `Cards/DeviceCard` autodocs and the light, dark, and mobile `Layouts/AppLayout` stories cover the selected and unselected states together.
 - Storybook visual evidence refreshed for `Panels/DeviceInfoPanel / LongIdentityValues` and `Panels/DeviceInfoPanel / NarrowLongIdentityValues` so the Identity panel proves stable label/value alignment and predictable truncation for long identifiers and FQDNs on desktop and narrow layouts.
+- Storybook visual evidence refreshed for `Layouts/AppLayout / DeviceHeaderDesktop`, `Layouts/AppLayout / DashboardMobileDrawer`, and `Layouts/AppLayout / DeviceHeaderMobileDrawer` so the shell-level header promotion and narrow drawer behavior stay covered alongside the selected-device list contract.
 - `cd web && bun run build`
 - `cd web && bun test ./src`
 - `cd web && bun run build-storybook`
 - `cd web && bun run test:storybook`
 - Production demo visual review at `/devices/aabbcc001122/info?demo=true` for desktop, narrow, `isolapurr-dark`, and `system` rendering.
+- Production demo visual review refreshed at `/?demo=true`, `/devices/aabbcc001122?demo=true`, and `/devices/aabbcc001122/power?demo=true` to capture the new desktop shell header plus the narrow right-side device drawer.

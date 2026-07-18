@@ -830,9 +830,17 @@ textarea.textarea:disabled {
   max-height: min(80dvh, 44rem);
 }
 
+.iso-drawer-box {
+  margin-left: auto;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .demo-sheet[open] .demo-sheet-box {
     animation: demo-sheet-rise 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .modal[open] .iso-drawer-box {
+    animation: iso-drawer-slide-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 }
 
@@ -844,5 +852,16 @@ textarea.textarea:disabled {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes iso-drawer-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }

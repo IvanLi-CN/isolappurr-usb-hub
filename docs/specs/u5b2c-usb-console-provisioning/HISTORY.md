@@ -52,3 +52,12 @@ runtime scopes. This prevents a same-origin demo page from reusing the live
 leader lease or overwriting the live device snapshot cache with demo state,
 which previously surfaced as `unknown` transport/state badges and `device not
 found` power pages for real hardware.
+
+On 2026-07-18, the saved-device shell also promoted selected-device identity
+into the shared desktop header for `Overview`, `Settings`, and `Power`,
+removed the duplicated in-body identity block above tabs, moved the two-column
+sidebar breakpoint to `lg`, and replaced the narrow inline device list with a
+right-side device drawer on Dashboard plus saved-device detail routes. The
+drawer now reuses the saved-device list panel, keeps `+ Add`, and owns the
+narrow `About` entry so device switching stays in the shell instead of inside
+page content.

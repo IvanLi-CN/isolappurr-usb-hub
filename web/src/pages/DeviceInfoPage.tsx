@@ -22,22 +22,12 @@ export function DeviceInfoPage() {
   }
   const deviceRuntime = runtime.runtimeById[device.id];
 
-  const shortId = device.id.length > 6 ? device.id.slice(0, 6) : device.id;
-
   return (
-    <div className="flex flex-col" data-testid="device-hardware-page">
+    <div className="flex flex-col gap-4" data-testid="device-hardware-page">
       <div>
-        <div className="text-[24px] font-bold">{device.name}</div>
-        <div className="mt-2 truncate font-mono text-[12px] font-semibold text-[var(--muted)]">
-          id: {shortId} • {device.baseUrl}
-        </div>
-      </div>
-
-      <div className="mt-4">
         <DevicePageTabs deviceId={deviceId} />
       </div>
-
-      <div className="mt-[22px]">
+      <div className="pt-1">
         <DeviceInfoPanel
           device={device}
           transport={runtime.transport(device.id)}

@@ -43,23 +43,25 @@ test("renders devices list and mock dashboard", async ({ page }) => {
 
   await expect(page).toHaveTitle("IsolaPurr USB Hub Console");
 
-  await expect(page.getByTestId("device-list")).toBeVisible();
-  await expect(page.getByTestId("device-card-aabbcc001122")).toBeVisible();
+  const desktopSidebar = page.locator("aside");
+  await expect(desktopSidebar.getByTestId("device-list")).toBeVisible();
   await expect(
-    page.getByTestId("device-card-aabbcc001122"),
+    desktopSidebar.getByTestId("device-card-aabbcc001122"),
+  ).toBeVisible();
+  await expect(
+    desktopSidebar.getByTestId("device-card-aabbcc001122"),
   ).not.toHaveAttribute("aria-current");
 
-  await page.getByTestId("device-card-aabbcc001122").click();
+  await desktopSidebar.getByTestId("device-card-aabbcc001122").click();
   await expect(page.getByTestId("device-dashboard")).toBeVisible();
-  await expect(page.getByTestId("device-card-aabbcc001122")).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
   await expect(
-    page.getByTestId("device-selected-marker-aabbcc001122"),
+    desktopSidebar.getByTestId("device-card-aabbcc001122"),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    desktopSidebar.getByTestId("device-selected-marker-aabbcc001122"),
   ).toBeVisible();
 
-  const selectedCard = page.getByTestId("device-card-aabbcc001122");
+  const selectedCard = desktopSidebar.getByTestId("device-card-aabbcc001122");
   const selectionColors = async () =>
     selectedCard.evaluate((card) => {
       const marker = card.querySelector(
@@ -110,6 +112,96 @@ test("renders devices list and mock dashboard", async ({ page }) => {
 
   await expect(page.getByTestId("port-card-port_a")).toBeVisible();
   await expect(page.getByTestId("port-card-port_c")).toBeVisible();
+});
+
+test("promotes saved-device identity into the desktop shell header", async ({
+  page,
+}) => {
+  const storageKey = "isolapurr_usb_hub.devices";
+  const device = {
+    id: "aabbcc001122",
+    name: "Demo Hub",
+    baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
+  };
+
+  await page.addInitScript(
+    ({ storageKey, device }) => {
+      window.localStorage.setItem(storageKey, JSON.stringify([device]));
+    },
+    { storageKey, device },
+  );
+
+  await page.goto("/devices/aabbcc001122");
+
+  await expect(page.getByTestId("app-header-device-title")).toHaveText(
+    "Demo Hub",
+  );
+  await expect(page.getByTestId("app-header-device-subtitle")).toHaveText(
+    "id: aabbcc • http://isolapurr-usb-hub-aabbcc001122.local",
+  );
+  await expect(
+    page
+      .getByTestId("device-overview-page")
+      .getByRole("heading", { name: "Demo Hub" }),
+  ).toHaveCount(0);
+
+  await page.goto("/devices/aabbcc001122/power");
+  await expect(page.getByTestId("app-header-device-title")).toHaveText(
+    "Demo Hub",
+  );
+  await expect(page.getByTestId("device-power-page")).toBeVisible();
+});
+
+test("uses a mobile device drawer for dashboard and saved-device routes", async ({
+  page,
+}) => {
+  const storageKey = "isolapurr_usb_hub.devices";
+  const device = {
+    id: "aabbcc001122",
+    name: "Demo Hub",
+    baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
+  };
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(
+    ({ storageKey, device }) => {
+      window.localStorage.setItem(storageKey, JSON.stringify([device]));
+    },
+    { storageKey, device },
+  );
+
+  await page.goto("/");
+
+  await expect(
+    page.locator("aside").getByTestId("device-list"),
+  ).not.toBeVisible();
+  await page.getByTestId("mobile-device-drawer-trigger").click();
+  await expect(page.getByTestId("mobile-device-drawer")).toBeVisible();
+
+  await page
+    .getByTestId("mobile-device-drawer")
+    .getByRole("button", { name: "+ Add" })
+    .click();
+  await expect(page.getByTestId("add-device-dialog")).toBeVisible();
+  await expect(page.getByTestId("mobile-device-drawer")).not.toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("add-device-dialog")).not.toBeVisible();
+
+  await page.getByTestId("mobile-device-drawer-trigger").click();
+  await page
+    .getByTestId("mobile-device-drawer")
+    .getByTestId("device-card-aabbcc001122")
+    .click();
+  await expect(page.getByTestId("mobile-device-drawer")).not.toBeVisible();
+  await expect(page.getByTestId("device-overview-page")).toBeVisible();
+  await expect(page.getByTestId("app-header-mobile-title")).toHaveText(
+    "Demo Hub",
+  );
+
+  await page.getByTestId("mobile-device-drawer-trigger").click();
+  await page.getByTestId("mobile-device-drawer-about").click();
+  await expect(page.getByTestId("about")).toBeVisible();
+  await expect(page.getByTestId("mobile-device-drawer")).toHaveCount(0);
 });
 
 test("publishes PWA metadata and offline app shell", async ({
