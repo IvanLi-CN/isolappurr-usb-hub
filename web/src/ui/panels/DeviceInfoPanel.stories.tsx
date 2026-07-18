@@ -50,8 +50,8 @@ const meta: Meta<typeof DeviceInfoPanel> = {
     device: demoDevice,
     transport: "http",
     wifiManagementTransport: null,
-    canControlHardware: true,
-    requestControlTakeover: () => undefined,
+    sharedCommand: null,
+    sharedRevision: 0,
     loadInfo: async () => ({ ok: true, value: mockInfo }),
     loadWifiConfig: async () => ({ ok: true, value: mockWifiConfigured }),
     saveWifiConfig: async () => ({
@@ -285,22 +285,31 @@ export const ResetSettingsUsbFlow: Story = {
   },
 };
 
-export const ControlledInAnotherTab: Story = {
+export const QueuedDeviceCommand: Story = {
   args: {
     transport: "local_usb",
     wifiManagementTransport: "local_usb",
-    canControlHardware: false,
+    sharedCommand: {
+      requestId: "wifi-save-1",
+      deviceId: demoDevice.id,
+      sourceTabId: "tab-b",
+      kind: "mutation",
+      method: "saveWifiConfig",
+      state: "running",
+      queuedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      revision: 2,
+      errorMessage: null,
+    },
+    sharedRevision: 2,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(
-      await canvas.findByText(
-        /another browser tab currently owns live hardware control/i,
-      ),
-    ).toBeVisible();
-    await expect(
-      canvas.getByRole("button", { name: "Take over control" }),
-    ).toBeVisible();
+    const busyMessages = await canvas.findAllByText(
+      /another device command is currently queued or running/i,
+    );
+    await expect(busyMessages[0]).toBeVisible();
     await expect(
       canvas.getByRole("button", { name: "Save Wi-Fi" }),
     ).toBeDisabled();

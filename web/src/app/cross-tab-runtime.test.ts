@@ -1,12 +1,31 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { CrossTabRuntimeCoordinator } from "./cross-tab-runtime";
+import {
+  CrossTabRuntimeCoordinator,
+  runtimeRpcMethodKind,
+} from "./cross-tab-runtime";
 
 type StorageListener = (event: StorageEvent) => void;
+type WindowListener = (event: Event) => void;
 
 function installMockWindow() {
   const store = new Map<string, string>();
   const storageListeners = new Set<StorageListener>();
+  const pagehideListeners = new Set<WindowListener>();
+  const beforeUnloadListeners = new Set<WindowListener>();
+
+  const listenersFor = (type: string) => {
+    if (type === "storage") {
+      return storageListeners;
+    }
+    if (type === "pagehide") {
+      return pagehideListeners;
+    }
+    if (type === "beforeunload") {
+      return beforeUnloadListeners;
+    }
+    return null;
+  };
 
   const localStorage = {
     getItem(key: string) {
@@ -35,14 +54,22 @@ function installMockWindow() {
     value: {
       localStorage,
       addEventListener: (type: string, listener: StorageListener) => {
-        if (type === "storage") {
-          storageListeners.add(listener);
-        }
+        const listeners = listenersFor(type);
+        listeners?.add(listener as never);
       },
       removeEventListener: (type: string, listener: StorageListener) => {
-        if (type === "storage") {
-          storageListeners.delete(listener);
+        const listeners = listenersFor(type);
+        listeners?.delete(listener as never);
+      },
+      dispatchEvent: (event: Event) => {
+        const listeners = listenersFor(event.type);
+        if (!listeners) {
+          return true;
         }
+        for (const listener of listeners) {
+          listener(event as never);
+        }
+        return true;
       },
       setInterval,
       clearInterval,
@@ -94,6 +121,11 @@ describe("CrossTabRuntimeCoordinator", () => {
     );
   });
 
+  test("classifies runtime RPC methods into query and mutation kinds", () => {
+    expect(runtimeRpcMethodKind("deviceInfo")).toBe("query");
+    expect(runtimeRpcMethodKind("savePowerConfig")).toBe("mutation");
+  });
+
   test("broadcasts shared runtime snapshots through storage fallback", () => {
     const leader = new CrossTabRuntimeCoordinator();
     leader.start();
@@ -117,5 +149,82 @@ describe("CrossTabRuntimeCoordinator", () => {
 
     expect(seenSnapshotOrigin).toBe(leader.getTabId());
     unsubscribe();
+  });
+
+  test("does not loop its own snapshot back through storage fallback", () => {
+    const leader = new CrossTabRuntimeCoordinator();
+    leader.start();
+
+    let seenSnapshots = 0;
+    const unsubscribe = leader.subscribeMessages((message) => {
+      if (message.type === "runtime-snapshot") {
+        seenSnapshots += 1;
+      }
+    });
+
+    leader.publishSnapshot({
+      at: new Date().toISOString(),
+      originTabId: leader.getTabId(),
+      now: 1_234,
+      runtimeById: {},
+    });
+
+    expect(seenSnapshots).toBe(0);
+    unsubscribe();
+  });
+
+  test("forwards runtime rpc requests and responses through storage fallback", () => {
+    const leader = new CrossTabRuntimeCoordinator();
+    leader.start();
+
+    const secondaryTab = new CrossTabRuntimeCoordinator();
+    secondaryTab.start();
+
+    let requestSeen = false;
+    let responseSeen = false;
+
+    const unsubscribeLeader = leader.subscribeMessages((message) => {
+      if (
+        message.type === "runtime-rpc-request" &&
+        message.requestId === "req-1"
+      ) {
+        requestSeen = true;
+      }
+    });
+    const unsubscribeSecondary = secondaryTab.subscribeMessages((message) => {
+      if (
+        message.type === "runtime-rpc-response" &&
+        message.requestId === "req-1"
+      ) {
+        responseSeen = true;
+      }
+    });
+
+    secondaryTab.postMessage({
+      type: "runtime-rpc-request",
+      originTabId: secondaryTab.getTabId(),
+      requestId: "req-1",
+      kind: "mutation",
+      method: "savePowerConfig",
+      args: ["device-a", { capability: { power_watts: 65 } }, 7],
+    });
+    leader.postMessage({
+      type: "runtime-rpc-response",
+      originTabId: leader.getTabId(),
+      targetTabId: secondaryTab.getTabId(),
+      requestId: "req-1",
+      result: {
+        ok: true,
+        value: {
+          ok: true,
+          value: { hardware: "sw2303" },
+        },
+      },
+    });
+
+    expect(requestSeen).toBe(true);
+    expect(responseSeen).toBe(true);
+    unsubscribeLeader();
+    unsubscribeSecondary();
   });
 });

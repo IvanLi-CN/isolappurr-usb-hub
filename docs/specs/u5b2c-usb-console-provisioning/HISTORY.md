@@ -32,10 +32,15 @@ Theme-owned input surfaces are explicit as well: disabled form controls retain t
 
 The browser runtime moved from per-tab autonomous polling to a same-origin
 single-writer model. One leader tab now owns discovery, transport bootstrap,
-snapshot polling, and hardware writes; follower tabs consume the shared
-snapshot, stay read-only, and must use explicit takeover to become leader.
+snapshot polling, and hardware writes, while every same-origin tab submits
+device reads and writes through the shared runtime and converges on the same
+canonical snapshot stream.
 
 This same update also introduced a browser-persistent per-device power-lock
 owner store so refresh and short reopen flows can resume the same lock owner
 within the existing device TTL window instead of self-blocking on a fresh
-random owner after reload.
+random owner after reload. The same-origin Power surface now keeps `Output
+mode` as an explicit local draft with `Save and apply`, while the remaining
+persisted config edits still flow through the shared queue as background saves.
+Toast-style hints keep the page layout stable while the shared runtime catches
+up.

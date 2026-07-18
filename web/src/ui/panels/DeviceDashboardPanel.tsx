@@ -303,7 +303,9 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   }, [connectionState, device.id]);
 
   const writeDisabled =
-    connectionState !== "online" || !runtime.canControlHardware;
+    connectionState !== "online" ||
+    runtime.runtimeById[device.id]?.command?.state === "queued" ||
+    runtime.runtimeById[device.id]?.command?.state === "running";
 
   const items = useMemo(() => {
     const isOnline = connectionState === "online";
@@ -370,21 +372,6 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
 
   return (
     <div className="flex flex-col gap-6" data-testid="device-dashboard">
-      {!runtime.canControlHardware ? (
-        <div className="flex flex-col gap-3 rounded-[16px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-[12px] font-semibold leading-5 text-[var(--muted)]">
-            Another browser tab currently owns live hardware control. Port
-            actions stay read-only here until you take over control.
-          </div>
-          <button
-            className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[12px] font-bold text-[var(--text)]"
-            type="button"
-            onClick={runtime.requestControlTakeover}
-          >
-            Take over control
-          </button>
-        </div>
-      ) : null}
       <div className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)] sm:min-h-[116px]">
         <div className="grid grid-cols-1 gap-y-[10px] leading-4 sm:grid-cols-2 sm:gap-x-6">
           <div className="flex min-w-0 items-center">

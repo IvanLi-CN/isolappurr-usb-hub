@@ -38,6 +38,27 @@ export type ChannelRuntime = {
   lastError: DeviceApiError | null;
 };
 
+export type SharedRuntimeCommandKind = "query" | "mutation";
+export type SharedRuntimeCommandStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed";
+
+export type SharedRuntimeCommandState = {
+  requestId: string;
+  deviceId: string;
+  sourceTabId: string;
+  kind: SharedRuntimeCommandKind;
+  method: string;
+  state: SharedRuntimeCommandStatus;
+  queuedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  revision: number;
+  errorMessage: string | null;
+};
+
 export type DeviceRuntime = {
   lastOkAt: number | null;
   lastError: DeviceApiError | null;
@@ -49,6 +70,8 @@ export type DeviceRuntime = {
   powerConfig: PowerConfigResponse | null;
   idleBias: IdleBiasResponse | null;
   pdDiagnostics: PdDiagnosticsResponse | null;
+  revision: number;
+  command: SharedRuntimeCommandState | null;
 };
 
 export type DeviceRuntimeContextValue = {
@@ -296,23 +319,36 @@ function updatePowerLockOwnerRecord(
 }
 
 export function getStablePowerLockOwner(deviceKey: string): number {
+  const stored = readPowerLockOwnerRecords()[deviceKey];
+  if (stored?.ownerId) {
+    if (powerLockOwners.get(deviceKey) !== stored.ownerId) {
+      powerLockOwners.set(deviceKey, stored.ownerId);
+    }
+    return stored.ownerId;
+  }
   const existing = powerLockOwners.get(deviceKey);
   if (existing) {
     return existing;
   }
-  const stored = readPowerLockOwnerRecords()[deviceKey];
-  if (stored?.ownerId) {
-    powerLockOwners.set(deviceKey, stored.ownerId);
-    return stored.ownerId;
-  }
   const owner = createPowerLockOwner();
-  powerLockOwners.set(deviceKey, owner);
-  updatePowerLockOwnerRecord(deviceKey, (current) => ({
+  const persisted = updatePowerLockOwnerRecord(deviceKey, (current) => {
+    if (current) {
+      return current;
+    }
+    return {
+      ownerId: owner,
+      resumeUntilMs: 0,
+      updatedAtMs: Date.now(),
+    };
+  }) ?? {
     ownerId: owner,
-    resumeUntilMs: current?.resumeUntilMs ?? 0,
+    resumeUntilMs: 0,
     updatedAtMs: Date.now(),
-  }));
-  return owner;
+  };
+  const stable =
+    readPowerLockOwnerRecords()[deviceKey]?.ownerId ?? persisted.ownerId;
+  powerLockOwners.set(deviceKey, stable);
+  return stable;
 }
 
 export function canResumePowerLock(

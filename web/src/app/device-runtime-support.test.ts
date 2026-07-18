@@ -49,6 +49,7 @@ function mockPowerLockStorage() {
       },
     },
   });
+  return store;
 }
 
 describe("historical local usb bindings", () => {
@@ -67,6 +68,24 @@ describe("historical local usb bindings", () => {
     expect(canResumePowerLock("device-a", 16_001)).toBe(false);
     clearPowerLockResume("device-a");
     expect(canResumePowerLock("device-a", 1_001)).toBe(false);
+  });
+
+  test("prefers the persisted owner over a stale in-memory cache", () => {
+    const store = mockPowerLockStorage();
+    const deviceKey = "device-race";
+    const first = getStablePowerLockOwner(deviceKey);
+    store.set(
+      "isolapurr.runtime.power-lock-owners.v1",
+      JSON.stringify({
+        [deviceKey]: {
+          ownerId: first + 1,
+          resumeUntilMs: 0,
+          updatedAtMs: 1,
+        },
+      }),
+    );
+
+    expect(getStablePowerLockOwner(deviceKey)).toBe(first + 1);
   });
 
   test("keep verified http ahead of a stored-but-not-live local usb binding", () => {

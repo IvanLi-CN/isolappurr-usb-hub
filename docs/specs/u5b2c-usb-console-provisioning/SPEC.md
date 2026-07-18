@@ -86,8 +86,9 @@ Default selection is only defined after more than one path is immediately usable
 - Firmware update UI MUST default to writing the ESP32-S3 app image `.bin` at `0x10000`; merged full-flash images are not the default product update artifact.
 - Product documentation and UI copy MUST present `Wi-Fi / LAN`, `Web Serial`, and `Local USB` as first-class delivery paths. Any preference, alternate-path prompt, or disabled state MUST be explained by immediate availability or capability boundary, not by product-quality hierarchy.
 - Runtime control MUST treat Wi-Fi / LAN, Web Serial, and Local USB as concurrent channels for the same saved device. The active channel is the current primary; if it fails, another available channel MUST be promoted without creating a duplicate device entry.
-- Browser-managed Web runtime MUST use one same-origin single-writer coordinator per browser profile. Exactly one leader tab may bootstrap USB-capable transports, poll device snapshots, or execute hardware writes at a time; follower tabs MUST consume the shared snapshot and remain read-only until explicit takeover.
-- The browser single-writer runtime MUST synchronize leader lease, active transport, runtime snapshots, and takeover events through a same-origin cross-tab channel with a storage-backed fallback so a second tab cannot silently start a competing poller or transport owner.
+- Browser-managed Web runtime MUST use one same-origin single-writer coordinator per browser profile. Exactly one leader tab may bootstrap USB-capable transports, poll device snapshots, or execute hardware writes at a time, but every same-origin tab MUST submit reads and writes through that shared runtime and receive the same canonical snapshot updates.
+- The browser single-writer runtime MUST synchronize leader lease, active transport, runtime snapshots, shared command state, and browser-local transport handoff events through a same-origin cross-tab channel with a storage-backed fallback so a second tab cannot silently start a competing poller or transport owner.
+- Browser-local permission or transport acquisition flows such as `navigator.serial.requestPort()` MAY trigger an internal leader handoff, but ordinary saved-device reads and writes MUST NOT require an owner-facing takeover step or imply that non-leader tabs are a different product role.
 - When multiple channels are immediately available, the runtime MAY choose a default preference based on the last successful channel for that device. This preference is a selection rule only and MUST NOT be documented as a quality ranking.
 - When only one channel is immediately available, the runtime MUST use that channel and MUST NOT require any other channel to exist first.
 - When Web Serial or Local USB `info` reports a Wi-Fi IPv4 address, Web UI MUST immediately probe `http://<ipv4>` and bind that Wi-Fi / LAN base URL only when the HTTP identity matches the USB `device_id`.
@@ -176,8 +177,17 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given Web Serial or Local USB is connecting, when the user watches Add device, then recent connection steps and failure causes are visible in the modal.
 - Given a saved device exists, when the user confirms deletion from Hardware, then the profile is removed and the page navigates away from the deleted device route.
 - Given the active runtime channel fails while another channel remains available, when the next control or polling operation runs, then the available channel becomes primary.
-- Given one browser tab is already controlling a saved device, when the user opens another same-origin tab, then the second tab shows the shared live state without starting another hardware controller or transport bootstrap path.
-- Given a follower tab explicitly takes over control, when the takeover succeeds, then that tab becomes the single runtime leader, the prior leader drops to read-only, and later snapshots reflect the new leader immediately across both tabs.
+- Given one browser tab is already controlling a saved device, when the user opens another same-origin tab, then the second tab shows the shared live state, can submit supported commands through the shared runtime, and does not start another hardware controller or transport bootstrap path.
+- Given one same-origin tab starts a persisted Power save through the shared
+  runtime, when another same-origin tab is still open on that device, then both
+  tabs keep the same canonical live state, toast-based feedback does not shift
+  layout, and non-`Output mode` editing can continue during short background
+  saves.
+- Given one same-origin tab holds an unsaved `Output mode` draft and another
+  same-origin tab submits a newer `Output mode` write on that device, when the
+  shared runtime serializes the newer mutation, then the first tab keeps its
+  local draft visible but blocks `Save and apply` until the operator refreshes
+  the page, without starting a second poller or transport owner.
 - Given a device is currently managed through Wi-Fi / LAN, when the Hardware page renders Wi-Fi configuration, then stored settings are readable but save and clear controls are disabled until Web Serial or Local USB is active.
 - Given Wi-Fi credentials are saved through Web Serial or Local USB, when EEPROM write succeeds, then firmware immediately reconnects Wi-Fi with the new credentials and reports no reboot requirement.
 - Given Wi-Fi credentials are cleared through Web Serial or Local USB, when EEPROM clear succeeds, then firmware immediately stops the Wi-Fi station and reports no reboot requirement.
@@ -295,10 +305,6 @@ Device Hardware reset settings over Local USB:
 PR: include
 
 ![Device Hardware reset settings Local USB](assets/settings-reset-usb-flow.png)
-
-Device Hardware controlled in another tab:
-
-![Device Hardware controlled in another tab](assets/device-info-controlled-in-another-tab.png)
 
 Action system evidence source: production SPA route `/devices/aabbcc001122/info?demo=true` with deterministic demo data. The `system` selection removes `data-theme` and follows the host dark preference used for this capture.
 

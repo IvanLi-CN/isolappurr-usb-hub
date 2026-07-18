@@ -98,22 +98,6 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {!runtime.canControlHardware ? (
-        <div className="flex flex-col gap-3 rounded-[16px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-[12px] font-semibold leading-5 text-[var(--muted)]">
-            Another browser tab currently owns live hardware control. This
-            dashboard stays read-only until you take over control here.
-          </div>
-          <button
-            className="rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[12px] font-bold text-[var(--text)]"
-            type="button"
-            onClick={runtime.requestControlTakeover}
-          >
-            Take over control
-          </button>
-        </div>
-      ) : null}
-
       <div className="grid grid-cols-1 gap-6 min-[1600px]:grid-cols-2">
         {items.map((item) => (
           <DeviceSummaryCard
@@ -129,7 +113,12 @@ export function DashboardPage() {
             onDataReplug={(deviceId, portId) =>
               void runtime.replug(deviceId, portId)
             }
-            actionsDisabled={!runtime.canControlHardware}
+            actionsDisabled={
+              item.connection.state !== "online" ||
+              runtime.runtimeById[item.device.id]?.command?.state ===
+                "queued" ||
+              runtime.runtimeById[item.device.id]?.command?.state === "running"
+            }
           />
         ))}
 

@@ -4,9 +4,13 @@ import type {
   IdleBiasResponse,
   PdDiagnosticsResponse,
   PowerConfigResponse,
+  RebootResponse,
   Result,
+  SettingsResetResponse,
   WifiConfigResponse,
+  WifiMutationResponse,
 } from "../domain/deviceApi";
+import type { UsbCDownstreamRoute } from "../domain/ports";
 import type { DeviceRuntime } from "./device-runtime-support";
 
 type LeaseRecord = {
@@ -33,23 +37,58 @@ export type RuntimeRpcMethod =
   | "refreshDevice"
   | "deviceInfo"
   | "wifiConfig"
+  | "saveWifiConfig"
+  | "clearWifiConfig"
+  | "resetSettings"
+  | "rebootDevice"
   | "powerConfig"
+  | "savePowerConfig"
+  | "restorePowerDefaults"
+  | "setPowerLock"
+  | "setPowerRuntime"
   | "idleBias"
-  | "pdDiagnostics";
+  | "setIdleBiasCorrection"
+  | "runIdleBiasCalibration"
+  | "clearIdleBiasCalibration"
+  | "pdDiagnostics"
+  | "setPower"
+  | "replug"
+  | "setUsbCDownstreamRoute";
+
+export type RuntimeRpcKind = "query" | "mutation";
 
 export type RuntimeRpcResultMap = {
   refreshDevice: Result<{ ok: true }>;
   deviceInfo: Result<DeviceInfoResponse>;
   wifiConfig: Result<WifiConfigResponse>;
+  saveWifiConfig: Result<WifiMutationResponse>;
+  clearWifiConfig: Result<WifiMutationResponse>;
+  resetSettings: Result<SettingsResetResponse>;
+  rebootDevice: Result<RebootResponse>;
   powerConfig: Result<PowerConfigResponse>;
+  savePowerConfig: Result<PowerConfigResponse>;
+  restorePowerDefaults: Result<PowerConfigResponse>;
+  setPowerLock: Result<PowerConfigResponse>;
+  setPowerRuntime: Result<PowerConfigResponse>;
   idleBias: Result<IdleBiasResponse>;
   pdDiagnostics: Result<PdDiagnosticsResponse>;
+  setIdleBiasCorrection: Result<IdleBiasResponse>;
+  runIdleBiasCalibration: Result<IdleBiasResponse>;
+  clearIdleBiasCalibration: Result<IdleBiasResponse>;
+  setPower: Result<{ accepted: true }>;
+  replug: Result<{ accepted: true }>;
+  setUsbCDownstreamRoute: Result<{
+    accepted: true;
+    usb_c_downstream_route: UsbCDownstreamRoute;
+    persisted: boolean;
+  }>;
 };
 
 type RuntimeRpcRequestMessage = {
   type: "runtime-rpc-request";
   originTabId: string;
   requestId: string;
+  kind: RuntimeRpcKind;
   method: RuntimeRpcMethod;
   args: unknown[];
 };
@@ -82,6 +121,27 @@ const SNAPSHOT_STORAGE_KEY = "isolapurr.runtime.snapshot.v1";
 const MESSAGE_STORAGE_KEY = "isolapurr.runtime.message.v1";
 const LEASE_TTL_MS = 15_000;
 const HEARTBEAT_INTERVAL_MS = 5_000;
+
+const MUTATION_METHODS = new Set<RuntimeRpcMethod>([
+  "saveWifiConfig",
+  "clearWifiConfig",
+  "resetSettings",
+  "rebootDevice",
+  "savePowerConfig",
+  "restorePowerDefaults",
+  "setPowerLock",
+  "setPowerRuntime",
+  "setIdleBiasCorrection",
+  "runIdleBiasCalibration",
+  "clearIdleBiasCalibration",
+  "setPower",
+  "replug",
+  "setUsbCDownstreamRoute",
+]);
+
+export function runtimeRpcMethodKind(method: RuntimeRpcMethod): RuntimeRpcKind {
+  return MUTATION_METHODS.has(method) ? "mutation" : "query";
+}
 
 function createTabId(): string {
   if (

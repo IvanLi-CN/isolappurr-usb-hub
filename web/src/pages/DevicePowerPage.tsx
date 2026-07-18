@@ -41,17 +41,18 @@ export function DevicePowerPage() {
         coordination={runtime.coordination}
         canControlHardware={runtime.canControlHardware}
         powerLockOwner={runtime.powerLockOwner(deviceId)}
-        requestControlTakeover={runtime.requestControlTakeover}
         clearIdleBiasCalibration={(owner) =>
           runtime.clearIdleBiasCalibration(deviceId, owner)
         }
         loadIdleBias={() => runtime.idleBias(deviceId)}
         loadPdDiagnostics={() => runtime.pdDiagnostics(deviceId)}
         loadPowerConfig={() => runtime.powerConfig(deviceId)}
-        localAdvancedLocked={!runtime.canControlHardware}
+        localAdvancedLocked={false}
+        sharedCommand={deviceRuntime?.command ?? null}
         sharedIdleBiasSnapshot={deviceRuntime?.idleBias ?? null}
         sharedPdDiagnostics={deviceRuntime?.pdDiagnostics ?? null}
         sharedPowerConfig={deviceRuntime?.powerConfig ?? null}
+        sharedRevision={deviceRuntime?.revision ?? 0}
         restorePowerDefaults={(owner) =>
           runtime.restorePowerDefaults(deviceId, owner)
         }

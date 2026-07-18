@@ -50,10 +50,12 @@ import {
   type RuntimeChannelMessage,
   type RuntimeRpcMethod,
   type RuntimeRpcResultMap,
+  runtimeRpcMethodKind,
 } from "./cross-tab-runtime";
 import { useDemoMode } from "./demo-mode";
 import { DeviceRuntimeContext } from "./device-runtime-context";
 import {
+  canResumePowerLock,
   clearPowerLockResume,
   createEmptyChannels,
   type DeviceRuntime,
@@ -75,6 +77,7 @@ import {
   resolveLocalUsbTarget,
   resolveOrderedDeviceTransports,
   runQueuedDeviceRequest,
+  type SharedRuntimeCommandKind,
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
@@ -107,11 +110,13 @@ export function DeviceRuntimeProvider({
     coordinator.getLeaseState(),
   );
   const inflight = useRef<Set<string>>(new Set());
+  const runtimeByIdRef = useRef(runtimeById);
   const localUsbAgent = useRef<DesktopAgent | null>(null);
   const lastDemoEnabled = useRef(demoEnabled);
   const localUsbPortByDevice = useRef<Record<string, string>>({});
   const localUsbRequestQueues = useRef<Record<string, Promise<void>>>({});
   const httpRequestQueues = useRef<Record<string, Promise<void>>>({});
+  const deviceMutationQueues = useRef<Record<string, Promise<void>>>({});
   const preferredTransportByDevice = useRef<Record<string, DeviceTransport>>(
     {},
   );
@@ -136,6 +141,10 @@ export function DeviceRuntimeProvider({
   >(null);
   const wasLeaderRef = useRef(coordination.role !== "follower");
   const isLeader = coordination.role !== "follower";
+
+  useEffect(() => {
+    runtimeByIdRef.current = runtimeById;
+  }, [runtimeById]);
 
   useEffect(() => {
     coordinator.start();
@@ -213,6 +222,7 @@ export function DeviceRuntimeProvider({
           delete localUsbPortByDevice.current[id];
           delete localUsbRequestQueues.current[id];
           delete httpRequestQueues.current[id];
+          delete deviceMutationQueues.current[id];
           delete preferredTransportByDevice.current[id];
         }
       }
@@ -229,6 +239,8 @@ export function DeviceRuntimeProvider({
             powerConfig: null,
             idleBias: null,
             pdDiagnostics: null,
+            revision: 0,
+            command: null,
           };
         }
       }
@@ -246,6 +258,38 @@ export function DeviceRuntimeProvider({
     return `rpc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }, []);
 
+  type SharedMutationInvocationOptions = {
+    requestId?: string;
+    sourceTabId?: string;
+  };
+
+  const runtimeRpcTimeoutMs = useCallback(
+    (method: RuntimeRpcMethod): number => {
+      if (method === "runIdleBiasCalibration") {
+        return 190_000;
+      }
+      if (
+        method === "savePowerConfig" ||
+        method === "restorePowerDefaults" ||
+        method === "setPowerLock" ||
+        method === "setPowerRuntime" ||
+        method === "setIdleBiasCorrection" ||
+        method === "clearIdleBiasCalibration" ||
+        method === "saveWifiConfig" ||
+        method === "clearWifiConfig" ||
+        method === "resetSettings" ||
+        method === "rebootDevice" ||
+        method === "setPower" ||
+        method === "replug" ||
+        method === "setUsbCDownstreamRoute"
+      ) {
+        return 25_000;
+      }
+      return 8_000;
+    },
+    [],
+  );
+
   const requestLeaderRpc = useCallback(
     async <TMethod extends RuntimeRpcMethod>(
       method: TMethod,
@@ -256,7 +300,7 @@ export function DeviceRuntimeProvider({
         const timeoutId = window.setTimeout(() => {
           delete pendingRpc.current[requestId];
           reject(new Error(`Cross-tab runtime request timed out: ${method}`));
-        }, 8_000);
+        }, runtimeRpcTimeoutMs(method));
         pendingRpc.current[requestId] = {
           resolve: (value) => resolve(value as RuntimeRpcResultMap[TMethod]),
           reject,
@@ -266,35 +310,188 @@ export function DeviceRuntimeProvider({
           type: "runtime-rpc-request",
           originTabId: coordination.currentTabId,
           requestId,
+          kind: runtimeRpcMethodKind(method),
           method,
           args,
         });
       });
     },
-    [coordinator, coordination.currentTabId, createRpcRequestId],
+    [
+      coordinator,
+      coordination.currentTabId,
+      createRpcRequestId,
+      runtimeRpcTimeoutMs,
+    ],
   );
-
-  const followerControlError = useCallback(
-    (): DeviceApiError => ({
-      kind: "busy",
-      message:
-        "Hardware control is active in another browser tab. Take over control in this tab before sending commands.",
-      retryable: true,
-    }),
-    [],
-  );
-
-  const warnFollowerControlBlocked = useCallback(() => {
-    pushToast({
-      message:
-        "Hardware control is active in another browser tab. Use Take over control in this tab before sending commands.",
-      variant: "warning",
-    });
-  }, [pushToast]);
 
   const requestControlTakeover = useCallback(() => {
     coordinator.requestTakeover();
   }, [coordinator]);
+
+  const updateDeviceCommandState = useCallback(
+    (
+      deviceId: string,
+      update: (
+        current: DeviceRuntime,
+      ) => Pick<DeviceRuntime, "revision" | "command"> | null,
+    ) => {
+      setRuntimeById((prev) => {
+        const current = prev[deviceId];
+        if (!current) {
+          return prev;
+        }
+        const next = update(current);
+        if (!next) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [deviceId]: {
+            ...current,
+            revision: next.revision,
+            command: next.command,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const markDeviceCommandState = useCallback(
+    ({
+      deviceId,
+      requestId,
+      sourceTabId,
+      kind,
+      method,
+      state,
+    }: {
+      deviceId: string;
+      requestId: string;
+      sourceTabId: string;
+      kind: SharedRuntimeCommandKind;
+      method: string;
+      state: "queued" | "running";
+    }) => {
+      updateDeviceCommandState(deviceId, (current) => {
+        const existingCommand =
+          current.command?.requestId === requestId ? current.command : null;
+        return {
+          revision: current.revision,
+          command: {
+            requestId,
+            deviceId,
+            sourceTabId,
+            kind,
+            method,
+            state,
+            queuedAt: existingCommand?.queuedAt ?? new Date().toISOString(),
+            startedAt:
+              state === "running"
+                ? (existingCommand?.startedAt ?? new Date().toISOString())
+                : null,
+            finishedAt: null,
+            revision: current.revision,
+            errorMessage: null,
+          },
+        };
+      });
+    },
+    [updateDeviceCommandState],
+  );
+
+  const finishDeviceCommandState = useCallback(
+    ({
+      deviceId,
+      requestId,
+      succeeded,
+      incrementRevision,
+      errorMessage,
+    }: {
+      deviceId: string;
+      requestId: string;
+      succeeded: boolean;
+      incrementRevision: boolean;
+      errorMessage?: string | null;
+    }) => {
+      updateDeviceCommandState(deviceId, (current) => {
+        const nextRevision = incrementRevision
+          ? current.revision + 1
+          : current.revision;
+        if (!current.command || current.command.requestId !== requestId) {
+          return {
+            revision: nextRevision,
+            command: current.command,
+          };
+        }
+        return {
+          revision: nextRevision,
+          command: {
+            ...current.command,
+            state: succeeded ? "done" : "failed",
+            finishedAt: new Date().toISOString(),
+            revision: nextRevision,
+            errorMessage: errorMessage ?? null,
+          },
+        };
+      });
+    },
+    [updateDeviceCommandState],
+  );
+
+  const runSharedMutation = useCallback(
+    async <T,>({
+      deviceId,
+      method,
+      invoke,
+      requestId = createRpcRequestId(),
+      sourceTabId = coordination.currentTabId,
+    }: {
+      deviceId: string;
+      method: RuntimeRpcMethod;
+      invoke: () => Promise<Result<T>>;
+      requestId?: string;
+      sourceTabId?: string;
+    }): Promise<Result<T>> => {
+      markDeviceCommandState({
+        deviceId,
+        requestId,
+        sourceTabId,
+        kind: "mutation",
+        method,
+        state: "queued",
+      });
+      return runQueuedDeviceRequest(
+        deviceMutationQueues.current,
+        deviceId,
+        async () => {
+          markDeviceCommandState({
+            deviceId,
+            requestId,
+            sourceTabId,
+            kind: "mutation",
+            method,
+            state: "running",
+          });
+          const result = await invoke();
+          finishDeviceCommandState({
+            deviceId,
+            requestId,
+            succeeded: result.ok,
+            incrementRevision: result.ok,
+            errorMessage: result.ok ? null : result.error.message,
+          });
+          return result;
+        },
+      );
+    },
+    [
+      coordination.currentTabId,
+      createRpcRequestId,
+      finishDeviceCommandState,
+      markDeviceCommandState,
+    ],
+  );
 
   const syncObservedPowerLock = useCallback(
     (
@@ -1013,6 +1210,73 @@ export function DeviceRuntimeProvider({
     [devices, markChannelResult, orderedTransports, requestTransport],
   );
 
+  const refreshCanonicalPowerConfig = useCallback(
+    async (
+      deviceId: string,
+      owner?: number,
+      fallback?: PowerConfigResponse,
+    ): Promise<Result<PowerConfigResponse>> => {
+      const snapshot = await runDeviceCommand<PowerConfigResponse>(
+        deviceId,
+        "power.config_get",
+      );
+      if (snapshot.ok) {
+        syncObservedPowerLock(deviceId, snapshot.value.lock, owner);
+        syncPowerConfigSnapshot(deviceId, snapshot.value);
+        return snapshot;
+      }
+      if (!fallback) {
+        return snapshot;
+      }
+      syncObservedPowerLock(deviceId, fallback.lock, owner);
+      syncPowerConfigSnapshot(deviceId, fallback);
+      return { ok: true, value: fallback };
+    },
+    [runDeviceCommand, syncObservedPowerLock, syncPowerConfigSnapshot],
+  );
+
+  useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
+    let cancelled = false;
+    const renewLocks = async () => {
+      for (const device of devices) {
+        const runtime = runtimeByIdRef.current[device.id];
+        const lock = runtime?.powerConfig?.lock;
+        const owner = getStablePowerLockOwner(device.id);
+        if (!lock || lock.owner !== owner || !canResumePowerLock(device.id)) {
+          continue;
+        }
+        const renewal = await runDeviceCommand<PowerConfigResponse>(
+          device.id,
+          "power.lock",
+          {
+            owner,
+            acquire: true,
+          },
+        );
+        if (cancelled) {
+          return;
+        }
+        if (renewal.ok) {
+          markPowerLockHeld(device.id);
+          await refreshCanonicalPowerConfig(device.id, owner, renewal.value);
+          continue;
+        }
+        const snapshot = await refreshCanonicalPowerConfig(device.id, owner);
+        if (!cancelled && snapshot.ok && snapshot.value.lock?.owner === owner) {
+          markPowerLockHeld(device.id);
+        }
+      }
+    };
+    const intervalId = window.setInterval(() => void renewLocks(), 8_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [devices, isLeader, refreshCanonicalPowerConfig, runDeviceCommand]);
+
   const wifiConfig = useCallback(
     async (deviceId: string): Promise<Result<WifiConfigResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
@@ -1027,56 +1291,74 @@ export function DeviceRuntimeProvider({
     async (
       deviceId: string,
       input: WifiConfigInput,
+      options?: SharedMutationInvocationOptions,
     ): Promise<Result<WifiMutationResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("saveWifiConfig", [deviceId, input]);
       }
-      const res = await runDeviceCommand<WifiMutationResponse>(
+      return runSharedMutation({
         deviceId,
-        "wifi.set",
-        input,
-        ["web_serial", "local_usb"],
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
-      }
-      return res;
+        method: "saveWifiConfig",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const res = await runDeviceCommand<WifiMutationResponse>(
+            deviceId,
+            "wifi.set",
+            input,
+            ["web_serial", "local_usb"],
+          );
+          if (res.ok) {
+            await refreshDevice(deviceId);
+          }
+          return res;
+        },
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
       refreshDevice,
+      requestLeaderRpc,
       runDeviceCommand,
-      warnFollowerControlBlocked,
+      runSharedMutation,
     ],
   );
 
   const clearWifi = useCallback(
-    async (deviceId: string): Promise<Result<WifiMutationResponse>> => {
+    async (
+      deviceId: string,
+      options?: SharedMutationInvocationOptions,
+    ): Promise<Result<WifiMutationResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("clearWifiConfig", [deviceId]);
       }
-      const res = await runDeviceCommand<WifiMutationResponse>(
+      return runSharedMutation({
         deviceId,
-        "wifi.clear",
-        undefined,
-        ["web_serial", "local_usb"],
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
-      }
-      return res;
+        method: "clearWifiConfig",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const res = await runDeviceCommand<WifiMutationResponse>(
+            deviceId,
+            "wifi.clear",
+            undefined,
+            ["web_serial", "local_usb"],
+          );
+          if (res.ok) {
+            await refreshDevice(deviceId);
+          }
+          return res;
+        },
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
       refreshDevice,
+      requestLeaderRpc,
       runDeviceCommand,
-      warnFollowerControlBlocked,
+      runSharedMutation,
     ],
   );
 
@@ -1084,53 +1366,70 @@ export function DeviceRuntimeProvider({
     async (
       deviceId: string,
       scope: SettingsResetScope,
+      options?: SharedMutationInvocationOptions,
     ): Promise<Result<SettingsResetResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("resetSettings", [deviceId, scope]);
       }
-      const preferred: DeviceTransport[] | undefined =
-        scope === "wifi" ? ["web_serial", "local_usb"] : undefined;
-      const res = await runDeviceCommand<SettingsResetResponse>(
+      return runSharedMutation({
         deviceId,
-        "settings.reset",
-        scope === "other"
-          ? { scope, owner: getStablePowerLockOwner(deviceId) }
-          : { scope },
-        preferred,
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
-      }
-      return res;
+        method: "resetSettings",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const preferred: DeviceTransport[] | undefined =
+            scope === "wifi" ? ["web_serial", "local_usb"] : undefined;
+          const res = await runDeviceCommand<SettingsResetResponse>(
+            deviceId,
+            "settings.reset",
+            scope === "other"
+              ? { scope, owner: getStablePowerLockOwner(deviceId) }
+              : { scope },
+            preferred,
+          );
+          if (res.ok) {
+            await refreshDevice(deviceId);
+          }
+          return res;
+        },
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
       refreshDevice,
+      requestLeaderRpc,
       runDeviceCommand,
-      warnFollowerControlBlocked,
+      runSharedMutation,
     ],
   );
 
   const reboot = useCallback(
-    async (deviceId: string): Promise<Result<RebootResponse>> => {
+    async (
+      deviceId: string,
+      options?: SharedMutationInvocationOptions,
+    ): Promise<Result<RebootResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("rebootDevice", [deviceId]);
       }
-      return runDeviceCommand<RebootResponse>(deviceId, "reboot", undefined, [
-        "web_serial",
-        "local_usb",
-      ]);
+      return runSharedMutation({
+        deviceId,
+        method: "rebootDevice",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () =>
+          runDeviceCommand<RebootResponse>(deviceId, "reboot", undefined, [
+            "web_serial",
+            "local_usb",
+          ]),
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
+      requestLeaderRpc,
       runDeviceCommand,
-      warnFollowerControlBlocked,
+      runSharedMutation,
     ],
   );
 
@@ -1139,23 +1438,13 @@ export function DeviceRuntimeProvider({
       if (!isLeader && coordination.role !== "unsupported") {
         return requestLeaderRpc("powerConfig", [deviceId]);
       }
-      const res = await runDeviceCommand<PowerConfigResponse>(
-        deviceId,
-        "power.config_get",
-      );
-      if (res.ok) {
-        syncObservedPowerLock(deviceId, res.value.lock);
-        syncPowerConfigSnapshot(deviceId, res.value);
-      }
-      return res;
+      return refreshCanonicalPowerConfig(deviceId);
     },
     [
       coordination.role,
+      refreshCanonicalPowerConfig,
       isLeader,
       requestLeaderRpc,
-      runDeviceCommand,
-      syncPowerConfigSnapshot,
-      syncObservedPowerLock,
     ],
   );
 
@@ -1210,32 +1499,43 @@ export function DeviceRuntimeProvider({
       deviceId: string,
       input: PowerConfigInput,
       owner: number,
+      options?: SharedMutationInvocationOptions,
     ): Promise<Result<PowerConfigResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("savePowerConfig", [deviceId, input, owner]);
       }
-      const res = await runDeviceCommand<PowerConfigResponse>(
+      return runSharedMutation({
         deviceId,
-        "power.config_set",
-        { config: input, owner },
-      );
-      if (res.ok) {
-        syncObservedPowerLock(deviceId, res.value.lock, owner);
-        syncPowerConfigSnapshot(deviceId, res.value);
-        await refreshDevice(deviceId);
-      }
-      return res;
+        method: "savePowerConfig",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const res = await runDeviceCommand<PowerConfigResponse>(
+            deviceId,
+            "power.config_set",
+            { config: input, owner },
+          );
+          if (res.ok) {
+            const canonical = await refreshCanonicalPowerConfig(
+              deviceId,
+              owner,
+              res.value,
+            );
+            await refreshDevice(deviceId);
+            return canonical;
+          }
+          return res;
+        },
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
+      refreshCanonicalPowerConfig,
       refreshDevice,
+      requestLeaderRpc,
       runDeviceCommand,
-      syncPowerConfigSnapshot,
-      syncObservedPowerLock,
-      warnFollowerControlBlocked,
+      runSharedMutation,
     ],
   );
 
@@ -1243,32 +1543,43 @@ export function DeviceRuntimeProvider({
     async (
       deviceId: string,
       owner: number,
+      options?: SharedMutationInvocationOptions,
     ): Promise<Result<PowerConfigResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("restorePowerDefaults", [deviceId, owner]);
       }
-      const res = await runDeviceCommand<PowerConfigResponse>(
+      return runSharedMutation({
         deviceId,
-        "power.config_defaults",
-        { owner },
-      );
-      if (res.ok) {
-        syncObservedPowerLock(deviceId, res.value.lock, owner);
-        syncPowerConfigSnapshot(deviceId, res.value);
-        await refreshDevice(deviceId);
-      }
-      return res;
+        method: "restorePowerDefaults",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const res = await runDeviceCommand<PowerConfigResponse>(
+            deviceId,
+            "power.config_defaults",
+            { owner },
+          );
+          if (res.ok) {
+            const canonical = await refreshCanonicalPowerConfig(
+              deviceId,
+              owner,
+              res.value,
+            );
+            await refreshDevice(deviceId);
+            return canonical;
+          }
+          return res;
+        },
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
+      refreshCanonicalPowerConfig,
       refreshDevice,
+      requestLeaderRpc,
       runDeviceCommand,
-      syncPowerConfigSnapshot,
-      syncObservedPowerLock,
-      warnFollowerControlBlocked,
+      runSharedMutation,
     ],
   );
 
@@ -1277,39 +1588,48 @@ export function DeviceRuntimeProvider({
       deviceId: string,
       owner: number,
       acquire: boolean,
+      options?: SharedMutationInvocationOptions,
     ): Promise<Result<PowerConfigResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("setPowerLock", [deviceId, owner, acquire]);
       }
-      const res = await runDeviceCommand<PowerConfigResponse>(
+      return runSharedMutation({
         deviceId,
-        "power.lock",
-        {
-          owner,
-          acquire,
+        method: "setPowerLock",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const res = await runDeviceCommand<PowerConfigResponse>(
+            deviceId,
+            "power.lock",
+            {
+              owner,
+              acquire,
+            },
+          );
+          if (res.ok) {
+            if (acquire && res.value.lock?.owner === owner) {
+              markPowerLockHeld(deviceId);
+            } else if (!acquire) {
+              clearPowerLockResume(deviceId);
+            }
+            return refreshCanonicalPowerConfig(
+              deviceId,
+              acquire ? owner : undefined,
+              res.value,
+            );
+          }
+          return res;
         },
-      );
-      if (res.ok) {
-        if (acquire && res.value.lock?.owner === owner) {
-          markPowerLockHeld(deviceId);
-        } else if (!acquire) {
-          clearPowerLockResume(deviceId);
-        } else {
-          syncObservedPowerLock(deviceId, res.value.lock, owner);
-        }
-        syncPowerConfigSnapshot(deviceId, res.value);
-      }
-      return res;
+      });
     },
     [
       coordination.role,
-      followerControlError,
+      refreshCanonicalPowerConfig,
       isLeader,
+      requestLeaderRpc,
       runDeviceCommand,
-      syncPowerConfigSnapshot,
-      syncObservedPowerLock,
-      warnFollowerControlBlocked,
+      runSharedMutation,
     ],
   );
 
@@ -1318,30 +1638,42 @@ export function DeviceRuntimeProvider({
       deviceId: string,
       correctionEnabled: boolean,
       owner: number,
+      options?: SharedMutationInvocationOptions,
     ): Promise<Result<IdleBiasResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("setIdleBiasCorrection", [
+          deviceId,
+          correctionEnabled,
+          owner,
+        ]);
       }
-      const res = await runDeviceCommand<IdleBiasResponse>(
+      return runSharedMutation({
         deviceId,
-        "power.idle_bias_set",
-        { correction_enabled: correctionEnabled, owner },
-      );
-      if (res.ok) {
-        syncIdleBiasSnapshot(deviceId, res.value);
-        await refreshDevice(deviceId);
-      }
-      return res;
+        method: "setIdleBiasCorrection",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const res = await runDeviceCommand<IdleBiasResponse>(
+            deviceId,
+            "power.idle_bias_set",
+            { correction_enabled: correctionEnabled, owner },
+          );
+          if (res.ok) {
+            syncIdleBiasSnapshot(deviceId, res.value);
+            await refreshDevice(deviceId);
+          }
+          return res;
+        },
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
       refreshDevice,
+      requestLeaderRpc,
       runDeviceCommand,
+      runSharedMutation,
       syncIdleBiasSnapshot,
-      warnFollowerControlBlocked,
     ],
   );
 
@@ -1349,30 +1681,38 @@ export function DeviceRuntimeProvider({
     async (
       deviceId: string,
       owner: number,
+      options?: SharedMutationInvocationOptions,
     ): Promise<Result<IdleBiasResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("runIdleBiasCalibration", [deviceId, owner]);
       }
-      const res = await runDeviceCommand<IdleBiasResponse>(
+      return runSharedMutation({
         deviceId,
-        "power.idle_bias_run",
-        {
-          owner,
+        method: "runIdleBiasCalibration",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const res = await runDeviceCommand<IdleBiasResponse>(
+            deviceId,
+            "power.idle_bias_run",
+            {
+              owner,
+            },
+          );
+          if (res.ok) {
+            syncIdleBiasSnapshot(deviceId, res.value);
+          }
+          return res;
         },
-      );
-      if (res.ok) {
-        syncIdleBiasSnapshot(deviceId, res.value);
-      }
-      return res;
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
+      requestLeaderRpc,
       runDeviceCommand,
+      runSharedMutation,
       syncIdleBiasSnapshot,
-      warnFollowerControlBlocked,
     ],
   );
 
@@ -1380,30 +1720,38 @@ export function DeviceRuntimeProvider({
     async (
       deviceId: string,
       owner: number,
+      options?: SharedMutationInvocationOptions,
     ): Promise<Result<IdleBiasResponse>> => {
       if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
+        return requestLeaderRpc("clearIdleBiasCalibration", [deviceId, owner]);
       }
-      const res = await runDeviceCommand<IdleBiasResponse>(
+      return runSharedMutation({
         deviceId,
-        "power.idle_bias_clear",
-        { owner },
-      );
-      if (res.ok) {
-        syncIdleBiasSnapshot(deviceId, res.value);
-        await refreshDevice(deviceId);
-      }
-      return res;
+        method: "clearIdleBiasCalibration",
+        requestId: options?.requestId,
+        sourceTabId: options?.sourceTabId,
+        invoke: async () => {
+          const res = await runDeviceCommand<IdleBiasResponse>(
+            deviceId,
+            "power.idle_bias_clear",
+            { owner },
+          );
+          if (res.ok) {
+            syncIdleBiasSnapshot(deviceId, res.value);
+            await refreshDevice(deviceId);
+          }
+          return res;
+        },
+      });
     },
     [
       coordination.role,
-      followerControlError,
       isLeader,
       refreshDevice,
+      requestLeaderRpc,
       runDeviceCommand,
+      runSharedMutation,
       syncIdleBiasSnapshot,
-      warnFollowerControlBlocked,
     ],
   );
 
@@ -1430,22 +1778,14 @@ export function DeviceRuntimeProvider({
       pendingPortId,
       method,
       params,
-      errorLabel,
-      successMessage,
       allowedTransports,
     }: {
       deviceId: string;
       pendingPortId: PortId;
       method: string;
       params?: Record<string, unknown>;
-      errorLabel: string;
-      successMessage: (deviceName: string, result: T) => string;
       allowedTransports?: DeviceTransport[];
     }): Promise<Result<T> | null> => {
-      if (!isLeader && coordination.role !== "unsupported") {
-        warnFollowerControlBlocked();
-        return { ok: false, error: followerControlError() };
-      }
       const device = devices.find((d) => d.id === deviceId);
       if (!device) {
         return null;
@@ -1460,49 +1800,67 @@ export function DeviceRuntimeProvider({
           allowedTransports,
         );
         if (result.ok) {
-          pushToast({
-            message: successMessage(device.name, result.value),
-            variant: "success",
-          });
           await refreshDevice(deviceId);
-        } else {
-          handleApiErrorToast(device.name, errorLabel, result.error);
         }
         return result;
       } finally {
         setPending(deviceId, pendingPortId, false);
       }
     },
-    [
-      coordination.role,
-      devices,
-      followerControlError,
-      handleApiErrorToast,
-      isLeader,
-      pushToast,
-      refreshDevice,
-      runDeviceCommand,
-      setPending,
-      warnFollowerControlBlocked,
-    ],
+    [devices, refreshDevice, runDeviceCommand, setPending],
   );
 
   const setPower = useCallback(
     async (deviceId: string, portId: PortId, enabled: boolean) => {
       const label = portId === "port_a" ? "USB-A" : "USB-C";
-      await runPendingMutation<{ accepted: true }>({
-        deviceId,
-        pendingPortId: portId,
-        method: "port.power_set",
-        params: {
-          port: portId,
-          enabled,
-        },
-        errorLabel: label,
-        successMessage: (deviceName) => `${deviceName}: ${label} power set`,
-      });
+      const deviceName =
+        devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+      const result =
+        !isLeader && coordination.role !== "unsupported"
+          ? await requestLeaderRpc("setPower", [deviceId, portId, enabled])
+          : await runSharedMutation({
+              deviceId,
+              method: "setPower",
+              invoke: async () => {
+                const direct = await runPendingMutation<{ accepted: true }>({
+                  deviceId,
+                  pendingPortId: portId,
+                  method: "port.power_set",
+                  params: {
+                    port: portId,
+                    enabled,
+                  },
+                });
+                return (
+                  direct ?? {
+                    ok: false,
+                    error: {
+                      kind: "invalid_response",
+                      message: `Unknown device: ${deviceId}`,
+                    },
+                  }
+                );
+              },
+            });
+      if (result.ok) {
+        pushToast({
+          message: `${deviceName}: ${label} power set`,
+          variant: "success",
+        });
+        return;
+      }
+      handleApiErrorToast(deviceName, label, result.error);
     },
-    [runPendingMutation],
+    [
+      coordination.role,
+      devices,
+      handleApiErrorToast,
+      isLeader,
+      pushToast,
+      requestLeaderRpc,
+      runPendingMutation,
+      runSharedMutation,
+    ],
   );
 
   const setPowerRuntime = useCallback(
@@ -1513,76 +1871,182 @@ export function DeviceRuntimeProvider({
       enabled: boolean,
     ): Promise<Result<PowerConfigResponse>> => {
       const label = action === "output" ? "Power" : "TPS discharge";
-      const result = await runPendingMutation<PowerConfigResponse>({
-        deviceId,
-        pendingPortId: "port_c",
-        method: "power.runtime_set",
-        params: {
-          action,
-          enabled,
-          owner,
-        },
-        errorLabel: label,
-        successMessage: (deviceName) => `${deviceName}: ${label} updated`,
-      });
-      if (!result) {
-        return {
-          ok: false,
-          error: {
-            kind: "invalid_response",
-            message: `Unknown device: ${deviceId}`,
-          },
-        };
-      }
+      const deviceName =
+        devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+      const result =
+        !isLeader && coordination.role !== "unsupported"
+          ? await requestLeaderRpc("setPowerRuntime", [
+              deviceId,
+              owner,
+              action,
+              enabled,
+            ])
+          : await runSharedMutation({
+              deviceId,
+              method: "setPowerRuntime",
+              invoke: async () => {
+                const direct = await runPendingMutation<PowerConfigResponse>({
+                  deviceId,
+                  pendingPortId: "port_c",
+                  method: "power.runtime_set",
+                  params: {
+                    action,
+                    enabled,
+                    owner,
+                  },
+                });
+                if (!direct?.ok) {
+                  return (
+                    direct ?? {
+                      ok: false,
+                      error: {
+                        kind: "invalid_response",
+                        message: `Unknown device: ${deviceId}`,
+                      },
+                    }
+                  );
+                }
+                return refreshCanonicalPowerConfig(
+                  deviceId,
+                  owner,
+                  direct.value,
+                );
+              },
+            });
       if (result.ok) {
         syncObservedPowerLock(deviceId, result.value.lock, owner);
         syncPowerConfigSnapshot(deviceId, result.value);
+        pushToast({
+          message: `${deviceName}: ${label} updated`,
+          variant: "success",
+        });
+      } else {
+        handleApiErrorToast(deviceName, label, result.error);
       }
       return result;
     },
-    [runPendingMutation, syncObservedPowerLock, syncPowerConfigSnapshot],
+    [
+      coordination.role,
+      devices,
+      handleApiErrorToast,
+      isLeader,
+      pushToast,
+      refreshCanonicalPowerConfig,
+      requestLeaderRpc,
+      runPendingMutation,
+      runSharedMutation,
+      syncObservedPowerLock,
+      syncPowerConfigSnapshot,
+    ],
   );
 
   const replug = useCallback(
     async (deviceId: string, portId: PortId) => {
       const label = portId === "port_a" ? "USB-A" : "USB-C";
-      await runPendingMutation<{ accepted: true }>({
-        deviceId,
-        pendingPortId: portId,
-        method: "port.replug",
-        params: {
-          port: portId,
-        },
-        errorLabel: label,
-        successMessage: (deviceName) =>
-          `${deviceName}: ${label} replug accepted`,
-      });
+      const deviceName =
+        devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+      const result =
+        !isLeader && coordination.role !== "unsupported"
+          ? await requestLeaderRpc("replug", [deviceId, portId])
+          : await runSharedMutation({
+              deviceId,
+              method: "replug",
+              invoke: async () => {
+                const direct = await runPendingMutation<{ accepted: true }>({
+                  deviceId,
+                  pendingPortId: portId,
+                  method: "port.replug",
+                  params: {
+                    port: portId,
+                  },
+                });
+                return (
+                  direct ?? {
+                    ok: false,
+                    error: {
+                      kind: "invalid_response",
+                      message: `Unknown device: ${deviceId}`,
+                    },
+                  }
+                );
+              },
+            });
+      if (result.ok) {
+        pushToast({
+          message: `${deviceName}: ${label} replug accepted`,
+          variant: "success",
+        });
+        return;
+      }
+      handleApiErrorToast(deviceName, label, result.error);
     },
-    [runPendingMutation],
+    [
+      coordination.role,
+      devices,
+      handleApiErrorToast,
+      isLeader,
+      pushToast,
+      requestLeaderRpc,
+      runPendingMutation,
+      runSharedMutation,
+    ],
   );
 
   const setRoute = useCallback(
     async (deviceId: string, route: UsbCDownstreamRoute) => {
-      await runPendingMutation<{
-        accepted: true;
-        usb_c_downstream_route: UsbCDownstreamRoute;
-        persisted: boolean;
-      }>({
-        deviceId,
-        pendingPortId: "port_c",
-        method: "hub.route_set",
-        params: {
-          route,
-        },
-        errorLabel: "USB-C route",
-        successMessage: (deviceName, result) => {
-          const label =
-            result.usb_c_downstream_route === "mcu" ? "Upgrade" : "Normal";
-          return `${deviceName}: USB-C mode set to ${label}`;
-        },
-      });
+      const deviceName =
+        devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+      const result =
+        !isLeader && coordination.role !== "unsupported"
+          ? await requestLeaderRpc("setUsbCDownstreamRoute", [deviceId, route])
+          : await runSharedMutation({
+              deviceId,
+              method: "setUsbCDownstreamRoute",
+              invoke: async () => {
+                const direct = await runPendingMutation<{
+                  accepted: true;
+                  usb_c_downstream_route: UsbCDownstreamRoute;
+                  persisted: boolean;
+                }>({
+                  deviceId,
+                  pendingPortId: "port_c",
+                  method: "hub.route_set",
+                  params: {
+                    route,
+                  },
+                });
+                return (
+                  direct ?? {
+                    ok: false,
+                    error: {
+                      kind: "invalid_response",
+                      message: `Unknown device: ${deviceId}`,
+                    },
+                  }
+                );
+              },
+            });
+      if (result.ok) {
+        const label =
+          result.value.usb_c_downstream_route === "mcu" ? "Upgrade" : "Normal";
+        pushToast({
+          message: `${deviceName}: USB-C mode set to ${label}`,
+          variant: "success",
+        });
+        return;
+      }
+      handleApiErrorToast(deviceName, "USB-C route", result.error);
     },
-    [runPendingMutation],
+    [
+      coordination.role,
+      devices,
+      handleApiErrorToast,
+      isLeader,
+      pushToast,
+      requestLeaderRpc,
+      runPendingMutation,
+      runSharedMutation,
+    ],
   );
 
   rpcRequestHandlerRef.current = async (message) => {
@@ -1592,9 +2056,18 @@ export function DeviceRuntimeProvider({
         | Result<{ ok: true }>
         | Result<DeviceInfoResponse>
         | Result<WifiConfigResponse>
+        | Result<WifiMutationResponse>
+        | Result<SettingsResetResponse>
+        | Result<RebootResponse>
         | Result<PowerConfigResponse>
         | Result<IdleBiasResponse>
-        | Result<PdDiagnosticsResponse>;
+        | Result<PdDiagnosticsResponse>
+        | Result<{ accepted: true }>
+        | Result<{
+            accepted: true;
+            usb_c_downstream_route: UsbCDownstreamRoute;
+            persisted: boolean;
+          }>;
       switch (message.method) {
         case "refreshDevice":
           await refreshDevice(deviceId);
@@ -1606,14 +2079,234 @@ export function DeviceRuntimeProvider({
         case "wifiConfig":
           result = await wifiConfig(deviceId);
           break;
+        case "saveWifiConfig":
+          result = await saveWifiConfig(
+            deviceId,
+            message.args[1] as WifiConfigInput,
+            {
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+            },
+          );
+          break;
+        case "clearWifiConfig":
+          result = await clearWifi(deviceId, {
+            requestId: message.requestId,
+            sourceTabId: message.originTabId,
+          });
+          break;
+        case "resetSettings":
+          result = await resetSettings(
+            deviceId,
+            message.args[1] as SettingsResetScope,
+            {
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+            },
+          );
+          break;
+        case "rebootDevice":
+          result = await reboot(deviceId, {
+            requestId: message.requestId,
+            sourceTabId: message.originTabId,
+          });
+          break;
         case "powerConfig":
           result = await powerConfig(deviceId);
+          break;
+        case "savePowerConfig":
+          result = await savePowerConfig(
+            deviceId,
+            message.args[1] as PowerConfigInput,
+            Number(message.args[2]),
+            {
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+            },
+          );
+          break;
+        case "restorePowerDefaults":
+          result = await restoreDefaults(deviceId, Number(message.args[1]), {
+            requestId: message.requestId,
+            sourceTabId: message.originTabId,
+          });
+          break;
+        case "setPowerLock":
+          result = await setLock(
+            deviceId,
+            Number(message.args[1]),
+            Boolean(message.args[2]),
+            {
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+            },
+          );
+          break;
+        case "setPowerRuntime":
+          result = await (async () => {
+            const owner = Number(message.args[1]);
+            const action = message.args[2] as "output" | "discharge";
+            const enabled = Boolean(message.args[3]);
+            const direct = await runSharedMutation({
+              deviceId,
+              method: "setPowerRuntime",
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+              invoke: async () => {
+                const queued = await runPendingMutation<PowerConfigResponse>({
+                  deviceId,
+                  pendingPortId: "port_c",
+                  method: "power.runtime_set",
+                  params: {
+                    action,
+                    enabled,
+                    owner,
+                  },
+                });
+                if (!queued?.ok) {
+                  return (
+                    queued ?? {
+                      ok: false,
+                      error: {
+                        kind: "invalid_response",
+                        message: `Unknown device: ${deviceId}`,
+                      },
+                    }
+                  );
+                }
+                return refreshCanonicalPowerConfig(
+                  deviceId,
+                  owner,
+                  queued.value,
+                );
+              },
+            });
+            return direct;
+          })();
           break;
         case "idleBias":
           result = await idleBias(deviceId);
           break;
+        case "setIdleBiasCorrection":
+          result = await setIdleBias(
+            deviceId,
+            Boolean(message.args[1]),
+            Number(message.args[2]),
+            {
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+            },
+          );
+          break;
+        case "runIdleBiasCalibration":
+          result = await runIdleBias(deviceId, Number(message.args[1]), {
+            requestId: message.requestId,
+            sourceTabId: message.originTabId,
+          });
+          break;
+        case "clearIdleBiasCalibration":
+          result = await clearIdleBias(deviceId, Number(message.args[1]), {
+            requestId: message.requestId,
+            sourceTabId: message.originTabId,
+          });
+          break;
         case "pdDiagnostics":
           result = await pdDiagnostics(deviceId);
+          break;
+        case "setPower":
+          result = await (async () => {
+            const portId = message.args[1] as PortId;
+            const enabled = Boolean(message.args[2]);
+            return runSharedMutation({
+              deviceId,
+              method: "setPower",
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+              invoke: async () => {
+                const queued = await runPendingMutation<{ accepted: true }>({
+                  deviceId,
+                  pendingPortId: portId,
+                  method: "port.power_set",
+                  params: {
+                    port: portId,
+                    enabled,
+                  },
+                });
+                return (
+                  queued ?? {
+                    ok: false,
+                    error: {
+                      kind: "invalid_response",
+                      message: `Unknown device: ${deviceId}`,
+                    },
+                  }
+                );
+              },
+            });
+          })();
+          break;
+        case "replug":
+          result = await (async () => {
+            const portId = message.args[1] as PortId;
+            return runSharedMutation({
+              deviceId,
+              method: "replug",
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+              invoke: async () => {
+                const queued = await runPendingMutation<{ accepted: true }>({
+                  deviceId,
+                  pendingPortId: portId,
+                  method: "port.replug",
+                  params: {
+                    port: portId,
+                  },
+                });
+                return (
+                  queued ?? {
+                    ok: false,
+                    error: {
+                      kind: "invalid_response",
+                      message: `Unknown device: ${deviceId}`,
+                    },
+                  }
+                );
+              },
+            });
+          })();
+          break;
+        case "setUsbCDownstreamRoute":
+          result = await (async () => {
+            const route = message.args[1] as UsbCDownstreamRoute;
+            const direct = await runSharedMutation({
+              deviceId,
+              method: "setUsbCDownstreamRoute",
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+              invoke: async () => {
+                const queued = await runPendingMutation<{
+                  accepted: true;
+                  usb_c_downstream_route: UsbCDownstreamRoute;
+                  persisted: boolean;
+                }>({
+                  deviceId,
+                  pendingPortId: "port_c",
+                  method: "hub.route_set",
+                  params: { route },
+                });
+                return (
+                  queued ?? {
+                    ok: false,
+                    error: {
+                      kind: "invalid_response",
+                      message: `Unknown device: ${deviceId}`,
+                    },
+                  }
+                );
+              },
+            });
+            return direct;
+          })();
           break;
       }
       coordinator.postMessage({
@@ -1651,7 +2344,7 @@ export function DeviceRuntimeProvider({
       now,
       runtimeById,
       coordination,
-      canControlHardware: isLeader,
+      canControlHardware: true,
       powerLockOwner: getStablePowerLockOwner,
       requestControlTakeover,
       refreshDevice,
@@ -1680,7 +2373,6 @@ export function DeviceRuntimeProvider({
     coordination,
     deviceInfo,
     idleBias,
-    isLeader,
     now,
     pdDiagnostics,
     powerConfig,

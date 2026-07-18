@@ -4,6 +4,7 @@ import { Toaster, toast } from "sonner";
 export type ToastVariant = "info" | "success" | "warning" | "error";
 
 export type ToastInput = {
+  id?: string;
   message: string;
   variant?: ToastVariant;
   durationMs?: number;
@@ -19,7 +20,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const pushToast = useCallback((input: ToastInput) => {
     const variant = input.variant ?? "info";
     const durationMs = input.durationMs ?? 2500;
-    toast[variant](input.message, { duration: durationMs });
+    toast[variant](input.message, { duration: durationMs, id: input.id });
   }, []);
 
   const value = useMemo(() => ({ pushToast }), [pushToast]);
