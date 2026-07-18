@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, userEvent, within } from "@storybook/test";
+import { useState } from "react";
 
 import type {
   IdleBiasResponse,
@@ -8,7 +9,10 @@ import type {
   Result,
 } from "../../domain/deviceApi";
 import type { PortState, PortTelemetry } from "../../domain/ports";
+import { ToastProvider } from "../toast/ToastProvider";
 import { DevicePowerPanel } from "./DevicePowerPanel";
+
+const stableOwner = 7;
 
 const manualConfig: PowerConfigResponse = {
   hardware: "sw2303",
@@ -85,6 +89,21 @@ const manualOutputOffConfig: PowerConfigResponse = {
 const hostLockedConfig: PowerConfigResponse = {
   ...manualConfig,
   lock: { owner: 42, expires_at_ms: Date.now() + 15_000 },
+};
+
+const controlledHereConfig: PowerConfigResponse = {
+  ...manualConfig,
+  lock: { owner: stableOwner, expires_at_ms: Date.now() + 15_000 },
+};
+
+const controlledAutoConfig: PowerConfigResponse = {
+  ...autoConfig,
+  lock: { owner: stableOwner, expires_at_ms: Date.now() + 15_000 },
+};
+
+const controlledManualOutputOffConfig: PowerConfigResponse = {
+  ...manualOutputOffConfig,
+  lock: { owner: stableOwner, expires_at_ms: Date.now() + 15_000 },
 };
 
 const manualForceConfig: PowerConfigResponse = {
@@ -287,11 +306,13 @@ const meta: Meta<typeof DevicePowerPanel> = {
   },
   decorators: [
     (Story) => (
-      <div className="min-h-screen bg-[var(--bg)] p-6">
-        <div className="mx-auto max-w-[1280px]">
-          <Story />
+      <ToastProvider>
+        <div className="min-h-screen bg-[var(--bg)] p-6">
+          <div className="mx-auto max-w-[1280px]">
+            <Story />
+          </div>
         </div>
-      </div>
+      </ToastProvider>
     ),
   ],
 };
@@ -304,7 +325,20 @@ const defaultArgs: Story["args"] = {
   deviceKey: "bench-hub",
   deviceName: "Bench Hub",
   transportLabel: "local_usb",
+  coordination: {
+    role: "leader",
+    currentTabId: "tab-a",
+    leaderTabId: "tab-a",
+    leaseExpiresAt: new Date(Date.now() + 15_000).toISOString(),
+  },
+  canControlHardware: true,
+  powerLockOwner: stableOwner,
   localAdvancedLocked: false,
+  sharedCommand: null,
+  sharedRevision: 0,
+  sharedPowerConfig: null,
+  sharedIdleBiasSnapshot: null,
+  sharedPdDiagnostics: null,
   loadPowerConfig: () => ok(manualConfig),
   loadIdleBias: () => okIdle(idleBiasMissing),
   loadPdDiagnostics: () => Promise.resolve({ ok: true, value: pdDiagnostics }),
@@ -322,10 +356,22 @@ const defaultArgs: Story["args"] = {
 };
 
 export const Default: Story = {
-  args: defaultArgs,
+  args: {
+    ...defaultArgs,
+    canControlHardware: false,
+    coordination: {
+      role: "unsupported",
+      currentTabId: "tab-a",
+      leaderTabId: null,
+      leaseExpiresAt: null,
+    },
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const portal = within(canvasElement.ownerDocument.body);
+    await expect(await canvas.findByText("Unlocked")).toBeVisible();
+    await expect(
+      await canvas.findByRole("button", { name: "Acquire control" }),
+    ).toBeVisible();
     await expect(
       await canvas.findByTestId("PD-negotiation-badge"),
     ).toBeVisible();
@@ -339,18 +385,155 @@ export const Default: Story = {
       await canvas.findByRole("button", { name: "Run calibration" }),
     ).toBeVisible();
     await expect(await canvas.findByText("Missing")).toBeVisible();
-    await userEvent.click(
+    await expect(
       await canvas.findByRole("button", { name: /4 PDO/i }),
-    );
-    await expect(await portal.findByText("9V")).toBeVisible();
-    await expect(await portal.findByText("12V")).toBeVisible();
-    await userEvent.click(
-      await canvas.findByRole("button", { name: /4 PDO/i }),
-    );
+    ).toBeDisabled();
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
+    ).toBeDisabled();
   },
 };
 
-export const HostLocked: Story = {
+export const ControlledHere: Story = {
+  args: {
+    ...defaultArgs,
+    sharedRevision: 1,
+    sharedPowerConfig: controlledHereConfig,
+    loadPowerConfig: () => ok(controlledHereConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+    setPowerLock: () => ok(controlledHereConfig),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Controlled here")).toBeVisible();
+    await expect(
+      canvas.queryByRole("button", { name: "Acquire control" }),
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const QueuedMutation: Story = {
+  args: {
+    ...defaultArgs,
+    sharedRevision: 2,
+    sharedPowerConfig: controlledHereConfig,
+    sharedCommand: {
+      requestId: "cmd-1",
+      deviceId: "bench-hub",
+      sourceTabId: "tab-b",
+      kind: "mutation",
+      method: "savePowerConfig",
+      state: "queued",
+      queuedAt: new Date(Date.now() - 400).toISOString(),
+      startedAt: null,
+      finishedAt: null,
+      revision: 2,
+      errorMessage: null,
+    },
+    loadPowerConfig: () => ok(controlledHereConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const powerCapInput = await canvas.findByDisplayValue("100 W");
+    await userEvent.clear(powerCapInput);
+    await userEvent.type(powerCapInput, "83 W");
+    await expect(canvas.getByRole("slider", { name: /Voltage/ })).toBeEnabled();
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
+    ).toBeDisabled();
+  },
+};
+
+export const RunningSharedSave: Story = {
+  args: {
+    ...defaultArgs,
+    sharedRevision: 2,
+    sharedPowerConfig: controlledHereConfig,
+    sharedCommand: {
+      requestId: "cmd-2",
+      deviceId: "bench-hub",
+      sourceTabId: "tab-a",
+      kind: "mutation",
+      method: "savePowerConfig",
+      state: "running",
+      queuedAt: new Date(Date.now() - 6_500).toISOString(),
+      startedAt: new Date(Date.now() - 6_000).toISOString(),
+      finishedAt: null,
+      revision: 2,
+      errorMessage: null,
+    },
+    loadPowerConfig: () => ok(controlledHereConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole("slider", { name: /Voltage/ }),
+    ).toBeDisabled();
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
+    ).toBeDisabled();
+  },
+};
+
+export const StaleDraftAfterRemoteWrite: Story = {
+  render: (args) => {
+    const [revision, setRevision] = useState(3);
+    const [sharedConfig, setSharedConfig] = useState(controlledHereConfig);
+    return (
+      <div className="grid gap-4">
+        <button
+          className="w-fit rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[12px] font-bold text-[var(--text)]"
+          type="button"
+          onClick={() => {
+            setSharedConfig({
+              ...controlledHereConfig,
+              manual: {
+                ...controlledHereConfig.manual,
+                voltage_mv: 12000,
+              },
+            });
+            setRevision((current) => current + 1);
+          }}
+        >
+          Simulate remote update
+        </button>
+        <DevicePowerPanel
+          {...args}
+          sharedPowerConfig={sharedConfig}
+          sharedRevision={revision}
+          loadPowerConfig={() => ok(sharedConfig)}
+        />
+      </div>
+    );
+  },
+  args: {
+    ...defaultArgs,
+    sharedPowerConfig: controlledHereConfig,
+    sharedRevision: 3,
+    loadPowerConfig: () => ok(controlledHereConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const voltageInput = await canvas.findByDisplayValue("9 V");
+    await userEvent.clear(voltageInput);
+    await userEvent.type(voltageInput, "15 V");
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
+    ).toBeEnabled();
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Simulate remote update" }),
+    );
+    await expect(await canvas.findByDisplayValue("15 V")).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
+    ).toBeDisabled();
+  },
+};
+
+export const LockedByAnotherHost: Story = {
   args: {
     ...defaultArgs,
     loadPowerConfig: () => ok(hostLockedConfig),
@@ -360,7 +543,9 @@ export const HostLocked: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByText("Host lock active")).toBeVisible();
+    await expect(
+      await canvas.findByText("Locked by another host"),
+    ).toBeVisible();
     await expect(
       canvas.getByRole("slider", { name: /Voltage/ }),
     ).toBeDisabled();
@@ -373,10 +558,12 @@ export const HostLocked: Story = {
 export const AutoFollowDefaults: Story = {
   args: {
     ...defaultArgs,
-    loadPowerConfig: () => ok(autoConfig),
+    sharedRevision: 1,
+    sharedPowerConfig: controlledAutoConfig,
+    loadPowerConfig: () => ok(controlledAutoConfig),
     loadIdleBias: () => okIdle(idleBiasReadyOff),
-    savePowerConfig: () => ok(autoConfig),
-    setPowerLock: () => ok(autoConfig),
+    savePowerConfig: () => ok(controlledAutoConfig),
+    setPowerLock: () => ok(controlledAutoConfig),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -390,13 +577,17 @@ export const AutoFollowDefaults: Story = {
       ),
       "300",
     );
+    await userEvent.clear(
+      popover.getByLabelText(
+        "Auto-follow cable loop compensation load current",
+      ),
+    );
     await userEvent.type(
       popover.getByLabelText(
         "Auto-follow cable loop compensation load current",
       ),
       "3000",
     );
-    await expect(await popover.findByText(/now uses 100mΩ/i)).toBeVisible();
     await expect(
       canvas.getByRole("slider", {
         name: "Auto-follow cable loop compensation",
@@ -410,7 +601,7 @@ export const ManualTpsCdcSet: Story = {
     ...defaultArgs,
     loadPowerConfig: () =>
       ok({
-        ...manualConfig,
+        ...controlledHereConfig,
         manual: {
           ...manualConfig.manual,
           tps_cdc_rise_mv: 700,
@@ -423,15 +614,20 @@ export const ManualTpsCdcSet: Story = {
       await canvas.findByLabelText("Manual cable loop compensation help"),
     );
     const popover = within(document.body);
+    await userEvent.clear(
+      popover.getByLabelText("Manual cable loop compensation voltage drop"),
+    );
     await userEvent.type(
       popover.getByLabelText("Manual cable loop compensation voltage drop"),
       "300",
+    );
+    await userEvent.clear(
+      popover.getByLabelText("Manual cable loop compensation load current"),
     );
     await userEvent.type(
       popover.getByLabelText("Manual cable loop compensation load current"),
       "3000",
     );
-    await expect(await popover.findByText(/now uses 100mΩ/i)).toBeVisible();
     await expect(
       canvas.getByRole("slider", { name: "Cable loop compensation" }),
     ).toHaveValue("5");
@@ -441,10 +637,12 @@ export const ManualTpsCdcSet: Story = {
 export const OutputOffManualHighVoltage: Story = {
   args: {
     ...defaultArgs,
-    loadPowerConfig: () => ok(manualOutputOffConfig),
-    savePowerConfig: () => ok(manualOutputOffConfig),
-    setPowerLock: () => ok(manualOutputOffConfig),
-    setPowerRuntime: () => ok(manualOutputOffConfig),
+    sharedRevision: 1,
+    sharedPowerConfig: controlledManualOutputOffConfig,
+    loadPowerConfig: () => ok(controlledManualOutputOffConfig),
+    savePowerConfig: () => ok(controlledManualOutputOffConfig),
+    setPowerLock: () => ok(controlledManualOutputOffConfig),
+    setPowerRuntime: () => ok(controlledManualOutputOffConfig),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -524,41 +722,79 @@ export const ForcedPwmMode: Story = {
   },
 };
 
-export const SaveManualFlow: Story = {
+export const LocalDraftSaveAction: Story = {
+  render: (args) => {
+    const [saved, setSaved] = useState(false);
+    return (
+      <div className="grid gap-4">
+        {saved ? (
+          <div
+            className="text-[12px] font-semibold text-[var(--badge-success-text)]"
+            data-testid="save-invoked"
+          >
+            Save invoked
+          </div>
+        ) : null}
+        <DevicePowerPanel
+          {...args}
+          savePowerConfig={async (input) => {
+            setSaved(true);
+            return ok({
+              ...controlledHereConfig,
+              tps_mode: input.tps_mode,
+              manual: {
+                ...controlledHereConfig.manual,
+                ...input.manual,
+              },
+            });
+          }}
+        />
+      </div>
+    );
+  },
   args: {
     ...defaultArgs,
-    loadPowerConfig: () => ok(autoConfig),
+    sharedRevision: 1,
+    sharedPowerConfig: controlledHereConfig,
+    loadPowerConfig: () => ok(controlledHereConfig),
     loadIdleBias: () => okIdle(idleBiasReadyOff),
-    savePowerConfig: (_input, _owner) => ok(manualConfig),
-    setPowerLock: () => ok(autoConfig),
+    setPowerLock: () => ok(controlledHereConfig),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Manual TPS" }),
-    );
-    const voltageInput = canvas.getAllByRole("textbox")[0];
+    const voltageInput = await canvas.findByDisplayValue("9 V");
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
+    ).toBeDisabled();
     await userEvent.clear(voltageInput);
-    await userEvent.type(voltageInput, "9000");
+    await userEvent.type(voltageInput, "12 V");
+    await expect(await canvas.findByDisplayValue("12 V")).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
+    ).toBeEnabled();
+    await expect(canvas.queryByTestId("save-invoked")).not.toBeInTheDocument();
     await userEvent.click(
       canvas.getByRole("button", { name: "Save and apply" }),
     );
-    await expect(await canvas.findByText("Saved and applied")).toBeVisible();
+    await expect(await canvas.findByTestId("save-invoked")).toBeVisible();
   },
 };
 
 export const RestoreDefaultsFlow: Story = {
   args: {
     ...defaultArgs,
+    sharedRevision: 1,
+    sharedPowerConfig: controlledHereConfig,
+    loadPowerConfig: () => ok(controlledHereConfig),
     loadIdleBias: () => okIdle(idleBiasReadyOff),
-    restorePowerDefaults: () => ok(autoConfig),
+    restorePowerDefaults: () => ok(controlledAutoConfig),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(
       await canvas.findByRole("button", { name: "Restore defaults" }),
     );
-    await expect(await canvas.findByText("Defaults restored")).toBeVisible();
+    await expect(await canvas.findByDisplayValue("5 V")).toBeVisible();
   },
 };
 

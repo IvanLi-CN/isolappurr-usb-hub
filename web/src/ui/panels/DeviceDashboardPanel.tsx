@@ -302,7 +302,10 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
     };
   }, [connectionState, device.id]);
 
-  const writeDisabled = connectionState !== "online";
+  const writeDisabled =
+    connectionState !== "online" ||
+    runtime.runtimeById[device.id]?.command?.state === "queued" ||
+    runtime.runtimeById[device.id]?.command?.state === "running";
 
   const items = useMemo(() => {
     const isOnline = connectionState === "online";

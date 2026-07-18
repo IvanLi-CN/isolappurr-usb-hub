@@ -1,15 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 
-import { getStablePowerLockOwner } from "../../app/device-runtime-support";
-import type {
-  IdleBiasResponse,
-  PdDiagnosticsResponse,
-  PowerConfigInput,
-  PowerConfigManualInput,
-  PowerConfigResponse,
-  Result,
-} from "../../domain/deviceApi";
-import type { PortState, PortTelemetry } from "../../domain/ports";
 import { ActionButton } from "../actions/ActionButton";
 import {
   activeProtocolLabel,
@@ -20,12 +10,10 @@ import {
   CompactOptionsRow,
   CompactSelectField,
   cableLoopResistanceMohmToTpsCdcRise,
-  cloneConfig,
   DiscreteSliderField,
   type FormState,
   formatCompactCurrent,
   formatCurrentInput,
-  formatFixedVoltageSummary,
   formatPowerInput,
   formatSw2303LineCompensation,
   formatVoltageInput,
@@ -40,233 +28,78 @@ import {
 } from "./DevicePowerPanelControls";
 import { DevicePowerPanelIdleBiasSection } from "./DevicePowerPanelIdleBiasSection";
 import { DevicePowerPanelSidebar } from "./DevicePowerPanelSidebar";
+import {
+  type DevicePowerPanelProps,
+  useDevicePowerPanelState,
+} from "./useDevicePowerPanelState";
 
-const HEARTBEAT_MS = 8_000;
+export function DevicePowerPanel(props: DevicePowerPanelProps) {
+  const {
+    acquireControl,
+    activeProtocol,
+    busy,
+    config,
+    error,
+    fixedVoltageSummary,
+    form,
+    idleBiasRunning,
+    idleBiasSnapshot,
+    lockBusy,
+    lockStatusLabel,
+    lockStatusTone,
+    lockedByOtherHost,
+    manualHighVoltageWarning,
+    outputModeSaveDisabled,
+    owner,
+    powerControlsDisabled,
+    restoreDefaults,
+    restoreDisabled,
+    restoringDefaults,
+    runtimeDischargeEnabled,
+    runtimeOutputEnabled,
+    saveInFlight,
+    setCurrentProfile,
+    setFastChargeConfig,
+    setIdleBiasBusy,
+    setIdleBiasRunning,
+    setLightLoadMode,
+    setManualNumber,
+    setManualTpsCdcRise,
+    setPathMode,
+    setPowerWatts,
+    setPps,
+    setProtocol,
+    setSw2303LineCompensation,
+    setTpsMode,
+    showAcquireControl,
+    submitOutputMode,
+    toggleFixedVoltage,
+    toggleRuntime,
+  } = useDevicePowerPanelState(props);
+  const {
+    clearIdleBiasCalibration,
+    deviceName,
+    loadIdleBias,
+    replugUsbC,
+    runIdleBiasCalibration,
+    setIdleBiasCorrection,
+    transportLabel,
+    usbCPending,
+    usbCState,
+    usbCTelemetry,
+  } = props;
 
-type DevicePowerPanelProps = {
-  deviceKey: string;
-  deviceName: string;
-  transportLabel: string;
-  localAdvancedLocked: boolean;
-  loadPowerConfig: () => Promise<Result<PowerConfigResponse>>;
-  loadIdleBias: () => Promise<Result<IdleBiasResponse>>;
-  savePowerConfig: (
-    input: PowerConfigInput,
-    owner: number,
-  ) => Promise<Result<PowerConfigResponse>>;
-  restorePowerDefaults: (owner: number) => Promise<Result<PowerConfigResponse>>;
-  setPowerLock: (
-    owner: number,
-    acquire: boolean,
-  ) => Promise<Result<PowerConfigResponse>>;
-  setPowerRuntime: (
-    owner: number,
-    action: "output" | "discharge",
-    enabled: boolean,
-  ) => Promise<Result<PowerConfigResponse>>;
-  setIdleBiasCorrection: (
-    enabled: boolean,
-    owner: number,
-  ) => Promise<Result<IdleBiasResponse>>;
-  runIdleBiasCalibration: (owner: number) => Promise<Result<IdleBiasResponse>>;
-  clearIdleBiasCalibration: (
-    owner: number,
-  ) => Promise<Result<IdleBiasResponse>>;
-  loadPdDiagnostics: () => Promise<Result<PdDiagnosticsResponse>>;
-  usbCTelemetry: PortTelemetry | null;
-  usbCState: PortState | null;
-  usbCPending: boolean;
-  replugUsbC: () => Promise<void>;
-};
+  const handleAcquireControl = useCallback(() => {
+    void acquireControl();
+  }, [acquireControl]);
 
-export function DevicePowerPanel({
-  deviceKey,
-  deviceName,
-  transportLabel,
-  localAdvancedLocked,
-  loadPowerConfig,
-  loadIdleBias,
-  savePowerConfig,
-  restorePowerDefaults,
-  setPowerLock,
-  setPowerRuntime,
-  setIdleBiasCorrection,
-  runIdleBiasCalibration,
-  clearIdleBiasCalibration,
-  loadPdDiagnostics,
-  usbCTelemetry,
-  usbCState,
-  usbCPending,
-  replugUsbC,
-}: DevicePowerPanelProps) {
-  const [config, setConfig] = useState<PowerConfigResponse | null>(null);
-  const [form, setForm] = useState<FormState | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const [idleBiasSnapshot, setIdleBiasSnapshot] =
-    useState<IdleBiasResponse | null>(null);
-  const [pdDiagnostics, setPdDiagnostics] =
-    useState<PdDiagnosticsResponse | null>(null);
-  const [idleBiasBusy, setIdleBiasBusy] = useState(false);
-  const [idleBiasRunning, setIdleBiasRunning] = useState(false);
-  const lockedRef = useRef(false);
-  const loadPowerConfigRef = useRef(loadPowerConfig);
-  const loadIdleBiasRef = useRef(loadIdleBias);
-  const loadPdDiagnosticsRef = useRef(loadPdDiagnostics);
-  const setPowerLockRef = useRef(setPowerLock);
-  const setPowerRuntimeRef = useRef(setPowerRuntime);
-  const ownerRef = useRef(getStablePowerLockOwner(deviceKey));
+  const handleSubmitOutputMode = useCallback(() => {
+    void submitOutputMode();
+  }, [submitOutputMode]);
 
-  const initializeLoadedConfig = useCallback(
-    (nextConfig: PowerConfigResponse) => {
-      setConfig(nextConfig);
-      setForm((current) => current ?? cloneConfig(nextConfig));
-      setError(null);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    loadPowerConfigRef.current = loadPowerConfig;
-  }, [loadPowerConfig]);
-
-  useEffect(() => {
-    loadIdleBiasRef.current = loadIdleBias;
-  }, [loadIdleBias]);
-
-  useEffect(() => {
-    loadPdDiagnosticsRef.current = loadPdDiagnostics;
-  }, [loadPdDiagnostics]);
-
-  useEffect(() => {
-    setPowerLockRef.current = setPowerLock;
-  }, [setPowerLock]);
-
-  useEffect(() => {
-    setPowerRuntimeRef.current = setPowerRuntime;
-  }, [setPowerRuntime]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadConfig = async () => {
-      const configRes = await loadPowerConfigRef.current();
-      if (cancelled) {
-        return;
-      }
-      if (configRes.ok) {
-        initializeLoadedConfig(configRes.value);
-      } else {
-        setError(configRes.error.message);
-      }
-    };
-    const loadIdleBiasSnapshot = async () => {
-      const idleBiasRes = await loadIdleBiasRef.current();
-      if (cancelled) {
-        return;
-      }
-      if (idleBiasRes.ok) {
-        setIdleBiasSnapshot(idleBiasRes.value);
-        setIdleBiasRunning(idleBiasRes.value.run.state === "running");
-      } else {
-        setIdleBiasSnapshot(null);
-        setIdleBiasRunning(false);
-      }
-    };
-    const loadPdSnapshot = async () => {
-      const pdRes = await loadPdDiagnosticsRef.current();
-      if (cancelled) {
-        return;
-      }
-      if (pdRes.ok) {
-        setPdDiagnostics(pdRes.value);
-      } else {
-        setPdDiagnostics(null);
-      }
-    };
-    void loadConfig();
-    void loadIdleBiasSnapshot();
-    void loadPdSnapshot();
-    return () => {
-      cancelled = true;
-    };
-  }, [initializeLoadedConfig]);
-
-  useEffect(() => {
-    if (form || transportLabel === "unknown") {
-      return;
-    }
-    let cancelled = false;
-    const retry = async () => {
-      const configRes = await loadPowerConfigRef.current();
-      if (cancelled || !configRes.ok) {
-        return;
-      }
-      initializeLoadedConfig(configRes.value);
-    };
-    void retry();
-    return () => {
-      cancelled = true;
-    };
-  }, [form, initializeLoadedConfig, transportLabel]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (!lockedRef.current) {
-        return;
-      }
-      const res = await setPowerLockRef.current(ownerRef.current, true);
-      if (cancelled) {
-        return;
-      }
-      if (!res.ok) {
-        setError(res.error.message);
-      } else {
-        setConfig(res.value);
-      }
-    };
-
-    const id = window.setInterval(() => void tick(), HEARTBEAT_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-      if (lockedRef.current) {
-        void setPowerLockRef.current(ownerRef.current, false);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const acquire = async () => {
-      const res = await setPowerLockRef.current(ownerRef.current, true);
-      if (cancelled) {
-        return;
-      }
-      if (res.ok) {
-        lockedRef.current = true;
-        setConfig(res.value);
-        setForm((current) => current ?? cloneConfig(res.value));
-        setError(null);
-      } else {
-        setError(res.error.message);
-      }
-    };
-    void acquire();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const lockedByOtherHost =
-    config?.lock !== null &&
-    config?.lock !== undefined &&
-    config.lock.owner !== ownerRef.current;
-  const advancedDisabled =
-    localAdvancedLocked || lockedByOtherHost || idleBiasRunning;
-  const powerControlsDisabled = advancedDisabled || busy || idleBiasBusy;
+  const handleRestoreDefaults = useCallback(() => {
+    void restoreDefaults();
+  }, [restoreDefaults]);
 
   if (!form && error) {
     return (
@@ -291,265 +124,6 @@ export function DevicePowerPanel({
     );
   }
 
-  const setTpsMode = (mode: FormState["tps_mode"]) => {
-    setForm((current) => (current ? { ...current, tps_mode: mode } : current));
-    setDirty(true);
-  };
-
-  const setLightLoadMode = (mode: FormState["light_load_mode"]) => {
-    setForm((current) =>
-      current ? { ...current, light_load_mode: mode } : current,
-    );
-    setDirty(true);
-  };
-
-  const setManualNumber = (
-    key: "voltage_mv" | "current_limit_ma",
-    value: number,
-  ) => {
-    setForm((current) =>
-      current
-        ? {
-            ...current,
-            manual: {
-              ...current.manual,
-              [key]: Number.isFinite(value) ? value : current.manual[key],
-            },
-          }
-        : current,
-    );
-    setDirty(true);
-  };
-
-  const setManualTpsCdcRise = (
-    value: FormState["manual"]["tps_cdc_rise_mv"],
-  ) => {
-    setForm((current) =>
-      current
-        ? {
-            ...current,
-            manual: {
-              ...current.manual,
-              tps_cdc_rise_mv: value,
-            },
-          }
-        : current,
-    );
-    setDirty(true);
-  };
-
-  const setSw2303LineCompensation = (
-    value: FormState["sw2303_line_compensation"],
-  ) => {
-    setForm((current) =>
-      current ? { ...current, sw2303_line_compensation: value } : current,
-    );
-    setDirty(true);
-  };
-
-  const setPowerWatts = (value: number) => {
-    setForm((current) =>
-      current
-        ? {
-            ...current,
-            capability: {
-              ...current.capability,
-              power_watts: value,
-            },
-          }
-        : current,
-    );
-    setDirty(true);
-  };
-
-  const setPathMode = (mode: PowerConfigManualInput["usb_c_path_mode"]) => {
-    setForm((current) =>
-      current
-        ? { ...current, manual: { ...current.manual, usb_c_path_mode: mode } }
-        : current,
-    );
-    setDirty(true);
-  };
-
-  const setProtocol = (
-    key: keyof FormState["capability"]["protocols"],
-    value: boolean,
-  ) => {
-    setForm((current) =>
-      current
-        ? {
-            ...current,
-            capability: {
-              ...current.capability,
-              protocols: { ...current.capability.protocols, [key]: value },
-            },
-          }
-        : current,
-    );
-    setDirty(true);
-  };
-
-  const setPps = (value: boolean) => {
-    setForm((current) =>
-      current
-        ? {
-            ...current,
-            capability: {
-              ...current.capability,
-              pd: {
-                ...current.capability.pd,
-                pps: value,
-              },
-            },
-          }
-        : current,
-    );
-    setDirty(true);
-  };
-
-  const setCurrentProfile = (
-    key: keyof FormState["capability"]["current"],
-    value: number | boolean,
-  ) => {
-    setForm((current) =>
-      current
-        ? {
-            ...current,
-            capability: {
-              ...current.capability,
-              current: {
-                ...current.capability.current,
-                [key]: value,
-              },
-            },
-          }
-        : current,
-    );
-    setDirty(true);
-  };
-
-  const setFastChargeConfig = (
-    key: keyof FormState["capability"]["fast_charge"],
-    value: boolean,
-  ) => {
-    setForm((current) =>
-      current
-        ? {
-            ...current,
-            capability: {
-              ...current.capability,
-              fast_charge: {
-                ...current.capability.fast_charge,
-                [key]: value,
-              },
-            },
-          }
-        : current,
-    );
-    setDirty(true);
-  };
-
-  const toggleFixedVoltage = (mv: number) => {
-    setForm((current) => {
-      if (!current) {
-        return current;
-      }
-      const exists = current.capability.pd.fixed_voltages_mv.includes(mv);
-      const fixed_voltages_mv = exists
-        ? current.capability.pd.fixed_voltages_mv.filter(
-            (value) => value !== mv,
-          )
-        : [...current.capability.pd.fixed_voltages_mv, mv].sort(
-            (a, b) => a - b,
-          );
-      return {
-        ...current,
-        capability: {
-          ...current.capability,
-          pd: {
-            ...current.capability.pd,
-            fixed_voltages_mv,
-          },
-        },
-      };
-    });
-    setDirty(true);
-  };
-
-  const activeProtocol = pdDiagnostics?.active_protocol ?? null;
-  const fixedVoltageSummary = formatFixedVoltageSummary(
-    form.capability.pd.fixed_voltages_mv,
-  );
-
-  const submit = async () => {
-    setBusy(true);
-    setStatus("Saving and applying power configuration...");
-    setError(null);
-    const res = await savePowerConfig(form, ownerRef.current);
-    setBusy(false);
-    if (res.ok) {
-      setConfig(res.value);
-      setForm(cloneConfig(res.value));
-      setDirty(false);
-      setStatus("Saved and applied");
-    } else {
-      setError(res.error.message);
-      setStatus(null);
-    }
-  };
-
-  const restore = async () => {
-    setBusy(true);
-    setStatus("Restoring defaults...");
-    setError(null);
-    const res = await restorePowerDefaults(ownerRef.current);
-    setBusy(false);
-    if (res.ok) {
-      setConfig(res.value);
-      setForm(cloneConfig(res.value));
-      setDirty(false);
-      setStatus("Defaults restored");
-    } else {
-      setError(res.error.message);
-      setStatus(null);
-    }
-  };
-
-  const toggleRuntime = async (
-    action: "output" | "discharge",
-    enabled: boolean,
-  ) => {
-    setBusy(true);
-    setStatus(
-      action === "output"
-        ? `${enabled ? "Enabling" : "Disabling"} Power...`
-        : `${enabled ? "Enabling" : "Disabling"} TPS discharge...`,
-    );
-    setError(null);
-    const res = await setPowerRuntimeRef.current(
-      ownerRef.current,
-      action,
-      enabled,
-    );
-    setBusy(false);
-    if (res.ok) {
-      setConfig(res.value);
-      setStatus(
-        action === "output"
-          ? `Power ${enabled ? "enabled" : "disabled"}`
-          : `TPS discharge ${enabled ? "enabled" : "disabled"}`,
-      );
-    } else {
-      setError(res.error.message);
-      setStatus(null);
-    }
-  };
-
-  const runtimeOutputEnabled = config?.runtime?.output_enabled ?? true;
-  const runtimeDischargeEnabled = config?.runtime?.discharge_enabled ?? false;
-  const manualHighVoltageWarning =
-    form.tps_mode === "manual" && form.manual.voltage_mv > 5000;
-
   return (
     <section
       className="flex flex-col gap-5 rounded-[10px] border border-[var(--border)] bg-[var(--panel)] px-5 py-5"
@@ -569,15 +143,30 @@ export function DevicePowerPanel({
             {config?.persisted ? "EEPROM saved" : "Unsaved default"}
           </span>
           <span
-            className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${lockedByOtherHost ? "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
+            className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${lockStatusTone}`}
           >
-            {lockedByOtherHost ? "Host lock active" : "Host lock idle"}
+            {lockStatusLabel}
           </span>
           <span
-            className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${idleBiasRunning ? "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]" : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"}`}
+            className={`inline-flex h-7 items-center rounded-full border px-3 font-semibold ${
+              idleBiasRunning
+                ? "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]"
+                : "border-[var(--border)] bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
+            }`}
           >
             {idleBiasRunning ? "Calibration running" : "Calibration idle"}
           </span>
+          {showAcquireControl ? (
+            <ActionButton
+              tone="primary"
+              loading={lockBusy}
+              disabled={lockBusy}
+              onClick={handleAcquireControl}
+              data-testid="device-power-acquire-control"
+            >
+              Acquire control
+            </ActionButton>
+          ) : null}
         </div>
       </header>
 
@@ -948,7 +537,11 @@ export function DevicePowerPanel({
               </div>
               <div className="inline-flex h-9 w-full rounded-[8px] border border-[var(--border-subtle)] bg-[var(--panel-3)] p-1 sm:w-auto">
                 <button
-                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "auto_follow" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${
+                    form.tps_mode === "auto_follow"
+                      ? "bg-[var(--primary)] text-[var(--primary-text)]"
+                      : "text-[var(--muted)]"
+                  } ${powerControlsDisabled ? "opacity-60" : ""}`}
                   disabled={powerControlsDisabled}
                   onClick={() => setTpsMode("auto_follow")}
                   type="button"
@@ -956,7 +549,11 @@ export function DevicePowerPanel({
                   Auto follow
                 </button>
                 <button
-                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${form.tps_mode === "manual" ? "bg-[var(--primary)] text-[var(--primary-text)]" : "text-[var(--muted)]"} ${powerControlsDisabled ? "opacity-60" : ""}`}
+                  className={`min-w-0 flex-1 rounded-[6px] px-3 text-[13px] font-semibold sm:min-w-[112px] ${
+                    form.tps_mode === "manual"
+                      ? "bg-[var(--primary)] text-[var(--primary-text)]"
+                      : "text-[var(--muted)]"
+                  } ${powerControlsDisabled ? "opacity-60" : ""}`}
                   disabled={powerControlsDisabled}
                   onClick={() => setTpsMode("manual")}
                   type="button"
@@ -1061,7 +658,15 @@ export function DevicePowerPanel({
                 ].map(([value, label, detail]) => (
                   <button
                     key={value}
-                    className={`flex min-h-[88px] flex-col items-start justify-between rounded-[8px] border px-3 py-3 text-left ${form.manual.usb_c_path_mode === value ? "border-[var(--primary)] bg-[var(--panel-3)]" : "border-[var(--border-subtle)] bg-[var(--panel)]"} ${powerControlsDisabled || form.tps_mode !== "manual" ? "opacity-60" : ""}`}
+                    className={`flex min-h-[88px] flex-col items-start justify-between rounded-[8px] border px-3 py-3 text-left ${
+                      form.manual.usb_c_path_mode === value
+                        ? "border-[var(--primary)] bg-[var(--panel-3)]"
+                        : "border-[var(--border-subtle)] bg-[var(--panel)]"
+                    } ${
+                      powerControlsDisabled || form.tps_mode !== "manual"
+                        ? "opacity-60"
+                        : ""
+                    }`}
                     disabled={
                       powerControlsDisabled || form.tps_mode !== "manual"
                     }
@@ -1128,34 +733,23 @@ export function DevicePowerPanel({
               <div className="flex flex-wrap justify-end gap-3">
                 <ActionButton
                   className="min-w-[176px]"
-                  loading={
-                    busy &&
-                    status === "Saving and applying power configuration..."
-                  }
+                  loading={saveInFlight}
                   tone="primary"
-                  disabled={powerControlsDisabled || !dirty}
-                  onClick={() => void submit()}
+                  disabled={outputModeSaveDisabled}
+                  onClick={handleSubmitOutputMode}
                 >
                   Save and apply
                 </ActionButton>
                 <ActionButton
                   className="min-w-[176px]"
-                  loading={busy && status === "Restoring defaults..."}
+                  loading={restoringDefaults}
                   tone="warning"
-                  disabled={powerControlsDisabled}
-                  onClick={() => void restore()}
+                  disabled={restoreDisabled}
+                  onClick={handleRestoreDefaults}
                 >
                   Restore defaults
                 </ActionButton>
               </div>
-              {status ? (
-                <div className="text-[12px] text-[var(--muted)]">{status}</div>
-              ) : null}
-              {error ? (
-                <div className="text-[12px] text-[var(--badge-error-text)]">
-                  {error}
-                </div>
-              ) : null}
             </div>
           </section>
 
@@ -1176,16 +770,20 @@ export function DevicePowerPanel({
 
         <DevicePowerPanelIdleBiasSection
           busy={busy}
-          clearIdleBiasCalibration={(owner) => clearIdleBiasCalibration(owner)}
+          clearIdleBiasCalibration={(nextOwner) =>
+            clearIdleBiasCalibration(nextOwner)
+          }
           initialIdleBias={idleBiasSnapshot}
           loadIdleBias={loadIdleBias}
           lockedByOtherHost={lockedByOtherHost}
           onBusyChange={setIdleBiasBusy}
           onRunningChange={setIdleBiasRunning}
-          owner={ownerRef.current}
-          runIdleBiasCalibration={(owner) => runIdleBiasCalibration(owner)}
-          setIdleBiasCorrection={(enabled, owner) =>
-            setIdleBiasCorrection(enabled, owner)
+          owner={owner}
+          runIdleBiasCalibration={(nextOwner) =>
+            runIdleBiasCalibration(nextOwner)
+          }
+          setIdleBiasCorrection={(enabled, nextOwner) =>
+            setIdleBiasCorrection(enabled, nextOwner)
           }
         />
       </div>

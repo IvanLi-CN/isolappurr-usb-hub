@@ -60,10 +60,13 @@ for diagnostics.
   calculates `R_loop(mΩ)=ΔV(mV)×1000/I(mA)`. It MUST describe the resistance
   as the VBUS-plus-return-path loop, not a single conductor.
 - A valid calculator result MUST update only the corresponding unsaved Web
-  form value. TPS results MUST round down to `20mΩ` steps and clamp at
-  `140mΩ`; SW2303 results MUST round down to `50mΩ` steps and clamp at
-  `150mΩ`. Invalid inputs, including zero or negative current, MUST not alter
-  the form.
+  power setting. TPS manual-compensation results inside `Output mode` MUST
+  wait for the existing `Save and apply` action before the shared runtime
+  writes hardware state. SW2303 Auto follow results outside `Output mode`
+  MAY continue using the shared runtime's background auto-apply path. TPS
+  results MUST round down to `20mΩ` steps and clamp at `140mΩ`; SW2303
+  results MUST round down to `50mΩ` steps and clamp at `150mΩ`. Invalid
+  inputs, including zero or negative current, MUST not alter the form.
 - The owner-facing CLI MUST accept `--cable-resistance-mohm` for the TPS
   manual ladder, preserve `--tps-cdc-rise-mv` as a mutually exclusive legacy
   input, and render both manual and Auto follow compensation in mΩ.
@@ -162,6 +165,25 @@ for diagnostics.
   EEPROM record and force `correction_enabled=false`.
 - Host lock MUST use a TTL heartbeat. A host holding the lock MAY refresh it;
   other hosts MUST be rejected until the lock expires or is released.
+- The browser Power surface MUST persist one browser-scoped `owner` value per
+  device and keep a local resume window aligned with the existing device TTL so
+  refresh or short reopen can resume the same lock owner without inventing a
+  new host identity.
+- When the browser Power surface observes the device lock as `Unlocked`, it
+  MUST automatically acquire the lock for that browser-scoped `owner` so the
+  page stays ready for write actions without a separate owner-facing acquire
+  step.
+- Automatic browser lock renewal MUST continue using the same browser-scoped
+  `owner` when the browser has a recent local record that it previously held
+  that device lock. An observed foreign owner MUST remain read-only until that
+  lock expires or is released.
+- Same-browser tabs MUST share one single-writer runtime leader for polling,
+  lock heartbeat, and hardware writes. Every same-origin Power page MUST render
+  the shared snapshot, submit mutations through that shared runtime queue, and
+  stay synchronized without exposing ordinary takeover controls.
+- Same-browser Power coordination MUST isolate live device pages from
+  `?demo=true` Power pages. Demo and live routes MAY share an origin, but they
+  MUST NOT share the same runtime lease or snapshot namespace.
 - Local advanced controls MUST be blocked while a host lock is active, except
   existing USB-C power on/off behavior.
 - Web UI MUST show write/read errors instead of staying in a loading state.
@@ -237,12 +259,31 @@ for diagnostics.
 - `/api/v1/pd-diagnostics.usb_c_actual` MUST keep exposing the raw U17 INA226
   reading used by the PD diagnostics surface so HIL can distinguish control
   faults from idle-bias correction effects.
-- Storybook coverage MUST include normal, host-locked, failure, save, restore,
-  and narrow states for the power panel; power-panel idle-bias uncalibrated,
+- Storybook coverage MUST include normal, host-locked, failure,
+  local-draft-save-action, restore, controlled-here, queued-mutation,
+  running-shared-save, stale-draft-after-remote-write,
+  locked-by-another-host, and narrow states
+  for the power panel; power-panel idle-bias uncalibrated,
   correction off, correction on, running, confirmation, and failure states;
   plus Dashboard USB-C card inline live-badge states for auto-follow, `FOCUS`,
   `ON`, and `OFF`, the legacy no-diagnostics fallback, and the telemetry-error
   regression where a real error status chip must remain visible.
+- Power lock UI MUST distinguish at least `Unlocked`, `Controlled here`, and
+  `Locked by another host`. Same-browser tabs that already share the active
+  lock MUST all render `Controlled here`; queued or running shared commands MAY
+  add transient busy state, but ordinary writes MUST NOT be disabled only
+  because another same-origin tab currently holds the internal runtime lease.
+- Same-origin tabs MUST keep using the shared runtime queue as the only
+  hardware write path, but persisted Power-config interaction is split by
+  surface: `Output mode` edits stay local until the operator clicks `Save and
+  apply`, while the remaining persisted Power controls continue using the
+  existing background auto-apply path. Non-blocking hints for both paths MUST
+  use toast-style feedback rather than page-level banners, status rows, or
+  other layout-shifting prompt surfaces.
+- When same-origin tabs submit overlapping Power edits, the shared runtime MUST
+  serialize them per device and rebroadcast the canonical snapshot. An
+  unsaved `Output mode` draft that predates a newer shared `Output mode`
+  snapshot MUST be blocked from saving until the operator refreshes the page.
 - Power visual verification MUST NOT rely on page-level Storybook route stories.
   Route-level proof belongs to the production `/devices/:deviceId/power` page
   and this spec's live or mock-only evidence entries.
@@ -286,8 +327,9 @@ for diagnostics.
   SW2303 line compensation is forced off while TPS55288 applies the saved
   `manual.tps_cdc_rise_mv` value using internal CDC mode only.
 - Given a Web operator enters `300mV` voltage drop and `3000mA` load current in
-  the manual TPS help calculator, then the unsaved TPS setting becomes
-  `100mΩ`, represented by `manual.tps_cdc_rise_mv=500` on save.
+  the manual TPS help calculator, then the power surface sets the TPS draft
+  value to `100mΩ`, represented by `manual.tps_cdc_rise_mv=500`, and waits for
+  `Save and apply` before the shared runtime writes hardware state.
 - Given a Web operator enters `299mV` and `3000mA`, then the TPS calculator
   selects `80mΩ` by rounding down to the supported ladder.
 - Given a calculator result exceeds a controller's maximum supported loop
@@ -298,6 +340,39 @@ for diagnostics.
   flag together with `--tps-cdc-rise-mv` fails validation.
 - Given a remote host lock, when another host attempts a config write, then the
   write is rejected as busy and the UI presents the locked state.
+- Given the browser previously held the device lock, when the operator refreshes
+  the Power page before the lock TTL expires, then the browser resumes the same
+  `owner` and the page returns to `Controlled here` instead of showing itself
+  as locked by another host.
+- Given the browser previously held the device lock, when the tab closes and
+  the operator reopens the page before the TTL expires, then the browser can
+  resume the same `owner`; after the TTL expires, the page automatically
+  acquires control again as long as no foreign host currently owns the lock.
+- Given a second same-origin tab opens while the first tab controls the device,
+  when the Power page loads, then it shows `Controlled here`, can submit writes
+  through the shared runtime, and reflects shared live state without starting a
+  second lock heartbeat or transport owner.
+- Given one same-origin tab edits `Output mode`, when the operator has not yet
+  clicked `Save and apply`, then those `Output mode` changes remain local to
+  that tab and the device state does not change.
+- Given one same-origin tab keeps editing outside `Output mode` while a
+  same-origin background Power save is in flight, when that save succeeds, then
+  the response only clears the non-`Output mode` draft that was actually saved
+  and later edits remain queued for the next automatic background apply.
+- Given one same-origin tab holds an unsaved `Output mode` draft and another
+  same-origin tab publishes a newer canonical `Output mode` snapshot first,
+  when the local tab receives that newer snapshot, then the older draft stays
+  visible, `Save and apply` becomes disabled, and the operator must refresh
+  the page before saving again.
+- Given a same-origin Power save from the current tab remains running past the
+  optimistic thresholds, when about `3 s` elapse after the save actually starts,
+  then the page shows toast feedback without shifting layout and still lets the
+  operator keep editing; only when the same save is still running at about `6 s`
+  do Power controls temporarily pause until the device confirms the update.
+- Given another host currently holds the device lock, when the Power page
+  refreshes, then the browser shows `Locked by another host`, keeps writes
+  disabled, and MUST NOT restore write access only because of stale local lock
+  history.
 - Given the runtime `Power` action turns output off, when the request
   succeeds, then TPS55288 clears `OE`, the API reports
   `runtime.output_enabled=false`, and the saved power config remains unchanged.
@@ -389,6 +464,62 @@ for diagnostics.
 
 ## Visual Evidence
 
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/Default`
+  state: unlocked fallback when shared coordination is unavailable
+  requested_viewport: `1365x1700`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the fallback unlocked state remains available only
+  when shared coordination is unavailable, while ordinary same-origin pages now
+  auto-acquire control instead of waiting for an explicit acquire step.
+
+![Device Power unlocked](./assets/device-power-unlocked.png)
+
+- source_type: production_spa_route
+  route: `/devices/:deviceId/power`
+  state: same-browser shared lock held
+  capture_scope: real browser viewport
+  target_program: real saved device over shared runtime
+  evidence_note: verifies a real saved-device page resumes or acquires the
+  shared browser owner identity and renders `Controlled here` without
+  degrading another same-origin tab to a foreign host.
+
+![Device Power controlled here](./assets/device-power-controlled-here.png)
+
+- source_type: production_spa_route
+  route: `/devices/:deviceId/power`
+  state: optimistic shared runtime mutation in flight
+  capture_scope: real browser viewport
+  target_program: real saved device over shared runtime
+  evidence_note: verifies a persisted Power edit remains interactive during a
+  short background save while the shared canonical lock state remains visible.
+
+![Device Power optimistic queued changes](./assets/device-power-optimistic-queued-changes.png)
+
+- source_type: production_spa_route
+  route: `/devices/:deviceId/power`
+  state: auto-applied persisted Power setting
+  capture_scope: real browser viewport
+  target_program: real saved device over shared runtime
+  evidence_note: verifies the shared runtime writes the canonical Power update
+  and all same-browser pages can converge on the confirmed saved setting.
+
+![Device Power auto-applied setting](./assets/device-power-auto-applied-setting.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/LockedByAnotherHost`
+  state: foreign host lock
+  requested_viewport: `1365x1700`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the Power page distinguishes a foreign host owner
+  from same-browser lock reuse and keeps the surface read-only.
+
+![Device Power locked by another host](./assets/device-power-locked-by-another-host.png)
+
 - source_type: ui_demo
   route: `/?demo=true`
   state: Dashboard and device-summary live telemetry
@@ -461,8 +592,8 @@ for diagnostics.
   submission_gate: approved
   PR: include
   evidence_note: verifies the Manual TPS help popover keeps the measurement
-  calculator with its explanatory copy, maps the 100mΩ recommendation onto the
-  manual cable-loop compensation draft, and leaves the save action explicit.
+  calculator with its explanatory copy and maps the 100mΩ recommendation onto
+  the manual cable-loop compensation control that now auto-applies.
 
 ![Manual TPS cable loop calculator](./assets/device-power-panel-manual-cable-loop-calculator.png)
 
@@ -476,8 +607,8 @@ for diagnostics.
   submission_gate: approved
   PR: include
   evidence_note: verifies the independent Auto follow help popover recommends
-  100mΩ from the same loop measurement and updates only its unsaved SW2303
-  compensation draft.
+  100mΩ from the same loop measurement and updates only the Auto follow SW2303
+  compensation control before the shared runtime auto-applies it.
 
 ![Auto follow cable loop calculator](./assets/device-power-panel-auto-follow-cable-loop-calculator.png)
 

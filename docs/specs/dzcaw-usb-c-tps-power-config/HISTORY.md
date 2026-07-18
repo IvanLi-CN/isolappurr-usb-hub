@@ -25,6 +25,40 @@
 - Added the compatible CLI `--cable-resistance-mohm` input while retaining the
   mutually exclusive `--tps-cdc-rise-mv` legacy flag.
 
+## 2026-07-17
+
+- Moved Web power control from a per-tab lock owner and per-tab poller to a
+  same-origin single-writer runtime leader with shared snapshots and shared
+  writable tabs that forward commands through the leader queue.
+- Persisted one browser-scoped power-lock owner per device and aligned the
+  local resume window to the existing 15-second device TTL so refresh and short
+  reopen can continue renewing the same owner instead of self-locking.
+- Split the Power surface lock state into explicit `Unlocked`, `Controlled
+  here`, and `Locked by another host` UI states, while keeping same-browser
+  tabs writable through the shared runtime queue.
+
+## 2026-07-18
+
+- Changed same-origin Power pages so an observed `Unlocked` device is acquired
+  automatically for the browser-scoped owner, removing the routine extra
+  `Acquire control` step while still refusing to auto-take over from a foreign
+  host lock.
+- Kept same-origin shared writable tabs and the shared runtime queue together
+  so every tab can edit while the browser still serializes hardware writes, but
+  restored an explicit `Save and apply` action for the `Output mode` persisted
+  draft instead of auto-submitting that region.
+- Kept non-blocking save feedback on toast surfaces and only pauses controls
+  when a shared Power save runs past the optimistic window, so the page layout
+  stays stable.
+- Rebased the slow-save timer onto the current tab's actual shared save start
+  instead of queue time, moved the first toast to about `3 s`, and delayed the
+  control lock to about `6 s` so normal LAN writes do not look like abnormal
+  slow saves.
+- Isolated `?demo=true` Power pages from live saved-device pages inside the
+  shared browser runtime namespace so demo leader election and demo snapshots
+  cannot replace live device state with `unknown` badges or `device not found`
+  errors.
+
 ## 2026-07-06
 
 - Fixed LAN Web manual-voltage saves by raising the firmware HTTP request

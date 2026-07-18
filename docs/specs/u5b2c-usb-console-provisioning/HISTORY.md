@@ -27,3 +27,28 @@ The Web App action vocabulary is centralized around semantic primary, secondary,
 The destructive confirmation path is shared so saved-device deletion, recovery flashing, and power-calibration confirmation have consistent focus behavior, cancel affordances, final-action emphasis, and keyboard dismissal. Reset and clear actions use warning rather than the same visual weight as normal task completion.
 
 Theme-owned input surfaces are explicit as well: disabled form controls retain the active panel token in dark and system-dark mode rather than inheriting a light framework fill. This keeps the action hierarchy legible across all supported theme choices.
+
+## 2026-07-17
+
+The browser runtime moved from per-tab autonomous polling to a same-origin
+single-writer model. One leader tab now owns discovery, transport bootstrap,
+snapshot polling, and hardware writes, while every same-origin tab submits
+device reads and writes through the shared runtime and converges on the same
+canonical snapshot stream.
+
+This same update also introduced a browser-persistent per-device power-lock
+owner store so refresh and short reopen flows can resume the same lock owner
+within the existing device TTL window instead of self-blocking on a fresh
+random owner after reload. The same-origin Power surface now keeps `Output
+mode` as an explicit local draft with `Save and apply`, while the remaining
+persisted config edits still flow through the shared queue as background saves.
+Toast-style hints keep the page layout stable while the shared runtime catches
+up.
+
+## 2026-07-18
+
+Live saved-device routes and `?demo=true` routes now use separate browser
+runtime scopes. This prevents a same-origin demo page from reusing the live
+leader lease or overwriting the live device snapshot cache with demo state,
+which previously surfaced as `unknown` transport/state badges and `device not
+found` power pages for real hardware.

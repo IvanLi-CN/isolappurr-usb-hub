@@ -23,6 +23,7 @@ import type {
   StoredDevice,
 } from "../domain/devices";
 import {
+  DEVICES_STORAGE_KEY,
   loadStoredDevices,
   mergeStoredDeviceTransports,
   normalizeBaseUrl,
@@ -79,6 +80,27 @@ export function DevicesProvider({
     }
     saveStoredDevices(devices);
   }, [devices, agent, ready, source, status]);
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      status !== "ready" ||
+      agent ||
+      source !== "browser"
+    ) {
+      return;
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== DEVICES_STORAGE_KEY) {
+        return;
+      }
+      setDevices(loadStoredDevices());
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [agent, source, status]);
 
   useEffect(() => {
     if (status !== "ready") {

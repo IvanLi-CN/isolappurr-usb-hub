@@ -8,12 +8,14 @@ import type {
 import { ActionButton } from "../actions/ActionButton";
 
 export function DeviceSettingsResetPanel({
+  sharedCommandBusy,
   transport,
   transportLabel,
   wifiCanManage,
   resetSettings,
   onWifiResetSuccess,
 }: {
+  sharedCommandBusy: boolean;
   transport: DeviceTransport | null;
   transportLabel: string;
   wifiCanManage: boolean;
@@ -28,6 +30,12 @@ export function DeviceSettingsResetPanel({
   const [error, setError] = useState<string | null>(null);
 
   const requestReset = (scope: SettingsResetScope) => {
+    if (sharedCommandBusy) {
+      setError(
+        "Another device command is still running in this browser runtime. Wait for it to finish before resetting settings.",
+      );
+      return;
+    }
     if (scope === "wifi" && !wifiCanManage) {
       setError(
         "Connect with Web Serial or Local USB before resetting Wi-Fi settings.",
@@ -89,7 +97,7 @@ export function DeviceSettingsResetPanel({
         <ResetSettingRow
           title="Wi-Fi"
           detail="Clear saved SSID and PSK. Requires Web Serial or Local USB."
-          disabled={!wifiCanManage || busy}
+          disabled={sharedCommandBusy || !wifiCanManage || busy}
           active={confirm === "wifi"}
           busy={busy && confirm === "wifi"}
           onRequest={() => requestReset("wifi")}
@@ -99,7 +107,7 @@ export function DeviceSettingsResetPanel({
         <ResetSettingRow
           title="Other"
           detail="Clear USB-C mode and power settings while keeping Wi-Fi credentials."
-          disabled={!transport || busy}
+          disabled={sharedCommandBusy || !transport || busy}
           active={confirm === "other"}
           busy={busy && confirm === "other"}
           onRequest={() => requestReset("other")}
@@ -109,9 +117,11 @@ export function DeviceSettingsResetPanel({
       </div>
 
       <div className="mt-4 text-[12px] font-semibold leading-5 text-[var(--muted)]">
-        {wifiCanManage
-          ? "Wi-Fi reset is available on the current USB-capable management path."
-          : "Wi-Fi reset is disabled on Wi-Fi/LAN so this page cannot strand the current connection."}
+        {sharedCommandBusy
+          ? "Another device command is currently queued or running in this browser runtime."
+          : wifiCanManage
+            ? "Wi-Fi reset is available on the current USB-capable management path."
+            : "Wi-Fi reset is disabled on Wi-Fi/LAN so this page cannot strand the current connection."}
       </div>
 
       {status ? (

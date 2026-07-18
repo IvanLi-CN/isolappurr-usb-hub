@@ -5,19 +5,11 @@ import {
   tryBootstrapDesktopAgent,
 } from "../domain/desktopAgent";
 import type {
-  DeviceApiError,
   DeviceInfoResponse,
   IdleBiasResponse,
   PdDiagnosticsResponse,
-  PowerConfigInput,
   PowerConfigResponse,
-  RebootResponse,
   Result,
-  SettingsResetResponse,
-  SettingsResetScope,
-  WifiConfigInput,
-  WifiConfigResponse,
-  WifiMutationResponse,
 } from "../domain/deviceApi";
 import {
   FLASH_TRANSPORT_LOCK_ALL,
@@ -34,20 +26,29 @@ import {
   subscribeLocalUsbDeviceLinks,
 } from "../domain/localUsbLinks";
 import { subscribeNetworkDeviceLinks } from "../domain/networkLinks";
-import type {
-  PortId,
-  PortsResponse,
-  UsbCDownstreamRoute,
-} from "../domain/ports";
+import type { PortsResponse } from "../domain/ports";
 import {
   forgetWebSerialDeviceTransport,
   getWebSerialDeviceTransport,
   subscribeWebSerialDeviceLinks,
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
+import {
+  DEMO_RUNTIME_SCOPE,
+  getSharedCrossTabRuntimeCoordinator,
+  LIVE_RUNTIME_SCOPE,
+  type RuntimeChannelMessage,
+  type RuntimeRpcMethod,
+  type RuntimeRpcResultMap,
+  runtimeRpcMethodKind,
+} from "./cross-tab-runtime";
 import { useDemoMode } from "./demo-mode";
+import { createDeviceRuntimeActions } from "./device-runtime-actions";
+import { createSharedMutationController } from "./device-runtime-command-state";
 import { DeviceRuntimeContext } from "./device-runtime-context";
 import {
+  canResumePowerLock,
+  clearPowerLockResume,
   createEmptyChannels,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
@@ -60,6 +61,7 @@ import {
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
+  markPowerLockHeld,
   recoverWifiClearLikeTimeout,
   resetLocalUsbRuntimeState,
   resetLocalUsbRuntimeStateForDevice,
@@ -89,20 +91,123 @@ export function DeviceRuntimeProvider({
 }) {
   const { devices, rebindHttpBaseUrl } = useDevices();
   const { enabled: demoEnabled } = useDemoMode();
+  const coordinator = useMemo(
+    () =>
+      getSharedCrossTabRuntimeCoordinator(
+        demoEnabled ? DEMO_RUNTIME_SCOPE : LIVE_RUNTIME_SCOPE,
+      ),
+    [demoEnabled],
+  );
   const { pushToast } = useToast();
   const [now, setNow] = useState(() => Date.now());
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(
     {},
   );
+  const [coordination, setCoordination] = useState(() =>
+    coordinator.getLeaseState(),
+  );
   const inflight = useRef<Set<string>>(new Set());
+  const runtimeByIdRef = useRef(runtimeById);
   const localUsbAgent = useRef<DesktopAgent | null>(null);
   const lastDemoEnabled = useRef(demoEnabled);
   const localUsbPortByDevice = useRef<Record<string, string>>({});
   const localUsbRequestQueues = useRef<Record<string, Promise<void>>>({});
   const httpRequestQueues = useRef<Record<string, Promise<void>>>({});
+  const deviceMutationQueues = useRef<Record<string, Promise<void>>>({});
   const preferredTransportByDevice = useRef<Record<string, DeviceTransport>>(
     {},
   );
+  const pendingRpc = useRef<
+    Record<
+      string,
+      {
+        resolve: (value: unknown) => void;
+        reject: (reason?: unknown) => void;
+        timeoutId: number;
+      }
+    >
+  >({});
+  const rpcRequestHandlerRef = useRef<
+    | ((
+        message: Extract<
+          RuntimeChannelMessage,
+          { type: "runtime-rpc-request" }
+        >,
+      ) => Promise<void>)
+    | null
+  >(null);
+  const wasLeaderRef = useRef(coordination.role !== "follower");
+  const isLeader = coordination.role !== "follower";
+
+  useEffect(() => {
+    runtimeByIdRef.current = runtimeById;
+  }, [runtimeById]);
+
+  useEffect(() => {
+    coordinator.start();
+    const cachedSnapshot = coordinator.readSnapshot();
+    if (cachedSnapshot) {
+      setNow(cachedSnapshot.now);
+      setRuntimeById(cachedSnapshot.runtimeById);
+    }
+    const unsubscribeLease = coordinator.subscribeLease(setCoordination);
+    const unsubscribeMessages = coordinator.subscribeMessages((message) => {
+      if (
+        message.type === "runtime-snapshot" &&
+        message.originTabId !== coordination.currentTabId &&
+        !isLeader
+      ) {
+        setNow(message.snapshot.now);
+        setRuntimeById(message.snapshot.runtimeById);
+        return;
+      }
+      if (
+        message.type === "runtime-rpc-response" &&
+        message.targetTabId === coordination.currentTabId
+      ) {
+        const pending = pendingRpc.current[message.requestId];
+        if (!pending) {
+          return;
+        }
+        window.clearTimeout(pending.timeoutId);
+        delete pendingRpc.current[message.requestId];
+        pending.resolve(message.result);
+        return;
+      }
+      if (message.type === "runtime-rpc-request" && isLeader) {
+        void rpcRequestHandlerRef.current?.(message);
+      }
+    });
+    return () => {
+      unsubscribeMessages();
+      unsubscribeLease();
+      coordinator.stop();
+    };
+  }, [coordinator, coordination.currentTabId, isLeader]);
+
+  useEffect(() => {
+    if (!isLeader) {
+      return;
+    }
+    coordinator.publishSnapshot({
+      at: new Date().toISOString(),
+      originTabId: coordination.currentTabId,
+      now,
+      runtimeById,
+    });
+  }, [coordinator, coordination.currentTabId, isLeader, now, runtimeById]);
+
+  useEffect(() => {
+    if (wasLeaderRef.current && !isLeader) {
+      localUsbAgent.current = null;
+      localUsbPortByDevice.current = {};
+      for (const device of devices) {
+        forgetWebSerialDeviceTransport(device.id);
+      }
+      setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
+    }
+    wasLeaderRef.current = isLeader;
+  }, [devices, isLeader]);
 
   useEffect(() => {
     setRuntimeById((prev) => {
@@ -114,6 +219,7 @@ export function DeviceRuntimeProvider({
           delete localUsbPortByDevice.current[id];
           delete localUsbRequestQueues.current[id];
           delete httpRequestQueues.current[id];
+          delete deviceMutationQueues.current[id];
           delete preferredTransportByDevice.current[id];
         }
       }
@@ -127,12 +233,116 @@ export function DeviceRuntimeProvider({
             hub: null,
             ports: null,
             pending: { port_a: false, port_c: false },
+            powerConfig: null,
+            idleBias: null,
+            pdDiagnostics: null,
+            revision: 0,
+            command: null,
           };
         }
       }
       return next;
     });
   }, [devices]);
+
+  const createRpcRequestId = useCallback(() => {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
+      return crypto.randomUUID();
+    }
+    return `rpc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }, []);
+
+  const runtimeRpcTimeoutMs = useCallback(
+    (method: RuntimeRpcMethod): number => {
+      if (method === "runIdleBiasCalibration") {
+        return 190_000;
+      }
+      if (
+        method === "savePowerConfig" ||
+        method === "restorePowerDefaults" ||
+        method === "setPowerLock" ||
+        method === "setPowerRuntime" ||
+        method === "setIdleBiasCorrection" ||
+        method === "clearIdleBiasCalibration" ||
+        method === "saveWifiConfig" ||
+        method === "clearWifiConfig" ||
+        method === "resetSettings" ||
+        method === "rebootDevice" ||
+        method === "setPower" ||
+        method === "replug" ||
+        method === "setUsbCDownstreamRoute"
+      ) {
+        return 25_000;
+      }
+      return 8_000;
+    },
+    [],
+  );
+
+  const requestLeaderRpc = useCallback(
+    async <TMethod extends RuntimeRpcMethod>(
+      method: TMethod,
+      args: unknown[],
+    ): Promise<RuntimeRpcResultMap[TMethod]> => {
+      const requestId = createRpcRequestId();
+      return new Promise<RuntimeRpcResultMap[TMethod]>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+          delete pendingRpc.current[requestId];
+          reject(new Error(`Cross-tab runtime request timed out: ${method}`));
+        }, runtimeRpcTimeoutMs(method));
+        pendingRpc.current[requestId] = {
+          resolve: (value) => resolve(value as RuntimeRpcResultMap[TMethod]),
+          reject,
+          timeoutId,
+        };
+        coordinator.postMessage({
+          type: "runtime-rpc-request",
+          originTabId: coordination.currentTabId,
+          requestId,
+          kind: runtimeRpcMethodKind(method),
+          method,
+          args,
+        });
+      });
+    },
+    [
+      coordinator,
+      coordination.currentTabId,
+      createRpcRequestId,
+      runtimeRpcTimeoutMs,
+    ],
+  );
+
+  const requestControlTakeover = useCallback(() => {
+    coordinator.requestTakeover();
+  }, [coordinator]);
+  const { runSharedMutation } = createSharedMutationController({
+    currentTabId: coordination.currentTabId,
+    createRpcRequestId,
+    deviceMutationQueues,
+    setRuntimeById,
+  });
+
+  const syncObservedPowerLock = useCallback(
+    (
+      deviceId: string,
+      lock: PowerConfigResponse["lock"] | null | undefined,
+      owner = getStablePowerLockOwner(deviceId),
+    ) => {
+      if (!lock) {
+        return;
+      }
+      if (lock.owner === owner) {
+        markPowerLockHeld(deviceId);
+        return;
+      }
+      clearPowerLockResume(deviceId);
+    },
+    [],
+  );
 
   const getLocalUsbAgent =
     useCallback(async (): Promise<DesktopAgent | null> => {
@@ -377,6 +587,63 @@ export function DeviceRuntimeProvider({
     [],
   );
 
+  const syncPowerConfigSnapshot = useCallback(
+    (deviceId: string, nextConfig: PowerConfigResponse) => {
+      setRuntimeById((prev) => {
+        const current = prev[deviceId];
+        if (!current) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [deviceId]: {
+            ...current,
+            powerConfig: nextConfig,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const syncIdleBiasSnapshot = useCallback(
+    (deviceId: string, nextIdleBias: IdleBiasResponse) => {
+      setRuntimeById((prev) => {
+        const current = prev[deviceId];
+        if (!current) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [deviceId]: {
+            ...current,
+            idleBias: nextIdleBias,
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const syncPdDiagnosticsSnapshot = useCallback(
+    (deviceId: string, nextPdDiagnostics: PdDiagnosticsResponse) => {
+      setRuntimeById((prev) => {
+        const current = prev[deviceId];
+        if (!current) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [deviceId]: {
+            ...current,
+            pdDiagnostics: nextPdDiagnostics,
+          },
+        };
+      });
+    },
+    [],
+  );
+
   const orderedTransports = useCallback(
     (deviceId: string): DeviceTransport[] => {
       return resolveOrderedDeviceTransports({
@@ -509,6 +776,9 @@ export function DeviceRuntimeProvider({
   }, [pollDevice]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     return subscribeLocalUsbDeviceLinks((link) => {
       localUsbPortByDevice.current[link.deviceId] = link.portPath;
       preferredTransportByDevice.current[link.deviceId] = "local_usb";
@@ -517,9 +787,12 @@ export function DeviceRuntimeProvider({
         void pollDevice(link.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, pollDevice]);
+  }, [devices, isLeader, pollDevice]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     return subscribeWebSerialDeviceLinks((link) => {
       preferredTransportByDevice.current[link.deviceId] = "web_serial";
       const device = devices.find((d) => d.id === link.deviceId);
@@ -527,9 +800,12 @@ export function DeviceRuntimeProvider({
         void pollDevice(link.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, pollDevice]);
+  }, [devices, isLeader, pollDevice]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     return subscribeFlashTransportLocks((lock) => {
       if (lock.deviceId === FLASH_TRANSPORT_LOCK_ALL) {
         setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
@@ -556,9 +832,12 @@ export function DeviceRuntimeProvider({
         void pollDevice(lock.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, pollDevice]);
+  }, [devices, isLeader, pollDevice]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     return subscribeNetworkDeviceLinks((link) => {
       markChannelResult(link.deviceId, "http", {
         ok: true,
@@ -570,9 +849,12 @@ export function DeviceRuntimeProvider({
       }
       void pollDevice(link.deviceId, link.baseUrl);
     });
-  }, [markChannelResult, pollDevice, runtimeById]);
+  }, [isLeader, markChannelResult, pollDevice, runtimeById]);
 
   useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
     let cancelled = false;
     const tick = async () => {
       const nextNow = Date.now();
@@ -593,40 +875,28 @@ export function DeviceRuntimeProvider({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [devices]);
-
-  const setPending = useCallback(
-    (deviceId: string, portId: PortId, value: boolean) => {
-      setRuntimeById((prev) => {
-        const current = prev[deviceId];
-        if (!current) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [deviceId]: {
-            ...current,
-            pending: { ...current.pending, [portId]: value },
-          },
-        };
-      });
-    },
-    [],
-  );
+  }, [devices, isLeader]);
 
   const refreshDevice = useCallback(
     async (deviceId: string) => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        await requestLeaderRpc("refreshDevice", [deviceId]);
+        return;
+      }
       const device = devices.find((d) => d.id === deviceId);
       if (!device) {
         return;
       }
       await pollDevice(deviceId, httpBaseUrlForDevice(device));
     },
-    [devices, pollDevice],
+    [coordination.role, devices, isLeader, pollDevice, requestLeaderRpc],
   );
 
   const deviceInfo = useCallback(
     async (deviceId: string): Promise<Result<DeviceInfoResponse>> => {
+      if (!isLeader && coordination.role !== "unsupported") {
+        return requestLeaderRpc("deviceInfo", [deviceId]);
+      }
       const device = devices.find((d) => d.id === deviceId);
       const activeTransport = resolveActiveDeviceTransport({
         deviceId,
@@ -677,9 +947,12 @@ export function DeviceRuntimeProvider({
       return checked;
     },
     [
+      coordination.role,
       devices,
+      isLeader,
       markChannelResult,
       rebindHttpBaseUrl,
+      requestLeaderRpc,
       requestTransport,
       runtimeById,
     ],
@@ -751,387 +1024,124 @@ export function DeviceRuntimeProvider({
     [devices, markChannelResult, orderedTransports, requestTransport],
   );
 
-  const wifiConfig = useCallback(
-    async (deviceId: string): Promise<Result<WifiConfigResponse>> => {
-      return runDeviceCommand<WifiConfigResponse>(deviceId, "wifi.get");
-    },
-    [runDeviceCommand],
-  );
-
-  const saveWifiConfig = useCallback(
+  const refreshCanonicalPowerConfig = useCallback(
     async (
       deviceId: string,
-      input: WifiConfigInput,
-    ): Promise<Result<WifiMutationResponse>> => {
-      const res = await runDeviceCommand<WifiMutationResponse>(
-        deviceId,
-        "wifi.set",
-        input,
-        ["web_serial", "local_usb"],
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
-      }
-      return res;
-    },
-    [refreshDevice, runDeviceCommand],
-  );
-
-  const clearWifi = useCallback(
-    async (deviceId: string): Promise<Result<WifiMutationResponse>> => {
-      const res = await runDeviceCommand<WifiMutationResponse>(
-        deviceId,
-        "wifi.clear",
-        undefined,
-        ["web_serial", "local_usb"],
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
-      }
-      return res;
-    },
-    [refreshDevice, runDeviceCommand],
-  );
-
-  const resetSettings = useCallback(
-    async (
-      deviceId: string,
-      scope: SettingsResetScope,
-    ): Promise<Result<SettingsResetResponse>> => {
-      const preferred: DeviceTransport[] | undefined =
-        scope === "wifi" ? ["web_serial", "local_usb"] : undefined;
-      const res = await runDeviceCommand<SettingsResetResponse>(
-        deviceId,
-        "settings.reset",
-        scope === "other"
-          ? { scope, owner: getStablePowerLockOwner(deviceId) }
-          : { scope },
-        preferred,
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
-      }
-      return res;
-    },
-    [refreshDevice, runDeviceCommand],
-  );
-
-  const reboot = useCallback(
-    async (deviceId: string): Promise<Result<RebootResponse>> => {
-      return runDeviceCommand<RebootResponse>(deviceId, "reboot", undefined, [
-        "web_serial",
-        "local_usb",
-      ]);
-    },
-    [runDeviceCommand],
-  );
-
-  const powerConfig = useCallback(
-    async (deviceId: string): Promise<Result<PowerConfigResponse>> => {
-      return runDeviceCommand<PowerConfigResponse>(
+      owner?: number,
+      fallback?: PowerConfigResponse,
+    ): Promise<Result<PowerConfigResponse>> => {
+      const snapshot = await runDeviceCommand<PowerConfigResponse>(
         deviceId,
         "power.config_get",
       );
-    },
-    [runDeviceCommand],
-  );
-
-  const pdDiagnostics = useCallback(
-    async (deviceId: string): Promise<Result<PdDiagnosticsResponse>> => {
-      return runDeviceCommand<PdDiagnosticsResponse>(
-        deviceId,
-        "pd.diagnostics_get",
-      );
-    },
-    [runDeviceCommand],
-  );
-
-  const idleBias = useCallback(
-    async (deviceId: string): Promise<Result<IdleBiasResponse>> => {
-      return runDeviceCommand<IdleBiasResponse>(
-        deviceId,
-        "power.idle_bias_get",
-      );
-    },
-    [runDeviceCommand],
-  );
-
-  const savePowerConfig = useCallback(
-    async (
-      deviceId: string,
-      input: PowerConfigInput,
-      owner: number,
-    ): Promise<Result<PowerConfigResponse>> => {
-      const res = await runDeviceCommand<PowerConfigResponse>(
-        deviceId,
-        "power.config_set",
-        { config: input, owner },
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
+      if (snapshot.ok) {
+        syncObservedPowerLock(deviceId, snapshot.value.lock, owner);
+        syncPowerConfigSnapshot(deviceId, snapshot.value);
+        return snapshot;
       }
-      return res;
-    },
-    [refreshDevice, runDeviceCommand],
-  );
-
-  const restoreDefaults = useCallback(
-    async (
-      deviceId: string,
-      owner: number,
-    ): Promise<Result<PowerConfigResponse>> => {
-      const res = await runDeviceCommand<PowerConfigResponse>(
-        deviceId,
-        "power.config_defaults",
-        { owner },
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
+      if (!fallback) {
+        return snapshot;
       }
-      return res;
+      syncObservedPowerLock(deviceId, fallback.lock, owner);
+      syncPowerConfigSnapshot(deviceId, fallback);
+      return { ok: true, value: fallback };
     },
-    [refreshDevice, runDeviceCommand],
+    [runDeviceCommand, syncObservedPowerLock, syncPowerConfigSnapshot],
   );
 
-  const setLock = useCallback(
-    async (
-      deviceId: string,
-      owner: number,
-      acquire: boolean,
-    ): Promise<Result<PowerConfigResponse>> => {
-      return runDeviceCommand<PowerConfigResponse>(deviceId, "power.lock", {
-        owner,
-        acquire,
-      });
-    },
-    [runDeviceCommand],
-  );
-
-  const setIdleBias = useCallback(
-    async (
-      deviceId: string,
-      correctionEnabled: boolean,
-      owner: number,
-    ): Promise<Result<IdleBiasResponse>> => {
-      const res = await runDeviceCommand<IdleBiasResponse>(
-        deviceId,
-        "power.idle_bias_set",
-        { correction_enabled: correctionEnabled, owner },
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
-      }
-      return res;
-    },
-    [refreshDevice, runDeviceCommand],
-  );
-
-  const runIdleBias = useCallback(
-    async (
-      deviceId: string,
-      owner: number,
-    ): Promise<Result<IdleBiasResponse>> => {
-      return runDeviceCommand<IdleBiasResponse>(
-        deviceId,
-        "power.idle_bias_run",
-        {
-          owner,
-        },
-      );
-    },
-    [runDeviceCommand],
-  );
-
-  const clearIdleBias = useCallback(
-    async (
-      deviceId: string,
-      owner: number,
-    ): Promise<Result<IdleBiasResponse>> => {
-      const res = await runDeviceCommand<IdleBiasResponse>(
-        deviceId,
-        "power.idle_bias_clear",
-        { owner },
-      );
-      if (res.ok) {
-        await refreshDevice(deviceId);
-      }
-      return res;
-    },
-    [refreshDevice, runDeviceCommand],
-  );
-
-  const handleApiErrorToast = useCallback(
-    (deviceName: string, label: string, err: DeviceApiError) => {
-      if (err.kind === "busy") {
-        pushToast({
-          message: `${deviceName}: ${label} is busy`,
-          variant: "warning",
-        });
-        return;
-      }
-      pushToast({
-        message: `${deviceName}: ${label} error (${err.kind})`,
-        variant: "error",
-      });
-    },
-    [pushToast],
-  );
-
-  const runPendingMutation = useCallback(
-    async <T,>({
-      deviceId,
-      pendingPortId,
-      method,
-      params,
-      errorLabel,
-      successMessage,
-      allowedTransports,
-    }: {
-      deviceId: string;
-      pendingPortId: PortId;
-      method: string;
-      params?: Record<string, unknown>;
-      errorLabel: string;
-      successMessage: (deviceName: string, result: T) => string;
-      allowedTransports?: DeviceTransport[];
-    }): Promise<Result<T> | null> => {
-      const device = devices.find((d) => d.id === deviceId);
-      if (!device) {
-        return null;
-      }
-
-      setPending(deviceId, pendingPortId, true);
-      try {
-        const result = await runDeviceCommand<T>(
-          deviceId,
-          method,
-          params,
-          allowedTransports,
-        );
-        if (result.ok) {
-          pushToast({
-            message: successMessage(device.name, result.value),
-            variant: "success",
-          });
-          await refreshDevice(deviceId);
-        } else {
-          handleApiErrorToast(device.name, errorLabel, result.error);
+  useEffect(() => {
+    if (!isLeader) {
+      return () => {};
+    }
+    let cancelled = false;
+    const renewLocks = async () => {
+      for (const device of devices) {
+        const runtime = runtimeByIdRef.current[device.id];
+        const lock = runtime?.powerConfig?.lock;
+        const owner = getStablePowerLockOwner(device.id);
+        if (!lock || lock.owner !== owner || !canResumePowerLock(device.id)) {
+          continue;
         }
-        return result;
-      } finally {
-        setPending(deviceId, pendingPortId, false);
-      }
-    },
-    [
-      devices,
-      handleApiErrorToast,
-      pushToast,
-      refreshDevice,
-      runDeviceCommand,
-      setPending,
-    ],
-  );
-
-  const setPower = useCallback(
-    async (deviceId: string, portId: PortId, enabled: boolean) => {
-      const label = portId === "port_a" ? "USB-A" : "USB-C";
-      await runPendingMutation<{ accepted: true }>({
-        deviceId,
-        pendingPortId: portId,
-        method: "port.power_set",
-        params: {
-          port: portId,
-          enabled,
-        },
-        errorLabel: label,
-        successMessage: (deviceName) => `${deviceName}: ${label} power set`,
-      });
-    },
-    [runPendingMutation],
-  );
-
-  const setPowerRuntime = useCallback(
-    async (
-      deviceId: string,
-      owner: number,
-      action: "output" | "discharge",
-      enabled: boolean,
-    ): Promise<Result<PowerConfigResponse>> => {
-      const label = action === "output" ? "Power" : "TPS discharge";
-      const result = await runPendingMutation<PowerConfigResponse>({
-        deviceId,
-        pendingPortId: "port_c",
-        method: "power.runtime_set",
-        params: {
-          action,
-          enabled,
-          owner,
-        },
-        errorLabel: label,
-        successMessage: (deviceName) => `${deviceName}: ${label} updated`,
-      });
-      if (!result) {
-        return {
-          ok: false,
-          error: {
-            kind: "invalid_response",
-            message: `Unknown device: ${deviceId}`,
+        const renewal = await runDeviceCommand<PowerConfigResponse>(
+          device.id,
+          "power.lock",
+          {
+            owner,
+            acquire: true,
           },
-        };
+        );
+        if (cancelled) {
+          return;
+        }
+        if (renewal.ok) {
+          markPowerLockHeld(device.id);
+          await refreshCanonicalPowerConfig(device.id, owner, renewal.value);
+          continue;
+        }
+        const snapshot = await refreshCanonicalPowerConfig(device.id, owner);
+        if (!cancelled && snapshot.ok && snapshot.value.lock?.owner === owner) {
+          markPowerLockHeld(device.id);
+        }
       }
-      return result;
-    },
-    [runPendingMutation],
-  );
+    };
+    const intervalId = window.setInterval(() => void renewLocks(), 8_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [devices, isLeader, refreshCanonicalPowerConfig, runDeviceCommand]);
 
-  const replug = useCallback(
-    async (deviceId: string, portId: PortId) => {
-      const label = portId === "port_a" ? "USB-A" : "USB-C";
-      await runPendingMutation<{ accepted: true }>({
-        deviceId,
-        pendingPortId: portId,
-        method: "port.replug",
-        params: {
-          port: portId,
-        },
-        errorLabel: label,
-        successMessage: (deviceName) =>
-          `${deviceName}: ${label} replug accepted`,
-      });
-    },
-    [runPendingMutation],
-  );
+  const {
+    clearIdleBias,
+    clearWifi,
+    handleRuntimeRpcRequest,
+    idleBias,
+    pdDiagnostics,
+    powerConfig,
+    reboot,
+    replug,
+    resetSettings,
+    restoreDefaults,
+    runIdleBias,
+    savePowerConfig,
+    saveWifiConfig,
+    setIdleBias,
+    setLock,
+    setPower,
+    setPowerRuntime,
+    setRoute,
+    wifiConfig,
+  } = createDeviceRuntimeActions({
+    coordinator,
+    coordinationRole: coordination.role,
+    currentTabId: coordination.currentTabId,
+    deviceInfo,
+    devices,
+    isLeader,
+    pushToast,
+    requestLeaderRpc,
+    refreshCanonicalPowerConfig,
+    refreshDevice,
+    runDeviceCommand,
+    runSharedMutation,
+    runtimeByIdRef,
+    setRuntimeById,
+    syncIdleBiasSnapshot,
+    syncObservedPowerLock,
+    syncPdDiagnosticsSnapshot,
+    syncPowerConfigSnapshot,
+  });
 
-  const setRoute = useCallback(
-    async (deviceId: string, route: UsbCDownstreamRoute) => {
-      await runPendingMutation<{
-        accepted: true;
-        usb_c_downstream_route: UsbCDownstreamRoute;
-        persisted: boolean;
-      }>({
-        deviceId,
-        pendingPortId: "port_c",
-        method: "hub.route_set",
-        params: {
-          route,
-        },
-        errorLabel: "USB-C route",
-        successMessage: (deviceName, result) => {
-          const label =
-            result.usb_c_downstream_route === "mcu" ? "Upgrade" : "Normal";
-          return `${deviceName}: USB-C mode set to ${label}`;
-        },
-      });
-    },
-    [runPendingMutation],
-  );
+  rpcRequestHandlerRef.current = handleRuntimeRpcRequest;
 
   const value = useMemo<DeviceRuntimeContextValue>(() => {
     return buildDeviceRuntimeContextValue({
       now,
       runtimeById,
-      devices,
-      localUsbPortByDevice: localUsbPortByDevice.current,
+      coordination,
+      canControlHardware: true,
+      powerLockOwner: getStablePowerLockOwner,
+      requestControlTakeover,
       refreshDevice,
       deviceInfo,
       wifiConfig,
@@ -1155,8 +1165,8 @@ export function DeviceRuntimeProvider({
     });
   }, [
     clearWifi,
+    coordination,
     deviceInfo,
-    devices,
     idleBias,
     now,
     pdDiagnostics,
@@ -1176,6 +1186,7 @@ export function DeviceRuntimeProvider({
     setRoute,
     setPower,
     runIdleBias,
+    requestControlTakeover,
     wifiConfig,
   ]);
 

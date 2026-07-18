@@ -21,6 +21,18 @@
 - Development CLI: implemented `serial ports`, `serial identify`, `serial request`, `firmware make-bin`, `firmware flash`, `firmware reset`, and `firmware monitor`. `just desktop-agent-build` builds the CLI once; `just ports` and related selector commands then execute the existing binary without implicit rebuilds. `just identify` writes `.esp32-port` with the owner-confirmed port plus `device_id`/`mac`; `just select-port` can also cache an `identity=unconfirmed` owner-confirmed port when `info` times out; `just flash` uses `espflash flash` on the release ELF for unconfirmed bootstrap flashing, then confirms identity; `just flash-monitor` validates identity, flashes only the app `.bin`, resets, and monitors without `mcu-agentd`.
 - Web transports and Add device UI: implemented with Add device flows for Wi-Fi / LAN, Web Serial, and Local USB; Web Serial JSONL; Local USB JSONL; and Wi-Fi HTTP channel.
 - Device runtime: implemented concurrent Wi-Fi / LAN, Web Serial, and Local USB channel tracking. The active channel remains primary while healthy; when it fails, polling and controls promote the next available channel for the same saved device.
+- Browser single-writer runtime: implemented a same-origin coordinator so one leader tab owns discovery, transport bootstrap, polling, and hardware writes while every same-origin tab submits reads and writes through the shared runtime command channel.
+- Cross-tab state propagation: implemented BroadcastChannel-first snapshot and
+  message sync with a localStorage fallback, including shared queued/running
+  command state, per-device snapshot revision tracking, browser-persistent
+  per-device power-lock owner storage, and mixed Power-write coordination so
+  same-origin tabs stay writable while the shared runtime serializes hardware
+  writes: `Output mode` drafts wait for explicit save, while the remaining
+  persisted controls continue background apply.
+- Demo/runtime isolation: live saved-device routes and `?demo=true` routes now
+  use separate cross-tab runtime scopes so a same-origin demo page cannot win
+  leader election for the live app or overwrite the live device snapshot cache
+  with demo data.
 - Web runtime transport recovery: implemented a stricter split between transient Web Serial request failures and hard disconnects. Runtime channel selection now drops stale Web Serial state when the live browser link is gone, falls back to another immediately available channel for `deviceInfo()` and polling, and keeps Serial list badges in a history state unless a live link still exists.
 - Runtime preference: when multiple channels are already available, the runtime can keep using the last successful channel for that device as the default primary. This is a selection heuristic, not a product-quality ranking.
 - Communication path documentation: updated the product entry docs and this spec with a path matrix covering why multiple schemes exist, each path's immediate-availability prerequisite, intended use, and real capability boundary.

@@ -20,6 +20,7 @@ export function DeviceInfoPage() {
   if (!device) {
     return <MissingDeviceState />;
   }
+  const deviceRuntime = runtime.runtimeById[device.id];
 
   const shortId = device.id.length > 6 ? device.id.slice(0, 6) : device.id;
 
@@ -41,6 +42,8 @@ export function DeviceInfoPage() {
           device={device}
           transport={runtime.transport(device.id)}
           wifiManagementTransport={runtime.wifiManagementTransport(device.id)}
+          sharedCommand={deviceRuntime?.command ?? null}
+          sharedRevision={deviceRuntime?.revision ?? 0}
           loadInfo={() => runtime.deviceInfo(device.id)}
           loadWifiConfig={() => runtime.wifiConfig(device.id)}
           saveWifiConfig={(input) => runtime.saveWifiConfig(device.id, input)}

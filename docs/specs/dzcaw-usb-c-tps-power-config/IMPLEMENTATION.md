@@ -159,7 +159,35 @@
 - Split the Web power-config types into writable request fields and richer
   readback fields so `setPowerConfig()` strips read-only response data such as
   `manual.path_policy` before issuing `PUT /power/config`.
-- Added host-lock heartbeat handling with per-panel owner IDs.
+- Added leader-owned host-lock heartbeat handling with browser-persistent
+  per-device owner IDs.
+- Replaced the per-tab in-memory power-lock owner with a browser-persistent
+  per-device owner store, including a local resume window aligned to the
+  existing firmware/device TTL so refresh and short reopen flows reuse the same
+  owner instead of self-locking behind a fresh random host id.
+- Added a same-origin cross-tab runtime coordinator so one browser tab leads
+  transport bootstrap, polling, command serialization, and lock heartbeat while
+  every same-origin tab forwards power reads and writes through the shared
+  runtime queue.
+- Split the cross-tab Power runtime namespace by mode so `?demo=true` pages
+  use a separate lease/snapshot scope from live saved-device pages. This keeps
+  same-origin demo data from poisoning the live device card and Power snapshot.
+- Updated the Power panel to expose explicit `Unlocked`, `Controlled here`, and
+  `Locked by another host` states, keep same-origin tabs writable through the
+  shared runtime queue, preserve toast-based non-blocking feedback without
+  shifting panel layout, and restore an explicit `Save and apply` action for
+  the `Output mode` persisted draft while leaving the rest of the page on the
+  existing background-save path.
+- Tightened slow-save feedback so it starts from the current tab's actual shared
+  save `startedAt` rather than queue time. The panel now shows a non-blocking
+  toast after about `3 s`, only pauses controls after about `6 s`, and ignores
+  another tab's shared save when deciding whether this tab should warn or lock.
+- Changed ordinary same-origin Power pages so an observed `Unlocked` device now
+  auto-acquires control for the browser-scoped owner instead of waiting for a
+  separate owner-facing acquire step; only foreign host locks remain read-only.
+- Kept the Power page on mixed persisted-write semantics: `Output mode` now
+  saves through an explicit owner-facing `Save and apply` action, while the
+  remaining persisted config fields still use automatic background apply.
 - Added a typed `/api/v1/pd-diagnostics` read path plus inline Dashboard
   USB-C card badges that render the shared firmware display contract directly:
   auto-follow keeps `PD` / `PPS` / `DC`, while manual output renders the
@@ -199,8 +227,9 @@
   `off|0|50|100|150mΩ` ladder. The raw request fields stay unchanged.
 - Added separate interactive calculators inside the existing manual and
   Auto-follow help popovers. They convert measured voltage drop and load
-  current into a downward-quantized local draft, clamp out-of-range results,
-  and never write the device until the existing save action is used.
+  current into a downward-quantized local form update, clamp out-of-range
+  results, and rely on the shared runtime's automatic background apply path to
+  write the device.
 - Reworked the Power page so the right-side actions column now carries the
   live USB-C voltage/current/power readout plus `Power` and `Replug` actions,
   while the manual-only advanced `TPS discharge on output-off` control remains

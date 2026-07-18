@@ -1,25 +1,21 @@
-import type { StoredDevice } from "../domain/devices";
-import { isLocalUsbSuppressedForFlashDevice } from "../domain/flashTransportLocks";
-import { getLocalUsbDeviceLink } from "../domain/localUsbLinks";
 import type { PortId } from "../domain/ports";
-import { getWebSerialDeviceTransport } from "../domain/webSerialLinks";
 import {
   type ConnectionState,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
   type DeviceTransport,
-  localUsbPortPathForDevice,
-  resolveActiveDeviceTransport,
   shortApiError,
 } from "./device-runtime-support";
 
 type DeviceRuntimeValueParams = {
   now: number;
   runtimeById: Record<string, DeviceRuntime>;
-  devices: StoredDevice[];
-  localUsbPortByDevice: Record<string, string>;
 } & Pick<
   DeviceRuntimeContextValue,
+  | "coordination"
+  | "canControlHardware"
+  | "powerLockOwner"
+  | "requestControlTakeover"
   | "refreshDevice"
   | "deviceInfo"
   | "wifiConfig"
@@ -47,8 +43,10 @@ const OFFLINE_THRESHOLD_MS = 10_000;
 export function buildDeviceRuntimeContextValue({
   now,
   runtimeById,
-  devices,
-  localUsbPortByDevice,
+  coordination,
+  canControlHardware,
+  powerLockOwner,
+  requestControlTakeover,
   refreshDevice,
   deviceInfo,
   wifiConfig,
@@ -92,34 +90,20 @@ export function buildDeviceRuntimeContextValue({
   };
 
   const transport = (deviceId: string): DeviceTransport | null =>
-    resolveActiveDeviceTransport({
-      deviceId,
-      devices,
-      runtime: runtimeById[deviceId],
-      preferred: null,
-      localUsbPortPath: localUsbPortByDevice[deviceId],
-      hasLocalUsbLink: Boolean(getLocalUsbDeviceLink(deviceId)),
-      hasWebSerialLink: Boolean(getWebSerialDeviceTransport(deviceId)),
-      localUsbSuppressed: isLocalUsbSuppressedForFlashDevice(deviceId),
-    });
+    runtimeById[deviceId]?.transport ?? null;
 
   const wifiManagementTransport = (
     deviceId: string,
   ): DeviceTransport | null => {
     const active = transport(deviceId);
-    const stored = devices.find((device) => device.id === deviceId);
     if (active === "web_serial" || active === "local_usb") {
       return active;
     }
-    if (getWebSerialDeviceTransport(deviceId)) {
+    const runtime = runtimeById[deviceId];
+    if (runtime?.channels.web_serial.lastOkAt) {
       return "web_serial";
     }
-    if (
-      !isLocalUsbSuppressedForFlashDevice(deviceId) &&
-      (localUsbPortByDevice[deviceId] ||
-        getLocalUsbDeviceLink(deviceId) ||
-        (stored ? localUsbPortPathForDevice(stored) : null))
-    ) {
+    if (runtime?.channels.local_usb.lastOkAt) {
       return "local_usb";
     }
     return null;
@@ -149,6 +133,8 @@ export function buildDeviceRuntimeContextValue({
   return {
     now,
     runtimeById,
+    coordination,
+    canControlHardware,
     connectionState,
     lastOkAt,
     lastErrorLabel,
@@ -158,6 +144,8 @@ export function buildDeviceRuntimeContextValue({
     hub,
     port,
     pending,
+    powerLockOwner,
+    requestControlTakeover,
     refreshDevice,
     deviceInfo,
     wifiConfig,

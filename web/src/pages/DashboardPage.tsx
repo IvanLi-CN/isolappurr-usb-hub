@@ -113,6 +113,12 @@ export function DashboardPage() {
             onDataReplug={(deviceId, portId) =>
               void runtime.replug(deviceId, portId)
             }
+            actionsDisabled={
+              item.connection.state !== "online" ||
+              runtime.runtimeById[item.device.id]?.command?.state ===
+                "queued" ||
+              runtime.runtimeById[item.device.id]?.command?.state === "running"
+            }
           />
         ))}
 
