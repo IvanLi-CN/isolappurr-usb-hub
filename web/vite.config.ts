@@ -149,6 +149,7 @@ export default defineConfig(() => {
             "**/brand/isolapurr-product-poster.png",
             "**/brand/isolapurr-product-render.png",
             "**/brand/isolapurr-product-render-full.png",
+            "**/brand/isolapurr-product-render-cutout.png",
             "**/firmware/**/*",
           ],
           navigateFallback: `${base}index.html`,
