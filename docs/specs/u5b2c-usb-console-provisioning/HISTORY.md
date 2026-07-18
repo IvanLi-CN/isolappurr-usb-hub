@@ -44,3 +44,11 @@ mode` as an explicit local draft with `Save and apply`, while the remaining
 persisted config edits still flow through the shared queue as background saves.
 Toast-style hints keep the page layout stable while the shared runtime catches
 up.
+
+## 2026-07-18
+
+Live saved-device routes and `?demo=true` routes now use separate browser
+runtime scopes. This prevents a same-origin demo page from reusing the live
+leader lease or overwriting the live device snapshot cache with demo state,
+which previously surfaced as `unknown` transport/state badges and `device not
+found` power pages for real hardware.

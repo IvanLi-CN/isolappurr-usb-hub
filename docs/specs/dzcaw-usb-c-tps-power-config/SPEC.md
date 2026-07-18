@@ -181,6 +181,9 @@ for diagnostics.
   lock heartbeat, and hardware writes. Every same-origin Power page MUST render
   the shared snapshot, submit mutations through that shared runtime queue, and
   stay synchronized without exposing ordinary takeover controls.
+- Same-browser Power coordination MUST isolate live device pages from
+  `?demo=true` Power pages. Demo and live routes MAY share an origin, but they
+  MUST NOT share the same runtime lease or snapshot namespace.
 - Local advanced controls MUST be blocked while a host lock is active, except
   existing USB-C power on/off behavior.
 - Web UI MUST show write/read errors instead of staying in a loading state.

@@ -54,6 +54,10 @@
   instead of queue time, moved the first toast to about `3 s`, and delayed the
   control lock to about `6 s` so normal LAN writes do not look like abnormal
   slow saves.
+- Isolated `?demo=true` Power pages from live saved-device pages inside the
+  shared browser runtime namespace so demo leader election and demo snapshots
+  cannot replace live device state with `unknown` badges or `device not found`
+  errors.
 
 ## 2026-07-06
 

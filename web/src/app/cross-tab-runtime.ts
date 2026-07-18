@@ -19,6 +19,9 @@ type LeaseRecord = {
   updatedAt: string;
 };
 
+export const LIVE_RUNTIME_SCOPE = "live";
+export const DEMO_RUNTIME_SCOPE = "demo";
+
 export type CrossTabRuntimeLeaseState = {
   role: "leader" | "follower" | "unsupported";
   currentTabId: string;
@@ -115,10 +118,10 @@ export type RuntimeChannelMessage =
 type LeaseListener = (state: CrossTabRuntimeLeaseState) => void;
 type MessageListener = (message: RuntimeChannelMessage) => void;
 
-const CHANNEL_NAME = "isolapurr.runtime.cross-tab.v1";
-const LEASE_STORAGE_KEY = "isolapurr.runtime.leader-lease.v1";
-const SNAPSHOT_STORAGE_KEY = "isolapurr.runtime.snapshot.v1";
-const MESSAGE_STORAGE_KEY = "isolapurr.runtime.message.v1";
+const CHANNEL_NAME_PREFIX = "isolapurr.runtime.cross-tab.v1";
+const LEASE_STORAGE_KEY_PREFIX = "isolapurr.runtime.leader-lease.v1";
+const SNAPSHOT_STORAGE_KEY_PREFIX = "isolapurr.runtime.snapshot.v1";
+const MESSAGE_STORAGE_KEY_PREFIX = "isolapurr.runtime.message.v1";
 const LEASE_TTL_MS = 15_000;
 const HEARTBEAT_INTERVAL_MS = 5_000;
 
@@ -151,6 +154,10 @@ function createTabId(): string {
     return crypto.randomUUID();
   }
   return `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function scopedStorageKey(prefix: string, scopeId: string): string {
+  return `${prefix}.${scopeId}`;
 }
 
 function parseLeaseRecord(raw: string | null): LeaseRecord | null {
@@ -214,6 +221,10 @@ function isLeaseExpired(record: LeaseRecord | null, now = Date.now()): boolean {
 }
 
 export class CrossTabRuntimeCoordinator {
+  private readonly channelName: string;
+  private readonly leaseStorageKey: string;
+  private readonly snapshotStorageKey: string;
+  private readonly messageStorageKey: string;
   private readonly tabId = createTabId();
   private readonly leaseListeners = new Set<LeaseListener>();
   private readonly messageListeners = new Set<MessageListener>();
@@ -226,6 +237,19 @@ export class CrossTabRuntimeCoordinator {
     leaderTabId: null,
     leaseExpiresAt: null,
   };
+
+  constructor(scopeId = LIVE_RUNTIME_SCOPE) {
+    this.channelName = scopedStorageKey(CHANNEL_NAME_PREFIX, scopeId);
+    this.leaseStorageKey = scopedStorageKey(LEASE_STORAGE_KEY_PREFIX, scopeId);
+    this.snapshotStorageKey = scopedStorageKey(
+      SNAPSHOT_STORAGE_KEY_PREFIX,
+      scopeId,
+    );
+    this.messageStorageKey = scopedStorageKey(
+      MESSAGE_STORAGE_KEY_PREFIX,
+      scopeId,
+    );
+  }
 
   start(): void {
     if (this.started) {
@@ -246,7 +270,7 @@ export class CrossTabRuntimeCoordinator {
     }
 
     if (typeof BroadcastChannel !== "undefined") {
-      this.channel = new BroadcastChannel(CHANNEL_NAME);
+      this.channel = new BroadcastChannel(this.channelName);
       this.channel.addEventListener("message", (event) => {
         this.notifyMessageListeners(event.data as RuntimeChannelMessage);
       });
@@ -309,7 +333,7 @@ export class CrossTabRuntimeCoordinator {
     ) {
       return null;
     }
-    return parseSnapshot(window.localStorage.getItem(SNAPSHOT_STORAGE_KEY));
+    return parseSnapshot(window.localStorage.getItem(this.snapshotStorageKey));
   }
 
   publishSnapshot(snapshot: SharedRuntimeSnapshot): void {
@@ -319,7 +343,10 @@ export class CrossTabRuntimeCoordinator {
     ) {
       return;
     }
-    window.localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
+    window.localStorage.setItem(
+      this.snapshotStorageKey,
+      JSON.stringify(snapshot),
+    );
     this.postMessage({
       type: "runtime-snapshot",
       originTabId: this.tabId,
@@ -339,7 +366,7 @@ export class CrossTabRuntimeCoordinator {
       return;
     }
     window.localStorage.setItem(
-      MESSAGE_STORAGE_KEY,
+      this.messageStorageKey,
       JSON.stringify({
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         payload: message,
@@ -359,7 +386,7 @@ export class CrossTabRuntimeCoordinator {
   }
 
   private readonly handleStorageEvent = (event: StorageEvent) => {
-    if (event.key === LEASE_STORAGE_KEY) {
+    if (event.key === this.leaseStorageKey) {
       const lease = parseLeaseRecord(event.newValue);
       if (lease && !isLeaseExpired(lease) && lease.tabId === this.tabId) {
         this.setLeaseState({
@@ -373,7 +400,7 @@ export class CrossTabRuntimeCoordinator {
       this.refreshLeaseState(true);
       return;
     }
-    if (event.key === SNAPSHOT_STORAGE_KEY) {
+    if (event.key === this.snapshotStorageKey) {
       const snapshot = parseSnapshot(event.newValue);
       if (!snapshot || snapshot.originTabId === this.tabId) {
         return;
@@ -385,7 +412,7 @@ export class CrossTabRuntimeCoordinator {
       });
       return;
     }
-    if (event.key === MESSAGE_STORAGE_KEY) {
+    if (event.key === this.messageStorageKey) {
       const message = parseMessage(event.newValue);
       if (!message || message.originTabId === this.tabId) {
         return;
@@ -405,7 +432,7 @@ export class CrossTabRuntimeCoordinator {
     ) {
       return null;
     }
-    return parseLeaseRecord(window.localStorage.getItem(LEASE_STORAGE_KEY));
+    return parseLeaseRecord(window.localStorage.getItem(this.leaseStorageKey));
   }
 
   private writeLease(): LeaseRecord {
@@ -414,7 +441,7 @@ export class CrossTabRuntimeCoordinator {
       updatedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + LEASE_TTL_MS).toISOString(),
     };
-    window.localStorage.setItem(LEASE_STORAGE_KEY, JSON.stringify(record));
+    window.localStorage.setItem(this.leaseStorageKey, JSON.stringify(record));
     return record;
   }
 
@@ -429,7 +456,7 @@ export class CrossTabRuntimeCoordinator {
     if (!lease || lease.tabId !== this.tabId) {
       return;
     }
-    window.localStorage.removeItem(LEASE_STORAGE_KEY);
+    window.localStorage.removeItem(this.leaseStorageKey);
     this.setLeaseState({
       role: "follower",
       currentTabId: this.tabId,
@@ -510,11 +537,16 @@ export class CrossTabRuntimeCoordinator {
   }
 }
 
-let sharedCoordinator: CrossTabRuntimeCoordinator | null = null;
+const sharedCoordinators = new Map<string, CrossTabRuntimeCoordinator>();
 
-export function getSharedCrossTabRuntimeCoordinator(): CrossTabRuntimeCoordinator {
-  if (!sharedCoordinator) {
-    sharedCoordinator = new CrossTabRuntimeCoordinator();
+export function getSharedCrossTabRuntimeCoordinator(
+  scopeId = LIVE_RUNTIME_SCOPE,
+): CrossTabRuntimeCoordinator {
+  const existing = sharedCoordinators.get(scopeId);
+  if (existing) {
+    return existing;
   }
-  return sharedCoordinator;
+  const next = new CrossTabRuntimeCoordinator(scopeId);
+  sharedCoordinators.set(scopeId, next);
+  return next;
 }

@@ -169,6 +169,9 @@
   transport bootstrap, polling, command serialization, and lock heartbeat while
   every same-origin tab forwards power reads and writes through the shared
   runtime queue.
+- Split the cross-tab Power runtime namespace by mode so `?demo=true` pages
+  use a separate lease/snapshot scope from live saved-device pages. This keeps
+  same-origin demo data from poisoning the live device card and Power snapshot.
 - Updated the Power panel to expose explicit `Unlocked`, `Controlled here`, and
   `Locked by another host` states, keep same-origin tabs writable through the
   shared runtime queue, preserve toast-based non-blocking feedback without

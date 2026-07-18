@@ -46,7 +46,9 @@ import {
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
 import {
+  DEMO_RUNTIME_SCOPE,
   getSharedCrossTabRuntimeCoordinator,
+  LIVE_RUNTIME_SCOPE,
   type RuntimeChannelMessage,
   type RuntimeRpcMethod,
   type RuntimeRpcResultMap,
@@ -99,9 +101,15 @@ export function DeviceRuntimeProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const coordinator = useMemo(() => getSharedCrossTabRuntimeCoordinator(), []);
   const { devices, rebindHttpBaseUrl } = useDevices();
   const { enabled: demoEnabled } = useDemoMode();
+  const coordinator = useMemo(
+    () =>
+      getSharedCrossTabRuntimeCoordinator(
+        demoEnabled ? DEMO_RUNTIME_SCOPE : LIVE_RUNTIME_SCOPE,
+      ),
+    [demoEnabled],
+  );
   const { pushToast } = useToast();
   const [now, setNow] = useState(() => Date.now());
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(

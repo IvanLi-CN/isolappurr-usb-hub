@@ -29,6 +29,10 @@
   same-origin tabs stay writable while the shared runtime serializes hardware
   writes: `Output mode` drafts wait for explicit save, while the remaining
   persisted controls continue background apply.
+- Demo/runtime isolation: live saved-device routes and `?demo=true` routes now
+  use separate cross-tab runtime scopes so a same-origin demo page cannot win
+  leader election for the live app or overwrite the live device snapshot cache
+  with demo data.
 - Web runtime transport recovery: implemented a stricter split between transient Web Serial request failures and hard disconnects. Runtime channel selection now drops stale Web Serial state when the live browser link is gone, falls back to another immediately available channel for `deviceInfo()` and polling, and keeps Serial list badges in a history state unless a live link still exists.
 - Runtime preference: when multiple channels are already available, the runtime can keep using the last successful channel for that device as the default primary. This is a selection heuristic, not a product-quality ranking.
 - Communication path documentation: updated the product entry docs and this spec with a path matrix covering why multiple schemes exist, each path's immediate-availability prerequisite, intended use, and real capability boundary.

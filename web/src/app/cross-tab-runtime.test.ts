@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   CrossTabRuntimeCoordinator,
+  DEMO_RUNTIME_SCOPE,
+  LIVE_RUNTIME_SCOPE,
   runtimeRpcMethodKind,
 } from "./cross-tab-runtime";
 
@@ -226,5 +228,57 @@ describe("CrossTabRuntimeCoordinator", () => {
     expect(responseSeen).toBe(true);
     unsubscribeLeader();
     unsubscribeSecondary();
+  });
+
+  test("isolates demo and live runtime scopes", () => {
+    const liveLeader = new CrossTabRuntimeCoordinator(LIVE_RUNTIME_SCOPE);
+    liveLeader.start();
+
+    const demoLeader = new CrossTabRuntimeCoordinator(DEMO_RUNTIME_SCOPE);
+    demoLeader.start();
+
+    expect(liveLeader.getLeaseState().role).toBe("leader");
+    expect(demoLeader.getLeaseState().role).toBe("leader");
+    expect(liveLeader.getLeaseState().leaderTabId).not.toBe(
+      demoLeader.getLeaseState().leaderTabId,
+    );
+
+    let liveSawDemoSnapshot = false;
+    const unsubscribe = liveLeader.subscribeMessages((message) => {
+      if (message.type === "runtime-snapshot") {
+        liveSawDemoSnapshot = true;
+      }
+    });
+
+    demoLeader.publishSnapshot({
+      at: new Date().toISOString(),
+      originTabId: demoLeader.getTabId(),
+      now: 1_234,
+      runtimeById: {
+        aabbcc001122: {
+          lastOkAt: null,
+          lastError: null,
+          transport: null,
+          channels: {
+            http: { lastOkAt: null, lastError: null },
+            web_serial: { lastOkAt: null, lastError: null },
+            local_usb: { lastOkAt: null, lastError: null },
+          },
+          hub: null,
+          ports: null,
+          pending: { port_a: false, port_c: false },
+          powerConfig: null,
+          idleBias: null,
+          pdDiagnostics: null,
+          revision: 0,
+          command: null,
+        },
+      },
+    });
+
+    expect(liveSawDemoSnapshot).toBe(false);
+    expect(liveLeader.readSnapshot()).toBeNull();
+    expect(demoLeader.readSnapshot()?.runtimeById.aabbcc001122).toBeDefined();
+    unsubscribe();
   });
 });
