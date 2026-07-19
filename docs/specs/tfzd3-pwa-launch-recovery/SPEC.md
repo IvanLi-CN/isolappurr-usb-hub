@@ -157,6 +157,9 @@ PR: include
 Installed-PWA cold-start launching shell rendered from the standalone Storybook desktop light state.
 ![PWA startup shell launching desktop light](./assets/pwa-startup-shell-launching-desktop.png)
 
+Acceptance note:
+The primary startup headline stays on one line in the desktop light state; this launch-critical text must not wrap.
+
 PR: include
 Installed-PWA startup failure shell rendered from the standalone Storybook state, including recovery actions.
 ![PWA startup shell failed](./assets/pwa-startup-shell-failed.png)
