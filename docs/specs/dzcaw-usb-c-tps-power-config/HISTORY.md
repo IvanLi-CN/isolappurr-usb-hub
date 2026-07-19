@@ -217,3 +217,25 @@
 - Reworked the owner-facing Web wording and layout so the live USB-C
   telemetry plus `Power` / `Replug` actions now sit in the right rail, and the
   old `2mm Output` page label is no longer presented as a standalone setting.
+
+## 2026-07-19
+
+- Extended the Dashboard USB-C header to show the live TMP112 temperature as a
+  compact integer chip, and mapped its color to the same `<80°C`,
+  `80-99.9°C`, and `>=100°C` thermal protection thresholds used by runtime
+  derating and forced shutdown.
+- Refreshed the Dashboard HIL visual evidence so the Overview page now proves
+  the TMP112 chip renders inline with the existing live USB-C badges on the
+  real `856a141cdbd4` device.
+
+## 2026-07-18
+
+- Added dual thermal sampling from the ESP32-S3 MCU sensor and TMP112 `0x48`
+  to the shared PD diagnostics surface instead of creating a separate
+  temperature endpoint.
+- Introduced a runtime-only thermal overlay that derates from `80°C`,
+  force-shuts TPS output above `100°C`, promotes recovered faults to
+  `rearm_required`, and keeps the saved EEPROM power config unchanged.
+- Extended owner-facing `isolapurr power show` and the Web Power page with live
+  thermal state, effective power-cap, sensor status, and manual re-enable
+  guidance, while leaving `power config show` as the saved-config view.

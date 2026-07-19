@@ -349,85 +349,8 @@
                 }
             }
         }
-        #[cfg(feature = "net_http")]
-        {
-            let pending_power_runtime = if power_runtime_result_inflight {
-                None
-            } else {
-                let guard = api_state.lock().await;
-                guard.pending.power_runtime
-            };
-
-            if let Some(command) = pending_power_runtime {
-                match command {
-                    net::ApiPowerRuntimeCommand::SetOutputEnabled { enabled } => {
-                        let output_runtime_applied =
-                            runtime_tps_output_enabled_reported == enabled;
-                        if runtime_tps_output_enabled != enabled || !output_runtime_applied {
-                            runtime_tps_output_enabled = enabled;
-                            tps_state.last = None;
-                            tps_5v_setpoint_since = None;
-                            sw2303_i2c_allowed = false;
-                            sw2303_profile_applied = false;
-                            sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
-                            sw2303_recontract_pending = false;
-                            last_sw2303_profile_attempt = None;
-                            last_sw2303_path_control = None;
-                            last_sw2303_line_compensation = None;
-                            last_tps_cdc_rise = None;
-                            sw2303_stable_reads = 0;
-                            sw2303_consecutive_errors = 0;
-                            tps_consecutive_errors = 0;
-                            sw2303_error_latched = false;
-                            tps_error_latched = false;
-                            last_sw2303_read_attempt = None;
-                            last_valid_sw2303_request = None;
-                            last_request = None;
-                            last_fast_protocol = None;
-                            last_tps_status = None;
-                            power_runtime_result_inflight = true;
-                        } else {
-                            let mut guard = api_state.lock().await;
-                            guard.pending.power_runtime = None;
-                            guard.power.runtime_output_enabled =
-                                runtime_tps_output_enabled_reported;
-                            guard.power.runtime_discharge_enabled =
-                                runtime_tps_discharge_enabled_reported;
-                            POWER_RUNTIME_RESULT.signal(true);
-                        }
-                    }
-                    net::ApiPowerRuntimeCommand::SetDischargeEnabled { enabled } => {
-                        let discharge_runtime_applied =
-                            runtime_tps_discharge_enabled_reported == enabled;
-                        if runtime_tps_output_enabled {
-                            runtime_tps_discharge_enabled = enabled;
-                            runtime_tps_discharge_enabled_reported = enabled;
-                            let mut guard = api_state.lock().await;
-                            guard.pending.power_runtime = None;
-                            guard.power.runtime_output_enabled =
-                                runtime_tps_output_enabled_reported;
-                            guard.power.runtime_discharge_enabled =
-                                runtime_tps_discharge_enabled_reported;
-                            POWER_RUNTIME_RESULT.signal(true);
-                        } else if runtime_tps_discharge_enabled != enabled
-                            || !discharge_runtime_applied
-                        {
-                            runtime_tps_discharge_enabled = enabled;
-                            tps_state.last = None;
-                            power_runtime_result_inflight = true;
-                        } else {
-                            let mut guard = api_state.lock().await;
-                            guard.pending.power_runtime = None;
-                            guard.power.runtime_output_enabled =
-                                runtime_tps_output_enabled_reported;
-                            guard.power.runtime_discharge_enabled =
-                                runtime_tps_discharge_enabled_reported;
-                            POWER_RUNTIME_RESULT.signal(true);
-                        }
-                    }
-                }
-            }
-        }
+        let (thermal_effective_power_watts, effective_power_config) =
+            include!("main_loop_pd_thermal.inc");
         #[cfg(feature = "net_http")]
         include!("main_loop_pd_idle_bias.inc");
         #[cfg(feature = "net_http")]
@@ -471,6 +394,7 @@
             discharge_enabled: runtime_tps_discharge_enabled,
             ..boot_sp
         };
+        let mut requested_i_lim_ma = boot_sp.i_lim_ma;
 
         let allow_sw2303_probe = usb_c_pd_power_on
             && (!sw2303_error_latched
@@ -509,6 +433,7 @@
             .unwrap_or(false);
         let allow_sw2303_read = sw2303_i2c_allowed && allow_sw2303_probe && sw2303_power_gate_ready;
         (request, setpoint) = if !usb_c_pd_power_on {
+            requested_i_lim_ma = 0;
             (None, usb_c_power_off_setpoint)
         } else if allow_sw2303_read {
             last_sw2303_read_attempt = Some(Instant::now());
@@ -549,8 +474,10 @@
                         );
                     }
                     let sp = if sw2303_stable_reads >= SW2303_STABLE_READS_BEFORE_TPS {
+                        requested_i_lim_ma = request.i_req_ma;
                         power_request_to_setpoint(request)
                     } else {
+                        requested_i_lim_ma = boot_sp.i_lim_ma;
                         boot_sp
                     };
                     (Some(request), sp)
@@ -572,15 +499,27 @@
                     }
                     sw2303_consecutive_errors = sw2303_consecutive_errors.saturating_add(1);
                     let sp = last_valid_sw2303_request
-                        .map(power_request_to_setpoint)
-                        .unwrap_or(boot_sp);
+                        .map(|request| {
+                            requested_i_lim_ma = request.i_req_ma;
+                            power_request_to_setpoint(request)
+                        })
+                        .unwrap_or_else(|| {
+                            requested_i_lim_ma = boot_sp.i_lim_ma;
+                            boot_sp
+                        });
                     (last_valid_sw2303_request, sp)
                 }
             }
         } else {
             let sp = last_valid_sw2303_request
-                .map(power_request_to_setpoint)
-                .unwrap_or(boot_sp);
+                .map(|request| {
+                    requested_i_lim_ma = request.i_req_ma;
+                    power_request_to_setpoint(request)
+                })
+                .unwrap_or_else(|| {
+                    requested_i_lim_ma = boot_sp.i_lim_ma;
+                    boot_sp
+                });
             (last_valid_sw2303_request, sp)
         };
 
@@ -608,10 +547,10 @@
                     "applied after stable target reads"
                 };
                 last_sw2303_profile_attempt = Some(Instant::now());
-                match apply_enable_profile(&mut sw2303_i2c, &power_config).await {
+                match apply_enable_profile(&mut sw2303_i2c, &effective_power_config).await {
                     Ok(status) => {
                         sw2303_readback_config = status.readback;
-                        let readback_matches = status.matches_config(&power_config);
+                        let readback_matches = status.matches_config(&effective_power_config);
                         sw2303_profile_applied = readback_matches;
                         log_sw2303_profile_status(apply_context, &status);
                         if readback_matches {
@@ -687,6 +626,7 @@
 
         if usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual {
             let manual_vout_mv = quantize_manual_voltage_mv(power_config.manual.voltage_mv);
+            requested_i_lim_ma = power_config.manual.current_limit_ma;
             setpoint = PowerSetpoint {
                 v_out_mv: manual_vout_mv,
                 i_lim_ma: power_config.manual.current_limit_ma,
@@ -760,6 +700,19 @@
                 }
             }
         }
+
+        let thermal_current_limit_ma =
+            current_limit_ma_for_power_watts(setpoint.v_out_mv, thermal_effective_power_watts);
+        requested_i_lim_ma = requested_i_lim_ma.min(thermal_current_limit_ma);
+        setpoint.i_lim_ma = if power_config.tps_mode == TpsMode::Manual {
+            clamp_manual_current_limit_ma(
+                setpoint.v_out_mv,
+                requested_i_lim_ma,
+                thermal_effective_power_watts,
+            )
+        } else {
+            quantize_ilim_ma_floor_with_margin(requested_i_lim_ma)
+        };
 
         let target_tps_cdc_rise = if power_config.tps_mode == TpsMode::Manual {
             power_config.manual.tps_cdc_rise
@@ -912,11 +865,19 @@
             POWER_RUNTIME_RESULT.signal(result);
         }
 
-        if !tps_was_in_error && tps_error_latched {
-            prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
-        } else if tps_was_in_error && !tps_error_latched {
-            prompt_tone.notify(SoundEvent::ExitSafety(SafetyKind::TpsApply));
+        let safety_alarm_requested =
+            tps_error_latched || thermal_controller.state().alarm_active();
+        if !safety_alarm_active && safety_alarm_requested {
+            let kind = if thermal_controller.state().alarm_active() {
+                SafetyKind::OverTemp
+            } else {
+                SafetyKind::TpsApply
+            };
+            prompt_tone.notify(SoundEvent::EnterSafety(kind));
+        } else if safety_alarm_active && !safety_alarm_requested {
+            prompt_tone.notify(SoundEvent::ExitSafety(SafetyKind::OverTemp));
         }
+        safety_alarm_active = safety_alarm_requested;
 
         let runtime_recovery_due =
             usb_c_pd_power_on && tps_consecutive_errors >= PD_RUNTIME_RECOVERY_ERROR_LIMIT;

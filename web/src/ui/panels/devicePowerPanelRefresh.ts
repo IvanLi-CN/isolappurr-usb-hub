@@ -1,0 +1,1 @@
+export const PD_DIAGNOSTICS_REFRESH_MS = 1_000;

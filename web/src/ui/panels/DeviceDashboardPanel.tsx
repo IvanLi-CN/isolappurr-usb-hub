@@ -226,6 +226,30 @@ function formatOutputCurrentLimitBadge(
   return `${(value / 1000).toFixed(2)} A`;
 }
 
+function formatTmpTemperatureBadge(
+  value: number | null | undefined,
+): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return `${Math.trunc(value / 10)}°C`;
+}
+
+function tmpTemperatureBadgeTone(
+  value: number | null | undefined,
+): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (value >= 1000) {
+    return "border-[var(--badge-error-border)] bg-[var(--badge-error-bg)] text-[var(--badge-error-text)]";
+  }
+  if (value >= 800) {
+    return "border-[var(--badge-warning-border)] bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]";
+  }
+  return "border-[var(--surface-success-ring)] bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]";
+}
+
 export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const runtime = useDeviceRuntime();
   const [pdDiagnostics, setPdDiagnostics] =
@@ -341,12 +365,27 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const outputCurrentLimitBadge = formatOutputCurrentLimitBadge(
     pdDiagnostics?.tps_setpoint?.iout_limit_ma,
   );
+  const tmpTemperatureBadge = formatTmpTemperatureBadge(
+    pdDiagnostics?.thermal.sensors.tmp112.temperature_deci_c,
+  );
+  const tmpTemperatureTone = tmpTemperatureBadgeTone(
+    pdDiagnostics?.thermal.sensors.tmp112.temperature_deci_c,
+  );
   const hasResolvedUsbCPort =
     connectionState === "online"
       ? runtime.port(device.id, "port_c") !== null
       : false;
   const usbCHeaderBadges = liveDisplay
     ? [
+        ...(tmpTemperatureBadge && tmpTemperatureTone
+          ? [
+              {
+                label: tmpTemperatureBadge,
+                toneClassName: tmpTemperatureTone,
+                testId: "dashboard-usb-c-tmp-temperature",
+              },
+            ]
+          : []),
         ...(outputCurrentLimitBadge
           ? [
               {

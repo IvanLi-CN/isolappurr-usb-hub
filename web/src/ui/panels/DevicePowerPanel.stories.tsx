@@ -293,9 +293,35 @@ const pdDiagnostics: PdDiagnosticsResponse = {
     enabled: true,
     ma: 3000,
   },
+  thermal: {
+    sensors: {
+      mcu: {
+        temperature_deci_c: 456,
+        status: "ok",
+      },
+      tmp112: {
+        temperature_deci_c: 471,
+        status: "ok",
+      },
+    },
+    hottest_temperature_deci_c: 471,
+    state: "normal",
+    reason: "none",
+    effective_power_watts: 100,
+    sample_uptime_ms: 1000,
+  },
   runtime_recovery_count: 0,
   sample_uptime_ms: 1000,
 };
+
+function withThermal(
+  thermal: PdDiagnosticsResponse["thermal"],
+): PdDiagnosticsResponse {
+  return {
+    ...pdDiagnostics,
+    thermal,
+  };
+}
 
 const meta: Meta<typeof DevicePowerPanel> = {
   title: "Panels/DevicePowerPanel",
@@ -354,6 +380,22 @@ const defaultArgs: Story["args"] = {
   usbCPending: false,
   replugUsbC: async () => undefined,
 };
+
+function thermalStoryArgs(
+  thermal: PdDiagnosticsResponse["thermal"],
+  overrides: Partial<Story["args"]> = {},
+): Story["args"] {
+  return {
+    ...defaultArgs,
+    sharedPdDiagnostics: withThermal(thermal),
+    loadPdDiagnostics: () =>
+      Promise.resolve({
+        ok: true,
+        value: withThermal(thermal),
+      }),
+    ...overrides,
+  };
+}
 
 export const Default: Story = {
   args: {
@@ -683,6 +725,99 @@ export const OutputOffManualHighVoltage: Story = {
     await expect(await canvas.findByTestId("usb-c-power-unit")).toHaveClass(
       "text-[var(--telemetry-power)]",
     );
+  },
+};
+
+export const ThermalNormal: Story = {
+  args: {
+    ...thermalStoryArgs({
+      ...pdDiagnostics.thermal,
+      state: "normal",
+      reason: "none",
+      effective_power_watts: 100,
+    }),
+  },
+};
+
+export const ThermalDerating: Story = {
+  args: {
+    ...thermalStoryArgs({
+      ...pdDiagnostics.thermal,
+      sensors: {
+        mcu: { temperature_deci_c: 789, status: "ok" },
+        tmp112: { temperature_deci_c: 851, status: "ok" },
+      },
+      hottest_temperature_deci_c: 851,
+      state: "derating",
+      reason: "tmp112_hot",
+      effective_power_watts: 75,
+    }),
+  },
+};
+
+export const ThermalShutdown: Story = {
+  args: {
+    ...thermalStoryArgs(
+      {
+        ...pdDiagnostics.thermal,
+        sensors: {
+          mcu: { temperature_deci_c: 1008, status: "ok" },
+          tmp112: { temperature_deci_c: 984, status: "ok" },
+        },
+        hottest_temperature_deci_c: 1008,
+        state: "shutdown",
+        reason: "mcu_critical",
+        effective_power_watts: 0,
+      },
+      {
+        sharedPowerConfig: controlledManualOutputOffConfig,
+        loadPowerConfig: () => ok(controlledManualOutputOffConfig),
+      },
+    ),
+  },
+};
+
+export const ThermalRearmRequired: Story = {
+  args: {
+    ...thermalStoryArgs(
+      {
+        ...pdDiagnostics.thermal,
+        sensors: {
+          mcu: { temperature_deci_c: 941, status: "ok" },
+          tmp112: { temperature_deci_c: 965, status: "ok" },
+        },
+        hottest_temperature_deci_c: 965,
+        state: "rearm_required",
+        reason: "none",
+        effective_power_watts: 0,
+      },
+      {
+        sharedPowerConfig: controlledManualOutputOffConfig,
+        loadPowerConfig: () => ok(controlledManualOutputOffConfig),
+      },
+    ),
+  },
+};
+
+export const ThermalSensorFault: Story = {
+  args: {
+    ...thermalStoryArgs(
+      {
+        ...pdDiagnostics.thermal,
+        sensors: {
+          mcu: { temperature_deci_c: 512, status: "stale" },
+          tmp112: { temperature_deci_c: null, status: "error" },
+        },
+        hottest_temperature_deci_c: 512,
+        state: "sensor_fault",
+        reason: "tmp112_sensor_fault",
+        effective_power_watts: 0,
+      },
+      {
+        sharedPowerConfig: controlledManualOutputOffConfig,
+        loadPowerConfig: () => ok(controlledManualOutputOffConfig),
+      },
+    ),
   },
 };
 

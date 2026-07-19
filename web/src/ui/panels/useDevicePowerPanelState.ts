@@ -25,6 +25,7 @@ import {
   type OutputModeDraft,
   serializeOutputModeDraft,
 } from "./devicePowerPanelOutputMode";
+import { PD_DIAGNOSTICS_REFRESH_MS } from "./devicePowerPanelRefresh";
 import {
   isOwnSharedSaveCommand,
   resolveNextSlowSaveDelayMs,
@@ -271,7 +272,16 @@ export function useDevicePowerPanelState({
         setIdleBiasRunning(false);
       }
     };
-    const loadPdCurrent = async () => {
+    void loadConfig();
+    void loadIdleBiasCurrent();
+    return () => {
+      cancelled = true;
+    };
+  }, [initializeLoadedConfig]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshPdDiagnostics = async () => {
       const pdRes = await loadPdDiagnosticsRef.current();
       if (cancelled) {
         return;
@@ -282,13 +292,16 @@ export function useDevicePowerPanelState({
         setPdDiagnostics(null);
       }
     };
-    void loadConfig();
-    void loadIdleBiasCurrent();
-    void loadPdCurrent();
+    void refreshPdDiagnostics();
+    const intervalId = window.setInterval(
+      () => void refreshPdDiagnostics(),
+      PD_DIAGNOSTICS_REFRESH_MS,
+    );
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
-  }, [initializeLoadedConfig]);
+  }, []);
 
   useEffect(() => {
     if (form || sharedPowerConfig || coordination.role === "unsupported") {

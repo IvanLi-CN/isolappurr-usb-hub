@@ -286,6 +286,40 @@ export type PdDiagnosticsResponse = {
     enabled: boolean | null;
     ma: number | null;
   };
+  thermal: {
+    sensors: {
+      mcu: {
+        temperature_deci_c: number | null;
+        status: "ok" | "stale" | "error" | string;
+      };
+      tmp112: {
+        temperature_deci_c: number | null;
+        status: "ok" | "stale" | "error" | string;
+      };
+    };
+    hottest_temperature_deci_c: number | null;
+    state:
+      | "normal"
+      | "derating"
+      | "shutdown"
+      | "rearm_required"
+      | "sensor_fault"
+      | string;
+    reason:
+      | "none"
+      | "mcu_hot"
+      | "tmp112_hot"
+      | "both_hot"
+      | "mcu_critical"
+      | "tmp112_critical"
+      | "both_critical"
+      | "mcu_sensor_fault"
+      | "tmp112_sensor_fault"
+      | "both_sensor_fault"
+      | string;
+    effective_power_watts: number;
+    sample_uptime_ms: number;
+  };
   runtime_recovery_count: number;
   sample_uptime_ms: number;
 };

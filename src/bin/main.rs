@@ -6,6 +6,8 @@
     holding buffers for the duration of a data transfer."
 )]
 
+#[path = "firmware_main/mcu_temperature.rs"]
+mod mcu_temperature;
 #[path = "../spi_device.rs"]
 mod spi_device;
 
@@ -76,7 +78,8 @@ use isolapurr_usb_hub::pd_i2c::sw2303::{
 };
 use isolapurr_usb_hub::pd_i2c::tps55288::{
     TpsApplyState, apply_cable_compensation, apply_light_load_mode, apply_setpoint,
-    boot_supply_setpoint, power_request_to_setpoint, stop_output_and_enable_discharge,
+    boot_supply_setpoint, power_request_to_setpoint, quantize_ilim_ma_floor_with_margin,
+    stop_output_and_enable_discharge,
 };
 use isolapurr_usb_hub::power_config::{
     MANUAL_DEFAULT_CURRENT_MA, PowerConfig, Sw2303CapabilityReadback, Sw2303PathControl, TpsMode,
@@ -90,11 +93,16 @@ use isolapurr_usb_hub::prompt_tone::{
 use isolapurr_usb_hub::provisioning;
 use isolapurr_usb_hub::release_version;
 use isolapurr_usb_hub::telemetry::{Field, NormalUiTelemetrySampler, TelemetryI2cAllowlist};
+use isolapurr_usb_hub::thermal::{
+    THERMAL_SAMPLE_INTERVAL_MS, ThermalController, ThermalState, ThermalTelemetry,
+    clamp_manual_current_limit_ma, current_limit_ma_for_power_watts,
+};
 
 #[cfg(feature = "net_http")]
 use isolapurr_usb_hub::telemetry::PortMetrics;
 use {esp_backtrace as _, esp_println as _};
 
+use mcu_temperature::Esp32S3TemperatureSensor;
 use spi_device::CsSpiDevice;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.

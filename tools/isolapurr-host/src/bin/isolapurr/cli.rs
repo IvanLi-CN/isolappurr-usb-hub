@@ -607,10 +607,33 @@ struct CliPowerDiagnostics {
     tps_setpoint: CliPowerSetpoint,
     #[serde(default)]
     tps_iout_limit_readback: Option<CliTpsIoutLimitReadback>,
+    thermal: CliPowerThermal,
     #[serde(default)]
     idle_bias: CliIdleBias,
     runtime_recovery_count: u32,
     sample_uptime_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliPowerThermal {
+    sensors: CliPowerThermalSensors,
+    hottest_temperature_deci_c: Option<i32>,
+    state: String,
+    reason: String,
+    effective_power_watts: u8,
+    sample_uptime_ms: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliPowerThermalSensors {
+    mcu: CliPowerThermalSensor,
+    tmp112: CliPowerThermalSensor,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CliPowerThermalSensor {
+    temperature_deci_c: Option<i32>,
+    status: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

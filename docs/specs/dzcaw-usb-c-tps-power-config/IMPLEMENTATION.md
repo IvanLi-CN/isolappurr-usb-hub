@@ -195,6 +195,11 @@
   right badge. When live PD diagnostics also expose
   `tps_setpoint.iout_limit_ma`, the header prepends an `x.xx A` output-current
   limit badge while still reusing the existing USB-C card V/A/W live telemetry.
+- Extended the same Dashboard USB-C header to prepend a TMP112 temperature
+  chip from shared thermal diagnostics. The chip shows only an integer
+  temperature like `37°C`, stays green below `80°C`, turns amber while the
+  runtime thermal overlay is derating, and turns red once the TMP112 reading
+  reaches the forced-off `100°C` threshold.
 - Updated the Web diagnostics contract to consume
   `tps_setpoint.iout_limit_ma` plus `tps_iout_limit_readback`, matching the
   clarified TPS55288 `IOUT_LIMIT` semantics used by CLI and firmware.
@@ -462,3 +467,22 @@ Runtime remediation:
 Idle-bias HIL still needs the empty-load bench sweep described in the feature
 acceptance notes: USB-C disconnected, calibration run completed, and spot
 checks at `3/5/9/12/15/20/21 V` comparing raw versus corrected current.
+
+Thermal runtime overlay:
+
+- Added a shared thermal controller in `isolapurr-firmware-core` that samples
+  ESP32-S3 MCU temperature plus TMP112 `0x48` at `1 s` cadence, converts both
+  into `0.1°C`, tracks `ok|stale|error` sensor status, and drives
+  `normal|derating|shutdown|rearm_required|sensor_fault` runtime state.
+- `pd-diagnostics` now carries a single `thermal` object across firmware HTTP,
+  USB JSONL, host bridge, CLI `power show`, and the Web Power page instead of
+  introducing a separate temperature API.
+- Runtime power limiting stays overlay-only: the saved EEPROM power config is
+  unchanged, while auto-follow and manual control paths both clamp their live
+  current limit against the effective thermal cap.
+- Thermal shutdown or sensor fault forces TPS output off and reuses the
+  existing safety alarm path. Healthy recovery moves to `rearm_required`,
+  silences the repeated alarm, and still requires an explicit operator re-enable.
+- Web Power diagnostics now refresh on the same `1 s` cadence as the rest of
+  PD diagnostics and include dedicated Storybook states for normal, derating,
+  shutdown, rearm-required, and sensor-fault output conditions.

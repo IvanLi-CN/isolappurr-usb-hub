@@ -291,6 +291,23 @@ function buildDemoDevice({
         enabled: true,
         ma: 2100,
       },
+      thermal: {
+        sensors: {
+          mcu: {
+            temperature_deci_c: 462,
+            status: "ok",
+          },
+          tmp112: {
+            temperature_deci_c: 478,
+            status: "ok",
+          },
+        },
+        hottest_temperature_deci_c: 478,
+        state: "normal",
+        reason: "none",
+        effective_power_watts: 100,
+        sample_uptime_ms: 9_876_543,
+      },
       runtime_recovery_count: 0,
       sample_uptime_ms: 9_876_543,
     },

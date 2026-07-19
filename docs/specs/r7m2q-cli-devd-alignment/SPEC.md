@@ -101,6 +101,9 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - MUST expose owner-facing saved power-config editing through
   `isolapurr power config show|set`, where `set` reads the current whole config,
   mutates only explicitly requested fields, and writes the full config back.
+- MUST keep `isolapurr power show` as the owner-facing live power view, backed
+  by the existing diagnostics path, and include runtime thermal state there
+  without changing `isolapurr power config show` into a live-overlay view.
 - MUST expose owner-facing device settings reset through `isolapurr settings
   reset wifi|other`. Human mode must require explicit confirmation unless a
   confirmation bypass flag is supplied; `--json` must return structured
@@ -272,8 +275,16 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
   USB-C request tracking without discarding the saved manual voltage/current
   target.
 - Given the user runs `isolapurr power show` without `--json`, when the CLI
-  renders the result, then it summarizes saved power settings and live USB-C
-  source state without requiring chip-specific field names.
+  renders the result, then it summarizes saved power settings, live USB-C
+  source state, and runtime thermal state without requiring chip-specific field
+  names.
+- Given the user runs `isolapurr power show` without `--json`, when live
+  diagnostics include thermal data, then the CLI shows MCU and TMP112
+  temperatures, the hottest point, the effective thermal power cap, and any
+  `derating`, `shutdown`, `rearm required`, or `sensor fault` guidance.
+- Given the user runs `isolapurr power config show` without `--json`, when a
+  thermal overlay is active, then the CLI still shows only the saved power
+  configuration instead of the runtime thermal cap or forced-off state.
 - Given `isolapurr power defaults` times out after the device accepts the
   request, when the CLI re-reads the saved config and finds the expected
   default profile, then it must treat the operation as success instead of

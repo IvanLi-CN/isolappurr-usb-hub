@@ -66,6 +66,18 @@ const missingSetpointDevice: StoredDevice = {
   baseUrl: "http://isolapurr-usb-hub-cc3388990011.local",
 };
 
+const tmpDeratingDevice: StoredDevice = {
+  id: "dd4499001122",
+  name: "TMP Derating Hub",
+  baseUrl: "http://isolapurr-usb-hub-dd4499001122.local",
+};
+
+const tmpShutdownDevice: StoredDevice = {
+  id: "ee5500112233",
+  name: "TMP Shutdown Hub",
+  baseUrl: "http://isolapurr-usb-hub-ee5500112233.local",
+};
+
 const autoPdDiagnostics: PdDiagnosticsResponse = {
   usb_c_power_enabled: true,
   sw2303_i2c_allowed: true,
@@ -130,6 +142,23 @@ const autoPdDiagnostics: PdDiagnosticsResponse = {
   tps_iout_limit_readback: {
     enabled: true,
     ma: 500,
+  },
+  thermal: {
+    sensors: {
+      mcu: {
+        temperature_deci_c: 418,
+        status: "ok",
+      },
+      tmp112: {
+        temperature_deci_c: 437,
+        status: "ok",
+      },
+    },
+    hottest_temperature_deci_c: 437,
+    state: "normal",
+    reason: "none",
+    effective_power_watts: 100,
+    sample_uptime_ms: 123_456,
   },
   runtime_recovery_count: 0,
   sample_uptime_ms: 123_456,
@@ -303,6 +332,61 @@ function mockUsbCDiagnostics(hostname: string): PdDiagnosticsResponse {
       tps_setpoint: undefined,
     } as PdDiagnosticsResponse;
   }
+  if (hostname === "isolapurr-usb-hub-dd4499001122.local") {
+    return {
+      ...autoPdDiagnostics,
+      thermal: {
+        ...autoPdDiagnostics.thermal,
+        sensors: {
+          ...autoPdDiagnostics.thermal.sensors,
+          tmp112: {
+            temperature_deci_c: 842,
+            status: "ok",
+          },
+        },
+        hottest_temperature_deci_c: 842,
+        state: "derating",
+        reason: "tmp112_hot",
+        effective_power_watts: 90,
+      },
+    };
+  }
+  if (hostname === "isolapurr-usb-hub-ee5500112233.local") {
+    return {
+      ...autoPdDiagnostics,
+      display: {
+        mode: { kind: "off", label: "5.00V" },
+        measurements_visible: true,
+        badge: { kind: "off", label: "OFF" },
+      },
+      thermal: {
+        ...autoPdDiagnostics.thermal,
+        sensors: {
+          ...autoPdDiagnostics.thermal.sensors,
+          tmp112: {
+            temperature_deci_c: 1008,
+            status: "ok",
+          },
+        },
+        hottest_temperature_deci_c: 1008,
+        state: "shutdown",
+        reason: "tmp112_critical",
+        effective_power_watts: 0,
+      },
+      usb_c_actual: {
+        status: "ok",
+        voltage_mv: 5044,
+        current_ma: 0,
+        power_mw: 0,
+        sample_uptime_ms: 123_456,
+      },
+      tps_setpoint: {
+        output_enabled: false,
+        mv: 5000,
+        iout_limit_ma: 500,
+      },
+    };
+  }
   return autoPdDiagnostics;
 }
 
@@ -329,6 +413,8 @@ const mockDeviceApi = async (
     "isolapurr-usb-hub-aa1166778899.local",
     "isolapurr-usb-hub-bb2277889900.local",
     "isolapurr-usb-hub-cc3388990011.local",
+    "isolapurr-usb-hub-dd4499001122.local",
+    "isolapurr-usb-hub-ee5500112233.local",
   ]);
 
   if (!knownHosts.has(url.hostname)) {
@@ -447,6 +533,9 @@ export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
+      await canvas.findByTestId("dashboard-usb-c-tmp-temperature"),
+    ).toHaveTextContent("43°C");
+    await expect(
       await canvas.findByTestId("dashboard-usb-c-iout-limit"),
     ).toHaveTextContent("0.50 A");
     await expect(
@@ -480,6 +569,9 @@ export const LegacyFirmwareUnknownIsolation: Story = {
     ).not.toBeInTheDocument();
     await expect(
       canvas.queryByTestId("dashboard-usb-c-live-badge"),
+    ).not.toBeInTheDocument();
+    await expect(
+      canvas.queryByTestId("dashboard-usb-c-tmp-temperature"),
     ).not.toBeInTheDocument();
   },
 };
@@ -646,5 +738,29 @@ export const MissingTpsSetpointObject: Story = {
     await expect(
       canvas.getByTestId("dashboard-usb-c-live-badge"),
     ).toHaveTextContent("9V");
+  },
+};
+
+export const TmpTemperatureDerating: Story = {
+  args: {
+    device: tmpDeratingDevice,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const chip = await canvas.findByTestId("dashboard-usb-c-tmp-temperature");
+    await expect(chip).toHaveTextContent("84°C");
+    await expect(chip.className).toContain("bg-[var(--badge-warning-bg)]");
+  },
+};
+
+export const TmpTemperatureShutdown: Story = {
+  args: {
+    device: tmpShutdownDevice,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const chip = await canvas.findByTestId("dashboard-usb-c-tmp-temperature");
+    await expect(chip).toHaveTextContent("100°C");
+    await expect(chip.className).toContain("bg-[var(--badge-error-bg)]");
   },
 };

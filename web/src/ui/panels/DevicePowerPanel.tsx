@@ -29,6 +29,15 @@ import {
 import { DevicePowerPanelIdleBiasSection } from "./DevicePowerPanelIdleBiasSection";
 import { DevicePowerPanelSidebar } from "./DevicePowerPanelSidebar";
 import {
+  formatThermalTemperature,
+  thermalAttentionMessage,
+  thermalReasonLabel,
+  thermalSensorStatusLabel,
+  thermalSensorTone,
+  thermalStateLabel,
+  thermalStateTone,
+} from "./devicePowerThermal";
+import {
   type DevicePowerPanelProps,
   useDevicePowerPanelState,
 } from "./useDevicePowerPanelState";
@@ -51,6 +60,7 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
     manualHighVoltageWarning,
     outputModeSaveDisabled,
     owner,
+    pdDiagnostics,
     powerControlsDisabled,
     restoreDefaults,
     restoreDisabled,
@@ -100,6 +110,11 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
   const handleRestoreDefaults = useCallback(() => {
     void restoreDefaults();
   }, [restoreDefaults]);
+
+  const thermal = pdDiagnostics?.thermal ?? null;
+  const thermalAttention = thermal
+    ? thermalAttentionMessage(thermal.state)
+    : null;
 
   if (!form && error) {
     return (
@@ -767,6 +782,139 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
             usbCTelemetry={usbCTelemetry}
           />
         </div>
+
+        <section className="grid gap-4 rounded-[10px] border border-[var(--border-subtle)] bg-[var(--panel-2)] px-4 py-4">
+          <div className="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-[14px] font-semibold">
+                Thermal diagnostics
+              </div>
+              <div className="mt-1 text-[12px] text-[var(--muted)]">
+                Live `pd-diagnostics` refreshes every second and clamps the
+                active power ceiling without rewriting saved config.
+              </div>
+            </div>
+            {thermal ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`inline-flex h-7 items-center rounded-full border px-3 text-[12px] font-semibold ${thermalStateTone(
+                    thermal.state,
+                  )}`}
+                  data-testid="thermal-state"
+                >
+                  {thermalStateLabel(thermal.state)}
+                </span>
+                <span className="inline-flex h-7 items-center rounded-full border border-[var(--border)] bg-[var(--panel)] px-3 text-[12px] font-semibold text-[var(--muted)]">
+                  {thermalReasonLabel(thermal.reason)}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          {thermal ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    key: "mcu",
+                    label: "MCU",
+                    temperature: thermal.sensors.mcu.temperature_deci_c,
+                    status: thermal.sensors.mcu.status,
+                  },
+                  {
+                    key: "tmp112",
+                    label: "TMP112",
+                    temperature: thermal.sensors.tmp112.temperature_deci_c,
+                    status: thermal.sensors.tmp112.status,
+                  },
+                ].map((sensor) => (
+                  <div
+                    className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3"
+                    key={sensor.key}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[12px] font-semibold text-[var(--muted)]">
+                        {sensor.label}
+                      </div>
+                      <span
+                        className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[11px] font-semibold ${thermalSensorTone(
+                          sensor.status,
+                        )}`}
+                      >
+                        {thermalSensorStatusLabel(sensor.status)}
+                      </span>
+                    </div>
+                    <div
+                      className="mt-3 text-[1.25rem] font-semibold text-[var(--text)]"
+                      data-testid={`thermal-${sensor.key}-temperature`}
+                    >
+                      {formatThermalTemperature(sensor.temperature)}
+                    </div>
+                  </div>
+                ))}
+                <div className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3">
+                  <div className="text-[12px] font-semibold text-[var(--muted)]">
+                    Hottest point
+                  </div>
+                  <div
+                    className="mt-3 text-[1.25rem] font-semibold text-[var(--text)]"
+                    data-testid="thermal-hottest"
+                  >
+                    {formatThermalTemperature(
+                      thermal.hottest_temperature_deci_c,
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3">
+                  <div className="text-[12px] font-semibold text-[var(--muted)]">
+                    Effective cap
+                  </div>
+                  <div
+                    className="mt-3 text-[1.25rem] font-semibold text-[var(--text)]"
+                    data-testid="thermal-effective-cap"
+                  >
+                    {thermal.effective_power_watts} W
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+                <div className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3">
+                  <div className="text-[12px] font-semibold text-[var(--muted)]">
+                    Protection reason
+                  </div>
+                  <div
+                    className="mt-2 text-[13px] font-semibold text-[var(--text)]"
+                    data-testid="thermal-reason"
+                  >
+                    {thermalReasonLabel(thermal.reason)}
+                  </div>
+                  {thermalAttention ? (
+                    <div
+                      className="mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--panel-3)] px-3 py-2 text-[12px] leading-5 text-[var(--muted)]"
+                      data-testid="thermal-attention"
+                    >
+                      {thermalAttention}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-3 py-3">
+                  <div className="text-[12px] font-semibold text-[var(--muted)]">
+                    Thermal sample
+                  </div>
+                  <div className="mt-2 text-[13px] font-semibold text-[var(--text)]">
+                    {thermal.sample_uptime_ms.toLocaleString()} ms uptime
+                  </div>
+                  <div className="mt-1 text-[12px] text-[var(--muted)]">
+                    Same 1 s cadence as the live USB-C power telemetry.
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-[13px] text-[var(--muted)]">
+              Waiting for live thermal diagnostics...
+            </div>
+          )}
+        </section>
 
         <DevicePowerPanelIdleBiasSection
           busy={busy}

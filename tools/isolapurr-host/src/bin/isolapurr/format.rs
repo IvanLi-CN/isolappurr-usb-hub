@@ -421,6 +421,29 @@ fn format_live_power_output(output: &Value) -> String {
         "Output target: {}",
         format_output_target(&diagnostics.tps_setpoint)
     ));
+    lines.push(format!(
+        "Thermal state: {}",
+        format_thermal_state(&diagnostics.thermal)
+    ));
+    lines.push(format!(
+        "Effective thermal cap: {} W",
+        diagnostics.thermal.effective_power_watts
+    ));
+    lines.push(format!(
+        "Hottest temperature: {}",
+        format_temperature_deci_c(diagnostics.thermal.hottest_temperature_deci_c)
+    ));
+    lines.push(format!(
+        "MCU temperature: {}",
+        format_thermal_sensor(&diagnostics.thermal.sensors.mcu)
+    ));
+    lines.push(format!(
+        "TMP112 temperature: {}",
+        format_thermal_sensor(&diagnostics.thermal.sensors.tmp112)
+    ));
+    if let Some(note) = format_thermal_note(&diagnostics.thermal) {
+        lines.push(note);
+    }
     if diagnostics.tps_setpoint.output_enabled == Some(false) {
         lines.push(format!(
             "TPS discharge: {}",
@@ -860,6 +883,79 @@ fn format_output_target(setpoint: &CliPowerSetpoint) -> String {
     }
 }
 
+fn format_temperature_deci_c(value: Option<i32>) -> String {
+    match value {
+        Some(value) => {
+            let sign = if value < 0 { "-" } else { "" };
+            let absolute = value.abs();
+            format!("{sign}{}.{:01}°C", absolute / 10, absolute % 10)
+        }
+        None => "unavailable".to_string(),
+    }
+}
+
+fn format_thermal_sensor(sensor: &CliPowerThermalSensor) -> String {
+    format!(
+        "{} ({})",
+        format_temperature_deci_c(sensor.temperature_deci_c),
+        format_thermal_sensor_status(&sensor.status)
+    )
+}
+
+fn format_thermal_sensor_status(status: &str) -> &'static str {
+    match status {
+        "ok" => "ok",
+        "stale" => "stale",
+        "error" => "error",
+        _ => "unknown",
+    }
+}
+
+fn format_thermal_state(thermal: &CliPowerThermal) -> String {
+    match thermal.state.as_str() {
+        "normal" => "Normal".to_string(),
+        "derating" => format!("Derating ({})", format_thermal_reason(&thermal.reason)),
+        "shutdown" => format!("Shutdown ({})", format_thermal_reason(&thermal.reason)),
+        "rearm_required" => "Rearm required".to_string(),
+        "sensor_fault" => format!("Sensor fault ({})", format_thermal_reason(&thermal.reason)),
+        _ => "Unknown".to_string(),
+    }
+}
+
+fn format_thermal_reason(reason: &str) -> &'static str {
+    match reason {
+        "none" => "normal",
+        "mcu_hot" => "MCU hot",
+        "tmp112_hot" => "TMP112 hot",
+        "both_hot" => "both hot",
+        "mcu_critical" => "MCU critical",
+        "tmp112_critical" => "TMP112 critical",
+        "both_critical" => "both critical",
+        "mcu_sensor_fault" => "MCU sensor fault",
+        "tmp112_sensor_fault" => "TMP112 sensor fault",
+        "both_sensor_fault" => "both sensor fault",
+        _ => "unknown reason",
+    }
+}
+
+fn format_thermal_note(thermal: &CliPowerThermal) -> Option<String> {
+    match thermal.state.as_str() {
+        "shutdown" => Some(
+            "Thermal shutdown: output forced off until temperature recovers and you enable it again."
+                .to_string(),
+        ),
+        "rearm_required" => Some(
+            "Thermal rearm: temperatures recovered; output stays off until you re-enable it."
+                .to_string(),
+        ),
+        "sensor_fault" => Some(
+            "Thermal sensor fault: output stays off until telemetry recovers, then re-enable it manually."
+                .to_string(),
+        ),
+        _ => None,
+    }
+}
+
 fn format_tps_iout_limit_readback(diagnostics: &CliPowerDiagnostics) -> Option<String> {
     let readback = diagnostics.tps_iout_limit_readback.as_ref()?;
     Some(match (readback.enabled, readback.ma) {
@@ -879,6 +975,12 @@ fn format_faults(diagnostics: &CliPowerDiagnostics) -> String {
     }
     if diagnostics.tps_error_latched {
         faults.push("power-stage fault latched");
+    }
+    if diagnostics.thermal.state == "shutdown" {
+        faults.push("thermal shutdown");
+    }
+    if diagnostics.thermal.state == "sensor_fault" {
+        faults.push("thermal sensor fault");
     }
     if faults.is_empty() {
         "none".to_string()

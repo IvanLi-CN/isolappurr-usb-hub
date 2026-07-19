@@ -3,7 +3,7 @@ use embedded_hal_async::i2c::{I2c, Operation};
 
 use super::hardware::{
     INA226_U13_ADDR_7BIT, INA226_U13_FALLBACK_ADDR_7BIT, INA226_U17_ADDR_7BIT,
-    INA226_U17_FALLBACK_ADDR_7BIT,
+    INA226_U17_FALLBACK_ADDR_7BIT, TMP112_ADDR_7BIT,
 };
 use crate::pd_i2c::TPS55288_ADDR_7BIT;
 #[cfg(feature = "net_http")]
@@ -32,7 +32,8 @@ impl<E: Error> Error for TelemetryI2cError<E> {
 ///   `0x74` on the shared system I2C bus.
 /// - Only allow the provisioning EEPROM U21 (`0x50`) through explicit
 ///   provisioning calls when `net_http` is enabled.
-/// - Never scan / never touch other devices on the same bus (e.g. TMP112 U23).
+/// - Allow direct TMP112 U23 register reads at `0x48`; never scan / never
+///   touch any other devices on the same bus.
 pub struct TelemetryI2cAllowlist<I2C> {
     inner: I2C,
 }
@@ -69,6 +70,7 @@ where
             && address != INA226_U13_FALLBACK_ADDR_7BIT
             && address != INA226_U17_ADDR_7BIT
             && address != INA226_U17_FALLBACK_ADDR_7BIT
+            && address != TMP112_ADDR_7BIT
             && address != TPS55288_ADDR_7BIT
             && address != WIFI_EEPROM_ADDR_7BIT
         {
@@ -79,6 +81,7 @@ where
             && address != INA226_U13_FALLBACK_ADDR_7BIT
             && address != INA226_U17_ADDR_7BIT
             && address != INA226_U17_FALLBACK_ADDR_7BIT
+            && address != TMP112_ADDR_7BIT
             && address != TPS55288_ADDR_7BIT
         {
             return Err(TelemetryI2cError::AddressNotAllowed(address));

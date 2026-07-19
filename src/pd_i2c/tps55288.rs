@@ -213,11 +213,18 @@ impl TpsApplyState {
 /// - Voltage is quantized with floor/truncation (never exceeds request due to rounding).
 /// - Current limit applies a 50 mA safety margin before quantization when feasible.
 pub fn power_request_to_setpoint(request: PowerRequest) -> PowerSetpoint {
+    power_request_to_setpoint_with_current_limit(request, request.i_req_ma)
+}
+
+pub fn power_request_to_setpoint_with_current_limit(
+    request: PowerRequest,
+    requested_current_limit_ma: u16,
+) -> PowerSetpoint {
     PowerSetpoint {
         output_enabled: true,
         discharge_enabled: false,
         v_out_mv: quantize_vout_mv_floor(request.v_req_mv),
-        i_lim_ma: quantize_ilim_ma_floor_with_margin(request.i_req_ma),
+        i_lim_ma: quantize_ilim_ma_floor_with_margin(requested_current_limit_ma),
     }
 }
 
@@ -229,7 +236,7 @@ fn quantize_vout_mv_floor(mv: u16) -> u16 {
     VOUT_MIN_MV + steps * VOUT_LSB_MV
 }
 
-fn quantize_ilim_ma_floor_with_margin(ma: u16) -> u16 {
+pub fn quantize_ilim_ma_floor_with_margin(ma: u16) -> u16 {
     use tps55288::registers::{ILIM_LSB_MA, ILIM_MAX_MA};
 
     let ma = ma.saturating_sub(ILIM_LSB_MA);
