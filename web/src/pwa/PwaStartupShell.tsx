@@ -121,12 +121,15 @@ export function PwaStartupShell({
             </div>
           ) : (
             <div
-              className="h-2 overflow-hidden rounded-full bg-[rgba(127,148,164,0.12)]"
+              className="h-2 overflow-hidden rounded-full"
               aria-hidden="true"
+              style={{ backgroundColor: "var(--loading-track)" }}
             >
               <span
-                className="block h-full w-[42%] rounded-full bg-[linear-gradient(90deg,var(--primary),var(--secondary))]"
+                className="block h-full w-[42%] rounded-full"
                 style={{
+                  background:
+                    "linear-gradient(90deg, var(--loading-accent) 0%, var(--loading-accent-2) 100%)",
                   animation:
                     "isolapurr-boot-progress 1.15s ease-in-out infinite",
                 }}
