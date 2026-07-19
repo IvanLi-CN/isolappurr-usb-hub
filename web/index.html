@@ -143,7 +143,7 @@
       }
 
       #isolapurr-pwa-boot-card {
-        width: min(100%, 420px);
+        width: min(100%, 440px);
         border-radius: 28px;
         border: 1px solid var(--boot-panel-border);
         background: var(--boot-panel);
@@ -153,8 +153,8 @@
 
       #isolapurr-pwa-boot-inner {
         display: grid;
-        gap: 18px;
-        padding: 30px 28px 26px;
+        gap: 24px;
+        padding: 32px 30px 28px;
       }
 
       #isolapurr-pwa-boot-logo {
@@ -166,7 +166,7 @@
 
       #isolapurr-pwa-boot-meta {
         display: grid;
-        gap: 10px;
+        gap: 12px;
         text-align: center;
       }
 
@@ -188,8 +188,11 @@
 
       #isolapurr-pwa-boot-title {
         margin: 0;
-        font-size: clamp(28px, 4.2vw, 34px);
+        justify-self: center;
+        max-width: 12ch;
+        font-size: clamp(27px, 3.8vw, 32px);
         font-weight: 800;
+        line-height: 1.05;
         letter-spacing: -0.03em;
         text-wrap: balance;
       }
@@ -200,16 +203,22 @@
         margin: 0;
       }
 
+      #isolapurr-pwa-boot-message,
+      #isolapurr-pwa-boot-detail {
+        justify-self: center;
+        max-width: 33ch;
+      }
+
       #isolapurr-pwa-boot-message {
-        font-size: 15px;
-        font-weight: 700;
+        font-size: 14px;
+        font-weight: 500;
         line-height: 1.5;
       }
 
       #isolapurr-pwa-boot-detail,
       #isolapurr-pwa-boot-note {
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 500;
         line-height: 1.65;
         color: var(--boot-muted);
       }
@@ -296,12 +305,40 @@
       }
 
       @media (max-width: 480px) {
+        #isolapurr-pwa-boot-card {
+          width: min(100%, 420px);
+        }
+
         #isolapurr-pwa-boot {
           padding: 18px;
         }
 
         #isolapurr-pwa-boot-inner {
+          gap: 18px;
           padding: 26px 22px 22px;
+        }
+
+        #isolapurr-pwa-boot-meta {
+          gap: 10px;
+        }
+
+        #isolapurr-pwa-boot-title {
+          max-width: none;
+          font-size: clamp(28px, 8.6vw, 34px);
+        }
+
+        #isolapurr-pwa-boot-message,
+        #isolapurr-pwa-boot-detail {
+          max-width: none;
+        }
+
+        #isolapurr-pwa-boot-message {
+          font-size: 15px;
+          font-weight: 700;
+        }
+
+        #isolapurr-pwa-boot-detail {
+          font-weight: 600;
         }
       }
     </style>
@@ -332,11 +369,9 @@
               Starting the installed console…
             </h1>
             <p id="isolapurr-pwa-boot-message" data-boot-message>
-              Loading your offline app shell and saved devices.
+              Loading your offline app shell.
             </p>
             <p id="isolapurr-pwa-boot-detail" data-boot-detail>
-              Saved devices and theme stay on this Mac even when the app shell
-              repairs itself.
             </p>
           </div>
           <div id="isolapurr-pwa-boot-progress" data-boot-progress aria-hidden="true">

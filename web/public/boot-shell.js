@@ -95,6 +95,7 @@
     }
     if (detailEl) {
       detailEl.textContent = options.detail;
+      detailEl.hidden = !options.detail;
     }
     if (chipEl) {
       chipEl.textContent = options.chip;
@@ -149,9 +150,8 @@
     setShellState("recovering", {
       chip: "Repairing app shell",
       title: "Repairing the installed console…",
-      message: "Switching this launch to the newest offline app shell.",
-      detail:
-        "If this recovery succeeds, the console will reload with the waiting service worker and keep your saved devices.",
+      message: "Switching to the newest offline app shell.",
+      detail: "",
       showActions: false,
       showNote: false,
       showProgress: true,
@@ -374,9 +374,8 @@
   setShellState("launching", {
     chip: "Installed console",
     title: "Starting the installed console…",
-    message: "Loading your offline app shell and saved devices.",
-    detail:
-      "Saved devices and theme stay on this Mac even when the app shell repairs itself.",
+    message: "Loading your offline app shell.",
+    detail: "",
     showActions: false,
     showNote: false,
     showProgress: true,

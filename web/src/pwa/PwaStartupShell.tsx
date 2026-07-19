@@ -21,16 +21,14 @@ const COPY: Record<
   launching: {
     chip: "Installed console",
     title: "Starting the installed console…",
-    message: "Loading your offline app shell and saved devices.",
-    detail:
-      "Saved devices and theme stay on this Mac even when the app shell repairs itself.",
+    message: "Loading your offline app shell.",
+    detail: "",
   },
   recovering: {
     chip: "Repairing app shell",
     title: "Repairing the installed console…",
-    message: "Switching this launch to the newest offline app shell.",
-    detail:
-      "If a newer waiting service worker is ready, this launch will reload into it automatically.",
+    message: "Switching to the newest offline app shell.",
+    detail: "",
   },
   failed: {
     chip: "Launch failed",
@@ -49,6 +47,7 @@ export function PwaStartupShell({
 }: PwaStartupShellProps) {
   const copy = COPY[state];
   const showActions = state === "failed";
+  const supportingDetail = detail ?? copy.detail;
 
   return (
     <div
@@ -60,9 +59,9 @@ export function PwaStartupShell({
           "radial-gradient(circle at top, color-mix(in srgb, var(--primary) 18%, transparent), transparent 55%), linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, var(--panel)), var(--bg))",
       }}
     >
-      <section className="w-full max-w-[420px] rounded-[28px] border border-[color-mix(in_srgb,var(--primary)_16%,transparent)] bg-[color-mix(in_srgb,var(--panel)_94%,transparent)] shadow-[0_24px_70px_rgba(31,41,55,0.16)] backdrop-blur-[24px]">
-        <div className="grid gap-5 p-7 sm:p-8">
-          <div className="grid justify-items-center gap-4 text-center">
+      <section className="w-full max-w-[440px] rounded-[28px] border border-[color-mix(in_srgb,var(--primary)_16%,transparent)] bg-[color-mix(in_srgb,var(--panel)_94%,transparent)] shadow-[0_24px_70px_rgba(31,41,55,0.16)] backdrop-blur-[24px] sm:max-w-[500px]">
+        <div className="grid gap-6 p-8 sm:gap-7 sm:px-10 sm:py-9">
+          <div className="grid justify-items-center gap-5 text-center">
             <BrandMark className="h-[106px] w-[106px]" />
             <div
               className="inline-flex min-h-8 items-center justify-center rounded-full px-3 text-[12px] font-extrabold uppercase tracking-[0.04em]"
@@ -77,19 +76,21 @@ export function PwaStartupShell({
             >
               {copy.chip}
             </div>
-            <div className="grid gap-2">
+            <div className="mx-auto grid max-w-[33ch] gap-3">
               <h1
-                className="m-0 [text-wrap:balance] text-[30px] font-extrabold leading-[1.02] tracking-[-0.03em] sm:text-[34px]"
+                className="m-0 mx-auto max-w-[12ch] [text-wrap:balance] text-[28px] font-extrabold leading-[1.05] tracking-[-0.03em] sm:text-[32px]"
                 data-testid="pwa-startup-shell-status"
               >
                 {copy.title}
               </h1>
-              <p className="m-0 text-[15px] font-bold leading-6">
+              <p className="m-0 text-[14px] font-medium leading-6 sm:text-[15px]">
                 {copy.message}
               </p>
-              <p className="m-0 text-[13px] font-semibold leading-6 text-[var(--muted)]">
-                {detail ?? copy.detail}
-              </p>
+              {supportingDetail ? (
+                <p className="m-0 text-[13px] font-medium leading-[1.7] text-[var(--muted)]">
+                  {supportingDetail}
+                </p>
+              ) : null}
             </div>
           </div>
 
