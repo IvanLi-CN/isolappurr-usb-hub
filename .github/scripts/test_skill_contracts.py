@@ -110,6 +110,8 @@ class SkillContractTest(unittest.TestCase):
             "README.md",
             "web/README.md",
             "docs/maintainer-workflow.md",
+            ".github/workflows/firmware.yml",
+            ".github/workflows/release.yml",
             "docs/specs/kvbq9-web-demo-surface-policy/**",
             "docs/specs/r7m2q-cli-devd-alignment/**",
             "skills/isolapurr-user-operations/**",

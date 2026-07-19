@@ -5,6 +5,8 @@ on:
     paths:
       - ".github/scripts/**"
       - ".github/workflows/repo-contracts.yml"
+      - ".github/workflows/firmware.yml"
+      - ".github/workflows/release.yml"
       - "AGENTS.md"
       - "README.md"
       - "web/README.md"
@@ -24,6 +26,8 @@ on:
     paths:
       - ".github/scripts/**"
       - ".github/workflows/repo-contracts.yml"
+      - ".github/workflows/firmware.yml"
+      - ".github/workflows/release.yml"
       - "AGENTS.md"
       - "README.md"
       - "web/README.md"

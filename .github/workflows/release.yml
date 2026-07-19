@@ -350,7 +350,7 @@ jobs:
 
       - name: Install espflash
         run: |
-          host="$(rustc -vV | sed -n 's/^host: //p')"
+          host="$(rustc +stable -vV | sed -n 's/^host: //p')"
           cargo +stable install espflash --locked --target "$host"
 
       - name: Install deps
