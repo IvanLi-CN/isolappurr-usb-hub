@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 export type BrandMarkVariant = "color" | "mono" | "light" | "dark";
 
 export function BrandMark({
@@ -9,6 +11,10 @@ export function BrandMark({
   variant?: BrandMarkVariant;
   title?: string;
 }) {
+  const gradientIdBase = useId().replaceAll(":", "");
+  const shellGradientId = `${gradientIdBase}-brand-shell-gradient`;
+  const panelGradientId = `${gradientIdBase}-brand-panel-gradient`;
+  const railGradientId = `${gradientIdBase}-brand-rail-gradient`;
   const background =
     variant === "dark"
       ? "oklch(0.28 0.045 160)"
@@ -17,14 +23,14 @@ export function BrandMark({
         : "transparent";
   const panelFill =
     variant === "color"
-      ? "url(#brand-panel-gradient)"
+      ? `url(#${panelGradientId})`
       : variant === "dark"
         ? "oklch(0.95 0.028 88)"
         : "oklch(0.97 0.03 88)";
   const railFill =
-    variant === "dark" ? "oklch(0.2 0.02 170)" : "url(#brand-rail-gradient)";
+    variant === "dark" ? "oklch(0.2 0.02 170)" : `url(#${railGradientId})`;
   const shellFill =
-    variant === "color" ? "url(#brand-shell-gradient)" : "oklch(0.62 0.07 160)";
+    variant === "color" ? `url(#${shellGradientId})` : "oklch(0.62 0.07 160)";
   const lineFill = variant === "mono" ? panelFill : "#7dd9e9";
   const portFill = variant === "mono" ? panelFill : "#f7f1df";
 
@@ -37,7 +43,7 @@ export function BrandMark({
     >
       <defs>
         <linearGradient
-          id="brand-shell-gradient"
+          id={shellGradientId}
           x1="42"
           x2="214"
           y1="42"
@@ -48,7 +54,7 @@ export function BrandMark({
           <stop offset="1" stopColor="#83b7a7" />
         </linearGradient>
         <linearGradient
-          id="brand-panel-gradient"
+          id={panelGradientId}
           x1="66"
           x2="190"
           y1="78"
@@ -59,7 +65,7 @@ export function BrandMark({
           <stop offset="1" stopColor="#e8dcc0" />
         </linearGradient>
         <linearGradient
-          id="brand-rail-gradient"
+          id={railGradientId}
           x1="80"
           x2="176"
           y1="102"

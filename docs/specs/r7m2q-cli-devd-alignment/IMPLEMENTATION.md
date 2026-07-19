@@ -168,6 +168,9 @@
 - `A2` Final acceptance audit over every explicit requirement: completed
 - `A3` Local signed-off commit to lock the result: ready for the current
   delivery commit
+- Route-level visual evidence refreshed at `/flash?demo=true` in both
+  `isolapurr` and `isolapurr-dark` so the shared shell brand-slot repair is
+  bound to formal spec assets instead of chat-only screenshots.
 
 ## Final Validation
 

@@ -5,6 +5,7 @@ import { DemoLink } from "../../app/demo-navigation";
 import { useTheme } from "../../app/theme-ui";
 import { usePwaInstall } from "../../pwa/install";
 import { ActionButton, IconButton } from "../actions/ActionButton";
+import { BrandLogo } from "../brand/BrandLogo";
 import { BrandMark } from "../brand/BrandMark";
 import { ThemeMenu } from "../nav/ThemeMenu";
 import { DemoControlPanel } from "./DemoControlPanel";
@@ -52,6 +53,11 @@ export function AppLayout({
   const showDemoControl = demoEnabled && location.pathname !== "/flash";
   const showInstallCta = canPromptInstall && !isInstalled;
   const mobileBrandLabel = headerInfo?.mobileTitle ?? headerInfo?.title;
+  const headerBrandVariant = theme === "isolapurr-dark" ? "dark" : "light";
+  const showBrandLogo = !headerInfo;
+  const mobileBrandLinkClassName = showBrandLogo
+    ? "flex shrink-0 items-center text-[var(--text)]"
+    : "flex min-w-0 items-center gap-2.5 truncate text-[16px] font-bold";
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -159,20 +165,27 @@ export function AppLayout({
       <header className="app-shell__header border-b border-[var(--border)] bg-[var(--panel-2)]">
         <div className="app-shell__frame mx-auto max-w-[1600px]">
           <div className="flex min-h-16 items-center justify-between gap-3 lg:hidden">
-            <DemoLink
-              className="flex min-w-0 items-center gap-2.5 truncate text-[16px] font-bold"
-              to="/"
-            >
-              <BrandMark
-                className="h-8 w-8 shrink-0"
-                variant={theme === "isolapurr-dark" ? "dark" : "color"}
-              />
-              <span
-                className="min-w-0 truncate"
-                data-testid="app-header-mobile-title"
-              >
-                {mobileBrandLabel ?? "IsolaPurr USB Hub"}
-              </span>
+            <DemoLink className={mobileBrandLinkClassName} to="/">
+              {showBrandLogo ? (
+                <BrandLogo
+                  className="shrink-0 text-[var(--text)]"
+                  markVariant="color"
+                  size="sm"
+                />
+              ) : (
+                <>
+                  <BrandMark
+                    className="h-8 w-8 shrink-0"
+                    variant={headerBrandVariant}
+                  />
+                  <span
+                    className="min-w-0 truncate"
+                    data-testid="app-header-mobile-title"
+                  >
+                    {mobileBrandLabel ?? "IsolaPurr USB Hub"}
+                  </span>
+                </>
+              )}
             </DemoLink>
             <div className="flex shrink-0 items-center gap-2">
               {showDemoControl ? <DemoControlPanel /> : null}
@@ -210,14 +223,13 @@ export function AppLayout({
           >
             <div className="flex min-w-0 items-center">
               <DemoLink
-                className="flex min-w-0 items-center gap-2.5 truncate text-[16px] font-bold"
+                className="flex min-w-0 items-center text-[var(--text)]"
                 to="/"
               >
-                <BrandMark
-                  className="h-8 w-8 shrink-0"
-                  variant={theme === "isolapurr-dark" ? "dark" : "color"}
+                <BrandLogo
+                  className="shrink-0 text-current"
+                  markVariant="color"
                 />
-                <span className="min-w-0 truncate">IsolaPurr USB Hub</span>
               </DemoLink>
             </div>
 
