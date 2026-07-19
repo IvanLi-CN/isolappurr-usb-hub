@@ -99,6 +99,15 @@ jobs:
           VITE_BASE: ${{ steps.pages.outputs.base_path }}/
         run: bun run build
 
+      - name: Retain previous hashed assets
+        if: steps.gate.outputs.run_build == 'true' && github.event_name != 'pull_request'
+        working-directory: web
+        env:
+          PAGES_DEPLOY_ORIGIN: https://isolapurr.ivanli.cc
+          VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}
+          VITE_BUILD_SHA: ${{ github.sha }}
+        run: bun run retain-pages-assets
+
       - name: Upload artifact
         if: steps.gate.outputs.run_build == 'true' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
