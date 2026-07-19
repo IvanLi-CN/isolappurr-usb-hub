@@ -20,13 +20,13 @@ const COPY: Record<
 > = {
   launching: {
     chip: "Installed console",
-    title: "Starting the installed console…",
+    title: "Starting console…",
     message: "Loading your offline app shell.",
     detail: "",
   },
   recovering: {
     chip: "Repairing app shell",
-    title: "Repairing the installed console…",
+    title: "Repairing console…",
     message: "Switching to the newest offline app shell.",
     detail: "",
   },
@@ -78,7 +78,7 @@ export function PwaStartupShell({
             </div>
             <div className="mx-auto grid max-w-[33ch] gap-3">
               <h1
-                className="m-0 mx-auto max-w-[12ch] [text-wrap:balance] text-[28px] font-extrabold leading-[1.05] tracking-[-0.03em] sm:text-[32px]"
+                className="m-0 mx-auto w-fit whitespace-nowrap text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] sm:text-[32px]"
                 data-testid="pwa-startup-shell-status"
               >
                 {copy.title}

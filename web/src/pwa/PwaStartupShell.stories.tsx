@@ -38,7 +38,7 @@ export const Launching: Story = {
     const canvas = within(canvasElement);
     await expect(
       canvas.getByTestId("pwa-startup-shell-status"),
-    ).toHaveTextContent("Starting the installed console…");
+    ).toHaveTextContent("Starting console…");
     await expect(
       canvas.queryByTestId("pwa-startup-shell-repair"),
     ).not.toBeInTheDocument();
@@ -60,7 +60,7 @@ export const Recovering: Story = {
     const canvas = within(canvasElement);
     await expect(
       canvas.getByTestId("pwa-startup-shell-status"),
-    ).toHaveTextContent("Repairing the installed console…");
+    ).toHaveTextContent("Repairing console…");
   },
 };
 

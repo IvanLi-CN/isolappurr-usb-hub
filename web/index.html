@@ -189,12 +189,11 @@
       #isolapurr-pwa-boot-title {
         margin: 0;
         justify-self: center;
-        max-width: 12ch;
         font-size: clamp(27px, 3.8vw, 32px);
         font-weight: 800;
         line-height: 1.05;
         letter-spacing: -0.03em;
-        text-wrap: balance;
+        white-space: nowrap;
       }
 
       #isolapurr-pwa-boot-message,
@@ -323,8 +322,7 @@
         }
 
         #isolapurr-pwa-boot-title {
-          max-width: none;
-          font-size: clamp(28px, 8.6vw, 34px);
+          font-size: clamp(26px, 8vw, 32px);
         }
 
         #isolapurr-pwa-boot-message,
@@ -366,7 +364,7 @@
               Installed console
             </div>
             <h1 id="isolapurr-pwa-boot-title" data-testid="pwa-startup-shell-status">
-              Starting the installed console…
+              Starting console…
             </h1>
             <p id="isolapurr-pwa-boot-message" data-boot-message>
               Loading your offline app shell.

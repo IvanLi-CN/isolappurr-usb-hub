@@ -149,7 +149,7 @@
 
     setShellState("recovering", {
       chip: "Repairing app shell",
-      title: "Repairing the installed console…",
+      title: "Repairing console…",
       message: "Switching to the newest offline app shell.",
       detail: "",
       showActions: false,
@@ -259,7 +259,7 @@
     setVisible(true);
     setShellState("recovering", {
       chip: "Repairing app shell",
-      title: "Repairing the installed console…",
+      title: "Repairing console…",
       message:
         "Resetting service workers and cached files for a clean relaunch.",
       detail:
@@ -373,7 +373,7 @@
   setVisible(true);
   setShellState("launching", {
     chip: "Installed console",
-    title: "Starting the installed console…",
+    title: "Starting console…",
     message: "Loading your offline app shell.",
     detail: "",
     showActions: false,

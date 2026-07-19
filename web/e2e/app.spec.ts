@@ -401,7 +401,7 @@ test("shows the standalone startup shell before the app mounts", async ({
 
   await expect(page.getByTestId("pwa-startup-shell")).toBeVisible();
   await expect(page.getByTestId("pwa-startup-shell-status")).toHaveText(
-    "Starting the installed console…",
+    "Starting console…",
   );
 
   await navigation;
