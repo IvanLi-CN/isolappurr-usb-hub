@@ -79,7 +79,7 @@ export function PwaStartupShell({
             </div>
             <div className="grid gap-2">
               <h1
-                className="m-0 text-[30px] font-extrabold leading-[1.02] tracking-[-0.03em] sm:text-[34px]"
+                className="m-0 [text-wrap:balance] text-[30px] font-extrabold leading-[1.02] tracking-[-0.03em] sm:text-[34px]"
                 data-testid="pwa-startup-shell-status"
               >
                 {copy.title}
