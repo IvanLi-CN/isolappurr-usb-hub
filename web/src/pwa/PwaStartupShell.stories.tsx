@@ -45,6 +45,13 @@ export const Launching: Story = {
   },
 };
 
+export const LaunchingDesktop: Story = {
+  ...Launching,
+  parameters: {
+    viewport: { defaultViewport: "isolapurrDesktop" },
+  },
+};
+
 export const Recovering: Story = {
   args: {
     state: "recovering",

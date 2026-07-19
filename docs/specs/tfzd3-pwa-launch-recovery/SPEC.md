@@ -154,6 +154,10 @@ Installed-PWA cold-start launching shell rendered from the standalone Storybook 
 ![PWA startup shell launching](./assets/pwa-startup-shell-launching.png)
 
 PR: include
+Installed-PWA cold-start launching shell rendered from the standalone Storybook desktop light state.
+![PWA startup shell launching desktop light](./assets/pwa-startup-shell-launching-desktop.png)
+
+PR: include
 Installed-PWA startup failure shell rendered from the standalone Storybook state, including recovery actions.
 ![PWA startup shell failed](./assets/pwa-startup-shell-failed.png)
 
