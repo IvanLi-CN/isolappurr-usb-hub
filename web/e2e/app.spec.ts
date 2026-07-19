@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 function contrastRatio(foreground: string, background: string): number {
   const luminance = (color: string): number => {
@@ -22,6 +22,97 @@ function contrastRatio(foreground: string, background: string): number {
     (left, right) => right - left,
   );
   return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
+async function mockPwaInstallState(
+  page: Page,
+  {
+    autoAppInstalled = false,
+    displayMode = "browser",
+    overlayVisible = false,
+    promptOutcome = "accepted",
+  }: {
+    autoAppInstalled?: boolean;
+    displayMode?: "browser" | "standalone";
+    overlayVisible?: boolean;
+    promptOutcome?: "accepted" | "dismissed";
+  } = {},
+) {
+  await page.addInitScript(
+    ({ autoAppInstalled, displayMode, overlayVisible, promptOutcome }) => {
+      class MockWindowControlsOverlay extends EventTarget {
+        visible;
+
+        constructor(initialVisible) {
+          super();
+          this.visible = initialVisible;
+        }
+
+        getTitlebarAreaRect() {
+          return new DOMRect(0, 0, 0, 0);
+        }
+      }
+
+      const overlay = new MockWindowControlsOverlay(overlayVisible);
+      Object.defineProperty(navigator, "windowControlsOverlay", {
+        configurable: true,
+        value: overlay,
+      });
+
+      const originalMatchMedia = window.matchMedia.bind(window);
+      window.matchMedia = (query) => {
+        const mediaQueryList = originalMatchMedia(query);
+        if (query === "(display-mode: standalone)") {
+          Object.defineProperty(mediaQueryList, "matches", {
+            configurable: true,
+            get: () => displayMode === "standalone",
+          });
+        }
+        if (query === "(display-mode: minimal-ui)") {
+          Object.defineProperty(mediaQueryList, "matches", {
+            configurable: true,
+            get: () => false,
+          });
+        }
+        if (query === "(display-mode: fullscreen)") {
+          Object.defineProperty(mediaQueryList, "matches", {
+            configurable: true,
+            get: () => false,
+          });
+        }
+        return mediaQueryList;
+      };
+
+      window.__mockInstallPromptCalls = 0;
+      window.__dispatchMockBeforeInstallPrompt = () => {
+        const event = new Event("beforeinstallprompt", {
+          cancelable: true,
+        });
+        Object.defineProperty(event, "platforms", {
+          configurable: true,
+          value: ["web"],
+        });
+        Object.defineProperty(event, "prompt", {
+          configurable: true,
+          value: async () => {
+            window.__mockInstallPromptCalls += 1;
+            if (autoAppInstalled) {
+              window.dispatchEvent(new Event("appinstalled"));
+            }
+          },
+        });
+        Object.defineProperty(event, "userChoice", {
+          configurable: true,
+          value: Promise.resolve({
+            outcome: promptOutcome,
+            platform: "web",
+          }),
+        });
+        window.dispatchEvent(event);
+      };
+    },
+    { autoAppInstalled, displayMode, overlayVisible, promptOutcome },
+  );
 }
 
 test("renders devices list and mock dashboard", async ({ page }) => {
@@ -249,6 +340,38 @@ test("publishes PWA metadata and offline app shell", async ({
       }),
     ]),
   );
+  expect(manifestJson.shortcuts).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: "Dashboard",
+        url: ".",
+      }),
+      expect.objectContaining({
+        name: "Firmware flash",
+        url: "flash",
+      }),
+    ]),
+  );
+  expect(manifestJson.screenshots).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        src: "pwa/dashboard-wide.png",
+        form_factor: "wide",
+        sizes: "1440x900",
+      }),
+      expect.objectContaining({
+        src: "pwa/flash-wide.png",
+        form_factor: "wide",
+        sizes: "1440x900",
+      }),
+    ]),
+  );
+  for (const screenshot of manifestJson.screenshots as Array<{ src: string }>) {
+    const screenshotAsset = await page.request.get(
+      new URL(screenshot.src, page.url()).toString(),
+    );
+    expect(screenshotAsset.ok()).toBe(true);
+  }
   await expect(page.locator('link[rel="icon"][sizes="any"]')).toHaveAttribute(
     "href",
     /favicon\.ico\?v=[0-9a-f]{12}$/,
@@ -280,6 +403,69 @@ test("publishes PWA metadata and offline app shell", async ({
   await page.goto("/");
   await expect(page.getByTestId("dashboard")).toBeVisible();
   await context.setOffline(false);
+});
+
+test("shows a native install CTA and then hides it after installation", async ({
+  page,
+}) => {
+  await mockPwaInstallState(page, { autoAppInstalled: true });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const target = window as Window & {
+      __dispatchMockBeforeInstallPrompt?: () => void;
+    };
+    target.__dispatchMockBeforeInstallPrompt?.();
+  });
+
+  await expect(
+    page.getByTestId("app-header-install-cta-desktop"),
+  ).toBeVisible();
+  await page.getByTestId("app-header-install-cta-desktop").click();
+  await expect(page.getByTestId("app-header-install-cta-desktop")).toHaveCount(
+    0,
+  );
+  await expect(
+    page.evaluate(() => {
+      const target = window as Window & {
+        __mockInstallPromptCalls?: number;
+      };
+      return target.__mockInstallPromptCalls ?? 0;
+    }),
+  ).resolves.toBe(1);
+
+  await page.getByRole("link", { name: "About" }).click();
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(page.getByTestId("about-install-card")).toBeVisible();
+  await expect(page.getByTestId("about-install-status")).toContainText(
+    "Installed",
+  );
+  await expect(page.getByTestId("about-install-cta")).toHaveCount(0);
+});
+
+test("keeps About fallback copy and reflects installed window chrome state", async ({
+  page,
+}) => {
+  await mockPwaInstallState(page, {
+    displayMode: "standalone",
+    overlayVisible: true,
+  });
+  await page.goto("/about");
+
+  await expect(page.getByTestId("app-shell")).toHaveAttribute(
+    "data-display-mode",
+    "window-controls-overlay",
+  );
+  await expect(page.getByTestId("app-shell")).toHaveAttribute(
+    "data-window-controls-overlay",
+    "visible",
+  );
+  await expect(page.getByTestId("about-install-status")).toContainText(
+    "Installed",
+  );
+  await expect(page.getByText("Dashboard · Firmware flash")).toBeVisible();
+
+  await page.goto("/");
+  await expect(page.getByTestId("about-install-card")).toHaveCount(0);
 });
 
 test("opens add device modal with supported connection methods (web)", async ({

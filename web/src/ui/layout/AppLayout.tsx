@@ -3,7 +3,8 @@ import { useLocation } from "react-router";
 import { useDemoMode } from "../../app/demo-mode";
 import { DemoLink } from "../../app/demo-navigation";
 import { useTheme } from "../../app/theme-ui";
-import { IconButton } from "../actions/ActionButton";
+import { usePwaInstall } from "../../pwa/install";
+import { ActionButton, IconButton } from "../actions/ActionButton";
 import { BrandMark } from "../brand/BrandMark";
 import { ThemeMenu } from "../nav/ThemeMenu";
 import { DemoControlPanel } from "./DemoControlPanel";
@@ -32,15 +33,24 @@ export function AppLayout({
 }) {
   const { theme, setTheme } = useTheme();
   const { enabled: demoEnabled } = useDemoMode();
+  const {
+    canPromptInstall,
+    displayMode,
+    isInstalled,
+    isWindowControlsOverlayVisible,
+    promptInstall,
+  } = usePwaInstall();
   const location = useLocation();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const lastRouteKeyRef = useRef(`${location.pathname}${location.search}`);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const [installing, setInstalling] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const routeKey = `${location.pathname}${location.search}`;
 
   const showTheme = location.pathname === "/" || location.pathname === "/about";
   const showDemoControl = demoEnabled && location.pathname !== "/flash";
+  const showInstallCta = canPromptInstall && !isInstalled;
   const mobileBrandLabel = headerInfo?.mobileTitle ?? headerInfo?.title;
 
   useEffect(() => {
@@ -48,13 +58,39 @@ export function AppLayout({
     if (!dialog) {
       return;
     }
-    if (mobileDrawerOpen && !dialog.open) {
-      dialog.showModal();
-      return;
+    let frameId = 0;
+    if (mobileDrawerOpen) {
+      if (!dialog.open) {
+        frameId = window.requestAnimationFrame(() => {
+          if (dialog.open) {
+            return;
+          }
+          try {
+            dialog.showModal();
+          } catch (error) {
+            if (
+              !(error instanceof DOMException) ||
+              error.name !== "InvalidStateError"
+            ) {
+              throw error;
+            }
+          }
+        });
+      }
+      return () => {
+        if (frameId !== 0) {
+          window.cancelAnimationFrame(frameId);
+        }
+      };
     }
     if (!mobileDrawerOpen && dialog.open) {
       dialog.close();
     }
+    return () => {
+      if (frameId !== 0) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
   }, [mobileDrawerOpen]);
 
   useEffect(() => {
@@ -72,6 +108,18 @@ export function AppLayout({
     }, 0);
   };
 
+  const onPromptInstall = async () => {
+    if (!showInstallCta || installing) {
+      return;
+    }
+    setInstalling(true);
+    try {
+      await promptInstall();
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   const aboutClassName =
     "flex h-9 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-transparent px-3 text-[12px] font-bold text-[var(--text)] sm:px-4";
   const mobileTriggerClassName =
@@ -84,10 +132,32 @@ export function AppLayout({
         })
       : sidebar;
 
+  const renderInstallAction = (testId: string, compact = false) =>
+    showInstallCta ? (
+      <ActionButton
+        className={compact ? "min-w-[88px]" : "min-w-[112px]"}
+        emphasis="solid"
+        loading={installing}
+        size="sm"
+        tone="primary"
+        onClick={() => void onPromptInstall()}
+        data-testid={testId}
+      >
+        {compact ? "Install" : "Install app"}
+      </ActionButton>
+    ) : null;
+
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="border-b border-[var(--border)] bg-[var(--panel-2)]">
-        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
+    <div
+      className="app-shell flex min-h-screen flex-col"
+      data-display-mode={displayMode}
+      data-testid="app-shell"
+      data-window-controls-overlay={
+        isWindowControlsOverlayVisible ? "visible" : "hidden"
+      }
+    >
+      <header className="app-shell__header border-b border-[var(--border)] bg-[var(--panel-2)]">
+        <div className="app-shell__frame mx-auto max-w-[1600px]">
           <div className="flex min-h-16 items-center justify-between gap-3 lg:hidden">
             <DemoLink
               className="flex min-w-0 items-center gap-2.5 truncate text-[16px] font-bold"
@@ -106,6 +176,7 @@ export function AppLayout({
             </DemoLink>
             <div className="flex shrink-0 items-center gap-2">
               {showDemoControl ? <DemoControlPanel /> : null}
+              {renderInstallAction("app-header-install-cta-mobile", true)}
               {showTheme ? (
                 <div className="hidden sm:block">
                   <ThemeMenu value={theme} onChange={setTheme} />
@@ -180,6 +251,7 @@ export function AppLayout({
                     <ThemeMenu value={theme} onChange={setTheme} />
                   </div>
                 ) : null}
+                {renderInstallAction("app-header-install-cta-desktop")}
                 <DemoLink className={aboutClassName} to="/about">
                   About
                 </DemoLink>
@@ -198,7 +270,7 @@ export function AppLayout({
           >
             {renderSidebar(false)}
           </aside>
-          <main className="min-h-0 min-w-0 flex-1 px-4 py-6 sm:px-6 lg:overflow-y-auto lg:px-8">
+          <main className="app-shell__main min-h-0 min-w-0 flex-1 lg:overflow-y-auto">
             {children}
           </main>
         </div>

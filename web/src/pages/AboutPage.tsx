@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useDesktopAgent } from "../app/desktop-agent-ui";
 import { resetStorage } from "../domain/desktopStorage";
+import { usePwaInstall } from "../pwa/install";
 import { ActionButton } from "../ui/actions/ActionButton";
 import { ConfirmDialog } from "../ui/actions/ConfirmDialog";
 import { useToast } from "../ui/toast/ToastProvider";
@@ -23,13 +24,65 @@ function envLink(key: string): string | null {
 export function AboutPage() {
   const { sha, date, version } = buildInfo();
   const { agent, status } = useDesktopAgent();
+  const {
+    canPromptInstall,
+    displayMode,
+    installStatus,
+    isWindowControlsOverlayVisible,
+    promptInstall,
+  } = usePwaInstall();
   const { pushToast } = useToast();
+  const [installing, setInstalling] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
 
   const repoUrl = envLink("VITE_REPO_URL");
   const docsUrl = envLink("VITE_DOCS_URL");
   const issuesUrl = envLink("VITE_ISSUES_URL");
+
+  const installStatusLabel =
+    installStatus === "installed"
+      ? displayMode === "window-controls-overlay"
+        ? "Installed window overlay"
+        : "Installed app shell"
+      : installStatus === "promptable"
+        ? "Ready to install"
+        : "Use browser install menu";
+  const installStatusDetail =
+    installStatus === "installed"
+      ? "This browser is already running the standalone console shell."
+      : installStatus === "promptable"
+        ? "Install the console for offline launch, a dedicated window, and direct shortcuts into Dashboard and Firmware flash."
+        : "If no Install button appears, use the browser install or add-to-home-screen menu. Chrome and Edge on desktop or Android expose the richest flow.";
+  const displayModeLabel =
+    displayMode === "window-controls-overlay"
+      ? "window-controls-overlay"
+      : displayMode;
+
+  const onPromptInstall = async () => {
+    if (!canPromptInstall || installing) {
+      return;
+    }
+    setInstalling(true);
+    try {
+      const outcome = await promptInstall();
+      if (outcome === "accepted") {
+        pushToast({
+          message: "Install prompt accepted.",
+          variant: "success",
+        });
+        return;
+      }
+      if (outcome === "dismissed") {
+        pushToast({
+          message: "Install prompt dismissed.",
+          variant: "warning",
+        });
+      }
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   const onResetStorage = async () => {
     if (!agent || status !== "ready" || resetting) {
@@ -150,6 +203,66 @@ export function AboutPage() {
               Report: 1s • Offline: 10s
             </div>
             <div className="text-[12px] font-semibold">Replug: one-shot</div>
+          </div>
+        </div>
+
+        <div
+          className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]"
+          data-testid="about-install-card"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="text-[16px] font-bold leading-5">Install app</div>
+              <div
+                className="mt-2 inline-flex w-fit rounded-full border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1 text-[11px] font-bold text-[var(--primary)]"
+                data-testid="about-install-status"
+              >
+                {installStatusLabel}
+              </div>
+              <div className="mt-3 max-w-[48ch] text-[12px] font-semibold leading-5 text-[var(--muted)]">
+                {installStatusDetail}
+              </div>
+            </div>
+            {canPromptInstall ? (
+              <ActionButton
+                emphasis="solid"
+                loading={installing}
+                tone="primary"
+                onClick={() => void onPromptInstall()}
+                data-testid="about-install-cta"
+              >
+                Install app
+              </ActionButton>
+            ) : null}
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-3">
+              <div className="text-[11px] font-bold text-[var(--muted)]">
+                launch mode
+              </div>
+              <div className="mt-1 text-[12px] font-semibold">
+                {displayModeLabel}
+              </div>
+            </div>
+            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-3">
+              <div className="text-[11px] font-bold text-[var(--muted)]">
+                titlebar
+              </div>
+              <div className="mt-1 text-[12px] font-semibold">
+                {isWindowControlsOverlayVisible
+                  ? "overlay active"
+                  : "browser chrome"}
+              </div>
+            </div>
+            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-3">
+              <div className="text-[11px] font-bold text-[var(--muted)]">
+                shortcuts
+              </div>
+              <div className="mt-1 text-[12px] font-semibold">
+                Dashboard · Firmware flash
+              </div>
+            </div>
           </div>
         </div>
 

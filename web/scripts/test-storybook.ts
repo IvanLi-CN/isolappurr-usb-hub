@@ -73,10 +73,13 @@ process.on("SIGTERM", () => {
 
 try {
   await waitForServer(url);
-  const tests = Bun.spawn(["bunx", "test-storybook", "--url", url, "--ci"], {
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  const tests = Bun.spawn(
+    ["bunx", "test-storybook", "--url", url, "--ci", "--skipTags", "skip-test"],
+    {
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  );
   const code = await tests.exited;
   stopServer();
   await server.exited.catch(() => undefined);

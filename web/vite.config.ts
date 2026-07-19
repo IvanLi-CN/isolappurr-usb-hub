@@ -99,6 +99,8 @@ export default defineConfig(() => {
           "icons/maskable-512.png",
           "brand/isolapurr-logo.png",
           "brand/github-social-preview.png",
+          "pwa/dashboard-wide.png",
+          "pwa/flash-wide.png",
         ],
         manifest: {
           id: base,
@@ -114,6 +116,36 @@ export default defineConfig(() => {
           background_color: "#f6f7fb",
           theme_color: "#a6c9bd",
           categories: ["productivity", "utilities"],
+          shortcuts: [
+            {
+              name: "Dashboard",
+              short_name: "Dashboard",
+              description:
+                "Open the multi-device overview with saved hubs and quick power controls.",
+              url: ".",
+              icons: [
+                {
+                  src: versionedInstallIconPath("icons/pwa-192.png"),
+                  sizes: "192x192",
+                  type: "image/png",
+                },
+              ],
+            },
+            {
+              name: "Firmware flash",
+              short_name: "Flash",
+              description:
+                "Open the standalone flash workbench for provisioning, recovery, and release installs.",
+              url: "flash",
+              icons: [
+                {
+                  src: versionedInstallIconPath("icons/pwa-192.png"),
+                  sizes: "192x192",
+                  type: "image/png",
+                },
+              ],
+            },
+          ],
           icons: [
             {
               src: versionedInstallIconPath("icons/pwa-192.png"),
@@ -138,6 +170,24 @@ export default defineConfig(() => {
               sizes: "512x512",
               type: "image/png",
               purpose: "maskable",
+            },
+          ],
+          screenshots: [
+            {
+              src: "pwa/dashboard-wide.png",
+              sizes: "1440x900",
+              type: "image/png",
+              form_factor: "wide",
+              label:
+                "Dashboard overview with saved devices and quick power controls.",
+            },
+            {
+              src: "pwa/flash-wide.png",
+              sizes: "1440x900",
+              type: "image/png",
+              form_factor: "wide",
+              label:
+                "Firmware flash workbench with bundled releases and transport controls.",
             },
           ],
         },
