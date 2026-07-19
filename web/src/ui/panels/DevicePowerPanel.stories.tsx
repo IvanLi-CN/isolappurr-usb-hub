@@ -381,6 +381,22 @@ const defaultArgs: Story["args"] = {
   replugUsbC: async () => undefined,
 };
 
+function thermalStoryArgs(
+  thermal: PdDiagnosticsResponse["thermal"],
+  overrides: Partial<Story["args"]> = {},
+): Story["args"] {
+  return {
+    ...defaultArgs,
+    sharedPdDiagnostics: withThermal(thermal),
+    loadPdDiagnostics: () =>
+      Promise.resolve({
+        ok: true,
+        value: withThermal(thermal),
+      }),
+    ...overrides,
+  };
+}
+
 export const Default: Story = {
   args: {
     ...defaultArgs,
@@ -714,30 +730,18 @@ export const OutputOffManualHighVoltage: Story = {
 
 export const ThermalNormal: Story = {
   args: {
-    ...defaultArgs,
-    sharedPdDiagnostics: withThermal({
+    ...thermalStoryArgs({
       ...pdDiagnostics.thermal,
       state: "normal",
       reason: "none",
       effective_power_watts: 100,
     }),
-    loadPdDiagnostics: () =>
-      Promise.resolve({
-        ok: true,
-        value: withThermal({
-          ...pdDiagnostics.thermal,
-          state: "normal",
-          reason: "none",
-          effective_power_watts: 100,
-        }),
-      }),
   },
 };
 
 export const ThermalDerating: Story = {
   args: {
-    ...defaultArgs,
-    sharedPdDiagnostics: withThermal({
+    ...thermalStoryArgs({
       ...pdDiagnostics.thermal,
       sensors: {
         mcu: { temperature_deci_c: 789, status: "ok" },
@@ -748,123 +752,72 @@ export const ThermalDerating: Story = {
       reason: "tmp112_hot",
       effective_power_watts: 75,
     }),
-    loadPdDiagnostics: () =>
-      Promise.resolve({
-        ok: true,
-        value: withThermal({
-          ...pdDiagnostics.thermal,
-          sensors: {
-            mcu: { temperature_deci_c: 789, status: "ok" },
-            tmp112: { temperature_deci_c: 851, status: "ok" },
-          },
-          hottest_temperature_deci_c: 851,
-          state: "derating",
-          reason: "tmp112_hot",
-          effective_power_watts: 75,
-        }),
-      }),
   },
 };
 
 export const ThermalShutdown: Story = {
   args: {
-    ...defaultArgs,
-    sharedPowerConfig: controlledManualOutputOffConfig,
-    loadPowerConfig: () => ok(controlledManualOutputOffConfig),
-    sharedPdDiagnostics: withThermal({
-      ...pdDiagnostics.thermal,
-      sensors: {
-        mcu: { temperature_deci_c: 1008, status: "ok" },
-        tmp112: { temperature_deci_c: 984, status: "ok" },
+    ...thermalStoryArgs(
+      {
+        ...pdDiagnostics.thermal,
+        sensors: {
+          mcu: { temperature_deci_c: 1008, status: "ok" },
+          tmp112: { temperature_deci_c: 984, status: "ok" },
+        },
+        hottest_temperature_deci_c: 1008,
+        state: "shutdown",
+        reason: "mcu_critical",
+        effective_power_watts: 0,
       },
-      hottest_temperature_deci_c: 1008,
-      state: "shutdown",
-      reason: "mcu_critical",
-      effective_power_watts: 0,
-    }),
-    loadPdDiagnostics: () =>
-      Promise.resolve({
-        ok: true,
-        value: withThermal({
-          ...pdDiagnostics.thermal,
-          sensors: {
-            mcu: { temperature_deci_c: 1008, status: "ok" },
-            tmp112: { temperature_deci_c: 984, status: "ok" },
-          },
-          hottest_temperature_deci_c: 1008,
-          state: "shutdown",
-          reason: "mcu_critical",
-          effective_power_watts: 0,
-        }),
-      }),
+      {
+        sharedPowerConfig: controlledManualOutputOffConfig,
+        loadPowerConfig: () => ok(controlledManualOutputOffConfig),
+      },
+    ),
   },
 };
 
 export const ThermalRearmRequired: Story = {
   args: {
-    ...defaultArgs,
-    sharedPowerConfig: controlledManualOutputOffConfig,
-    loadPowerConfig: () => ok(controlledManualOutputOffConfig),
-    sharedPdDiagnostics: withThermal({
-      ...pdDiagnostics.thermal,
-      sensors: {
-        mcu: { temperature_deci_c: 941, status: "ok" },
-        tmp112: { temperature_deci_c: 965, status: "ok" },
+    ...thermalStoryArgs(
+      {
+        ...pdDiagnostics.thermal,
+        sensors: {
+          mcu: { temperature_deci_c: 941, status: "ok" },
+          tmp112: { temperature_deci_c: 965, status: "ok" },
+        },
+        hottest_temperature_deci_c: 965,
+        state: "rearm_required",
+        reason: "none",
+        effective_power_watts: 0,
       },
-      hottest_temperature_deci_c: 965,
-      state: "rearm_required",
-      reason: "none",
-      effective_power_watts: 0,
-    }),
-    loadPdDiagnostics: () =>
-      Promise.resolve({
-        ok: true,
-        value: withThermal({
-          ...pdDiagnostics.thermal,
-          sensors: {
-            mcu: { temperature_deci_c: 941, status: "ok" },
-            tmp112: { temperature_deci_c: 965, status: "ok" },
-          },
-          hottest_temperature_deci_c: 965,
-          state: "rearm_required",
-          reason: "none",
-          effective_power_watts: 0,
-        }),
-      }),
+      {
+        sharedPowerConfig: controlledManualOutputOffConfig,
+        loadPowerConfig: () => ok(controlledManualOutputOffConfig),
+      },
+    ),
   },
 };
 
 export const ThermalSensorFault: Story = {
   args: {
-    ...defaultArgs,
-    sharedPowerConfig: controlledManualOutputOffConfig,
-    loadPowerConfig: () => ok(controlledManualOutputOffConfig),
-    sharedPdDiagnostics: withThermal({
-      ...pdDiagnostics.thermal,
-      sensors: {
-        mcu: { temperature_deci_c: 512, status: "stale" },
-        tmp112: { temperature_deci_c: null, status: "error" },
+    ...thermalStoryArgs(
+      {
+        ...pdDiagnostics.thermal,
+        sensors: {
+          mcu: { temperature_deci_c: 512, status: "stale" },
+          tmp112: { temperature_deci_c: null, status: "error" },
+        },
+        hottest_temperature_deci_c: 512,
+        state: "sensor_fault",
+        reason: "tmp112_sensor_fault",
+        effective_power_watts: 0,
       },
-      hottest_temperature_deci_c: 512,
-      state: "sensor_fault",
-      reason: "tmp112_sensor_fault",
-      effective_power_watts: 0,
-    }),
-    loadPdDiagnostics: () =>
-      Promise.resolve({
-        ok: true,
-        value: withThermal({
-          ...pdDiagnostics.thermal,
-          sensors: {
-            mcu: { temperature_deci_c: 512, status: "stale" },
-            tmp112: { temperature_deci_c: null, status: "error" },
-          },
-          hottest_temperature_deci_c: 512,
-          state: "sensor_fault",
-          reason: "tmp112_sensor_fault",
-          effective_power_watts: 0,
-        }),
-      }),
+      {
+        sharedPowerConfig: controlledManualOutputOffConfig,
+        loadPowerConfig: () => ok(controlledManualOutputOffConfig),
+      },
+    ),
   },
 };
 
