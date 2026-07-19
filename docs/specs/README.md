@@ -70,3 +70,4 @@
 | k7p9x | Firmware Validation Contract | 已完成 | `k7p9x-firmware-validation-contract/SPEC.md` | 2026-06-13 | Shared no_std firmware core host tests plus firmware-check validation entrypoint |
 | kvbq9 | Web demo surface policy | 已完成 | `kvbq9-web-demo-surface-policy/SPEC.md` | 2026-06-18 | Formal Web verification surfaces locked to production pages, controlled SPA `?demo=true|false`, composite Storybook stories, and spec-owned visual evidence; extra demo pages and page-level stories forbidden |
 | kk6gk | Web error states | 已完成 | `kk6gk-web-error-states/SPEC.md` | 2026-06-18 | Standalone page-level 404, missing saved-device error state, and spec-owned full-viewport browser evidence |
+| m7q4v | tps-fusb 双 FUSB302B PD 与电源路径硬件 | 待设计 | `m7q4v-tps-fusb-dual-pd-hardware/SPEC.md` | 2026-07-11 | Next hardware variant; design contract only, with formal netlist, PCB, and firmware still pending |
