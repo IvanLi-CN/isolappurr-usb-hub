@@ -13,6 +13,71 @@ body {
   min-height: 100dvh;
 }
 
+.app-shell {
+  --app-inset-left: env(safe-area-inset-left, 0px);
+  --app-inset-right: env(safe-area-inset-right, 0px);
+  --app-inset-top: env(safe-area-inset-top, 0px);
+  --app-shell-top-offset: 0px;
+  --app-titlebar-height: 0px;
+}
+
+.app-shell[data-display-mode="fullscreen"],
+.app-shell[data-display-mode="minimal-ui"],
+.app-shell[data-display-mode="standalone"] {
+  --app-shell-top-offset: 0.5rem;
+}
+
+.app-shell[data-window-controls-overlay="visible"] {
+  --app-inset-left: max(env(safe-area-inset-left, 0px), env(titlebar-area-x, 0px));
+  --app-inset-right: max(
+    env(safe-area-inset-right, 0px),
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
+  );
+  --app-inset-top: max(env(safe-area-inset-top, 0px), env(titlebar-area-height, 0px));
+  --app-shell-top-offset: 0.75rem;
+  --app-titlebar-height: env(titlebar-area-height, 0px);
+}
+
+.app-shell__header {
+  padding-top: calc(var(--app-inset-top) + var(--app-shell-top-offset));
+}
+
+.app-shell__frame {
+  padding-left: calc(1rem + var(--app-inset-left));
+  padding-right: calc(1rem + var(--app-inset-right));
+}
+
+.app-shell__main {
+  padding-top: calc(1.5rem + min(var(--app-titlebar-height), 1rem));
+  padding-right: calc(1rem + var(--app-inset-right));
+  padding-bottom: 1.5rem;
+  padding-left: calc(1rem + var(--app-inset-left));
+}
+
+@media (min-width: 640px) {
+  .app-shell__frame {
+    padding-left: calc(1.5rem + var(--app-inset-left));
+    padding-right: calc(1.5rem + var(--app-inset-right));
+  }
+
+  .app-shell__main {
+    padding-right: calc(1.5rem + var(--app-inset-right));
+    padding-left: calc(1.5rem + var(--app-inset-left));
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell__frame {
+    padding-left: calc(2rem + var(--app-inset-left));
+    padding-right: calc(2rem + var(--app-inset-right));
+  }
+
+  .app-shell__main {
+    padding-right: calc(2rem + var(--app-inset-right));
+    padding-left: calc(2rem + var(--app-inset-left));
+  }
+}
+
 :root,
 [data-theme="isolapurr"] {
   --bg: #f6f7fb;

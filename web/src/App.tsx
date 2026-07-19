@@ -22,6 +22,7 @@ import { DeviceInfoPage } from "./pages/DeviceInfoPage";
 import { DevicePowerPage } from "./pages/DevicePowerPage";
 import { FirmwareFlashPage } from "./pages/FirmwareFlashPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { PwaInstallProvider } from "./pwa/install";
 import { AppLayout } from "./ui/layout/AppLayout";
 import { DeviceListPanel } from "./ui/panels/DeviceListPanel";
 import { ToastProvider } from "./ui/toast/ToastProvider";
@@ -145,34 +146,36 @@ export default function App() {
       <DemoModeProvider>
         <DemoBootstrapper />
         <DesktopAgentProvider>
-          <ThemeProvider>
-            <ToastProvider>
-              <DevicesProvider>
-                <DeviceRuntimeProvider>
-                  <Routes>
-                    <Route path="/" element={<RootLayout />}>
-                      <Route index element={<DashboardPage />} />
-                      <Route
-                        path="devices/:deviceId"
-                        element={<DeviceDashboardPage />}
-                      />
-                      <Route
-                        path="devices/:deviceId/info"
-                        element={<DeviceInfoPage />}
-                      />
-                      <Route
-                        path="devices/:deviceId/power"
-                        element={<DevicePowerPage />}
-                      />
-                      <Route path="flash" element={<FirmwareFlashPage />} />
-                      <Route path="about" element={<AboutPage />} />
-                    </Route>
-                    <Route path="*" element={<NotFoundPage />} />
-                  </Routes>
-                </DeviceRuntimeProvider>
-              </DevicesProvider>
-            </ToastProvider>
-          </ThemeProvider>
+          <PwaInstallProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <DevicesProvider>
+                  <DeviceRuntimeProvider>
+                    <Routes>
+                      <Route path="/" element={<RootLayout />}>
+                        <Route index element={<DashboardPage />} />
+                        <Route
+                          path="devices/:deviceId"
+                          element={<DeviceDashboardPage />}
+                        />
+                        <Route
+                          path="devices/:deviceId/info"
+                          element={<DeviceInfoPage />}
+                        />
+                        <Route
+                          path="devices/:deviceId/power"
+                          element={<DevicePowerPage />}
+                        />
+                        <Route path="flash" element={<FirmwareFlashPage />} />
+                        <Route path="about" element={<AboutPage />} />
+                      </Route>
+                      <Route path="*" element={<NotFoundPage />} />
+                    </Routes>
+                  </DeviceRuntimeProvider>
+                </DevicesProvider>
+              </ToastProvider>
+            </ThemeProvider>
+          </PwaInstallProvider>
         </DesktopAgentProvider>
       </DemoModeProvider>
     </BrowserRouter>

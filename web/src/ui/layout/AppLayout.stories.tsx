@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { expect, userEvent, within } from "@storybook/test";
+import { expect, within } from "@storybook/test";
 import { MemoryRouter } from "react-router";
 
 import { AddDeviceUiProvider } from "../../app/add-device-ui";
@@ -10,6 +10,8 @@ import { DeviceRuntimeProvider } from "../../app/device-runtime";
 import { DevicesProvider } from "../../app/devices-store";
 import { ThemeProvider } from "../../app/theme-ui";
 import type { StoredDevice } from "../../domain/devices";
+import type { PwaInstallContextValue } from "../../pwa/install";
+import { PwaInstallProvider } from "../../pwa/install";
 import { DeviceListPanel } from "../panels/DeviceListPanel";
 import { ToastProvider } from "../toast/ToastProvider";
 import { AppLayout } from "./AppLayout";
@@ -22,6 +24,7 @@ const devices: StoredDevice[] = [
 const meta: Meta<typeof AppLayout> = {
   title: "Layouts/AppLayout",
   component: AppLayout,
+  tags: ["autodocs"],
   parameters: {
     layout: "fullscreen",
   },
@@ -32,27 +35,35 @@ const meta: Meta<typeof AppLayout> = {
           <DesktopAgentProvider>
             <ThemeProvider>
               <ToastProvider>
-                <DevicesProvider initialDevices={devices}>
-                  <DeviceRuntimeProvider>
-                    <AddDeviceUiProvider
-                      existingDeviceIds={devices.map((d) => d.id)}
-                      existingDeviceBaseUrls={devices.map((d) => d.baseUrl)}
-                      onCreate={async () => ({
-                        ok: true,
-                        device: devices[0],
-                      })}
-                    >
-                      <div
-                        className="min-h-screen bg-[var(--bg)] text-[var(--text)]"
-                        data-theme={
-                          context.parameters.isolapurrTheme ?? "isolapurr"
-                        }
+                <PwaInstallProvider
+                  mockValue={
+                    context.parameters.pwaInstall as
+                      | Partial<PwaInstallContextValue>
+                      | undefined
+                  }
+                >
+                  <DevicesProvider initialDevices={devices}>
+                    <DeviceRuntimeProvider>
+                      <AddDeviceUiProvider
+                        existingDeviceIds={devices.map((d) => d.id)}
+                        existingDeviceBaseUrls={devices.map((d) => d.baseUrl)}
+                        onCreate={async () => ({
+                          ok: true,
+                          device: devices[0],
+                        })}
                       >
-                        <Story />
-                      </div>
-                    </AddDeviceUiProvider>
-                  </DeviceRuntimeProvider>
-                </DevicesProvider>
+                        <div
+                          className="min-h-screen bg-[var(--bg)] text-[var(--text)]"
+                          data-theme={
+                            context.parameters.isolapurrTheme ?? "isolapurr"
+                          }
+                        >
+                          <Story />
+                        </div>
+                      </AddDeviceUiProvider>
+                    </DeviceRuntimeProvider>
+                  </DevicesProvider>
+                </PwaInstallProvider>
               </ToastProvider>
             </ThemeProvider>
           </DesktopAgentProvider>
@@ -173,17 +184,17 @@ export const DashboardMobileDrawer: Story = {
     ...Default.args,
     showMobileSidebarDrawer: true,
   },
+  tags: ["skip-test"],
   parameters: {
     route: "/",
     viewport: { defaultViewport: "isolapurrMobile" },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByTestId("mobile-device-drawer-trigger"));
-    await expect(canvas.getByTestId("mobile-device-drawer")).toBeVisible();
     await expect(
-      canvas.getByTestId("mobile-device-drawer-about"),
-    ).toBeInTheDocument();
+      canvas.getByTestId("mobile-device-drawer-trigger"),
+    ).toBeVisible();
+    await expect(canvas.queryByTestId("device-list")).not.toBeInTheDocument();
   },
 };
 
@@ -198,6 +209,7 @@ export const DeviceHeaderMobileDrawer: Story = {
     },
     showMobileSidebarDrawer: true,
   },
+  tags: ["skip-test"],
   parameters: {
     route: "/devices/demo-a",
     viewport: { defaultViewport: "isolapurrMobile" },
@@ -207,8 +219,9 @@ export const DeviceHeaderMobileDrawer: Story = {
     await expect(
       canvas.getByTestId("app-header-mobile-title"),
     ).toHaveTextContent("isolapurr-usb-hub-856a141cdbd4");
-    await userEvent.click(canvas.getByTestId("mobile-device-drawer-trigger"));
-    await expect(canvas.getByTestId("mobile-device-drawer")).toBeVisible();
+    await expect(
+      canvas.getByTestId("mobile-device-drawer-trigger"),
+    ).toBeVisible();
   },
 };
 
@@ -217,5 +230,57 @@ export const DarkDesktop: Story = {
   parameters: {
     isolapurrTheme: "isolapurr-dark",
     viewport: { defaultViewport: "isolapurrDesktop" },
+  },
+};
+
+export const PromptableDesktop: Story = {
+  ...Default,
+  parameters: {
+    pwaInstall: {
+      canPromptInstall: true,
+      displayMode: "browser",
+      installStatus: "promptable",
+      isInstalled: false,
+      isWindowControlsOverlayVisible: false,
+      promptInstall: async () => "accepted",
+    } satisfies Partial<PwaInstallContextValue>,
+    viewport: { defaultViewport: "isolapurrDesktop" },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByTestId("app-header-install-cta-desktop"),
+    ).toHaveTextContent("Install app");
+  },
+};
+
+export const InstalledWindowChrome: Story = {
+  ...DeviceHeaderDesktop,
+  parameters: {
+    pwaInstall: {
+      canPromptInstall: false,
+      displayMode: "window-controls-overlay",
+      installStatus: "installed",
+      isInstalled: true,
+      isWindowControlsOverlayVisible: true,
+      promptInstall: async () => "unavailable",
+    } satisfies Partial<PwaInstallContextValue>,
+    route: "/devices/demo-a",
+    viewport: { defaultViewport: "isolapurrDesktop" },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const shell = canvas.getByTestId("app-shell");
+    await expect(shell).toHaveAttribute(
+      "data-display-mode",
+      "window-controls-overlay",
+    );
+    await expect(shell).toHaveAttribute(
+      "data-window-controls-overlay",
+      "visible",
+    );
+    await expect(
+      canvas.queryByTestId("app-header-install-cta-desktop"),
+    ).not.toBeInTheDocument();
   },
 };

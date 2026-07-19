@@ -37,6 +37,15 @@ Production social preview metadata uses an absolute image URL on GitHub Pages. F
 - The generated web bundle keeps the most recent 50 app-upgrade releases and only the latest stable plus latest prerelease recovery images.
 - Firmware assets stay same-origin under `firmware/releases/**` and are fetched on demand by `/flash`; they are intentionally excluded from service-worker install-time precache.
 
+## PWA install surface
+
+- The app shell keeps a shared PWA install runtime for `beforeinstallprompt`, `appinstalled`, `display-mode`, and `window-controls-overlay`.
+- When the browser exposes a native install prompt and the shell is not already installed, the global header shows an `Install app` CTA. The `/about` page always keeps the install guide plus a browser-menu fallback when no native prompt is available.
+- Manifest shortcuts are fixed to the Dashboard (`/`) and Firmware flash workbench (`/flash`).
+- Manifest screenshots live under `web/public/pwa/` and must come from stable owner-facing app-shell states, never from marketing renders.
+- Refresh those screenshots with a running local preview/build host:
+  - `bun run capture:pwa-screenshots -- --base-url http://127.0.0.1:45175`
+
 ## Install icon contract
 
 - `web/src/assets/brand/isolapurr-mark.svg` is the single source of truth for all install icons.

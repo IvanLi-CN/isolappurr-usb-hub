@@ -214,7 +214,10 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 
 ## Visual Evidence
 
-Evidence source: Storybook canvas, captured from this worktree implementation.
+Evidence sources:
+
+- Storybook canvas for reusable component and composite-surface captures
+- Production SPA routes where the caption explicitly names `?demo=true`
 
 Add device discovery canonical device IDs:
 
@@ -343,6 +346,34 @@ Saved-device Power shell header on desktop: production SPA route `/devices/aabbc
 PR: include
 
 ![Saved-device Power shell header desktop](assets/saved-device-power-shell-header-desktop.png)
+
+Dashboard desktop shell, light theme: production SPA route `/?demo=true`,
+showing the restored shared brand slot with the IsolaPurr mark plus single-line
+product label, using the same controlled app-shell state source as the PWA
+manifest screenshot refresh.
+
+- PR: include
+- source_type: `ui_demo`
+- target_program: `mock-only`
+- capture_scope: `browser-viewport`
+- sensitive_exclusion: `No real device, desktop, or unrelated application data`
+- submission_gate: `approved`
+
+![Dashboard shell brand slot light](assets/dashboard-shell-brand-light.png)
+
+Dashboard desktop shell, dark theme: production SPA route `/?demo=true`,
+showing the same restored shared brand slot under `isolapurr-dark` so the
+owner-facing shell evidence matches the installed/header brand fix across both
+supported themes.
+
+- PR: include
+- source_type: `ui_demo`
+- target_program: `mock-only`
+- capture_scope: `browser-viewport`
+- sensitive_exclusion: `No real device, desktop, or unrelated application data`
+- submission_gate: `approved`
+
+![Dashboard shell brand slot dark](assets/dashboard-shell-brand-dark.png)
 
 Dashboard mobile device drawer: production SPA route `/?demo=true`, showing the header-triggered right-side drawer with saved-device cards, `+ Add`, and `About`.
 
