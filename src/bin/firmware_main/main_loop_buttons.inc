@@ -845,6 +845,9 @@
                         previous_tps_iout_limit_readback_enabled,
                     )
                 };
+            api_thermal = thermal_controller.telemetry(power_config.capability.power_watts);
+            let mut api_effective_power_config = power_config;
+            api_effective_power_config.capability.power_watts = api_thermal.effective_power_watts;
 
             let mut guard = api_state.lock().await;
             let idle_bias_run = guard.idle_bias.run;
@@ -866,7 +869,8 @@
                 sw2303_error_latched,
                 tps_error_latched,
                 sw2303_readback_config,
-                sw2303_readback_matches_config: sw2303_readback_config.matches_config(&power_config),
+                sw2303_readback_matches_config: sw2303_readback_config
+                    .matches_config(&api_effective_power_config),
                 sw2303_request_mv: request.map(|request| request.v_req_mv as u32),
                 sw2303_request_ma: request.map(|request| request.i_req_ma as u32),
                 sw2303_vbus_mv: request.and_then(|request| request.vbus_mv),
@@ -889,6 +893,7 @@
                 tps_setpoint_iout_limit_ma: current_tps_setpoint_iout_limit_ma,
                 tps_iout_limit_readback_ma,
                 tps_iout_limit_readback_enabled,
+                thermal: api_thermal,
                 runtime_recovery_count: pd_runtime_recovery_count,
                 sample_uptime_ms: uptime_ms_from_instant(now),
             };

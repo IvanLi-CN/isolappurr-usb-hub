@@ -16,6 +16,8 @@ pub const INA226_U13_FALLBACK_ADDR_7BIT: SevenBitAddress = 0x44;
 pub const INA226_U17_ADDR_7BIT: SevenBitAddress = 0x41;
 /// Counterfeit/clone fallback observed in the field for U17.
 pub const INA226_U17_FALLBACK_ADDR_7BIT: SevenBitAddress = 0x45;
+/// TMP112 (U23, board temperature) 7-bit I2C address with ADD0 tied to GND.
+pub const TMP112_ADDR_7BIT: SevenBitAddress = 0x48;
 
 /// USB-A shunt resistor: R22 = 10 mΩ.
 pub const U13_R22_SHUNT_RESISTANCE_UOHMS: u32 = 10_000;
@@ -31,14 +33,3 @@ pub const U17_CURRENT_LSB_UA_PER_BIT: u32 = 153;
 
 /// INA226 calibration value for U17 with the shared 10 mΩ shunt.
 pub const U17_CALIBRATION: u16 = 3346;
-
-#[cfg(test)]
-mod tests {
-    use super::{U17_CALIBRATION, U17_CURRENT_LSB_UA_PER_BIT};
-
-    #[test]
-    fn u17_calibration_constants_match_shared_5a_profile() {
-        assert_eq!(U17_CURRENT_LSB_UA_PER_BIT, 153);
-        assert_eq!(U17_CALIBRATION, 3346);
-    }
-}

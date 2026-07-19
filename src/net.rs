@@ -27,6 +27,7 @@ use isolapurr_usb_hub::provisioning::{
     DEFAULT_USB_C_DOWNSTREAM_ROUTE, UsbCDownstreamRoute, WifiCredentials,
 };
 use isolapurr_usb_hub::release_version;
+use isolapurr_usb_hub::thermal::ThermalTelemetry;
 use static_cell::StaticCell;
 
 use crate::mdns;
@@ -255,6 +256,7 @@ pub struct ApiPdSnapshot {
     pub tps_setpoint_iout_limit_ma: Option<u32>,
     pub tps_iout_limit_readback_ma: Option<u32>,
     pub tps_iout_limit_readback_enabled: Option<bool>,
+    pub thermal: ThermalTelemetry,
     pub runtime_recovery_count: u32,
     pub sample_uptime_ms: u64,
 }
@@ -286,6 +288,7 @@ impl ApiPdSnapshot {
             tps_setpoint_iout_limit_ma: None,
             tps_iout_limit_readback_ma: None,
             tps_iout_limit_readback_enabled: None,
+            thermal: ThermalTelemetry::unknown(),
             runtime_recovery_count: 0,
             sample_uptime_ms: 0,
         }
@@ -975,10 +978,28 @@ mod tests {
                 sample_uptime_ms: 1_500,
             },
             tps_setpoint_output_enabled: Some(true),
+            tps_setpoint_discharge_enabled: Some(false),
             tps_setpoint_mv: Some(9_000),
             tps_setpoint_iout_limit_ma: Some(3_000),
             tps_iout_limit_readback_ma: Some(3_000),
             tps_iout_limit_readback_enabled: Some(true),
+            thermal: ThermalTelemetry {
+                sensors: crate::thermal::ThermalSensors {
+                    mcu: crate::thermal::ThermalSensorReading {
+                        temperature_deci_c: Some(795),
+                        status: crate::thermal::ThermalSensorStatus::Ok,
+                    },
+                    tmp112: crate::thermal::ThermalSensorReading {
+                        temperature_deci_c: Some(812),
+                        status: crate::thermal::ThermalSensorStatus::Ok,
+                    },
+                },
+                hottest_temperature_deci_c: Some(812),
+                state: crate::thermal::ThermalState::Derating,
+                reason: crate::thermal::ThermalReason::Tmp112Hot,
+                effective_power_watts: 90,
+                sample_uptime_ms: 1_500,
+            },
             runtime_recovery_count: 0,
             sample_uptime_ms: 1_500,
         };
@@ -988,6 +1009,7 @@ mod tests {
 
         assert!(body.contains("\"usb_c_actual\":{\"status\":\"ok\",\"voltage_mv\":8950,\"current_ma\":42,\"power_mw\":376,\"sample_uptime_ms\":1500},\"tps_setpoint\""));
         assert!(body.contains("\"iout_limit_ma\":3000,\"ilim_ma\":3000"));
+        assert!(body.contains("\"thermal\":{\"sensors\":{\"mcu\":{\"temperature_deci_c\":795,\"status\":\"ok\"},\"tmp112\":{\"temperature_deci_c\":812,\"status\":\"ok\"}},\"hottest_temperature_deci_c\":812,\"state\":\"derating\",\"reason\":\"tmp112_hot\",\"effective_power_watts\":90,\"sample_uptime_ms\":1500}"));
     }
 
     #[test]

@@ -128,7 +128,9 @@ pub fn write_pd_diagnostics_json(
     write_json_bool_or_null(body, pd.tps_iout_limit_readback_enabled);
     let _ = body.push_str(",\"ma\":");
     write_json_u32_or_null(body, pd.tps_iout_limit_readback_ma);
-    let _ = body.push_str("},\"idle_bias\":");
+    let _ = body.push_str("},\"thermal\":");
+    write_thermal_json(body, &pd.thermal);
+    let _ = body.push_str(",\"idle_bias\":");
     write_idle_bias_json(body, idle_bias);
     let _ = core::write!(
         body,
@@ -136,6 +138,36 @@ pub fn write_pd_diagnostics_json(
         pd.runtime_recovery_count,
         pd.sample_uptime_ms
     );
+}
+
+fn write_thermal_json(body: &mut String, thermal: &isolapurr_usb_hub::thermal::ThermalTelemetry) {
+    let _ = body.push_str("{\"sensors\":{\"mcu\":");
+    write_thermal_sensor_json(body, thermal.sensors.mcu);
+    let _ = body.push_str(",\"tmp112\":");
+    write_thermal_sensor_json(body, thermal.sensors.tmp112);
+    let _ = body.push_str("},\"hottest_temperature_deci_c\":");
+    write_json_i32_or_null(body, thermal.hottest_temperature_deci_c.map(i32::from));
+    let _ = body.push_str(",\"state\":");
+    write_json_string(body, thermal.state.as_str());
+    let _ = body.push_str(",\"reason\":");
+    write_json_string(body, thermal.reason.as_str());
+    let _ = core::write!(
+        body,
+        ",\"effective_power_watts\":{},\"sample_uptime_ms\":{}}}",
+        thermal.effective_power_watts,
+        thermal.sample_uptime_ms
+    );
+}
+
+fn write_thermal_sensor_json(
+    body: &mut String,
+    sensor: isolapurr_usb_hub::thermal::ThermalSensorReading,
+) {
+    let _ = body.push_str("{\"temperature_deci_c\":");
+    write_json_i32_or_null(body, sensor.temperature_deci_c.map(i32::from));
+    let _ = body.push_str(",\"status\":");
+    write_json_string(body, sensor.status.as_str());
+    let _ = body.push('}');
 }
 
 fn write_usb_c_display_json(body: &mut String, pd: &ApiPdSnapshot) {
@@ -439,6 +471,17 @@ fn write_json_bool_or_null(body: &mut String, v: Option<bool>) {
 }
 
 fn write_json_u32_or_null(body: &mut String, v: Option<u32>) {
+    match v {
+        None => {
+            let _ = body.push_str("null");
+        }
+        Some(v) => {
+            let _ = core::write!(body, "{}", v);
+        }
+    }
+}
+
+fn write_json_i32_or_null(body: &mut String, v: Option<i32>) {
     match v {
         None => {
             let _ = body.push_str("null");

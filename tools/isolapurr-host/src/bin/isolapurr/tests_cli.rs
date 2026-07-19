@@ -205,6 +205,23 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
                 "enabled": true,
                 "ma": 3250
             },
+            "thermal": {
+                "sensors": {
+                    "mcu": {
+                        "temperature_deci_c": 792,
+                        "status": "ok"
+                    },
+                    "tmp112": {
+                        "temperature_deci_c": 851,
+                        "status": "ok"
+                    }
+                },
+                "hottest_temperature_deci_c": 851,
+                "state": "derating",
+                "reason": "tmp112_hot",
+                "effective_power_watts": 75,
+                "sample_uptime_ms": 1500
+            },
             "idle_bias": {
                 "correction_enabled": true,
                 "dataset": {
@@ -237,6 +254,11 @@ fn power_show_human_output_summarizes_live_status_without_chip_names() {
     assert!(rendered.contains("Fast-charge profile: QC2.0 20 V enabled, QC3.0 20 V disabled, PE2.0 20 V enabled, non-PD 12 V disabled"));
     assert!(rendered.contains("Negotiated request: 20000 mV @ 3250 mA"));
     assert!(rendered.contains("Active protocol: QC3.0"));
+    assert!(rendered.contains("Thermal state: Derating (TMP112 hot)"));
+    assert!(rendered.contains("Effective thermal cap: 75 W"));
+    assert!(rendered.contains("Hottest temperature: 85.1°C"));
+    assert!(rendered.contains("MCU temperature: 79.2°C (ok)"));
+    assert!(rendered.contains("TMP112 temperature: 85.1°C (ok)"));
     assert!(rendered.contains("TPS IOUT_LIMIT: 3250 mA"));
     assert!(rendered.contains("Idle-bias dataset: valid (3000..21000 mV, 37 points, step 500 mV)"));
     assert!(rendered.contains("Idle-bias correction: enabled"));
@@ -342,6 +364,23 @@ fn power_show_human_output_warns_for_manual_high_voltage_and_output_off() {
                 "enabled": true,
                 "ma": 3000
             },
+            "thermal": {
+                "sensors": {
+                    "mcu": {
+                        "temperature_deci_c": 965,
+                        "status": "ok"
+                    },
+                    "tmp112": {
+                        "temperature_deci_c": 972,
+                        "status": "ok"
+                    }
+                },
+                "hottest_temperature_deci_c": 972,
+                "state": "rearm_required",
+                "reason": "none",
+                "effective_power_watts": 0,
+                "sample_uptime_ms": 1500
+            },
             "runtime_recovery_count": 0,
             "sample_uptime_ms": 1500
         }
@@ -349,9 +388,255 @@ fn power_show_human_output_warns_for_manual_high_voltage_and_output_off() {
 
     assert!(rendered.contains("Runtime 2mm output: disabled"));
     assert!(rendered.contains("Runtime TPS discharge: enabled"));
+    assert!(rendered.contains("Thermal state: Rearm required"));
+    assert!(rendered.contains(
+        "Thermal rearm: temperatures recovered; output stays off until you re-enable it."
+    ));
     assert!(rendered.contains("TPS discharge: enabled"));
     assert!(rendered.contains("Warning: manual voltage above 5 V can still heat SW2303"));
     assert!(rendered.contains("Prefer auto follow for sustained high-voltage use."));
+}
+
+#[test]
+fn power_show_human_output_reports_thermal_shutdown_and_sensor_fault() {
+    let shutdown_rendered = format_power_show_output(&json!({
+        "config": {
+            "hardware": "sw2303",
+            "persisted": true,
+            "tps_mode": "auto_follow",
+            "light_load_mode": "pfm",
+            "runtime": {
+                "output_enabled": false,
+                "discharge_enabled": false
+            },
+            "capability": {
+                "profile": "full",
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": true,
+                    "qc30": true,
+                    "fcp": true,
+                    "afc": true,
+                    "scp": true,
+                    "pe20": true,
+                    "bc12": true,
+                    "sfcp": true
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                },
+                "current": {
+                    "pps3_limit_ma": 5000,
+                    "pd_pps_5a": false,
+                    "type_c_broadcast_ma": 500,
+                    "scp_limit_ma": 5000,
+                    "fcp_afc_sfcp_limit_ma": 3250
+                },
+                "fast_charge": {
+                    "qc20_20v_enabled": true,
+                    "qc30_20v_enabled": false,
+                    "pe20_20v_enabled": true,
+                    "non_pd_12v_enabled": false
+                }
+            },
+            "manual": {
+                "voltage_mv": 5000,
+                "current_limit_ma": 5000,
+                "tps_cdc_rise_mv": 0,
+                "usb_c_path_mode": "default",
+                "path_policy": "auto"
+            },
+            "lock": null
+        },
+        "diagnostics": {
+            "usb_c_power_enabled": false,
+            "sw2303_i2c_allowed": true,
+            "sw2303_profile_applied": true,
+            "sw2303_stable_reads": 3,
+            "sw2303_error_latched": false,
+            "tps_error_latched": false,
+            "sw2303_readback_config": {
+                "available": true,
+                "matches_config": true,
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": true,
+                    "qc30": true,
+                    "fcp": true,
+                    "afc": true,
+                    "scp": true,
+                    "pe20": true,
+                    "bc12": true,
+                    "sfcp": true
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                }
+            },
+            "sw2303_request": {
+                "mv": 20000,
+                "ma": 3250
+            },
+            "sw2303_last_valid_request": {
+                "mv": 20000,
+                "ma": 3250
+            },
+            "tps_setpoint": {
+                "output_enabled": false,
+                "discharge_enabled": false,
+                "mv": 20000,
+                "iout_limit_ma": 3250
+            },
+            "thermal": {
+                "sensors": {
+                    "mcu": {
+                        "temperature_deci_c": 1008,
+                        "status": "ok"
+                    },
+                    "tmp112": {
+                        "temperature_deci_c": 995,
+                        "status": "ok"
+                    }
+                },
+                "hottest_temperature_deci_c": 1008,
+                "state": "shutdown",
+                "reason": "mcu_critical",
+                "effective_power_watts": 0,
+                "sample_uptime_ms": 1500
+            },
+            "runtime_recovery_count": 1,
+            "sample_uptime_ms": 1500
+        }
+    }));
+
+    assert!(shutdown_rendered.contains("Thermal state: Shutdown (MCU critical)"));
+    assert!(shutdown_rendered.contains(
+        "Thermal shutdown: output forced off until temperature recovers and you enable it again."
+    ));
+    assert!(shutdown_rendered.contains("Faults: thermal shutdown"));
+
+    let sensor_fault_rendered = format_power_show_output(&json!({
+        "config": {
+            "hardware": "sw2303",
+            "persisted": true,
+            "tps_mode": "auto_follow",
+            "light_load_mode": "pfm",
+            "runtime": {
+                "output_enabled": false,
+                "discharge_enabled": false
+            },
+            "capability": {
+                "profile": "full",
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": true,
+                    "qc30": true,
+                    "fcp": true,
+                    "afc": true,
+                    "scp": true,
+                    "pe20": true,
+                    "bc12": true,
+                    "sfcp": true
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                },
+                "current": {
+                    "pps3_limit_ma": 5000,
+                    "pd_pps_5a": false,
+                    "type_c_broadcast_ma": 500,
+                    "scp_limit_ma": 5000,
+                    "fcp_afc_sfcp_limit_ma": 3250
+                },
+                "fast_charge": {
+                    "qc20_20v_enabled": true,
+                    "qc30_20v_enabled": false,
+                    "pe20_20v_enabled": true,
+                    "non_pd_12v_enabled": false
+                }
+            },
+            "manual": {
+                "voltage_mv": 5000,
+                "current_limit_ma": 5000,
+                "tps_cdc_rise_mv": 0,
+                "usb_c_path_mode": "default",
+                "path_policy": "auto"
+            },
+            "lock": null
+        },
+        "diagnostics": {
+            "usb_c_power_enabled": false,
+            "sw2303_i2c_allowed": true,
+            "sw2303_profile_applied": true,
+            "sw2303_stable_reads": 3,
+            "sw2303_error_latched": false,
+            "tps_error_latched": false,
+            "sw2303_readback_config": {
+                "available": true,
+                "matches_config": true,
+                "power_watts": 100,
+                "protocols": {
+                    "pd": true,
+                    "qc20": true,
+                    "qc30": true,
+                    "fcp": true,
+                    "afc": true,
+                    "scp": true,
+                    "pe20": true,
+                    "bc12": true,
+                    "sfcp": true
+                },
+                "pd": {
+                    "pps": true,
+                    "fixed_voltages_mv": [9000, 12000, 15000, 20000]
+                }
+            },
+            "sw2303_request": {
+                "mv": 20000,
+                "ma": 3250
+            },
+            "sw2303_last_valid_request": {
+                "mv": 20000,
+                "ma": 3250
+            },
+            "tps_setpoint": {
+                "output_enabled": false,
+                "discharge_enabled": false,
+                "mv": 20000,
+                "iout_limit_ma": 3250
+            },
+            "thermal": {
+                "sensors": {
+                    "mcu": {
+                        "temperature_deci_c": 512,
+                        "status": "stale"
+                    },
+                    "tmp112": {
+                        "temperature_deci_c": null,
+                        "status": "error"
+                    }
+                },
+                "hottest_temperature_deci_c": 512,
+                "state": "sensor_fault",
+                "reason": "tmp112_sensor_fault",
+                "effective_power_watts": 0,
+                "sample_uptime_ms": 1500
+            },
+            "runtime_recovery_count": 1,
+            "sample_uptime_ms": 1500
+        }
+    }));
+
+    assert!(sensor_fault_rendered.contains("Thermal state: Sensor fault (TMP112 sensor fault)"));
+    assert!(sensor_fault_rendered.contains("TMP112 temperature: unavailable (error)"));
+    assert!(sensor_fault_rendered.contains("Thermal sensor fault: output stays off until telemetry recovers, then re-enable it manually."));
+    assert!(sensor_fault_rendered.contains("Faults: thermal sensor fault"));
 }
 
 #[test]
@@ -483,6 +768,23 @@ fn power_diagnostics_deserializes_when_readback_current_is_missing() {
             "enabled": true,
             "ma": 4950
         },
+        "thermal": {
+            "sensors": {
+                "mcu": {
+                    "temperature_deci_c": 488,
+                    "status": "ok"
+                },
+                "tmp112": {
+                    "temperature_deci_c": 505,
+                    "status": "ok"
+                }
+            },
+            "hottest_temperature_deci_c": 505,
+            "state": "normal",
+            "reason": "none",
+            "effective_power_watts": 100,
+            "sample_uptime_ms": 1500
+        },
         "runtime_recovery_count": 0,
         "sample_uptime_ms": 1500
     }))
@@ -529,6 +831,8 @@ fn power_diagnostics_deserializes_when_readback_current_is_missing() {
             .and_then(|telemetry| telemetry.current_ma),
         Some(0)
     );
+    assert_eq!(parsed.thermal.state, "normal");
+    assert_eq!(parsed.thermal.effective_power_watts, 100);
 }
 
 #[test]
@@ -573,6 +877,23 @@ fn power_diagnostics_deserializes_legacy_ilim_field() {
             "discharge_enabled": false,
             "mv": 20000,
             "ilim_ma": 3250
+        },
+        "thermal": {
+            "sensors": {
+                "mcu": {
+                    "temperature_deci_c": 488,
+                    "status": "ok"
+                },
+                "tmp112": {
+                    "temperature_deci_c": 505,
+                    "status": "ok"
+                }
+            },
+            "hottest_temperature_deci_c": 505,
+            "state": "normal",
+            "reason": "none",
+            "effective_power_watts": 100,
+            "sample_uptime_ms": 1500
         },
         "runtime_recovery_count": 0,
         "sample_uptime_ms": 1500
@@ -625,6 +946,23 @@ fn power_diagnostics_deserializes_when_both_current_limit_keys_are_present() {
             "mv": 20000,
             "iout_limit_ma": 3300,
             "ilim_ma": 3250
+        },
+        "thermal": {
+            "sensors": {
+                "mcu": {
+                    "temperature_deci_c": 488,
+                    "status": "ok"
+                },
+                "tmp112": {
+                    "temperature_deci_c": 505,
+                    "status": "ok"
+                }
+            },
+            "hottest_temperature_deci_c": 505,
+            "state": "normal",
+            "reason": "none",
+            "effective_power_watts": 100,
+            "sample_uptime_ms": 1500
         },
         "runtime_recovery_count": 0,
         "sample_uptime_ms": 1500

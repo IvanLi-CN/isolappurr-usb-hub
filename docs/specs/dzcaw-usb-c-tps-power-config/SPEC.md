@@ -147,6 +147,27 @@ for diagnostics.
 - Firmware MUST expose `/api/v1/pd-diagnostics.tps_iout_limit_readback` as the
   raw TPS55288 `IOUT_LIMIT` register readback used for CLI/API/HIL write-path
   verification.
+- Firmware MUST sample MCU internal temperature plus TMP112 temperature at
+  `0x48` on the existing PD diagnostics cadence and expose both only through
+  `/api/v1/pd-diagnostics.thermal`; `/api/v1/ports` MUST NOT gain temperature
+  fields.
+- `/api/v1/pd-diagnostics.thermal` MUST expose
+  `sensors.mcu|tmp112.{temperature_deci_c,status}`,
+  `hottest_temperature_deci_c`, `state`, `reason`,
+  `effective_power_watts`, and `sample_uptime_ms`.
+- Thermal protection MUST be a runtime-only overlay over the saved power
+  config. When the hottest valid sensor is above `80.0°C`, the runtime cap
+  MUST follow `100W - 5W * ceil(T-80°C)` and the effective live cap MUST be
+  `min(saved power_watts, thermal cap)`.
+- Any thermal input above `100.0°C` MUST immediately force TPS output off and
+  enter `shutdown`. After both sensors recover below `98.0°C` for three
+  consecutive samples, the device MUST enter `rearm_required`, stop the
+  repeating alarm, keep output off, and require a new explicit output-enable
+  action before normal control resumes.
+- A thermal read failure MAY reuse that sensor's last successful sample for up
+  to three refresh periods. Past that stale window, the sensor MUST report
+  `status=error`, the thermal state MUST become `sensor_fault`, and output MUST
+  stay off until healthy samples resume and the operator re-enables output.
 - Corrected USB-C current MUST clamp at `0 mA` after subtracting the
   interpolated idle-bias offset, and corrected USB-C power MUST be recomputed
   from raw voltage times corrected current.
@@ -210,6 +231,12 @@ for diagnostics.
 - Web UI protocol cards MUST visually distinguish the currently active
   negotiated protocol from merely enabled protocols by consuming live PD
   diagnostics `active_protocol` instead of inferring it only from saved config.
+- The Web Power page MUST poll `/api/v1/pd-diagnostics` every `1 s` for live
+  PD plus thermal state instead of creating a separate thermal route or
+  temperature-only API.
+- The Web Power page MUST show thermal diagnostics for MCU, TMP112, hottest
+  point, effective thermal cap, state, reason, and any required manual rearm
+  or sensor-fault guidance while leaving saved-config views unchanged.
 - Web UI MUST reserve `success` semantics for real positive device or port
   state, and MUST use the shared warm-amber `secondary` informational tone for
   active protocol / live emphasis instead of reusing the success fill.
@@ -225,11 +252,18 @@ for diagnostics.
   value, the Web Dashboard USB-C card header MUST also show an output current
   limit badge formatted as `x.xx A`, using that applied TPS55288
   `IOUT_LIMIT` setpoint rather than live measured current.
+- When `/api/v1/pd-diagnostics.thermal.sensors.tmp112.temperature_deci_c`
+  resolves to a live value, the Web Dashboard USB-C card header MUST also show
+  a TMP112 temperature chip formatted as an integer `x°C` with no `TMP` label.
+  The chip MUST use success styling below `80°C`, warning styling from
+  `80.0°C` through `99.9°C`, and error styling at or above `100.0°C` so the
+  Overview page mirrors the thermal derating and forced-off thresholds.
 - When live USB-C display badges are present and USB-C telemetry resolves
   cleanly, the Web Dashboard USB-C card header MUST render the shared
   mode/setpoint label plus the shared live state badge, and MAY prepend the
-  output current limit badge when `iout_limit_ma` is present. In this live
-  badge mode, no separate legacy status chip may replace those inline badges.
+  TMP112 temperature chip plus the output current limit badge when those live
+  diagnostics are present. In this live badge mode, no separate legacy status
+  chip may replace those inline badges.
 - When live USB-C display badges are absent, or USB-C telemetry is not `ok`,
   the Dashboard MUST preserve the existing USB-C status chip instead of hiding
   fault/legacy state behind the live badges.
@@ -265,6 +299,8 @@ for diagnostics.
   locked-by-another-host, and narrow states
   for the power panel; power-panel idle-bias uncalibrated,
   correction off, correction on, running, confirmation, and failure states;
+  power-panel thermal normal, derating, shutdown, rearm-required, and
+  sensor-fault states;
   plus Dashboard USB-C card inline live-badge states for auto-follow, `FOCUS`,
   `ON`, and `OFF`, the legacy no-diagnostics fallback, and the telemetry-error
   regression where a real error status chip must remain visible.
@@ -379,6 +415,36 @@ for diagnostics.
 - Given the runtime `Power` action turns output on again, when the request
   succeeds, then the PD/TPS coordinator restarts from its boot setpoint path
   before resuming follow or manual behavior.
+- Given live PD diagnostics are read over HTTP, Web Serial JSONL, or the host
+  bridge, when thermal sampling succeeds, then the response includes one
+  `thermal` object with MCU plus TMP112 temperatures, per-sensor status,
+  hottest temperature, state, reason, effective power cap, and sample uptime,
+  while `/api/v1/ports` remains unchanged.
+- Given the hottest thermal reading rises above `80.0°C`, when runtime power
+  policy is applied, then firmware derates the live cap as
+  `100W - 5W * ceil(T-80°C)` and clamps the active limit to the lower of that
+  result and the saved source-capability `power_watts`.
+- Given `tps_mode=manual`, when the thermal cap is below the saved manual
+  request, then firmware clamps the runtime current limit to the lower of the
+  saved manual current limit, the thermal power budget at the current manual
+  voltage, and the TPS hardware limit before applying the existing `50 mA`
+  ladder.
+- Given a thermal sensor stops updating, when the last good sample is no older
+  than three refresh periods, then its status becomes `stale` and runtime
+  protection may still use that cached temperature; after the third missed
+  period, the status becomes `error`, the thermal state becomes
+  `sensor_fault`, and output is forced off.
+- Given either thermal input exceeds `100.0°C`, when the thermal controller
+  evaluates that sample, then the state becomes `shutdown`, output is forced
+  off immediately, and the audible safety alarm starts.
+- Given `shutdown` or `sensor_fault` has recovered, when both sensors stay
+  healthy and below `98.0°C` for three consecutive samples, then the state
+  becomes `rearm_required`, the repeating alarm stops, and output remains off
+  until a new explicit output-enable action is accepted.
+- Given the Power page renders live diagnostics, when the page remains open,
+  then it refreshes `pd-diagnostics` every `1 s` and shows the MCU/TMP112
+  temperatures, hottest point, effective thermal cap, state, reason, and any
+  required manual restart guidance.
 - Given the default desktop power panel story, when the safe-profile protocol
   cards are wide enough, then `PD` and `PPS` show `CC`, and the current non-PD
   protocol cards show `DPDM`.
@@ -1089,6 +1155,63 @@ PR: include
 
 PR: include
 ![HIL f293cc USB overview default path on](./assets/hil-f293cc-usb-overview-default-path-on.png)
+
+- source_type: live_hardware_browser
+  story_id_or_title: `Wi-Fi HIL overview TMP chip`
+  state: Dashboard USB-C TMP112 temperature chip normal threshold
+  requested_viewport: `full page`
+  viewport_strategy: `chrome extension full page screenshot`
+  capture_scope: `page`
+  target_program: `http://127.0.0.1:51200/devices/856a141cdbd4`
+  evidence_note: verifies the real Wi-Fi-backed HIL device `856a141cdbd4 /
+  1C:DB:D4:85:6A:14` shows the inline TMP112 temperature chip as an integer
+  `37°C` ahead of the live USB-C current-limit and display-state badges while
+  remaining below the thermal derating threshold.
+
+PR: include
+![HIL dashboard TMP temperature chip](./assets/hil-dashboard-usb-c-tmp-temperature-chip.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ThermalDerating`
+  state: Power page thermal derating live diagnostics
+  requested_viewport: `1365x1900`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the Power page surfaces both temperature sensors, the
+  hottest point, and the reduced effective cap while the runtime remains in
+  `derating`.
+
+PR: include
+![Device power panel thermal derating](./assets/device-power-panel-thermal-derating.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ThermalRearmRequired`
+  state: Power page thermal recovery awaiting manual re-enable
+  requested_viewport: `1365x1900`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies the recovered thermal state stays `rearm required`,
+  keeps output off, and explains that the operator must turn Power back on
+  manually.
+
+PR: include
+![Device power panel thermal rearm required](./assets/device-power-panel-thermal-rearm-required.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ThermalSensorFault`
+  state: Power page thermal sensor fault
+  requested_viewport: `1365x1900`
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `element`
+  target_program: `mock-only`
+  evidence_note: verifies per-sensor `stale` / `error` badges, the forced-off
+  effective cap, and the operator-facing fault guidance when temperature
+  telemetry is no longer trustworthy.
+
+PR: include
+![Device power panel thermal sensor fault](./assets/device-power-panel-thermal-sensor-fault.png)
 
 ## Risks
 

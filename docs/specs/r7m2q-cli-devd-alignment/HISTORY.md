@@ -58,6 +58,11 @@
   entrypoint for saved TPS power settings, while keeping `power output ...` and
   `power source-capability set` as compatibility wrappers over the same merged
   config write path.
+- Extended the shared power diagnostics contract with runtime thermal data so
+  `isolapurr power show` can surface MCU/TMP112 temperatures, hottest point,
+  effective power cap, and manual rearm guidance without adding a new command.
+- Kept `isolapurr power config show` as the persisted-config view even when the
+  runtime power path is thermally derated or forced off.
 - Extended the aligned power-config transport contract with top-level
   `light_load_mode=pfm|fpwm`, defaulting missing legacy values to `pfm` on the
   host side.

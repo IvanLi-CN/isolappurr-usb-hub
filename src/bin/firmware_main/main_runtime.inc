@@ -31,6 +31,10 @@
         DASHBOARD_BG_RGB8.2
     );
 
+    let mcu_temperature_sensor =
+        Esp32S3TemperatureSensor::new(peripherals.SYSTEM, peripherals.SENS);
+    Timer::after_micros(250).await;
+
     // Optional HTTP API state is shared by Wi-Fi and USB/native transports.
     #[cfg(feature = "net_http")]
     let api_state = net::init_http_api_state();
@@ -161,7 +165,7 @@
     .into_async();
     let mut telemetry_i2c = TelemetryI2cAllowlist::new(tps_i2c);
     info!(
-        "tps i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 allowlist=[0x40/0x44,0x41/0x45,0x50,0x74]"
+        "tps i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 allowlist=[0x40/0x44,0x41/0x45,0x48,0x50,0x74]"
     );
 
     let sw2303_i2c = I2c::new(
@@ -205,6 +209,9 @@
     let mut last_pd_runtime_recovery: Option<Instant> = None;
     let mut pd_runtime_recovery_count: u32 = 0;
     let mut tps_5v_setpoint_since: Option<Instant> = None;
+    let mut thermal_controller = ThermalController::new();
+    let mut last_thermal_sample_at: Option<Instant> = None;
+    let mut last_thermal_effective_power_watts: Option<u8> = None;
     let mut last_tps_iout_limit_readback_attempt_uptime_ms: Option<u64> = None;
     let mut last_tps_status: Option<(
         tps55288::data_types::OperatingStatus,
@@ -314,6 +321,7 @@
         defmt::warn!("tps55288 boot supply not ready; skipping boot-time SW2303 profile");
         prompt_tone.notify(SoundEvent::EnterSafety(SafetyKind::TpsApply));
     }
+    let mut safety_alarm_active = !tps_boot_ready;
 
     if tps_boot_ready {
         info!("sw2303 profile: deferred until first successful SW2303 read");
@@ -577,8 +585,9 @@
 
     loop {
         let sw2303_was_in_error = sw2303_error_latched;
-        let tps_was_in_error = tps_error_latched;
         let ui_was_in_error = ui_error_latched;
+        #[cfg(feature = "net_http")]
+        let api_thermal: ThermalTelemetry;
         #[cfg(feature = "net_http")]
         let mut power_config_result_pending: Option<bool> = None;
         let mut power_runtime_result_pending: Option<bool> = None;

@@ -6,15 +6,17 @@ use ina226::{AVG, Config, INA226, MODE, VBUSCT, VSHCT};
 use super::contract::Field;
 use super::hardware::{
     INA226_U13_ADDR_7BIT, INA226_U13_FALLBACK_ADDR_7BIT, INA226_U17_ADDR_7BIT,
-    INA226_U17_FALLBACK_ADDR_7BIT, U17_CALIBRATION, U17_CURRENT_LSB_UA_PER_BIT,
+    INA226_U17_FALLBACK_ADDR_7BIT, TMP112_ADDR_7BIT, U17_CALIBRATION, U17_CURRENT_LSB_UA_PER_BIT,
 };
 use super::i2c_allowlist::{TelemetryI2cAllowlist, TelemetryI2cError};
+use crate::thermal::tmp112_raw_to_deci_c;
 
 // Spec: docs/specs/j9twf-gc9307-normal-ui/SPEC.md (INA226 calibration + power source rules).
 const U13_CURRENT_LSB_UA_PER_BIT: u32 = 62;
 const U13_CALIBRATION: u16 = 8258;
 
 const POWER_LSB_MULTIPLIER: u32 = 25;
+const TMP112_TEMPERATURE_REGISTER: u8 = 0x00;
 
 fn ina226_config_for_continuous_sampling() -> Config {
     Config {
@@ -213,6 +215,16 @@ where
         };
 
         NormalUiTelemetrySnapshot { usb_a, usb_c }
+    }
+
+    pub async fn sample_tmp112_temperature_deci_c(
+        &mut self,
+    ) -> Result<i16, TelemetryI2cError<I2C::Error>> {
+        let mut raw = [0u8; 2];
+        self.i2c
+            .write_read(TMP112_ADDR_7BIT, &[TMP112_TEMPERATURE_REGISTER], &mut raw)
+            .await?;
+        Ok(tmp112_raw_to_deci_c(raw))
     }
 
     async fn resolve_port_address(

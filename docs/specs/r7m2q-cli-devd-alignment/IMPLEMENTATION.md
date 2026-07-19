@@ -204,3 +204,14 @@
   passed, and the full E2E suite passed with 11 tests plus 2 opt-in HIL skips.
 - Generated `web/dist/sw.js` was inspected after build; no `firmware/` asset
   is present in the PWA precache list.
+
+Thermal live-state alignment:
+
+- Extended the existing `device.diagnostics` / `pd-diagnostics` transport
+  contract with a nested `thermal` object instead of introducing a new route.
+- `isolapurr power show` now formats the shared thermal payload into MCU and
+  TMP112 temperatures, hottest point, effective runtime power cap, and
+  operator-facing `derating|shutdown|rearm required|sensor fault` guidance.
+- `isolapurr power config show` remains bound to the saved power-config record
+  and does not echo runtime thermal overlay values back as if they were
+  persisted configuration.
