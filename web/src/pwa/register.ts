@@ -26,7 +26,14 @@ export function registerPwaUpdatePrompt() {
             if (updateToastId !== undefined) {
               toast.dismiss(updateToastId);
             }
-            void updateSW(true);
+            void updateSW(true).catch((error) => {
+              console.error("PWA update activation failed", error);
+              toast.error("The update could not be applied.", {
+                description:
+                  "Try again after the current app shell finishes recovering.",
+                duration: 5000,
+              });
+            });
           },
         },
         cancel: {
@@ -38,6 +45,12 @@ export function registerPwaUpdatePrompt() {
           },
         },
       });
+    },
+    onNeedReload() {
+      if (updateToastId !== undefined) {
+        toast.dismiss(updateToastId);
+        updateToastId = undefined;
+      }
     },
     onOfflineReady() {
       if (suppressLifecycleToasts()) {

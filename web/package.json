@@ -13,6 +13,7 @@
     "brand-assets": "python3 scripts/generate-brand-assets.py",
     "bundle-firmware": "python3 ../tools/firmware-bundle/build-web-bundle.py --repo IvanLi-CN/isolappurr-usb-hub --manifest public/firmware/releases-manifest.json --output-dir public/firmware --limit 50",
     "icons": "python3 scripts/generate-brand-assets.py && bun scripts/generate-icons.mjs",
+    "retain-pages-assets": "bun scripts/retain-pages-assets.ts",
     "capture:pwa-screenshots": "bun scripts/capture-pwa-screenshots.mjs",
     "test:icons": "python3 scripts/check-icons.py",
     "test:unit": "bun test ./src",

@@ -78,6 +78,16 @@ body {
   }
 }
 
+@keyframes isolapurr-boot-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(280%);
+  }
+}
+
 :root,
 [data-theme="isolapurr"] {
   --bg: #f6f7fb;
@@ -92,6 +102,9 @@ body {
   --primary-text: #ffffff;
   --secondary: #cc9957;
   --secondary-text: #201102;
+  --loading-accent: oklch(0.69 0.058 176);
+  --loading-accent-2: oklch(0.8 0.063 225);
+  --loading-track: oklch(0.93 0.011 220);
   --focus: #2f5243;
   --success: #16a34a;
   --warning: #d97706;
@@ -187,6 +200,9 @@ body {
   --primary-text: #0f141b;
   --secondary: #d6a169;
   --secondary-text: #261608;
+  --loading-accent: oklch(0.76 0.048 176);
+  --loading-accent-2: oklch(0.84 0.052 225);
+  --loading-track: oklch(0.31 0.018 223);
   --focus: #b7cdc2;
   --success: #6caa83;
   --warning: #d7a05d;
@@ -266,6 +282,9 @@ body {
     --primary-text: #0f141b;
     --secondary: #d6a169;
     --secondary-text: #261608;
+    --loading-accent: oklch(0.76 0.048 176);
+    --loading-accent-2: oklch(0.84 0.052 225);
+    --loading-track: oklch(0.31 0.018 223);
     --focus: #b7cdc2;
     --success: #6caa83;
     --warning: #d7a05d;

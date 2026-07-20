@@ -1,5 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 
+const STANDALONE_MEDIA_QUERIES = [
+  "(display-mode: standalone)",
+  "(display-mode: window-controls-overlay)",
+  "(display-mode: fullscreen)",
+];
+
 function contrastRatio(foreground: string, background: string): number {
   const luminance = (color: string): number => {
     const channels = color
@@ -112,6 +118,101 @@ async function mockPwaInstallState(
       };
     },
     { autoAppInstalled, displayMode, overlayVisible, promptOutcome },
+  );
+}
+
+async function forceStandaloneLaunchShell(page: Page) {
+  await page.addInitScript(
+    ({ standaloneMediaQueries }) => {
+      const createMediaQueryList = (query: string, matches: boolean) => ({
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+        dispatchEvent() {
+          return false;
+        },
+      });
+
+      const originalMatchMedia = window.matchMedia.bind(window);
+      window.matchMedia = (query: string) => {
+        if (standaloneMediaQueries.includes(query)) {
+          return createMediaQueryList(
+            query,
+            query === standaloneMediaQueries[0],
+          );
+        }
+        return originalMatchMedia(query);
+      };
+    },
+    { standaloneMediaQueries: STANDALONE_MEDIA_QUERIES },
+  );
+}
+
+async function stubServiceWorkerForBootRecovery(
+  page: Page,
+  mode: "none" | "waiting",
+) {
+  await page.addInitScript(
+    ({ recoveryMode }) => {
+      const listeners = new Set<(event: Event) => void>();
+      const serviceWorker = {
+        controller: null,
+        ready: Promise.resolve(undefined),
+        addEventListener(type: string, listener: (event: Event) => void) {
+          if (type === "controllerchange") {
+            listeners.add(listener);
+          }
+        },
+        removeEventListener(type: string, listener: (event: Event) => void) {
+          if (type === "controllerchange") {
+            listeners.delete(listener);
+          }
+        },
+        async getRegistration() {
+          if (recoveryMode !== "waiting") {
+            return null;
+          }
+
+          return {
+            waiting: {
+              postMessage(message: { type?: string }) {
+                if (message?.type !== "SKIP_WAITING") {
+                  return;
+                }
+                setTimeout(() => {
+                  for (const listener of listeners) {
+                    listener(new Event("controllerchange"));
+                  }
+                }, 0);
+              },
+            },
+          };
+        },
+        async getRegistrations() {
+          return [];
+        },
+        async register() {
+          return {
+            active: null,
+            addEventListener() {},
+            installing: null,
+            scope: "/",
+            update: async () => {},
+            waiting: null,
+          };
+        },
+      };
+
+      Object.defineProperty(navigator, "serviceWorker", {
+        configurable: true,
+        value: serviceWorker,
+      });
+    },
+    { recoveryMode: mode },
   );
 }
 
@@ -383,6 +484,10 @@ test("publishes PWA metadata and offline app shell", async ({
     "href",
     /apple-touch-icon\.png\?v=[0-9a-f]{12}$/,
   );
+  await expect(
+    page.locator('meta[name="mobile-web-app-capable"]'),
+  ).toHaveAttribute("content", "yes");
+  await expect(page.locator('script[src$="boot-shell.js"]')).toHaveCount(1);
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
     "content",
     /brand\/github-social-preview\.png$/,
@@ -466,6 +571,108 @@ test("keeps About fallback copy and reflects installed window chrome state", asy
 
   await page.goto("/");
   await expect(page.getByTestId("about-install-card")).toHaveCount(0);
+});
+
+test("shows the standalone startup shell before the app mounts", async ({
+  page,
+}) => {
+  await forceStandaloneLaunchShell(page);
+
+  await page.route(/\/assets\/index-[^/]+\.js$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.continue();
+  });
+
+  const navigation = page.goto("/");
+
+  await expect(page.getByTestId("pwa-startup-shell")).toBeVisible();
+  await expect(page.getByTestId("pwa-startup-shell-status")).toHaveText(
+    "Starting console…",
+  );
+
+  await navigation;
+  await expect(page.getByTestId("dashboard")).toBeVisible();
+  await expect(page.getByTestId("pwa-startup-shell")).toBeHidden();
+});
+
+test("self-heals a stale standalone shell by promoting a waiting service worker", async ({
+  page,
+}) => {
+  await forceStandaloneLaunchShell(page);
+  await stubServiceWorkerForBootRecovery(page, "waiting");
+
+  let entryRequests = 0;
+  await page.route(/\/assets\/index-[^/]+\.js$/, async (route) => {
+    entryRequests += 1;
+    if (entryRequests === 1) {
+      await route.fulfill({
+        status: 404,
+        contentType: "text/javascript",
+        body: "/* stale shell */",
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByTestId("pwa-startup-shell")).toBeVisible();
+  await expect.poll(() => entryRequests).toBeGreaterThan(1);
+  await expect(page.getByTestId("dashboard")).toBeVisible();
+  await expect(page.getByTestId("pwa-startup-shell")).toBeHidden();
+});
+
+test("uses the failure shell repair action without clearing saved devices", async ({
+  page,
+}) => {
+  const storageKey = "isolapurr_usb_hub.devices";
+  const device = {
+    id: "aabbcc001122",
+    name: "Demo Hub",
+    baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
+  };
+
+  await forceStandaloneLaunchShell(page);
+  await stubServiceWorkerForBootRecovery(page, "none");
+  await page.addInitScript(
+    ({ storageKey, device }) => {
+      window.localStorage.setItem(storageKey, JSON.stringify([device]));
+    },
+    { storageKey, device },
+  );
+
+  let entryRequests = 0;
+  await page.route(/\/assets\/index-[^/]+\.js$/, async (route) => {
+    entryRequests += 1;
+    if (entryRequests === 1) {
+      await route.fulfill({
+        status: 404,
+        contentType: "text/javascript",
+        body: "/* missing entry bundle */",
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByTestId("pwa-startup-shell-status")).toHaveText(
+    "App launch failed",
+  );
+  await expect(
+    page.getByText(/without touching saved devices or theme/i),
+  ).toBeVisible();
+
+  await page.getByTestId("pwa-startup-shell-repair").click();
+
+  const desktopSidebar = page.locator("aside");
+  await expect(desktopSidebar.getByTestId("device-list")).toBeVisible();
+  await expect(
+    desktopSidebar.getByTestId("device-card-aabbcc001122"),
+  ).toBeVisible();
+  await expect(page.getByTestId("pwa-startup-shell")).toBeHidden();
 });
 
 test("opens add device modal with supported connection methods (web)", async ({

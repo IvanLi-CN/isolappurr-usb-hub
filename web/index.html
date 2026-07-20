@@ -2,6 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (() => {
+        const storageKey = "isolapurr_usb_hub.theme";
+        try {
+          const raw = window.localStorage.getItem(storageKey);
+          if (!raw) {
+            return;
+          }
+          const theme = JSON.parse(raw);
+          if (theme === "isolapurr" || theme === "isolapurr-dark") {
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+        } catch {
+          // Ignore malformed local theme state and fall back to CSS defaults.
+        }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
@@ -23,6 +40,7 @@
     />
     <meta name="twitter:image" content="%SOCIAL_PREVIEW_IMAGE_URL%" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="IsolaPurr" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#a6c9bd" />
@@ -41,10 +59,364 @@
       href="%BASE_URL%icons/apple-touch-icon.png?v=%INSTALL_ICON_VERSION%"
     />
     <link rel="preload" as="image" href="%BASE_URL%brand/isolapurr-logo.png" />
+    <style>
+      :root {
+        color-scheme: light;
+        --boot-bg: #f4f7f3;
+        --boot-panel: rgba(255, 255, 255, 0.92);
+        --boot-panel-border: rgba(88, 122, 105, 0.16);
+        --boot-panel-shadow: rgba(31, 41, 55, 0.16);
+        --boot-text: #112217;
+        --boot-muted: #57686c;
+        --boot-accent: #587a69;
+        --boot-accent-soft: rgba(88, 122, 105, 0.12);
+        --boot-secondary: #cc9957;
+        --boot-loading-accent: oklch(0.69 0.058 176);
+        --boot-loading-accent-2: oklch(0.8 0.063 225);
+        --boot-loading-track: oklch(0.93 0.011 220);
+        --boot-danger: #b94a58;
+        --boot-danger-soft: rgba(185, 74, 88, 0.12);
+        --boot-outline: rgba(88, 122, 105, 0.28);
+        --boot-backdrop-top: rgba(214, 231, 224, 0.9);
+        --boot-backdrop-bottom: rgba(246, 247, 251, 0.98);
+      }
+
+      [data-theme="isolapurr-dark"] {
+        color-scheme: dark;
+        --boot-bg: #0f141b;
+        --boot-panel: rgba(23, 29, 38, 0.94);
+        --boot-panel-border: rgba(137, 164, 150, 0.2);
+        --boot-panel-shadow: rgba(1, 7, 14, 0.42);
+        --boot-text: #ecf1f7;
+        --boot-muted: #afbbc6;
+        --boot-accent: #a1baad;
+        --boot-accent-soft: rgba(161, 186, 173, 0.14);
+        --boot-secondary: #d6a169;
+        --boot-loading-accent: oklch(0.76 0.048 176);
+        --boot-loading-accent-2: oklch(0.84 0.052 225);
+        --boot-loading-track: oklch(0.31 0.018 223);
+        --boot-danger: #e1848c;
+        --boot-danger-soft: rgba(225, 132, 140, 0.15);
+        --boot-outline: rgba(161, 186, 173, 0.34);
+        --boot-backdrop-top: rgba(30, 41, 52, 0.94);
+        --boot-backdrop-bottom: rgba(15, 20, 27, 0.98);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme]) {
+          color-scheme: dark;
+          --boot-bg: #0f141b;
+          --boot-panel: rgba(23, 29, 38, 0.94);
+          --boot-panel-border: rgba(137, 164, 150, 0.2);
+          --boot-panel-shadow: rgba(1, 7, 14, 0.42);
+          --boot-text: #ecf1f7;
+          --boot-muted: #afbbc6;
+          --boot-accent: #a1baad;
+          --boot-accent-soft: rgba(161, 186, 173, 0.14);
+          --boot-secondary: #d6a169;
+          --boot-loading-accent: oklch(0.76 0.048 176);
+          --boot-loading-accent-2: oklch(0.84 0.052 225);
+          --boot-loading-track: oklch(0.31 0.018 223);
+          --boot-danger: #e1848c;
+          --boot-danger-soft: rgba(225, 132, 140, 0.15);
+          --boot-outline: rgba(161, 186, 173, 0.34);
+          --boot-backdrop-top: rgba(30, 41, 52, 0.94);
+          --boot-backdrop-bottom: rgba(15, 20, 27, 0.98);
+        }
+      }
+
+      #isolapurr-pwa-boot[hidden] {
+        display: none;
+      }
+
+      #isolapurr-pwa-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(circle at top, var(--boot-backdrop-top), transparent 58%),
+          linear-gradient(180deg, var(--boot-backdrop-bottom), var(--boot-bg));
+        color: var(--boot-text);
+        transition:
+          opacity 180ms ease,
+          visibility 180ms ease;
+      }
+
+      #isolapurr-pwa-boot[data-state="ready"] {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      #isolapurr-pwa-boot-card {
+        width: min(100%, 440px);
+        border-radius: 28px;
+        border: 1px solid var(--boot-panel-border);
+        background: var(--boot-panel);
+        box-shadow: 0 24px 70px var(--boot-panel-shadow);
+        backdrop-filter: blur(24px);
+      }
+
+      #isolapurr-pwa-boot-inner {
+        display: grid;
+        gap: 24px;
+        padding: 32px 30px 28px;
+      }
+
+      #isolapurr-pwa-boot-logo {
+        width: clamp(88px, 22vw, 118px);
+        height: auto;
+        justify-self: center;
+        filter: drop-shadow(0 14px 30px rgba(31, 41, 55, 0.16));
+      }
+
+      #isolapurr-pwa-boot-meta {
+        display: grid;
+        gap: 12px;
+        text-align: center;
+      }
+
+      #isolapurr-pwa-boot-chip {
+        justify-self: center;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 32px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: var(--boot-accent-soft);
+        color: var(--boot-accent);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      #isolapurr-pwa-boot-title {
+        margin: 0;
+        justify-self: center;
+        font-size: clamp(27px, 3.8vw, 32px);
+        font-weight: 800;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+      }
+
+      #isolapurr-pwa-boot-message,
+      #isolapurr-pwa-boot-detail,
+      #isolapurr-pwa-boot-note {
+        margin: 0;
+      }
+
+      #isolapurr-pwa-boot-message,
+      #isolapurr-pwa-boot-detail {
+        justify-self: center;
+        max-width: 33ch;
+      }
+
+      #isolapurr-pwa-boot-message {
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 1.5;
+      }
+
+      #isolapurr-pwa-boot-detail,
+      #isolapurr-pwa-boot-note {
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1.65;
+        color: var(--boot-muted);
+      }
+
+      #isolapurr-pwa-boot-note {
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: rgba(127, 148, 164, 0.08);
+      }
+
+      #isolapurr-pwa-boot-progress {
+        overflow: hidden;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--boot-loading-track);
+      }
+
+      #isolapurr-pwa-boot-progress > span {
+        display: block;
+        width: 42%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(
+          90deg,
+          var(--boot-loading-accent),
+          var(--boot-loading-accent-2)
+        );
+        animation: isolapurr-boot-progress 1.15s ease-in-out infinite;
+      }
+
+      #isolapurr-pwa-boot-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .isolapurr-pwa-boot-action {
+        flex: 1 1 160px;
+        min-height: 44px;
+        border-radius: 14px;
+        border: 1px solid transparent;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        transition:
+          transform 140ms ease,
+          background-color 140ms ease,
+          border-color 140ms ease;
+      }
+
+      .isolapurr-pwa-boot-action:hover {
+        transform: translateY(-1px);
+      }
+
+      .isolapurr-pwa-boot-action:focus-visible {
+        outline: 3px solid var(--boot-outline);
+        outline-offset: 2px;
+      }
+
+      .isolapurr-pwa-boot-action[data-kind="retry"] {
+        background: var(--boot-accent);
+        color: #fff;
+      }
+
+      .isolapurr-pwa-boot-action[data-kind="repair"] {
+        border-color: color-mix(in srgb, var(--boot-danger) 34%, transparent);
+        background: var(--boot-danger-soft);
+        color: var(--boot-danger);
+      }
+
+      #isolapurr-pwa-boot[data-state="failed"] #isolapurr-pwa-boot-chip {
+        background: var(--boot-danger-soft);
+        color: var(--boot-danger);
+      }
+
+      @keyframes isolapurr-boot-progress {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(280%);
+        }
+      }
+
+      @media (max-width: 480px) {
+        #isolapurr-pwa-boot-card {
+          width: min(100%, 420px);
+        }
+
+        #isolapurr-pwa-boot {
+          padding: 18px;
+        }
+
+        #isolapurr-pwa-boot-inner {
+          gap: 18px;
+          padding: 26px 22px 22px;
+        }
+
+        #isolapurr-pwa-boot-meta {
+          gap: 10px;
+        }
+
+        #isolapurr-pwa-boot-title {
+          font-size: clamp(26px, 8vw, 32px);
+        }
+
+        #isolapurr-pwa-boot-message,
+        #isolapurr-pwa-boot-detail {
+          max-width: none;
+        }
+
+        #isolapurr-pwa-boot-message {
+          font-size: 15px;
+          font-weight: 700;
+        }
+
+        #isolapurr-pwa-boot-detail {
+          font-weight: 600;
+        }
+      }
+    </style>
     <title>IsolaPurr USB Hub Console</title>
   </head>
   <body>
+    <div
+      id="isolapurr-pwa-boot"
+      data-state="launching"
+      data-testid="pwa-startup-shell"
+      hidden
+    >
+      <section
+        id="isolapurr-pwa-boot-card"
+        aria-labelledby="isolapurr-pwa-boot-title"
+      >
+        <div id="isolapurr-pwa-boot-inner">
+          <img
+            id="isolapurr-pwa-boot-logo"
+            src="%BASE_URL%brand/isolapurr-logo.png"
+            alt=""
+          />
+          <div id="isolapurr-pwa-boot-meta">
+            <div id="isolapurr-pwa-boot-chip" data-boot-chip>
+              Installed console
+            </div>
+            <h1 id="isolapurr-pwa-boot-title" data-testid="pwa-startup-shell-status">
+              Starting console…
+            </h1>
+            <p id="isolapurr-pwa-boot-message" data-boot-message>
+              Loading your offline app shell.
+            </p>
+            <p id="isolapurr-pwa-boot-detail" data-boot-detail>
+            </p>
+          </div>
+          <div id="isolapurr-pwa-boot-progress" data-boot-progress aria-hidden="true">
+            <span></span>
+          </div>
+          <div id="isolapurr-pwa-boot-actions" data-boot-actions hidden>
+            <button
+              class="isolapurr-pwa-boot-action"
+              data-kind="retry"
+              data-boot-action="retry"
+              data-testid="pwa-startup-shell-retry"
+              type="button"
+            >
+              Try again
+            </button>
+            <button
+              class="isolapurr-pwa-boot-action"
+              data-kind="repair"
+              data-boot-action="repair"
+              data-testid="pwa-startup-shell-repair"
+              type="button"
+            >
+              Repair app
+            </button>
+          </div>
+          <p id="isolapurr-pwa-boot-note" data-boot-note hidden>
+            Repair app resets service workers and cached files without touching
+            saved devices or theme.
+          </p>
+        </div>
+      </section>
+    </div>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script src="%BASE_URL%boot-shell.js"></script>
+    <script
+      id="isolapurr-main-entry"
+      type="module"
+      src="%BASE_URL%src/main.tsx"
+    ></script>
   </body>
 </html>
