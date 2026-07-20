@@ -84,3 +84,4 @@
 - `cd web && bun run test:storybook`
 - Production demo visual review at `/devices/aabbcc001122/info?demo=true` for desktop, narrow, `isolapurr-dark`, and `system` rendering.
 - Production demo visual review refreshed at `/?demo=true`, `/devices/aabbcc001122?demo=true`, and `/devices/aabbcc001122/power?demo=true` to capture the new desktop shell header plus the narrow right-side device drawer.
+- Spec-owned route evidence refreshed at `/?demo=true` in both `isolapurr` and `isolapurr-dark` so the restored shared brand slot is anchored to formal dashboard captures instead of chat-only screenshots.
