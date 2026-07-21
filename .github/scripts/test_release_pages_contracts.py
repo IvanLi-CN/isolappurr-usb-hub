@@ -36,6 +36,15 @@ class ReleasePagesContractTest(unittest.TestCase):
         self.assertIn("gh release upload", workflow)
         self.assertIn("gh release edit", workflow)
 
+    def test_release_workflow_persists_build_date_for_retention(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'echo "VITE_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"',
+            workflow,
+        )
+        self.assertIn("VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}", workflow)
+
     def test_release_workflow_uses_scripted_release_shell_validation(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 

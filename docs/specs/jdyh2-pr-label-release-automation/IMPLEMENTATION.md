@@ -18,6 +18,7 @@
 - `.github/quality-gates.json` 现在是 required checks 的单一 truth source，并显式声明 `pull_request + merge_group` required-check contract。
 - `.github/workflows/repo-contracts.yml` 与 Python contract tests 现在锁住 Pages/release/quality-gates contract，防止 workflow 名称与触发策略再漂移。
 - `.github/workflows/host-tools.yml` 现在会始终展开三个 required matrix checks，并在无 host-tools 变更时用 no-op 成功保留精确检查名，避免 branch protection 只看到占位 check 而阻塞合并。
+- `.github/workflows/release.yml` 现在会先把 `VITE_BUILD_DATE` 写入 `$GITHUB_ENV`，再让 web build 与 `retain-pages-assets` 共同消费同一个时间戳；`web/scripts/retain-pages-assets.ts` 同时会对空 build date 兜底，避免 stable draft 已建好却在 hashed-asset retention 阶段崩掉。
 - GitHub `main` branch protection 现在已经按同一份 required-check contract 启用，并要求 PR 合并、signed commits、strict status checks、禁用 force-push 与 branch deletion。
 
 ## Remaining Gaps

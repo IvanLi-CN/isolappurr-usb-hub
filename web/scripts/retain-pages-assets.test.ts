@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   extractAssetUrlsFromServiceWorker,
+  resolveBuildDate,
   selectRetainedReleases,
 } from "./retain-pages-assets";
 
@@ -47,5 +48,20 @@ describe("selectRetainedReleases", () => {
         (release) => release.id,
       ),
     ).toEqual(["fresh-a", "fresh-b", "fresh-c"]);
+  });
+});
+
+describe("resolveBuildDate", () => {
+  test("falls back to now when the workflow passes an empty build date", () => {
+    const now = new Date("2026-07-21T09:20:23Z");
+
+    expect(resolveBuildDate("", now)).toBe("2026-07-21T09:20:23.000Z");
+    expect(resolveBuildDate("   ", now)).toBe("2026-07-21T09:20:23.000Z");
+  });
+
+  test("keeps an explicit build date unchanged", () => {
+    expect(resolveBuildDate("2026-07-21T09:20:23Z")).toBe(
+      "2026-07-21T09:20:23Z",
+    );
   });
 });
