@@ -1,6 +1,6 @@
 import unittest
 
-from release_intent import resolve_version, validate_labels
+from release_intent import resolve_version, resolve_version_for_target, validate_labels
 
 
 POLICY = {
@@ -53,6 +53,52 @@ class ReleaseIntentTest(unittest.TestCase):
             "minor", "dev", ["v0.1.0", "v0.2.0-dev.1", "v0.2.0-dev.2"]
         )
         self.assertEqual(result["tag"], "v0.2.0-dev.3")
+        self.assertTrue(result["isPrerelease"])
+
+    def test_stable_rerun_reuses_existing_target_release(self) -> None:
+        result = resolve_version_for_target(
+            "patch",
+            "stable",
+            [
+                {
+                    "tag": "v0.6.2",
+                    "target_commitish": "abc123",
+                    "draft": True,
+                    "prerelease": False,
+                },
+                {
+                    "tag": "v0.6.1",
+                    "target_commitish": "old",
+                    "draft": False,
+                    "prerelease": False,
+                },
+            ],
+            "abc123",
+        )
+        self.assertEqual(result["tag"], "v0.6.2")
+        self.assertFalse(result["isPrerelease"])
+
+    def test_dev_rerun_reuses_existing_target_prerelease(self) -> None:
+        result = resolve_version_for_target(
+            "patch",
+            "dev",
+            [
+                {
+                    "tag": "v0.6.2-dev.4",
+                    "target_commitish": "abc123",
+                    "draft": True,
+                    "prerelease": True,
+                },
+                {
+                    "tag": "v0.6.1",
+                    "target_commitish": "old",
+                    "draft": False,
+                    "prerelease": False,
+                },
+            ],
+            "abc123",
+        )
+        self.assertEqual(result["tag"], "v0.6.2-dev.4")
         self.assertTrue(result["isPrerelease"])
 
 

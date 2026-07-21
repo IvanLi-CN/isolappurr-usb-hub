@@ -2,17 +2,10 @@ name: Firmware (ESP32-S3)
 
 on:
   pull_request:
+  merge_group:
   push:
     branches:
       - main
-    paths:
-      - ".cargo/**"
-      - "crates/isolapurr-firmware-core/**"
-      - "src/**"
-      - "tools/**"
-      - "build.rs"
-      - "Cargo.toml"
-      - "Cargo.lock"
   workflow_dispatch:
 
 permissions:

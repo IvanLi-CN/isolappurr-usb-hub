@@ -90,10 +90,12 @@ jobs:
           import json
           import os
           import sys
+
           prs = json.load(open("prs.json", encoding="utf-8"))
           if not prs:
               print("No associated pull request found for target SHA.", file=sys.stderr)
               raise SystemExit(1)
+
           pr = prs[0]
           labels = [label["name"] for label in pr.get("labels", [])]
           with open("labels.json", "w", encoding="utf-8") as fh:
@@ -111,12 +113,14 @@ jobs:
             --out release-intent.json \
             --github-output "$GITHUB_OUTPUT"
 
-      - name: List existing release tags
+      - name: List existing releases
         if: steps.intent.outputs.shouldRelease == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release list --limit 200 --json tagName > release-tags.json
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/releases?per_page=200" > releases.json
 
       - name: Resolve release version
         id: version
@@ -125,11 +129,13 @@ jobs:
           python3 .github/scripts/release_intent.py resolve-version \
             --release-type "${{ steps.intent.outputs.type }}" \
             --channel "${{ steps.intent.outputs.channel }}" \
-            --tags-json-file release-tags.json \
+            --releases-json-file releases.json \
+            --target-sha "${{ steps.target.outputs.target_sha }}" \
             --out release-version.json \
             --github-output "$GITHUB_OUTPUT"
           python3 - <<'PY'
           import json
+
           intent = json.load(open("release-intent.json", encoding="utf-8"))
           version = json.load(open("release-version.json", encoding="utf-8"))
           intent.update(version)
@@ -147,10 +153,72 @@ jobs:
           path: release-intent.json
           if-no-files-found: error
 
+  stable-draft:
+    name: prepare stable draft release
+    if: needs.intent.outputs.shouldRelease == 'true' && needs.intent.outputs.channel == 'stable'
+    needs: intent
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Create or reuse stable draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.intent.outputs.tag }}
+          TARGET_SHA: ${{ needs.intent.outputs.targetSha }}
+        run: |
+          set -euo pipefail
+          body="Release build in progress. Draft remains unpublished until GitHub Pages deploy succeeds."
+
+          if gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release.json 2>/dev/null; then
+            python3 - <<'PY'
+            import json
+            import os
+            import sys
+
+            release = json.load(open("release.json", encoding="utf-8"))
+            if not release.get("draft"):
+                print(f"Stable release {release['tag_name']} already exists as a published release.", file=sys.stderr)
+                raise SystemExit(1)
+            if release.get("prerelease"):
+                print(f"Stable release {release['tag_name']} cannot reuse a prerelease shell.", file=sys.stderr)
+                raise SystemExit(1)
+            target = release.get("target_commitish")
+            if target and target != os.environ["TARGET_SHA"]:
+                print(
+                    f"Stable release {release['tag_name']} targets {target}, expected {os.environ['TARGET_SHA']}.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(1)
+            PY
+
+            gh api \
+              -X PATCH \
+              "/repos/${GITHUB_REPOSITORY}/releases/$(jq -r '.id' release.json)" \
+              -f tag_name="$RELEASE_TAG" \
+              -f target_commitish="$TARGET_SHA" \
+              -f name="$RELEASE_TAG" \
+              -F draft=true \
+              -F prerelease=false \
+              -f body="$body" >/dev/null
+          else
+            gh api \
+              -X POST \
+              "/repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="$RELEASE_TAG" \
+              -f target_commitish="$TARGET_SHA" \
+              -f name="$RELEASE_TAG" \
+              -F draft=true \
+              -F prerelease=false \
+              -f body="$body" >/dev/null
+          fi
+
   host-tools:
     name: host tools (${{ matrix.slug }})
-    if: needs.intent.outputs.shouldRelease == 'true'
-    needs: intent
+    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
+    needs:
+      - intent
+      - stable-draft
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -244,8 +312,10 @@ jobs:
 
   firmware:
     name: firmware release build
-    if: needs.intent.outputs.shouldRelease == 'true'
-    needs: intent
+    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
+    needs:
+      - intent
+      - stable-draft
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -328,8 +398,10 @@ jobs:
 
   web-dist:
     name: web release dist
-    if: needs.intent.outputs.shouldRelease == 'true'
-    needs: intent
+    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
+    needs:
+      - intent
+      - stable-draft
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -372,12 +444,25 @@ jobs:
           VITE_BASE: /
           VITE_BUILD_SHA: ${{ needs.intent.outputs.targetSha }}
           VITE_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
+        working-directory: web
         run: |
           export VITE_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           bun run build
-          mkdir -p ../dist
-          tar -czf "../dist/isolapurr-web-dist-${{ needs.intent.outputs.version }}.tar.gz" -C dist .
+
+      - name: Retain previous hashed assets
+        if: needs.intent.outputs.channel == 'stable'
         working-directory: web
+        env:
+          PAGES_DEPLOY_ORIGIN: https://isolapurr.ivanli.cc
+          VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}
+          VITE_BUILD_SHA: ${{ needs.intent.outputs.targetSha }}
+        run: bun run retain-pages-assets
+
+      - name: Package web dist
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          tar -czf "dist/isolapurr-web-dist-${{ needs.intent.outputs.version }}.tar.gz" -C web/dist .
 
       - name: Upload web dist
         uses: actions/upload-artifact@v4
@@ -386,11 +471,18 @@ jobs:
           path: dist/isolapurr-web-dist-*.tar.gz
           if-no-files-found: error
 
+      - name: Upload stable Pages artifact
+        if: needs.intent.outputs.channel == 'stable'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
   desktop:
     name: desktop (${{ matrix.slug }})
-    if: needs.intent.outputs.shouldRelease == 'true'
+    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
     needs:
       - intent
+      - stable-draft
       - web-dist
     runs-on: ${{ matrix.os }}
     permissions:
@@ -540,8 +632,8 @@ jobs:
           path: dist/desktop/
           if-no-files-found: error
 
-  publish:
-    name: publish GitHub release
+  upload-assets:
+    name: upload release assets
     if: needs.intent.outputs.shouldRelease == 'true'
     needs:
       - intent
@@ -597,9 +689,14 @@ jobs:
           ):
               digest = hashlib.sha256(path.read_bytes()).hexdigest()
               assets.append({"name": path.name, "size": path.stat().st_size, "sha256": digest})
-          (out / "asset-manifest.json").write_text(json.dumps({"assets": assets}, indent=2) + "\n", encoding="utf-8")
+          (out / "asset-manifest.json").write_text(
+              json.dumps({"assets": assets}, indent=2) + "\n",
+              encoding="utf-8",
+          )
           with (out / "SHA256SUMS").open("w", encoding="utf-8") as fh:
-              for path in sorted(p for p in out.iterdir() if p.is_file() and p.name != "SHA256SUMS"):
+              for path in sorted(
+                  p for p in out.iterdir() if p.is_file() and p.name != "SHA256SUMS"
+              ):
                   fh.write(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n")
           PY
           cat > release-notes.md <<EOF
@@ -612,6 +709,117 @@ jobs:
           EOF
           ls -lh "$out"
 
+      - name: Ensure release shell exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ needs.intent.outputs.channel }}
+          RELEASE_TAG: ${{ needs.intent.outputs.tag }}
+          TARGET_SHA: ${{ needs.intent.outputs.targetSha }}
+          IS_PRERELEASE: ${{ needs.intent.outputs.isPrerelease }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = "stable" ]; then
+            gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null
+            exit 0
+          fi
+
+          body="Release build in progress. Draft remains unpublished until all assets are uploaded."
+          if gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release.json 2>/dev/null; then
+            python3 - <<'PY'
+            import json
+            import os
+            import sys
+
+            release = json.load(open("release.json", encoding="utf-8"))
+            if not release.get("draft"):
+                print(f"Dev release {release['tag_name']} already exists as a published release.", file=sys.stderr)
+                raise SystemExit(1)
+            if not release.get("prerelease"):
+                print(f"Dev release {release['tag_name']} must remain a prerelease shell.", file=sys.stderr)
+                raise SystemExit(1)
+            target = release.get("target_commitish")
+            if target and target != os.environ["TARGET_SHA"]:
+                print(
+                    f"Dev release {release['tag_name']} targets {target}, expected {os.environ['TARGET_SHA']}.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(1)
+            PY
+
+            gh api \
+              -X PATCH \
+              "/repos/${GITHUB_REPOSITORY}/releases/$(jq -r '.id' release.json)" \
+              -f tag_name="$RELEASE_TAG" \
+              -f target_commitish="$TARGET_SHA" \
+              -f name="$RELEASE_TAG" \
+              -F draft=true \
+              -F prerelease=true \
+              -f body="$body" >/dev/null
+          else
+            gh api \
+              -X POST \
+              "/repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="$RELEASE_TAG" \
+              -f target_commitish="$TARGET_SHA" \
+              -f name="$RELEASE_TAG" \
+              -F draft=true \
+              -F prerelease="$IS_PRERELEASE" \
+              -f body="$body" >/dev/null
+          fi
+
+      - name: Upload release asset payloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.intent.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" dist/release-assets/* --clobber
+
+      - name: Upload release metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: release-notes.md
+          if-no-files-found: error
+
+  stable-pages:
+    name: deploy stable public site
+    if: needs.intent.outputs.shouldRelease == 'true' && needs.intent.outputs.channel == 'stable'
+    needs:
+      - intent
+      - web-dist
+      - upload-assets
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+  publish:
+    name: publish GitHub release
+    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-pages.result == 'success')
+    needs:
+      - intent
+      - upload-assets
+      - stable-pages
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          path: dist/release-metadata
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -620,17 +828,31 @@ jobs:
           IS_PRERELEASE: ${{ needs.intent.outputs.isPrerelease }}
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists." >&2
-            exit 1
-          fi
-          prerelease_arg=()
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            prerelease_arg=(--prerelease)
-          fi
-          gh release create "$RELEASE_TAG" \
-            --target "$TARGET_SHA" \
+          gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          release = json.load(open("release.json", encoding="utf-8"))
+          payload = {
+              "tag_name": os.environ["RELEASE_TAG"],
+              "target_commitish": os.environ["TARGET_SHA"],
+              "name": os.environ["RELEASE_TAG"],
+              "draft": False,
+              "prerelease": os.environ["IS_PRERELEASE"] == "true",
+              "body": Path("dist/release-metadata/release-notes.md").read_text(encoding="utf-8"),
+          }
+          Path("release-payload.json").write_text(
+              json.dumps(payload),
+              encoding="utf-8",
+          )
+          Path("release-id.txt").write_text(str(release["id"]), encoding="utf-8")
+          PY
+          gh api \
+            -X PATCH \
+            "/repos/${GITHUB_REPOSITORY}/releases/$(cat release-id.txt)" \
+            --input release-payload.json >/dev/null
+          gh release edit "$RELEASE_TAG" \
             --title "$RELEASE_TAG" \
-            --notes-file release-notes.md \
-            "${prerelease_arg[@]}" \
-            dist/release-assets/*
+            --notes-file dist/release-metadata/release-notes.md

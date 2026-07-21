@@ -1,17 +1,14 @@
-name: Deploy web to GitHub Pages
+name: Pages
 
 on:
   pull_request:
-    paths:
-      - "web/**"
-      - ".github/workflows/pages.yml"
-  push:
-    branches:
-      - main
-    paths:
-      - "web/**"
-      - ".github/workflows/pages.yml"
+  merge_group:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Deploy Pages from an existing stable release asset."
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,7 +20,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  pr-build:
+    name: PR build
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       GITHUB_PAGES: "true"
@@ -46,7 +45,7 @@ jobs:
 
           git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
           if git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- \
-            web .github/workflows/pages.yml | grep -q .; then
+            web .github/workflows/pages.yml .github/workflows/release.yml | grep -q .; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -54,12 +53,7 @@ jobs:
 
       - name: Skip build (no web changes)
         if: steps.gate.outputs.run_build != 'true'
-        run: echo "No web-related changes in this PR; skipping pages build."
-
-      - name: Setup Pages
-        id: pages
-        if: steps.gate.outputs.run_build == 'true' && github.event_name != 'pull_request'
-        uses: actions/configure-pages@v5
+        run: echo "No web-related changes in this PR; skipping Pages PR build."
 
       - name: Setup Bun
         if: steps.gate.outputs.run_build == 'true'
@@ -83,45 +77,49 @@ jobs:
 
       - name: Set build date
         if: steps.gate.outputs.run_build == 'true'
-        run: echo "VITE_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+        run: echo "VITE_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
-      - name: Build (PR)
-        if: steps.gate.outputs.run_build == 'true' && github.event_name == 'pull_request'
+      - name: Build
+        if: steps.gate.outputs.run_build == 'true'
         working-directory: web
         env:
           VITE_BASE: /
         run: bun run build
 
-      - name: Build
-        if: steps.gate.outputs.run_build == 'true' && github.event_name != 'pull_request'
-        working-directory: web
+  backfill:
+    name: upload backfill artifact
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download stable web asset
         env:
-          VITE_BASE: ${{ steps.pages.outputs.base_path }}/
-        run: bun run build
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release web/dist
+          gh release download "$RELEASE_TAG" \
+            --pattern "isolapurr-web-dist-*.tar.gz" \
+            --dir dist/release
+          tar -xzf dist/release/isolapurr-web-dist-*.tar.gz -C web/dist
 
-      - name: Retain previous hashed assets
-        if: steps.gate.outputs.run_build == 'true' && github.event_name != 'pull_request'
-        working-directory: web
-        env:
-          PAGES_DEPLOY_ORIGIN: https://isolapurr.ivanli.cc
-          VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}
-          VITE_BUILD_SHA: ${{ github.sha }}
-        run: bun run retain-pages-assets
-
-      - name: Upload artifact
-        if: steps.gate.outputs.run_build == 'true' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
         with:
           path: web/dist
 
   deploy:
-    needs: build
+    name: deploy Pages
+    if: github.event_name == 'workflow_dispatch'
+    needs: backfill
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

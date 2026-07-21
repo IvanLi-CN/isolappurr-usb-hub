@@ -1,6 +1,11 @@
 import { registerSW } from "virtual:pwa-register";
 import { toast } from "sonner";
 
+import {
+  createPwaUpdateCandidateStore,
+  createPwaUpdateScheduler,
+} from "./update";
+
 function suppressLifecycleToasts(): boolean {
   if (typeof window === "undefined") {
     return false;
@@ -14,9 +19,19 @@ export function registerPwaUpdatePrompt() {
   }
 
   let updateToastId: string | number | undefined;
+  const updateCandidateStore = createPwaUpdateCandidateStore(
+    typeof window === "undefined" ? null : window.sessionStorage,
+  );
+  let updateScheduler: ReturnType<typeof createPwaUpdateScheduler> | undefined;
   const updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
+      const candidateFingerprint =
+        updateScheduler?.getCurrentFingerprint() ?? "waiting-worker";
+      if (!updateCandidateStore.shouldPrompt(candidateFingerprint)) {
+        return;
+      }
+
       updateToastId = toast("A new IsolaPurr console is ready.", {
         description: "Apply the update to reload the offline app shell.",
         duration: Number.POSITIVE_INFINITY,
@@ -39,11 +54,25 @@ export function registerPwaUpdatePrompt() {
         cancel: {
           label: "Later",
           onClick: () => {
+            updateCandidateStore.dismiss(candidateFingerprint);
             if (updateToastId !== undefined) {
               toast.dismiss(updateToastId);
             }
           },
         },
+      });
+    },
+    onRegisteredSW(swUrl, registration) {
+      if (!registration || typeof window === "undefined") {
+        return;
+      }
+
+      updateScheduler?.dispose();
+      updateScheduler = createPwaUpdateScheduler({
+        document,
+        registration,
+        swUrl,
+        window,
       });
     },
     onNeedReload() {

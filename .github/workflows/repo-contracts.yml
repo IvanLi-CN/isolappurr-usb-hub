@@ -2,45 +2,10 @@ name: Repo Contracts
 
 on:
   pull_request:
-    paths:
-      - ".github/scripts/**"
-      - ".github/workflows/repo-contracts.yml"
-      - ".github/workflows/firmware.yml"
-      - ".github/workflows/release.yml"
-      - "AGENTS.md"
-      - "README.md"
-      - "web/README.md"
-      - "docs/maintainer-workflow.md"
-      - "docs/specs/kvbq9-web-demo-surface-policy/**"
-      - "docs/specs/r7m2q-cli-devd-alignment/**"
-      - "skills/isolapurr-developer-operations/**"
-      - "skills/isolapurr-maintainer-workflow/**"
-      - "skills/isolapurr-user-operations/**"
-      - "tools/isolapurr-host/install/**"
-      - "tools/isolapurr-host/src/bin/isolapurr/**"
-      - "web/src/App.tsx"
-      - "web/src/pages/**"
+  merge_group:
   push:
     branches:
       - main
-    paths:
-      - ".github/scripts/**"
-      - ".github/workflows/repo-contracts.yml"
-      - ".github/workflows/firmware.yml"
-      - ".github/workflows/release.yml"
-      - "AGENTS.md"
-      - "README.md"
-      - "web/README.md"
-      - "docs/maintainer-workflow.md"
-      - "docs/specs/kvbq9-web-demo-surface-policy/**"
-      - "docs/specs/r7m2q-cli-devd-alignment/**"
-      - "skills/isolapurr-developer-operations/**"
-      - "skills/isolapurr-maintainer-workflow/**"
-      - "skills/isolapurr-user-operations/**"
-      - "tools/isolapurr-host/install/**"
-      - "tools/isolapurr-host/src/bin/isolapurr/**"
-      - "web/src/App.tsx"
-      - "web/src/pages/**"
   workflow_dispatch:
 
 permissions:
@@ -55,6 +20,26 @@ jobs:
     name: Python contract tests
     runs-on: ubuntu-latest
     steps:
+      - name: Truth-source coverage note
+        run: |
+          cat <<'EOF'
+          Repo contract coverage includes:
+          - AGENTS.md
+          - README.md
+          - web/README.md
+          - docs/maintainer-workflow.md
+          - .github/workflows/firmware.yml
+          - .github/workflows/release.yml
+          - docs/specs/kvbq9-web-demo-surface-policy/**
+          - docs/specs/r7m2q-cli-devd-alignment/**
+          - skills/isolapurr-user-operations/**
+          - skills/isolapurr-developer-operations/**
+          - skills/isolapurr-maintainer-workflow/**
+          - tools/isolapurr-host/src/bin/isolapurr/**
+          - web/src/App.tsx
+          - web/src/pages/**
+          EOF
+
       - name: Checkout
         uses: actions/checkout@v4
 

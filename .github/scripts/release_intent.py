@@ -135,6 +135,45 @@ def parse_release_tags(raw: Any) -> list[str]:
     raise ValueError("release tags JSON must be a list")
 
 
+def parse_releases(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        raise ValueError("releases JSON must be a list")
+
+    releases: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, str):
+            releases.append(
+                {
+                    "tag": item,
+                    "target_commitish": None,
+                    "draft": False,
+                    "prerelease": False,
+                }
+            )
+            continue
+
+        if not isinstance(item, dict):
+            continue
+
+        tag = item.get("tagName") or item.get("tag_name") or item.get("name")
+        if not isinstance(tag, str):
+            continue
+
+        releases.append(
+            {
+                "tag": tag,
+                "target_commitish": item.get("targetCommitish")
+                or item.get("target_commitish"),
+                "draft": bool(item.get("isDraft") or item.get("draft")),
+                "prerelease": bool(
+                    item.get("isPrerelease") or item.get("prerelease")
+                ),
+            }
+        )
+
+    return releases
+
+
 def resolve_version(release_type: str, channel: str, tags: list[str]) -> dict[str, Any]:
     if release_type == "none":
         return {
@@ -179,6 +218,41 @@ def resolve_version(release_type: str, channel: str, tags: list[str]) -> dict[st
     }
 
 
+def resolve_version_for_target(
+    release_type: str,
+    channel: str,
+    releases: list[dict[str, Any]],
+    target_sha: str | None,
+) -> dict[str, Any]:
+    if target_sha:
+        for release in releases:
+            if release["target_commitish"] != target_sha:
+                continue
+
+            parsed = Version.parse_tag(release["tag"])
+            if parsed is None:
+                continue
+
+            _, pre = parsed
+            if channel == "stable" and pre is None and not release["prerelease"]:
+                return {
+                    "shouldRelease": True,
+                    "version": release["tag"][1:],
+                    "tag": release["tag"],
+                    "isPrerelease": False,
+                }
+
+            if channel == "dev" and pre is not None and pre.startswith("dev."):
+                return {
+                    "shouldRelease": True,
+                    "version": release["tag"][1:],
+                    "tag": release["tag"],
+                    "isPrerelease": True,
+                }
+
+    return resolve_version(release_type, channel, [release["tag"] for release in releases])
+
+
 def write_outputs(values: dict[str, Any], path: str | None) -> None:
     if not path:
         return
@@ -211,8 +285,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_resolve(args: argparse.Namespace) -> int:
-    tags = parse_release_tags(load_json(args.tags_json_file, args.tags_json))
-    result = resolve_version(args.release_type, args.channel, tags)
+    if args.releases_json is not None or args.releases_json_file is not None:
+        releases = parse_releases(
+            load_json(args.releases_json_file, args.releases_json)
+        )
+        result = resolve_version_for_target(
+            args.release_type,
+            args.channel,
+            releases,
+            args.target_sha,
+        )
+    else:
+        tags = parse_release_tags(load_json(args.tags_json_file, args.tags_json))
+        result = resolve_version(args.release_type, args.channel, tags)
     if args.out:
         Path(args.out).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))
@@ -238,6 +323,9 @@ def build_parser() -> argparse.ArgumentParser:
     resolve.add_argument("--channel", required=True)
     resolve.add_argument("--tags-json")
     resolve.add_argument("--tags-json-file")
+    resolve.add_argument("--releases-json")
+    resolve.add_argument("--releases-json-file")
+    resolve.add_argument("--target-sha")
     resolve.add_argument("--out")
     resolve.add_argument("--github-output")
     resolve.set_defaults(func=cmd_resolve)
