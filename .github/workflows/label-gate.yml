@@ -36,11 +36,19 @@ jobs:
             .github/scripts/release_intent.py
           sparse-checkout-cone-mode: false
 
+      - name: Load current pull request labels
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr view "$PR_NUMBER" --json labels --jq '.labels' > labels.json
+
       - name: Validate release intent labels
         if: github.event_name == 'pull_request'
         run: |
           python3 .github/scripts/release_intent.py validate \
-            --event "$GITHUB_EVENT_PATH" \
+            --labels-json-file labels.json \
             --policy .github/quality-gates.json
 
       - name: Accept merge queue handoff

@@ -161,6 +161,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout release helpers
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/release_workflow.py
+          sparse-checkout-cone-mode: false
+
       - name: Create or reuse stable draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -171,26 +180,10 @@ jobs:
           body="Release build in progress. Draft remains unpublished until GitHub Pages deploy succeeds."
 
           if gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release.json 2>/dev/null; then
-            python3 - <<'PY'
-            import json
-            import os
-            import sys
-
-            release = json.load(open("release.json", encoding="utf-8"))
-            if not release.get("draft"):
-                print(f"Stable release {release['tag_name']} already exists as a published release.", file=sys.stderr)
-                raise SystemExit(1)
-            if release.get("prerelease"):
-                print(f"Stable release {release['tag_name']} cannot reuse a prerelease shell.", file=sys.stderr)
-                raise SystemExit(1)
-            target = release.get("target_commitish")
-            if target and target != os.environ["TARGET_SHA"]:
-                print(
-                    f"Stable release {release['tag_name']} targets {target}, expected {os.environ['TARGET_SHA']}.",
-                    file=sys.stderr,
-                )
-                raise SystemExit(1)
-            PY
+            python3 .github/scripts/release_workflow.py validate-release-shell \
+              --release-json-file release.json \
+              --channel stable \
+              --target-sha "$TARGET_SHA"
 
             gh api \
               -X PATCH \
@@ -645,6 +638,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout release helpers
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/release_workflow.py
+          sparse-checkout-cone-mode: false
+          path: release-helpers
+
       - name: Checkout installers
         uses: actions/checkout@v4
         with:
@@ -653,6 +656,7 @@ jobs:
           sparse-checkout: |
             tools/isolapurr-host/install
           sparse-checkout-cone-mode: false
+          path: source
 
       - name: Download release artifacts
         uses: actions/download-artifact@v4
@@ -672,8 +676,8 @@ jobs:
           mkdir -p "$out"
           find dist/downloaded -type f ! -name release-intent.json -exec cp {} "$out/" \;
           cp dist/downloaded/release-intent/release-intent.json "$out/release-intent.json"
-          cp tools/isolapurr-host/install/install-isolapurr-host.sh "$out/"
-          cp tools/isolapurr-host/install/install-isolapurr-host.ps1 "$out/"
+          cp source/tools/isolapurr-host/install/install-isolapurr-host.sh "$out/"
+          cp source/tools/isolapurr-host/install/install-isolapurr-host.ps1 "$out/"
           chmod +x "$out/install-isolapurr-host.sh"
           python3 - <<'PY'
           import hashlib
@@ -725,26 +729,10 @@ jobs:
 
           body="Release build in progress. Draft remains unpublished until all assets are uploaded."
           if gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release.json 2>/dev/null; then
-            python3 - <<'PY'
-            import json
-            import os
-            import sys
-
-            release = json.load(open("release.json", encoding="utf-8"))
-            if not release.get("draft"):
-                print(f"Dev release {release['tag_name']} already exists as a published release.", file=sys.stderr)
-                raise SystemExit(1)
-            if not release.get("prerelease"):
-                print(f"Dev release {release['tag_name']} must remain a prerelease shell.", file=sys.stderr)
-                raise SystemExit(1)
-            target = release.get("target_commitish")
-            if target and target != os.environ["TARGET_SHA"]:
-                print(
-                    f"Dev release {release['tag_name']} targets {target}, expected {os.environ['TARGET_SHA']}.",
-                    file=sys.stderr,
-                )
-                raise SystemExit(1)
-            PY
+            python3 release-helpers/.github/scripts/release_workflow.py validate-release-shell \
+              --release-json-file release.json \
+              --channel dev \
+              --target-sha "$TARGET_SHA"
 
             gh api \
               -X PATCH \

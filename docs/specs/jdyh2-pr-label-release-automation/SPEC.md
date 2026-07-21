@@ -115,6 +115,10 @@
   When Label Gate runs
   Then it passes and resolves release intent as a release.
 
+- Given a PR created before its labels are durably visible in the initial `opened` event payload
+  When Label Gate validates the PR
+  Then it reads the current live PR labels instead of trusting the stale event snapshot.
+
 - Given existing releases `v0.1.0`
   When a `type:minor` stable release is resolved
   Then the next tag is `v0.2.0`.

@@ -102,6 +102,19 @@ class QualityGatesContractTest(unittest.TestCase):
                 msg=f"{workflow_name} must not rely on trigger-level paths-ignore filters",
             )
 
+    def test_host_tools_required_matrix_checks_always_materialize(self) -> None:
+        text = EXPECTED_PR_WORKFLOWS["Host tools"].read_text(encoding="utf-8")
+        build_header = text.split("\n  build:\n", 1)[1].split("\n    steps:\n", 1)[0]
+
+        self.assertIn("name: Host tools / ${{ matrix.slug }}", build_header)
+        self.assertNotIn(
+            "if: needs.gate.outputs.run_build == 'true'",
+            build_header,
+            msg="required matrix job must expand even when build inputs are unchanged",
+        )
+        self.assertIn("- name: Skip host tools build", text)
+        self.assertIn("if: needs.gate.outputs.run_build != 'true'", text)
+
 
 if __name__ == "__main__":
     unittest.main()
