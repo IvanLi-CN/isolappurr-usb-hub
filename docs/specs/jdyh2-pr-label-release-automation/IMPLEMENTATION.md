@@ -17,6 +17,7 @@
 - `.github/scripts/release_intent.py` 现在会按 `target_sha` 复用既有 stable draft / dev prerelease 版本，避免 rerun 时静默 bump 新 tag。
 - `.github/quality-gates.json` 现在是 required checks 的单一 truth source，并显式声明 `pull_request + merge_group` required-check contract。
 - `.github/workflows/repo-contracts.yml` 与 Python contract tests 现在锁住 Pages/release/quality-gates contract，防止 workflow 名称与触发策略再漂移。
+- `.github/workflows/host-tools.yml` 现在会始终展开三个 required matrix checks，并在无 host-tools 变更时用 no-op 成功保留精确检查名，避免 branch protection 只看到占位 check 而阻塞合并。
 - GitHub `main` branch protection 现在已经按同一份 required-check contract 启用，并要求 PR 合并、signed commits、strict status checks、禁用 force-push 与 branch deletion。
 
 ## Remaining Gaps
