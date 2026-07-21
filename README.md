@@ -190,7 +190,9 @@ Plan `#0008` 引入 Desktop App；CLI/devd alignment 后，桌面壳定位为 GU
 
 ### GitHub Pages
 
-- 推送到 `main` 后，GitHub Actions 会构建 `web/` 并发布到 GitHub Pages（工作流：`.github/workflows/pages.yml`）。
+- 默认 owner-facing GitHub Pages 公开面只由 stable release 路径更新：`.github/workflows/release.yml` 会在 `channel:stable` 合并后创建/复用 draft release、单次构建 public `web/dist`、用同一构建同时上传 release web asset 并部署 Pages，确认 Pages 成功后才发布 release。
+- `.github/workflows/pages.yml` 现在只承担 `Pages / PR build` 检查，以及 `workflow_dispatch(release_tag=...)` 的 stable backfill；它不会在普通 `push main` 时直接重建并覆盖默认公开站点。
+- `channel:dev` 仍可发布 prerelease 与资产，但不会更新默认 GitHub Pages 公开面。
 - 说明：为了支持 SPA 路由的“刷新/直达”，构建产物会额外生成 `web/dist/404.html`。
 
 ## 许可证

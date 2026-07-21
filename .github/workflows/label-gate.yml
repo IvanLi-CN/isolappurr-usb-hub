@@ -1,7 +1,7 @@
 name: Label Gate
 
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - edited
@@ -10,13 +10,14 @@ on:
       - labeled
       - unlabeled
       - ready_for_review
+  merge_group:
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: label-gate-${{ github.event.pull_request.number }}
+  group: label-gate-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -25,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout base policy
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
@@ -35,7 +37,13 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Validate release intent labels
+        if: github.event_name == 'pull_request'
         run: |
           python3 .github/scripts/release_intent.py validate \
             --event "$GITHUB_EVENT_PATH" \
             --policy .github/quality-gates.json
+
+      - name: Accept merge queue handoff
+        if: github.event_name == 'merge_group'
+        run: |
+          echo "merge_group inherits release-intent validation from the queued pull request."

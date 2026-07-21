@@ -8,6 +8,9 @@
 - 2026-07-19: 把启动故障恢复拆成两层：健康会话继续 `prompt` 更新，故障启动路径自动激活 `waiting` worker 并在必要时落入失败壳。
 - 2026-07-19: 为 GitHub Pages 增加旧 hash 静态资源 retention 窗口，避免 stale `index.html` 立刻命中被删除 bundle。
 - 2026-07-19: 追加 Storybook visual evidence 与 Playwright 回归，把白屏恢复做成可持续验证的合同。
+- 2026-07-20: 为健康会话补主动更新检查调度层，固定触发时机为注册完成、回到前台、重新联网和 60 分钟轮询。
+- 2026-07-20: 把 `Later` 行为冻结为“同一标签页会话内对同一候选更新只提示一次”，避免健康会话被重复打扰。
+- 2026-07-20: 把 stable public deploy retention 从 `pages.yml` 收回到 `release.yml`，让 PWA 更新发现与 stable 发布面回到同一合同。
 
 ## Key Reasons / Replacements
 

@@ -2,11 +2,7 @@ name: Host tools
 
 on:
   pull_request:
-    paths:
-      - "tools/isolapurr-host/**"
-      - "tools/firmware-catalog/**"
-      - ".github/workflows/host-tools.yml"
-      - "Justfile"
+  merge_group:
   push:
     branches:
       - main
@@ -20,8 +16,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    outputs:
+      run_build: ${{ steps.gate.outputs.run_build }}
+    steps:
+      - name: Checkout gate inputs
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            .github/workflows/host-tools.yml
+            Justfile
+            tools/firmware-catalog
+            tools/isolapurr-host
+          sparse-checkout-cone-mode: false
+
+      - name: Decide whether to build
+        id: gate
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          if git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- \
+            .github/workflows/host-tools.yml Justfile tools/firmware-catalog tools/isolapurr-host | grep -q .; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
-    name: host tools (${{ matrix.slug }})
+    name: Host tools / ${{ matrix.slug }}
+    if: needs.gate.outputs.run_build == 'true'
+    needs: gate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

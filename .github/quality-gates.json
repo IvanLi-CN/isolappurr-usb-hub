@@ -1,4 +1,38 @@
 {
+  "schema_version": 1,
+  "implementation_profile": "final",
+  "policy": {
+    "baseline_policy": "explicit-waiver-required",
+    "require_signed_commits": true,
+    "branch_protection": {
+      "protected_branches": ["main"],
+      "require_pull_request": true,
+      "disallow_direct_pushes": true,
+      "disallow_branch_deletions": true,
+      "disallow_force_pushes": true,
+      "allow_merge_commits": true,
+      "require_merge_queue": false,
+      "required_reviewers": [],
+      "required_status_checks": {
+        "strict": true,
+        "integrations": {
+          "Label Gate": 15368,
+          "CI / Web (quality gates)": 15368,
+          "CI / Rust fmt": 15368,
+          "Firmware (ESP32-S3) / build": 15368,
+          "Host tools / linux-x86_64": 15368,
+          "Host tools / macos-aarch64": 15368,
+          "Host tools / windows-x86_64": 15368,
+          "Desktop / web dist": 15368,
+          "Desktop / macos": 15368,
+          "Desktop / windows": 15368,
+          "Desktop / linux": 15368,
+          "Pages / PR build": 15368,
+          "Repo Contracts / Python contract tests": 15368
+        }
+      }
+    }
+  },
   "releaseIntent": {
     "typeLabels": ["type:major", "type:minor", "type:patch", "type:none"],
     "channelLabels": ["channel:stable", "channel:dev"],
@@ -10,38 +44,104 @@
     ],
     "unknownReleaseLabelPrefixes": ["type:", "channel:", "component:"]
   },
-  "requiredChecks": [
+  "required_checks": [
     "Label Gate",
     "CI / Web (quality gates)",
     "CI / Rust fmt",
     "Firmware (ESP32-S3) / build",
-    "Host tools / host tools (linux-x86_64)",
-    "Host tools / host tools (macos-aarch64)",
-    "Host tools / host tools (windows-x86_64)",
-    "desktop / web build (dist)",
-    "desktop / build (macos)",
-    "desktop / build (windows)",
-    "desktop / build (linux)",
-    "Deploy web to GitHub Pages / build"
+    "Host tools / linux-x86_64",
+    "Host tools / macos-aarch64",
+    "Host tools / windows-x86_64",
+    "Desktop / web dist",
+    "Desktop / macos",
+    "Desktop / windows",
+    "Desktop / linux",
+    "Pages / PR build",
+    "Repo Contracts / Python contract tests"
   ],
-  "postMergeRepositorySetup": {
-    "labels": [
-      "type:major",
-      "type:minor",
-      "type:patch",
-      "type:none",
-      "channel:stable",
-      "channel:dev",
-      "component:host-tools",
-      "component:firmware",
-      "component:desktop",
-      "component:web"
-    ],
-    "secrets": ["SHOUTRRR_URL"],
-    "branchProtection": [
-      "PR-only main",
-      "require signed commits",
-      "require requiredChecks"
-    ]
-  }
+  "informational_checks": [],
+  "waivers": [],
+  "expected_pr_workflows": [
+    {
+      "workflow": "Label Gate",
+      "jobs": ["Label Gate"]
+    },
+    {
+      "workflow": "CI",
+      "jobs": ["CI / Web (quality gates)", "CI / Rust fmt"]
+    },
+    {
+      "workflow": "Firmware (ESP32-S3)",
+      "jobs": ["Firmware (ESP32-S3) / build"]
+    },
+    {
+      "workflow": "Host tools",
+      "jobs": [
+        "Host tools / linux-x86_64",
+        "Host tools / macos-aarch64",
+        "Host tools / windows-x86_64"
+      ]
+    },
+    {
+      "workflow": "Desktop",
+      "jobs": [
+        "Desktop / web dist",
+        "Desktop / macos",
+        "Desktop / windows",
+        "Desktop / linux"
+      ]
+    },
+    {
+      "workflow": "Pages",
+      "jobs": ["Pages / PR build"]
+    },
+    {
+      "workflow": "Repo Contracts",
+      "jobs": ["Repo Contracts / Python contract tests"]
+    }
+  ],
+  "expected_main_workflows": [
+    {
+      "workflow": "CI",
+      "jobs": ["CI / Web (quality gates)", "CI / Rust fmt"]
+    },
+    {
+      "workflow": "Firmware (ESP32-S3)",
+      "jobs": ["Firmware (ESP32-S3) / build"]
+    },
+    {
+      "workflow": "Host tools",
+      "jobs": [
+        "Host tools / linux-x86_64",
+        "Host tools / macos-aarch64",
+        "Host tools / windows-x86_64"
+      ]
+    },
+    {
+      "workflow": "Desktop",
+      "jobs": [
+        "Desktop / web dist",
+        "Desktop / macos",
+        "Desktop / windows",
+        "Desktop / linux"
+      ]
+    },
+    {
+      "workflow": "Repo Contracts",
+      "jobs": ["Repo Contracts / Python contract tests"]
+    }
+  ],
+  "expected_release_workflows": [
+    {
+      "workflow": "Release",
+      "jobs": [
+        "resolve release intent",
+        "prepare stable draft release",
+        "web release dist",
+        "upload release assets",
+        "deploy stable public site",
+        "publish GitHub release"
+      ]
+    }
+  ]
 }

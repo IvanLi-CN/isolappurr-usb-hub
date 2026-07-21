@@ -78,6 +78,7 @@ Do not reintroduce deprecated released selector variants or temporary devd IDs a
 - `docs/maintainer-workflow.md` is the detailed maintainer process truth source.
 - `docs/specs/**` hold normative topic contracts and their implementation/history companions.
 - `docs/solutions/**` hold reusable engineering lessons when the task hits existing solution knowledge or creates a new stable reusable lesson.
+- The default owner-facing GitHub Pages public site is part of the release contract, not a standalone push-to-main side effect. Stable public deploy ownership belongs to `jdyh2-pr-label-release-automation`, while PWA runtime update behavior belongs to `tfzd3-pwa-launch-recovery`.
 - Web verification surfaces are governed by
   [`docs/specs/kvbq9-web-demo-surface-policy/SPEC.md`](./specs/kvbq9-web-demo-surface-policy/SPEC.md):
   production SPA pages remain the only app-level Web pages, the formal
@@ -96,7 +97,7 @@ Do not reintroduce deprecated released selector variants or temporary devd IDs a
 ### Project-doc gate
 
 - If the task changes current human-facing project truth, update `README.md`, `AGENTS.md`, or other project docs before claiming merge-ready.
-- For this repository, changes to maintainer routing and repo skill boundaries normally require `README.md`, `AGENTS.md`, and this workflow doc to stay aligned.
+- For this repository, changes to maintainer routing, repo skill boundaries, stable release/public-site ownership, or installed-PWA update semantics normally require `README.md`, `AGENTS.md`, and this workflow doc to stay aligned.
 
 ### Contract-test gate
 

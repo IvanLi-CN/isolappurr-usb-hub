@@ -15,6 +15,7 @@
 - 为已安装 PWA 冷启动定义独立于 React bundle 的品牌启动壳。
 - 为启动失败定义可解释、可恢复的失败壳，先自动恢复，再暴露手动入口。
 - 保持健康会话的 `prompt` 更新体验，只在故障启动路径上自动接管恢复。
+- 为健康会话补主动更新发现调度层，让 owner 不必完全依赖手动重开才能发现新版本。
 - 为 GitHub Pages 发布定义短期旧 hash 资源保留窗口，避免 stale `index.html` 立即打到 `404`。
 - 为该主题绑定稳定的视觉证据与自动化回归，阻止白屏回归重新进入主干。
 
@@ -51,6 +52,8 @@
 - 失败壳必须先自动执行恢复流程，再提供 `Try again` 与 `Repair app` 两个动作。
 - `Repair app` 只能重置 service worker 与静态缓存，不得清空保存设备、主题或其他 owner 数据。
 - 健康会话检测到新版本时，仍必须保持现有 `prompt` 更新模式。
+- 健康会话在 service worker 注册完成、回到前台、重新联网以及 60 分钟节流轮询时，必须主动执行一次 `sw.js` no-store 探测与 `registration.update()` 检查。
+- 当 owner 在健康会话里对某一候选更新点击 `Later` 时，同一标签页会话内不得重复提示同一候选更新；下一次启动仍应自然进入新版本。
 - 故障启动路径必须优先尝试激活 `waiting` service worker 并 reload；只有该路径无效时，才进入失败壳并允许缓存修复。
 - GitHub Pages 发布产物必须同时包含当前版本和 retention 窗口内仍受支持的旧 hash 资源。
 - retention 窗口必须满足“最近两版或 14 天，以较晚到达者为准”的保留规则。
@@ -74,6 +77,8 @@
 - 当启动阶段检测到 `waiting` service worker 且当前会话属于故障恢复态时，启动壳先发送 `SKIP_WAITING`，等待 `controllerchange` 后 reload。
 - 当自动恢复无法让应用进入可挂载状态时，启动壳切换到失败壳并显示手动动作。
 - 当用户点击 `Repair app` 时，运行时注销现有 service worker、清理 Cache Storage、保留持久数据，然后 reload。
+- 当健康会话的 service worker 注册完成、页面重新可见、网络重新联通或 60 分钟轮询触发时，运行时对 `sw.js` 发起 `cache: "no-store"` 探测；只有脚本指纹变化时才调用 `registration.update()`。
+- 当健康会话的更新 toast 被 owner 用 `Later` 关闭时，运行时把该候选更新指纹记录到标签页级会话存储，并对同一候选更新静默到本次标签页结束。
 - 当 Pages 发布新版本时，构建脚本从线上 retention 清单或线上 `sw.js` 读取仍受支持的旧 hash 资源，把它们并入当前 `dist/`，再写出新的 `asset-retention.json`。
 
 ### Edge cases / errors
@@ -114,6 +119,14 @@
   When 新 service worker 进入 `waiting`
   Then 页面继续使用 prompt toast，让用户主动点击更新。
 
+- Given 健康会话已完成 service worker 注册
+  When 页面启动、回到前台、重新联网或命中 60 分钟轮询
+  Then 运行时主动检查 `sw.js` 与 service worker 更新。
+
+- Given owner 对某一候选更新点击 `Later`
+  When 同一标签页会话内再次检测到同一候选更新
+  Then 页面不再重复弹出该候选更新 toast。
+
 - Given GitHub Pages 构建发布新版本
   When 产物打包完成
   Then `dist/` 中同时包含当前 hash 资源与 retention 窗口内的旧 hash 资源，并写出对应 `asset-retention.json`。
@@ -140,11 +153,13 @@
 
 - Storybook stories to add/update:
   - `PWA/StartupShell`
+  - `PWA/UpdateToast`
 - `play` coverage must verify failed-state recovery buttons.
 
 ### Release / workflow
 
-- `.github/workflows/pages.yml` must run the retention step for non-PR builds.
+- `.github/workflows/release.yml` must run the retention step for stable public deploy builds.
+- `.github/workflows/pages.yml` must limit itself to PR build checks and `release_tag` backfill.
 - `web/scripts/retain-pages-assets.ts` must remain able to bootstrap from live `sw.js` when `asset-retention.json` does not exist yet.
 
 ## Visual Evidence
@@ -163,6 +178,10 @@ The primary startup headline stays on one line in the desktop light state; this 
 PR: include
 Installed-PWA startup failure shell rendered from the standalone Storybook mobile dark state, including recovery actions.
 ![PWA startup shell failed](./assets/pwa-startup-shell-failed.png)
+
+PR: include
+Healthy-session update prompt rendered from the controlled `PWA/UpdateToast` Storybook surface, showing the owner-facing `Later` and `Update` actions.
+![PWA update prompt](./assets/pwa-update-toast.png)
 
 ## Related PRs
 
