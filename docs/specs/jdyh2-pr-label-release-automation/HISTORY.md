@@ -9,6 +9,7 @@
 - 2026-07-20: 把 `pages.yml` 改为 PR build + `release_tag` backfill 双路径；默认公开 Pages 面不再由普通 `push main` 直接部署。
 - 2026-07-20: 把 required checks、`merge_group` 可见性与 `quality-gates` truth source 对齐，避免 workflow 路径过滤导致 required check 缺席。
 - 2026-07-21: 把 release shell 校验从 `release.yml` 条件分支里的内联 heredoc 挪到 `.github/scripts/release_workflow.py`，修复 stable draft 在 shell 解析阶段提前失败、导致 release 资产与 Pages 完全未发布的问题。
+- 2026-07-21: 让 `Label Gate` 改为读取 PR 当前真实 labels，而不是依赖 `opened` 事件快照，修复“PR 创建时 labels 尚未挂稳却留下失败 required check”的 merge gate 竞态。
 
 ## Key Reasons / Replacements
 

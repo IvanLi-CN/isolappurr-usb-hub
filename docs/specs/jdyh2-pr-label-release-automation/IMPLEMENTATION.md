@@ -12,6 +12,7 @@
 
 - `.github/workflows/release.yml` 现在把 stable 发布固定为“解析意图 -> 准备 draft -> 单次构建 -> 上传资产 -> 部署 Pages -> 发布 release”。
 - stable/dev release shell 校验现在由 `.github/scripts/release_workflow.py` 承担，避免 `release.yml` 在条件分支中因为 heredoc 解析失败而把整条发布链路短路。
+- `.github/workflows/label-gate.yml` 现在读取 PR 当前真实 labels 再做 release-intent 校验，避免 `opened` 事件里的旧 label 快照把 required `Label Gate` 永久卡红。
 - `.github/workflows/pages.yml` 现在只承担 PR build check 与 `release_tag` backfill；默认公开 Pages 面不再由普通 `push main` 直接覆盖。
 - `.github/scripts/release_intent.py` 现在会按 `target_sha` 复用既有 stable draft / dev prerelease 版本，避免 rerun 时静默 bump 新 tag。
 - `.github/quality-gates.json` 现在是 required checks 的单一 truth source，并显式声明 `pull_request + merge_group` required-check contract。
@@ -35,6 +36,7 @@
 - `.github/workflows/firmware.yml`
 - `.github/scripts/release_intent.py`
 - `.github/scripts/release_workflow.py`
+- `.github/scripts/test_label_gate_contract.py`
 - `.github/scripts/test_release_intent.py`
 - `.github/scripts/test_release_workflow.py`
 - `.github/scripts/test_quality_gates_contract.py`
