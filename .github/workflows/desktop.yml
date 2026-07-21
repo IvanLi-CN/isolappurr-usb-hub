@@ -55,7 +55,7 @@ jobs:
   web-build:
     if: needs.gate.outputs.run_build == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
     needs: gate
-    name: web dist
+    name: Desktop / web dist
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -112,7 +112,7 @@ jobs:
             os: ubuntu-24.04
             tauri_target: x86_64-unknown-linux-gnu
             tauri_args: "--ci --bundles deb"
-    name: ${{ matrix.name }}
+    name: Desktop / ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:

@@ -17,7 +17,7 @@ class ReleasePagesContractTest(unittest.TestCase):
         self.assertIn("workflow_dispatch:\n", workflow)
         self.assertIn("release_tag:\n", workflow)
         self.assertNotIn("\n  push:\n", workflow)
-        self.assertIn("name: PR build\n", workflow)
+        self.assertIn("name: Pages / PR build\n", workflow)
         self.assertIn('gh release download "$RELEASE_TAG"', workflow)
         self.assertNotIn("bun run retain-pages-assets", workflow)
 

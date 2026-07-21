@@ -53,7 +53,7 @@ jobs:
           fi
 
   build:
-    name: ${{ matrix.slug }}
+    name: Host tools / ${{ matrix.slug }}
     if: needs.gate.outputs.run_build == 'true'
     needs: gate
     runs-on: ${{ matrix.os }}

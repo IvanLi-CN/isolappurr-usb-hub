@@ -27,7 +27,7 @@ jobs:
         run: python3 scripts/check_source_lengths.py
 
   web:
-    name: Web (quality gates)
+    name: CI / Web (quality gates)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -74,7 +74,7 @@ jobs:
         run: bun run test:e2e
 
   rustfmt:
-    name: Rust fmt
+    name: CI / Rust fmt
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   pr-build:
-    name: PR build
+    name: Pages / PR build
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
