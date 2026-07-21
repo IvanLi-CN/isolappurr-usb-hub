@@ -52,6 +52,14 @@ class ReleasePagesContractTest(unittest.TestCase):
         self.assertIn("/releases?per_page=200", workflow)
         self.assertIn("first(.[] | select(.tag_name == $tag)) // empty", workflow)
 
+    def test_release_asset_upload_uses_explicit_repo(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'gh release upload "$RELEASE_TAG" dist/release-assets/* --clobber --repo "$GITHUB_REPOSITORY"',
+            workflow,
+        )
+
     def test_release_workflow_uses_scripted_release_shell_validation(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
