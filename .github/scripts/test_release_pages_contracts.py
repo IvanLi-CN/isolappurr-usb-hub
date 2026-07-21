@@ -60,6 +60,17 @@ class ReleasePagesContractTest(unittest.TestCase):
             workflow,
         )
 
+    def test_release_edit_uses_explicit_repo(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'gh release edit "$RELEASE_TAG" \\\n'
+            '            --title "$RELEASE_TAG" \\\n'
+            "            --notes-file dist/release-metadata/release-notes.md \\\n"
+            '            --repo "$GITHUB_REPOSITORY"',
+            workflow,
+        )
+
     def test_release_workflow_uses_scripted_release_shell_validation(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 

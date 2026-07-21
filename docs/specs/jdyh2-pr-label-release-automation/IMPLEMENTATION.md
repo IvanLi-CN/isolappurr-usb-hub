@@ -21,6 +21,7 @@
 - `.github/workflows/release.yml` 现在会先把 `VITE_BUILD_DATE` 写入 `$GITHUB_ENV`，再让 web build 与 `retain-pages-assets` 共同消费同一个时间戳；`web/scripts/retain-pages-assets.ts` 同时会对空 build date 兜底，避免 stable draft 已建好却在 hashed-asset retention 阶段崩掉。
 - `.github/workflows/release.yml` 现在通过 `/releases?per_page=200` 列表 API 按 tag 查找 release shell，保证 draft release 也能被 prepare、upload-assets 与 publish 阶段复用。
 - `.github/workflows/release.yml` 现在调用 `gh release upload` 时显式传 `--repo "$GITHUB_REPOSITORY"`，避免 upload-assets job 只有 path checkout、没有根 `.git` 时无法解析仓库。
+- `.github/workflows/release.yml` 现在调用 `gh release edit` 时也显式传 `--repo "$GITHUB_REPOSITORY"`，避免 publish job 只有 artifact download、没有根 `.git` 时在发布成功后把 workflow 标红。
 - `.github/workflows/desktop.yml` 现在会始终展开三个 required matrix checks，并在无桌面/Web 变更时用 no-op 成功保留精确检查名，避免 branch protection 只看到 `Desktop / ${{ matrix.name }}` 占位 check 而阻塞合并。
 - GitHub `main` branch protection 现在已经按同一份 required-check contract 启用，并要求 PR 合并、signed commits、strict status checks、禁用 force-push 与 branch deletion。
 
