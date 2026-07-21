@@ -6,10 +6,13 @@ export type PwaUpdateCheckReason =
   | "online"
   | "interval";
 
-type MinimalDocument = Pick<Document, "addEventListener" | "visibilityState">;
+type MinimalDocument = Pick<
+  Document,
+  "addEventListener" | "removeEventListener" | "visibilityState"
+>;
 type MinimalWindow = Pick<
   Window,
-  "addEventListener" | "clearInterval" | "setInterval"
+  "addEventListener" | "clearInterval" | "removeEventListener" | "setInterval"
 > & {
   navigator?: Pick<Navigator, "onLine">;
   online?: boolean;
@@ -150,16 +153,18 @@ export function createPwaUpdateScheduler({
     void run("interval", true);
   }, intervalMs);
 
-  document.addEventListener("visibilitychange", () => {
+  const handleVisibilityChange = () => {
     if (document.visibilityState !== "visible") {
       return;
     }
     void run("visibility");
-  });
+  };
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
-  window.addEventListener("online", () => {
+  const handleOnline = () => {
     void run("online");
-  });
+  };
+  window.addEventListener("online", handleOnline);
 
   const startupCheck = run("startup");
 
@@ -169,6 +174,8 @@ export function createPwaUpdateScheduler({
     },
     dispose() {
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleOnline);
     },
     flush() {
       return startupCheck;

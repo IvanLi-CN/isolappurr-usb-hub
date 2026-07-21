@@ -138,4 +138,33 @@ describe("createPwaUpdateScheduler", () => {
     await scheduler.checkNow("online");
     expect(reasons).toEqual(["online"]);
   });
+
+  test("removes visibility and online listeners on dispose", async () => {
+    const target = new MockWindow();
+    let updateCalls = 0;
+
+    const scheduler = createPwaUpdateScheduler({
+      document: target.document as unknown as Document,
+      fetchImpl: async () => okResponse("const version = 'v1';"),
+      intervalMs: 60_000,
+      now: () => 0,
+      registration: {
+        update: async () => {
+          updateCalls += 1;
+        },
+      },
+      swUrl: "/sw.js",
+      window: target as unknown as Window,
+    });
+
+    await scheduler.flush();
+    expect(updateCalls).toBe(1);
+
+    scheduler.dispose();
+    target.document.dispatchEvent(new Event("visibilitychange"));
+    target.dispatchEvent(new Event("online"));
+
+    expect(target.intervalCallback).toBeNull();
+    expect(updateCalls).toBe(1);
+  });
 });
