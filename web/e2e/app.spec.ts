@@ -218,6 +218,7 @@ async function stubServiceWorkerForBootRecovery(
 
 test("renders devices list and mock dashboard", async ({ page }) => {
   const storageKey = "isolapurr_usb_hub.devices";
+  const themeStorageKey = "isolapurr_usb_hub.theme";
   const device = {
     id: "aabbcc001122",
     name: "Demo Hub",
@@ -225,15 +226,23 @@ test("renders devices list and mock dashboard", async ({ page }) => {
   };
 
   await page.addInitScript(
-    ({ storageKey, device }) => {
+    ({ storageKey, themeStorageKey, device }) => {
       window.localStorage.setItem(storageKey, JSON.stringify([device]));
+      window.localStorage.setItem(
+        themeStorageKey,
+        JSON.stringify("isolapurr-dark"),
+      );
     },
-    { storageKey, device },
+    { storageKey, themeStorageKey, device },
   );
 
   await page.goto("/");
 
   await expect(page).toHaveTitle("IsolaPurr USB Hub Console");
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-theme",
+    "isolapurr-dark",
+  );
 
   const desktopSidebar = page.locator("aside");
   await expect(desktopSidebar.getByTestId("device-list")).toBeVisible();
@@ -289,12 +298,6 @@ test("renders devices list and mock dashboard", async ({ page }) => {
 
   await expectSelectionContrast();
 
-  await page.evaluate(() => {
-    window.localStorage.setItem(
-      "isolapurr_usb_hub.theme",
-      JSON.stringify("isolapurr-dark"),
-    );
-  });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute(
     "data-theme",
