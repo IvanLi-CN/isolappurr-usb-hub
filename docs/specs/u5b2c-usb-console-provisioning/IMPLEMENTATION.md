@@ -19,6 +19,7 @@
 - EEPROM Wi-Fi config: implemented with magic/version/checksum record, SSID/PSK fields, optional static IPv4 fields, and queued runtime writes through the telemetry I2C bus.
 - Local USB: implemented for serial enumeration, JSONL request proxying, single-operation serial lock, `espflash save-image`, identity-checked `espflash write-bin` at `0x10000`, reset, and monitor using the user-selected app `.bin` and port path. First-time hardware or download mode can use the same selected port for one explicitly confirmed bootstrap flash before identity is available.
 - Development CLI: implemented `serial ports`, `serial identify`, `serial request`, `firmware make-bin`, `firmware flash`, `firmware reset`, and `firmware monitor`. `just desktop-agent-build` builds the CLI once; `just ports` and related selector commands then execute the existing binary without implicit rebuilds. `just identify` writes `.esp32-port` with the owner-confirmed port plus `device_id`/`mac`; `just select-port` can also cache an `identity=unconfirmed` owner-confirmed port when `info` times out; `just flash` uses `espflash flash` on the release ELF for unconfirmed bootstrap flashing, then confirms identity; `just flash-monitor` validates identity, flashes only the app `.bin`, resets, and monitors without `mcu-agentd`.
+- Development JSON monitor classifies non-UTF-8, control-byte, and short startup fragments as `binary` records with base64 payloads instead of coercing them into `log` or `jsonl` line records.
 - Web transports and Add device UI: implemented with Add device flows for Wi-Fi / LAN, Web Serial, and Local USB; Web Serial JSONL; Local USB JSONL; and Wi-Fi HTTP channel.
 - Device runtime: implemented concurrent Wi-Fi / LAN, Web Serial, and Local USB channel tracking. The active channel remains primary while healthy; when it fails, polling and controls promote the next available channel for the same saved device.
 - Browser single-writer runtime: implemented a same-origin coordinator so one leader tab owns discovery, transport bootstrap, polling, and hardware writes while every same-origin tab submits reads and writes through the shared runtime command channel.
@@ -68,6 +69,9 @@
 - `just --list`
 - `just host-tools-build`
 - `just host-tools-test`
+- `cargo +stable test --manifest-path desktop/src-tauri/Cargo.toml --target aarch64-apple-darwin`
+- Hardware validation: `isolapurr-desktop firmware monitor --port /dev/cu.usbmodem21221401 --elf target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub --reset --json` produced valid JSON lines with startup binary/control-byte frames reported as `kind:"binary"` and no replacement/control bytes in `line` fields.
+- Hardware validation: `isolapurr-desktop serial request --port /dev/cu.usbmodem21221401 --method info --json` succeeded after monitor interruption and reported full `device_id=f293cc9c139e`.
 - GitHub Actions pass for Firmware, Web quality gates, Deploy web build, Dependency Review, and Desktop macOS/Windows/Linux/Linux ARM/Windows ARM packaging.
 - Local USB hardware flash: generated an ESP32-S3 app `.bin` with `espflash save-image`, flashed it through `/api/v1/firmware/flash` at `0x10000`, and read back `info` from `/api/v1/serial/request`.
 - Web Serial hardware flash: selected the saved device's current Web Serial channel from the Hardware page, wrote the ESP32-S3 app `.bin` at `0x10000`, did not open the Add device/browser serial chooser during update, restored the Web Serial channel after reboot, and re-read `info` for the full 12-character `device_id`.

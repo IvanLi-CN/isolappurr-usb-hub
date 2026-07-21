@@ -238,6 +238,50 @@ mod tests {
     }
 
     #[test]
+    fn monitor_jsonl_classification_requires_json_object() {
+        assert_eq!(classify_monitor_line("{\"id\":1,\"ok\":true}"), "jsonl");
+        assert_eq!(classify_monitor_line("2"), "log");
+        assert_eq!(parse_monitor_record(b"2\n").kind, "log");
+        assert_eq!(parse_monitor_record(b"OK\n").line.as_deref(), Some("OK"));
+        assert!(is_single_byte_monitor_fragment(b"2"));
+        assert!(!is_single_byte_monitor_fragment(b"OK"));
+    }
+
+    #[test]
+    fn monitor_record_preserves_binary_bytes_outside_log_line() {
+        let record = parse_monitor_record(&[0xff, 0x00, b'E', b'\n']);
+        assert_eq!(record.kind, "binary");
+        assert_eq!(record.line, None);
+        assert_eq!(record.byte_len, Some(3));
+        assert_eq!(record.data_base64.as_deref(), Some("/wBF"));
+
+        let control_record = parse_monitor_record(&[b'a', 0x00, b'b', b'\n']);
+        assert_eq!(control_record.kind, "binary");
+        assert_eq!(control_record.line, None);
+
+        let boot_record = parse_monitor_record(b"ESP-ROM:esp32s3-20210327\n");
+        assert_eq!(boot_record.kind, "boot");
+        assert_eq!(
+            boot_record.line.as_deref(),
+            Some("ESP-ROM:esp32s3-20210327")
+        );
+    }
+
+    #[test]
+    fn monitor_parser_only_folds_one_startup_fragment_after_binary() {
+        let mut state = MonitorParserState::default();
+
+        assert_eq!(state.parse_line(&[0xff, 0x00, b'E', b'\n']).kind, "binary");
+        let fragment = state.parse_line(b"2\n");
+        assert_eq!(fragment.kind, "binary");
+        assert_eq!(fragment.data_base64.as_deref(), Some("Mg=="));
+
+        let log = state.parse_line(b"O\n");
+        assert_eq!(log.kind, "log");
+        assert_eq!(log.line.as_deref(), Some("O"));
+    }
+
+    #[test]
     fn extracts_identity_from_info_response_shapes() {
         let nested = serde_json::json!({
             "id": 1,
