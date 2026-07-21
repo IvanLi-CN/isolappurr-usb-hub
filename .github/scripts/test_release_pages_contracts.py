@@ -36,6 +36,18 @@ class ReleasePagesContractTest(unittest.TestCase):
         self.assertIn("gh release upload", workflow)
         self.assertIn("gh release edit", workflow)
 
+    def test_release_workflow_keeps_dev_jobs_running_when_stable_gates_are_skipped(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "if: always() && needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')",
+            workflow,
+        )
+        self.assertIn(
+            "if: always() && needs.intent.outputs.shouldRelease == 'true' && needs.upload-assets.result == 'success' && (needs.intent.outputs.channel != 'stable' || needs.stable-pages.result == 'success')",
+            workflow,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

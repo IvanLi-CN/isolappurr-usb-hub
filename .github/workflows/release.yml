@@ -215,7 +215,7 @@ jobs:
 
   host-tools:
     name: host tools (${{ matrix.slug }})
-    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
+    if: always() && needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
     needs:
       - intent
       - stable-draft
@@ -312,7 +312,7 @@ jobs:
 
   firmware:
     name: firmware release build
-    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
+    if: always() && needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
     needs:
       - intent
       - stable-draft
@@ -398,7 +398,7 @@ jobs:
 
   web-dist:
     name: web release dist
-    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
+    if: always() && needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
     needs:
       - intent
       - stable-draft
@@ -479,7 +479,7 @@ jobs:
 
   desktop:
     name: desktop (${{ matrix.slug }})
-    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
+    if: always() && needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
     needs:
       - intent
       - stable-draft
@@ -805,7 +805,7 @@ jobs:
 
   publish:
     name: publish GitHub release
-    if: needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-pages.result == 'success')
+    if: always() && needs.intent.outputs.shouldRelease == 'true' && needs.upload-assets.result == 'success' && (needs.intent.outputs.channel != 'stable' || needs.stable-pages.result == 'success')
     needs:
       - intent
       - upload-assets
