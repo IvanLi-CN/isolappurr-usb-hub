@@ -115,6 +115,19 @@ class QualityGatesContractTest(unittest.TestCase):
         self.assertIn("- name: Skip host tools build", text)
         self.assertIn("if: needs.gate.outputs.run_build != 'true'", text)
 
+    def test_desktop_required_matrix_checks_always_materialize(self) -> None:
+        text = EXPECTED_PR_WORKFLOWS["Desktop"].read_text(encoding="utf-8")
+        build_header = text.split("\n  build:\n", 1)[1].split("\n    steps:\n", 1)[0]
+
+        self.assertIn("name: Desktop / ${{ matrix.name }}", build_header)
+        self.assertNotIn(
+            "if: needs.gate.outputs.run_build == 'true'",
+            build_header,
+            msg="required desktop matrix job must expand even when inputs are unchanged",
+        )
+        self.assertIn("- name: Skip desktop build", text)
+        self.assertIn("SHOULD_BUILD:", text)
+
 
 if __name__ == "__main__":
     unittest.main()

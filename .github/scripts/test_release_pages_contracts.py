@@ -45,6 +45,13 @@ class ReleasePagesContractTest(unittest.TestCase):
         )
         self.assertIn("VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}", workflow)
 
+    def test_release_workflow_finds_draft_releases_from_list_api(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertNotIn("/releases/tags/${RELEASE_TAG}", workflow)
+        self.assertIn("/releases?per_page=200", workflow)
+        self.assertIn("first(.[] | select(.tag_name == $tag)) // empty", workflow)
+
     def test_release_workflow_uses_scripted_release_shell_validation(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
@@ -57,7 +64,7 @@ class ReleasePagesContractTest(unittest.TestCase):
             workflow.count(
                 "python3 release-helpers/.github/scripts/release_workflow.py validate-release-shell"
             ),
-            1,
+            2,
         )
 
     def test_release_workflow_keeps_dev_jobs_running_when_stable_gates_are_skipped(self) -> None:
