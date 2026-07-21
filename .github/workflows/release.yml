@@ -179,7 +179,8 @@ jobs:
           set -euo pipefail
           body="Release build in progress. Draft remains unpublished until GitHub Pages deploy succeeds."
 
-          if gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release.json 2>/dev/null; then
+          gh api "/repos/${GITHUB_REPOSITORY}/releases?per_page=200" > releases.json
+          if jq -e --arg tag "$RELEASE_TAG" 'first(.[] | select(.tag_name == $tag)) // empty' releases.json > release.json; then
             python3 .github/scripts/release_workflow.py validate-release-shell \
               --release-json-file release.json \
               --channel stable \
@@ -724,13 +725,26 @@ jobs:
           IS_PRERELEASE: ${{ needs.intent.outputs.isPrerelease }}
         run: |
           set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/releases?per_page=200" > releases.json
+          release_exists=false
+          if jq -e --arg tag "$RELEASE_TAG" 'first(.[] | select(.tag_name == $tag)) // empty' releases.json > release.json; then
+            release_exists=true
+          fi
+
           if [ "$CHANNEL" = "stable" ]; then
-            gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null
+            if [ "$release_exists" != "true" ]; then
+              echo "Stable release shell ${RELEASE_TAG} was not prepared." >&2
+              exit 1
+            fi
+            python3 release-helpers/.github/scripts/release_workflow.py validate-release-shell \
+              --release-json-file release.json \
+              --channel stable \
+              --target-sha "$TARGET_SHA"
             exit 0
           fi
 
           body="Release build in progress. Draft remains unpublished until all assets are uploaded."
-          if gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release.json 2>/dev/null; then
+          if [ "$release_exists" = "true" ]; then
             python3 release-helpers/.github/scripts/release_workflow.py validate-release-shell \
               --release-json-file release.json \
               --channel dev \
@@ -818,7 +832,10 @@ jobs:
           IS_PRERELEASE: ${{ needs.intent.outputs.isPrerelease }}
         run: |
           set -euo pipefail
-          gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release.json
+          gh api "/repos/${GITHUB_REPOSITORY}/releases?per_page=200" > releases.json
+          jq -e --arg tag "$RELEASE_TAG" \
+            'first(.[] | select(.tag_name == $tag)) // empty' \
+            releases.json > release.json
           python3 - <<'PY'
           import json
           import os
