@@ -862,4 +862,5 @@ jobs:
             --input release-payload.json >/dev/null
           gh release edit "$RELEASE_TAG" \
             --title "$RELEASE_TAG" \
-            --notes-file dist/release-metadata/release-notes.md
+            --notes-file dist/release-metadata/release-notes.md \
+            --repo "$GITHUB_REPOSITORY"
