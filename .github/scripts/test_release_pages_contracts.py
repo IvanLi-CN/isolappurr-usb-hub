@@ -36,6 +36,21 @@ class ReleasePagesContractTest(unittest.TestCase):
         self.assertIn("gh release upload", workflow)
         self.assertIn("gh release edit", workflow)
 
+    def test_release_workflow_uses_scripted_release_shell_validation(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertEqual(workflow.count("python3 - <<'PY'"), 4)
+        self.assertEqual(
+            workflow.count("python3 .github/scripts/release_workflow.py validate-release-shell"),
+            1,
+        )
+        self.assertEqual(
+            workflow.count(
+                "python3 release-helpers/.github/scripts/release_workflow.py validate-release-shell"
+            ),
+            1,
+        )
+
     def test_release_workflow_keeps_dev_jobs_running_when_stable_gates_are_skipped(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
