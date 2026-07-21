@@ -432,15 +432,17 @@ jobs:
             --output-dir web/public/firmware \
             --limit 50
 
+      - name: Capture web build date
+        run: echo "VITE_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
       - name: Build web dist
         env:
           VITE_BASE: /
+          VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}
           VITE_BUILD_SHA: ${{ needs.intent.outputs.targetSha }}
           VITE_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
         working-directory: web
-        run: |
-          export VITE_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          bun run build
+        run: bun run build
 
       - name: Retain previous hashed assets
         if: needs.intent.outputs.channel == 'stable'

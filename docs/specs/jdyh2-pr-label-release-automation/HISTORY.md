@@ -11,6 +11,7 @@
 - 2026-07-21: 把 release shell 校验从 `release.yml` 条件分支里的内联 heredoc 挪到 `.github/scripts/release_workflow.py`，修复 stable draft 在 shell 解析阶段提前失败、导致 release 资产与 Pages 完全未发布的问题。
 - 2026-07-21: 让 `Label Gate` 改为读取 PR 当前真实 labels，而不是依赖 `opened` 事件快照，修复“PR 创建时 labels 尚未挂稳却留下失败 required check”的 merge gate 竞态。
 - 2026-07-21: 让 `host-tools.yml` 的 required matrix checks 始终展开并在无变更时走 no-op 成功，修复 branch protection 只看到占位检查名、导致 main 仍然无法合并的问题。
+- 2026-07-21: 把 stable release 的 `VITE_BUILD_DATE` 改为写入 `$GITHUB_ENV` 并在 retention 脚本中对空串降级处理，修复主线 release 在 `Retain previous hashed assets` 阶段因空日期直接失败的问题。
 
 ## Key Reasons / Replacements
 

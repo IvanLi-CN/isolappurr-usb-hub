@@ -122,6 +122,14 @@ export function selectRetainedReleases(
   });
 }
 
+export function resolveBuildDate(
+  input: string | undefined,
+  now: Date = new Date(),
+): string {
+  const trimmed = input?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : now.toISOString();
+}
+
 async function listFiles(dir: string): Promise<string[]> {
   const files: string[] = [];
   const entries = await readdir(dir, { withFileTypes: true });
@@ -307,7 +315,7 @@ async function retainPreviousAssets({
 async function main() {
   const rootDir = resolve(import.meta.dir, "..");
   const distDir = resolve(rootDir, "dist");
-  const buildDate = process.env.VITE_BUILD_DATE ?? new Date().toISOString();
+  const buildDate = resolveBuildDate(process.env.VITE_BUILD_DATE);
   const buildSha = process.env.VITE_BUILD_SHA ?? "local-build";
   const siteOrigin = process.env.PAGES_DEPLOY_ORIGIN?.trim();
 
