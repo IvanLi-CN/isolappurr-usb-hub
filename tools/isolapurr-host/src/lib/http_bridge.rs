@@ -707,6 +707,46 @@ fn power_config_matches_expected(value: &Value, expected: &Value) -> bool {
             == expected.pointer("/manual/usb_c_path_mode")
 }
 
+fn power_runtime_matches_expected(value: &Value, action: &str, enabled: bool) -> bool {
+    let observed = value.get("result").unwrap_or(value);
+    (match action {
+        "output" => observed
+            .pointer("/runtime/output_enabled")
+            .and_then(Value::as_bool),
+        "discharge" => observed
+            .pointer("/runtime/discharge_enabled")
+            .and_then(Value::as_bool),
+        _ => None,
+    }) == Some(enabled)
+}
+
+async fn power_runtime_applied_after_serial_timeout(
+    state: &AppState,
+    id: &str,
+    action: &str,
+    enabled: bool,
+) -> anyhow::Result<Value> {
+    let mut last_error = None;
+    for _ in 0..6 {
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        match usb_jsonl_request(state, id, "power.config_get", None).await {
+            Ok(mut value) if power_runtime_matches_expected(&value, action, enabled) => {
+                if let Some(result) = value.get_mut("result").and_then(Value::as_object_mut) {
+                    result.insert("verified_after_serial_timeout".to_string(), json!(true));
+                }
+                return Ok(value);
+            }
+            Ok(_) => {
+                last_error = Some(anyhow!(
+                    "power runtime did not report the requested state yet"
+                ))
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("power runtime did not verify after serial timeout")))
+}
+
 fn power_config_matches_defaults(value: &Value) -> bool {
     let observed = value.get("result").unwrap_or(value);
     observed.get("persisted").and_then(Value::as_bool) == Some(true)
@@ -985,6 +1025,20 @@ async fn device_power_runtime_set(
     });
     match usb_jsonl_request(&state, &id, "power.runtime_set", Some(params)).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) if should_verify_power_config_after_serial_error(&err) => {
+            let action = body
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let enabled = body
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            match power_runtime_applied_after_serial_timeout(&state, &id, action, enabled).await {
+                Ok(value) => Json(redact_sensitive(&value)).into_response(),
+                Err(_) => error_from_anyhow(err),
+            }
+        }
         Err(err) => error_from_anyhow(err),
     }
 }

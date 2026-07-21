@@ -127,6 +127,10 @@
 - Extended Storybook/spec evidence to cover badge visibility on wide, narrow,
   and constrained medium-width protocol cards.
 
+- Recorded the Local USB lost-response rule for runtime output/discharge:
+  verify the resulting runtime state before accepting success, rather than
+  replaying a mutating command. Saved compensation settings remain untouched.
+
 ## 2026-06-11
 
 - Added a device-level USB-C idle-bias calibration topic to the existing
