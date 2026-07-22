@@ -154,11 +154,81 @@ async function forceStandaloneLaunchShell(page: Page) {
 
 async function stubServiceWorkerForBootRecovery(
   page: Page,
-  mode: "none" | "waiting",
+  mode: "none" | "waiting" | "updates-to-waiting",
 ) {
   await page.addInitScript(
     ({ recoveryMode }) => {
       const listeners = new Set<(event: Event) => void>();
+      const registrationListeners = new Set<(event: Event) => void>();
+      const workerListeners = new Set<(event: Event) => void>();
+
+      const waitingWorker = {
+        postMessage(message: { type?: string }) {
+          if (message?.type !== "SKIP_WAITING") {
+            return;
+          }
+          setTimeout(() => {
+            for (const listener of listeners) {
+              listener(new Event("controllerchange"));
+            }
+          }, 0);
+        },
+      };
+
+      const registration = {
+        installing: null as null | EventTarget,
+        waiting: recoveryMode === "waiting" ? waitingWorker : null,
+        addEventListener(type: string, listener: (event: Event) => void) {
+          if (type === "updatefound") {
+            registrationListeners.add(listener);
+          }
+        },
+        removeEventListener(type: string, listener: (event: Event) => void) {
+          if (type === "updatefound") {
+            registrationListeners.delete(listener);
+          }
+        },
+        async update() {
+          if (recoveryMode !== "updates-to-waiting" || registration.waiting) {
+            return;
+          }
+
+          const installing = new EventTarget();
+          Object.defineProperty(installing, "state", {
+            configurable: true,
+            get: () => (registration.waiting ? "installed" : "installing"),
+          });
+          const originalAddEventListener =
+            installing.addEventListener.bind(installing);
+          installing.addEventListener = (type, listener, options) => {
+            if (type === "statechange") {
+              workerListeners.add(listener as (event: Event) => void);
+            }
+            originalAddEventListener(type, listener, options);
+          };
+          const originalRemoveEventListener =
+            installing.removeEventListener.bind(installing);
+          installing.removeEventListener = (type, listener, options) => {
+            if (type === "statechange") {
+              workerListeners.delete(listener as (event: Event) => void);
+            }
+            originalRemoveEventListener(type, listener, options);
+          };
+
+          registration.installing = installing;
+          for (const listener of registrationListeners) {
+            listener(new Event("updatefound"));
+          }
+
+          setTimeout(() => {
+            registration.waiting = waitingWorker;
+            for (const listener of workerListeners) {
+              listener(new Event("statechange"));
+            }
+          }, 0);
+        },
+      };
+
       const serviceWorker = {
         controller: null,
         ready: Promise.resolve(undefined),
@@ -173,27 +243,14 @@ async function stubServiceWorkerForBootRecovery(
           }
         },
         async getRegistration() {
-          if (recoveryMode !== "waiting") {
+          if (recoveryMode === "none") {
             return null;
           }
 
-          return {
-            waiting: {
-              postMessage(message: { type?: string }) {
-                if (message?.type !== "SKIP_WAITING") {
-                  return;
-                }
-                setTimeout(() => {
-                  for (const listener of listeners) {
-                    listener(new Event("controllerchange"));
-                  }
-                }, 0);
-              },
-            },
-          };
+          return registration;
         },
         async getRegistrations() {
-          return [];
+          return recoveryMode === "none" ? [] : [registration];
         },
         async register() {
           return {
@@ -780,6 +837,59 @@ test("self-heals a stale standalone shell by promoting a waiting service worker"
   await expect.poll(() => entryRequests).toBeGreaterThan(1);
   await expect(page.getByTestId("dashboard")).toBeVisible();
   await expect(page.getByTestId("pwa-startup-shell")).toBeHidden();
+});
+
+test("refreshes the service worker when a stale shell fails before a waiting worker exists", async ({
+  page,
+}) => {
+  await forceStandaloneLaunchShell(page);
+  await stubServiceWorkerForBootRecovery(page, "updates-to-waiting");
+
+  let entryRequests = 0;
+  await page.route(/\/assets\/index-[^/]+\.js$/, async (route) => {
+    entryRequests += 1;
+    if (entryRequests === 1) {
+      await route.fulfill({
+        status: 404,
+        contentType: "text/javascript",
+        body: "/* stale shell */",
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByTestId("pwa-startup-shell")).toBeVisible();
+  await expect.poll(() => entryRequests).toBeGreaterThan(1);
+  await expect(page.getByTestId("dashboard")).toBeVisible();
+  await expect(page.getByTestId("pwa-startup-shell")).toBeHidden();
+});
+
+test("shows repair actions when a controlled browser launch crashes before mount", async ({
+  page,
+}) => {
+  await stubServiceWorkerForBootRecovery(page, "none");
+
+  await page.route(/\/assets\/index-[^/]+\.js$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/javascript",
+      body: "throw new Error('legacy bundle crash before mount');",
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByTestId("pwa-startup-shell-status")).toHaveText(
+    "App launch failed",
+    { timeout: 12_000 },
+  );
+  await expect(page.getByTestId("pwa-startup-shell-repair")).toBeVisible();
+  await expect(
+    page.getByText(/without touching saved devices or theme/i),
+  ).toBeVisible();
 });
 
 test("uses the failure shell repair action without clearing saved devices", async ({

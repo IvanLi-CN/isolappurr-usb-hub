@@ -32,7 +32,7 @@
 
 - `web/index.html` 级别的启动壳、失败壳、超时与错误监听。
 - React 主应用挂载成功信号与启动失败上报桥接。
-- 启动故障态下的 service worker `waiting` 激活、自愈 reload、缓存清理恢复动作。
+- 启动故障态下的 service worker 更新检查、`waiting` 激活、自愈 reload、缓存清理恢复动作。
 - GitHub Pages 发布产物的旧 hash 资源 retention 清单与并包规则。
 - Storybook 启动壳 visual evidence 与 Playwright 回归。
 
@@ -54,7 +54,7 @@
 - 健康会话检测到新版本时，仍必须保持现有 `prompt` 更新模式。
 - 健康会话在 service worker 注册完成、回到前台、重新联网以及 60 分钟节流轮询时，必须主动执行一次 `sw.js` no-store 探测与 `registration.update()` 检查。
 - 当 owner 在健康会话里对某一候选更新点击 `Later` 时，同一标签页会话内不得重复提示同一候选更新；下一次启动仍应自然进入新版本。
-- 故障启动路径必须优先尝试激活 `waiting` service worker 并 reload；只有该路径无效时，才进入失败壳并允许缓存修复。
+- 故障启动路径必须优先尝试激活 `waiting` service worker 并 reload；如果当前还没有 `waiting` worker，则必须先主动执行 `registration.update()` 并等待新 worker 进入 `waiting`，只有这些自动路径无效时，才进入失败壳并允许缓存修复。
 - GitHub Pages 发布产物必须同时包含当前版本和 retention 窗口内仍受支持的旧 hash 资源。
 - retention 窗口必须满足“最近两版或 14 天，以较晚到达者为准”的保留规则。
 - stable 发布环境存在 GitHub Release 访问能力且能发现既有 stable Release web-dist 资产时，retention 必须优先从这些资产恢复旧 hash 资源；不得只依赖当前线上 Pages manifest 作为历史真相源。若 GitHub API 成功但尚无匹配 web-dist 资产，允许退回线上 retention 清单或线上 `sw.js` 作为过渡期 bootstrap；GitHub API 失败仍必须失败。
@@ -77,6 +77,7 @@
 
 - 当已安装 PWA 冷启动时，`index.html` 立即渲染启动壳，并等待主应用通过挂载信号隐藏该壳。
 - 当启动阶段检测到 `waiting` service worker 且当前会话属于故障恢复态时，启动壳先发送 `SKIP_WAITING`，等待 `controllerchange` 后 reload。
+- 当启动阶段发生同源入口脚本错误、bundle 运行错误或挂载超时时，如果当前 service worker 还没有 `waiting` worker，启动壳必须主动调用 `registration.update()`；若新 worker 随后进入 `waiting`，继续走 `SKIP_WAITING` 与 reload。
 - 当自动恢复无法让应用进入可挂载状态时，启动壳切换到失败壳并显示手动动作。
 - 当用户点击 `Repair app` 时，运行时注销现有 service worker、清理 Cache Storage、保留持久数据，然后 reload。
 - 当健康会话的 service worker 注册完成、页面重新可见、网络重新联通或 60 分钟轮询触发时，运行时对 `sw.js` 发起 `cache: "no-store"` 探测；只有脚本指纹变化时才调用 `registration.update()`。
@@ -85,7 +86,7 @@
 
 ### Edge cases / errors
 
-- 非 standalone / 非安装态的普通浏览器页可以不显示启动壳，但仍应保留正常 app 加载行为。
+- 非 standalone / 非安装态的普通浏览器页可以不在健康启动时显示启动壳，但仍必须挂载启动失败观察器；一旦主应用无法挂载，不得保持白屏，必须进入同一失败壳与恢复动作。
 - 启动恢复路径只接管 startup failure，不得把健康会话的常规更新体验变成默认强刷。
 - 若没有可激活的 `waiting` worker，失败壳必须仍然可用，并允许用户显式执行 `Repair app`。
 - 缓存修复后必须保留保存设备与主题设置，不能把恢复成功建立在“丢失 owner 数据”之上。
@@ -109,9 +110,17 @@
   When PWA 冷启动
   Then 运行时必须先尝试激活 `waiting` service worker 并 reload，成功时直接恢复进入主应用。
 
+- Given 旧缓存 shell 启动失败且当前没有 `waiting` service worker
+  When GitHub Pages 已部署新 `sw.js`
+  Then 运行时必须主动调用 `registration.update()`，等待新 worker 进入 `waiting` 后自动激活并 reload。
+
 - Given stale shell 恢复后仍无法挂载主应用
   When 启动恢复流程结束
   Then 页面进入失败壳，并提供 `Try again` 与 `Repair app` 两个动作。
+
+- Given 浏览器 `display-mode` 未报告 standalone 但页面仍由旧 PWA shell 控制
+  When 入口 bundle 崩溃或应用没有挂载
+  Then 页面不得继续白屏，必须显示失败壳与 `Repair app`。
 
 - Given 用户点击 `Repair app`
   When service worker 与静态缓存被重置并重新加载
