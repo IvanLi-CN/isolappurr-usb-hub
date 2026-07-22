@@ -135,9 +135,7 @@
   plus recovery artifact metadata, with `app.bin` generated from the plain
   app image and `full.bin` generated from a merged, skip-padding recovery
   image. Release builds also run the Web firmware bundler before publishing
-  the Web distribution tarball, and the release Web bundle now injects the
-  same run's firmware artifact before older GitHub Release entries so the
-  `/flash` bundled release list starts with the current release.
+  the Web distribution tarball.
 - Removed the repo-managed legacy command examples that still referenced old released forms such as `status --hardware`, `status --device`, and `hardware save --id/--transport`, and added contract tests plus CLI parser tests so that drift fails CI instead of silently reappearing.
 
 ## Remaining hardening

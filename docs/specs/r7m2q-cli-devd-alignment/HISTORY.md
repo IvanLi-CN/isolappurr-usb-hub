@@ -17,10 +17,6 @@
 - Updated the Web firmware bundler so legacy ELF-only recovery releases are
   promoted into merged bundled `full_image` assets with matching local catalog
   metadata, instead of accidentally repackaging the plain app image at `0x0`.
-- Updated the release Web bundling path so the same run's firmware artifact is
-  injected into `firmware/releases-manifest.json` before older GitHub Release
-  entries, preventing the installed `/flash` list from lagging behind the
-  current stable release.
 - Fixed the Local USB recovery closeout path so post-flash identity capture no
   longer deadlocks on the serial guard during reboot, and confirmed-target
   recovery no longer falsely requires the non-project strong-confirm path.
