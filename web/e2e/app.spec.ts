@@ -811,6 +811,29 @@ test("shows the standalone startup shell before the app mounts", async ({
   await expect(page.getByTestId("pwa-startup-shell")).toBeHidden();
 });
 
+test("keeps ordinary browser loads hidden when the app has not mounted yet", async ({
+  page,
+}) => {
+  await page.clock.install();
+
+  await page.route(/\/assets\/index-[^/]+\.js$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/javascript",
+      body: "/* browser load still parsing; app has not mounted yet */",
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByTestId("pwa-startup-shell")).toBeHidden();
+  await page.clock.fastForward(9_000);
+  await expect(page.getByTestId("pwa-startup-shell")).toBeHidden();
+  await expect(page.getByTestId("pwa-startup-shell-status")).not.toHaveText(
+    "App launch failed",
+  );
+});
+
 test("self-heals a stale standalone shell by promoting a waiting service worker", async ({
   page,
 }) => {

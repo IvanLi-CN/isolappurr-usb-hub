@@ -30,7 +30,7 @@
 
 ### In scope
 
-- `web/index.html` 级别的启动壳、失败壳、超时与错误监听。
+- `web/index.html` 级别的启动壳、失败壳、standalone 启动超时与错误监听。
 - React 主应用挂载成功信号与启动失败上报桥接。
 - 启动故障态下的 service worker 更新检查、`waiting` 激活、自愈 reload、缓存清理恢复动作。
 - GitHub Pages 发布产物的旧 hash 资源 retention 清单与并包规则。
@@ -48,7 +48,7 @@
 
 - 已安装 PWA 每次冷启动必须先进入品牌启动壳，不得先出现纯白或纯空白窗口。
 - 启动壳必须在 React 入口之前可用，不能依赖主 bundle 成功加载后才显示。
-- 当入口脚本加载失败、运行期出现同源脚本错误、启动超时或恢复后仍未进入应用时，必须切换到失败壳。
+- 当入口脚本加载失败、运行期出现同源脚本错误、standalone 启动超时或恢复后仍未进入应用时，必须切换到失败壳。
 - 失败壳必须先自动执行恢复流程，再提供 `Try again` 与 `Repair app` 两个动作。
 - `Repair app` 只能重置 service worker 与静态缓存，不得清空保存设备、主题或其他 owner 数据。
 - 健康会话检测到新版本时，仍必须保持现有 `prompt` 更新模式。
@@ -77,7 +77,7 @@
 
 - 当已安装 PWA 冷启动时，`index.html` 立即渲染启动壳，并等待主应用通过挂载信号隐藏该壳。
 - 当启动阶段检测到 `waiting` service worker 且当前会话属于故障恢复态时，启动壳先发送 `SKIP_WAITING`，等待 `controllerchange` 后 reload。
-- 当启动阶段发生同源入口脚本错误、bundle 运行错误或挂载超时时，如果当前 service worker 还没有 `waiting` worker，启动壳必须主动调用 `registration.update()`；若新 worker 随后进入 `waiting`，继续走 `SKIP_WAITING` 与 reload。
+- 当启动阶段发生同源入口脚本错误、bundle 运行错误或 standalone 挂载超时时，如果当前 service worker 还没有 `waiting` worker，启动壳必须主动调用 `registration.update()`；若新 worker 随后进入 `waiting`，继续走 `SKIP_WAITING` 与 reload。
 - 当自动恢复无法让应用进入可挂载状态时，启动壳切换到失败壳并显示手动动作。
 - 当用户点击 `Repair app` 时，运行时注销现有 service worker、清理 Cache Storage、保留持久数据，然后 reload。
 - 当健康会话的 service worker 注册完成、页面重新可见、网络重新联通或 60 分钟轮询触发时，运行时对 `sw.js` 发起 `cache: "no-store"` 探测；只有脚本指纹变化时才调用 `registration.update()`。
@@ -86,7 +86,7 @@
 
 ### Edge cases / errors
 
-- 非 standalone / 非安装态的普通浏览器页可以不在健康启动时显示启动壳，但仍必须挂载启动失败观察器；一旦主应用无法挂载，不得保持白屏，必须进入同一失败壳与恢复动作。
+- 非 standalone / 非安装态的普通浏览器页可以不在健康启动时显示启动壳，也不得因普通挂载延迟触发 standalone 启动超时；但仍必须挂载入口脚本错误、同源 bundle 错误和未处理 promise rejection 观察器，显式启动故障不得保持白屏。
 - 启动恢复路径只接管 startup failure，不得把健康会话的常规更新体验变成默认强刷。
 - 若没有可激活的 `waiting` worker，失败壳必须仍然可用，并允许用户显式执行 `Repair app`。
 - 缓存修复后必须保留保存设备与主题设置，不能把恢复成功建立在“丢失 owner 数据”之上。
@@ -119,8 +119,12 @@
   Then 页面进入失败壳，并提供 `Try again` 与 `Repair app` 两个动作。
 
 - Given 浏览器 `display-mode` 未报告 standalone 但页面仍由旧 PWA shell 控制
-  When 入口 bundle 崩溃或应用没有挂载
+  When 入口 bundle 崩溃
   Then 页面不得继续白屏，必须显示失败壳与 `Repair app`。
+
+- Given 普通 browser 会话不是 standalone
+  When 主应用挂载慢于 standalone 启动超时但没有显式脚本故障
+  Then 启动壳必须保持隐藏，不得误触发 PWA 恢复 UI。
 
 - Given 用户点击 `Repair app`
   When service worker 与静态缓存被重置并重新加载

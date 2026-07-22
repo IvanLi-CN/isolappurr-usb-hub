@@ -496,7 +496,9 @@
   attachActionHandlers();
   attachFailureObservers();
 
-  if (isStandalone()) {
+  const standaloneLaunch = isStandalone();
+
+  if (standaloneLaunch) {
     setVisible(true);
     setShellState("launching", {
       chip: "Installed console",
@@ -511,7 +513,9 @@
     setVisible(false);
   }
 
-  startupTimer = window.setTimeout(() => {
-    void handleStartupFailure(TIMEOUT_DETAIL);
-  }, STARTUP_TIMEOUT_MS);
+  if (standaloneLaunch) {
+    startupTimer = window.setTimeout(() => {
+      void handleStartupFailure(TIMEOUT_DETAIL);
+    }, STARTUP_TIMEOUT_MS);
+  }
 })();
