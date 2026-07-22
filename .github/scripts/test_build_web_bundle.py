@@ -1,6 +1,8 @@
 import importlib.util
+import json
 import pathlib
 import sys
+import tempfile
 import unittest
 
 
@@ -179,6 +181,97 @@ class BuildWebBundleTest(unittest.TestCase):
             ],
         )
         self.assertEqual(catalog["artifacts"][-1], recovery_artifact)
+
+    def test_current_release_entry_is_bundled_from_local_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            catalog_path = root / "isolapurr-firmware-catalog.json"
+            app_bin = root / "isolapurr-usb-hub.app.bin"
+            full_image = root / "isolapurr-usb-hub.full.bin"
+            output_dir = root / "public" / "firmware"
+
+            app_bin.write_bytes(b"app")
+            full_image.write_bytes(b"full")
+            catalog_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": "1",
+                        "artifacts": [
+                            {
+                                "artifactId": "isolapurr-b7cb94de2722",
+                                "target": "esp32s3_app",
+                                "version": "0.6.4",
+                                "gitSha": "b7cb94de2722",
+                                "buildId": "29888489128",
+                                "files": [
+                                    {
+                                        "kind": "app_bin",
+                                        "path": "isolapurr-usb-hub.app.bin",
+                                        "sha256": "app-sha",
+                                        "size": 3,
+                                        "flashAddress": 0x10000,
+                                    }
+                                ],
+                            },
+                            {
+                                "artifactId": "isolapurr-b7cb94de2722-recovery",
+                                "target": "esp32s3_full",
+                                "version": "0.6.4",
+                                "gitSha": "b7cb94de2722",
+                                "buildId": "29888489128",
+                                "files": [
+                                    {
+                                        "kind": "full_image",
+                                        "path": "isolapurr-usb-hub.full.bin",
+                                        "sha256": "full-sha",
+                                        "size": 4,
+                                        "flashAddress": 0,
+                                    }
+                                ],
+                            },
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            entry, bundled_recovery = build_web_bundle.current_release_manifest_entry(
+                output_dir=output_dir,
+                tag_name="v0.6.4",
+                version="0.6.4",
+                published_at="2026-07-22T03:47:00Z",
+                prerelease=False,
+                catalog_path=catalog_path,
+                app_bin_path=app_bin,
+                full_image_path=full_image,
+            )
+
+            self.assertTrue(bundled_recovery)
+            self.assertEqual(entry["tagName"], "v0.6.4")
+            self.assertEqual(entry["version"], "0.6.4")
+            self.assertEqual(
+                entry["app"]["assetPath"],
+                "firmware/releases/v0.6.4/isolapurr-usb-hub.app.bin",
+            )
+            self.assertEqual(
+                entry["recovery"]["assetPath"],
+                "firmware/releases/v0.6.4/isolapurr-usb-hub.full.bin",
+            )
+            self.assertTrue(
+                (
+                    output_dir
+                    / "releases/v0.6.4/isolapurr-firmware-catalog.json"
+                ).is_file()
+            )
+            self.assertEqual(
+                (output_dir / "releases/v0.6.4/isolapurr-usb-hub.app.bin").read_bytes(),
+                b"app",
+            )
+            self.assertEqual(
+                (output_dir / "releases/v0.6.4/isolapurr-usb-hub.full.bin").read_bytes(),
+                b"full",
+            )
 
 
 if __name__ == "__main__":

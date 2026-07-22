@@ -46,6 +46,20 @@ class ReleasePagesContractTest(unittest.TestCase):
         self.assertIn("VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}", workflow)
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", workflow)
 
+    def test_release_web_dist_bundles_current_firmware_artifact(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        web_dist = workflow.split("\n  web-dist:\n", 1)[1].split("\n  desktop:\n", 1)[0]
+
+        self.assertIn("needs.firmware.result == 'success'", web_dist)
+        self.assertIn("      - firmware\n", web_dist)
+        self.assertIn("name: release-firmware", web_dist)
+        self.assertIn("--current-release-tag", web_dist)
+        self.assertIn("--current-release-version", web_dist)
+        self.assertIn("--current-published-at", web_dist)
+        self.assertIn("--current-catalog dist/current-firmware/isolapurr-firmware-catalog.json", web_dist)
+        self.assertIn("--current-app-bin dist/current-firmware/isolapurr-usb-hub.app.bin", web_dist)
+        self.assertIn("--current-full-image dist/current-firmware/isolapurr-usb-hub.full.bin", web_dist)
+
     def test_release_workflow_finds_draft_releases_from_list_api(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 

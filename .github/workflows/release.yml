@@ -392,10 +392,11 @@ jobs:
 
   web-dist:
     name: web release dist
-    if: always() && needs.intent.outputs.shouldRelease == 'true' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
+    if: always() && needs.intent.outputs.shouldRelease == 'true' && needs.firmware.result == 'success' && (needs.intent.outputs.channel != 'stable' || needs.stable-draft.result == 'success')
     needs:
       - intent
       - stable-draft
+      - firmware
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -423,18 +424,35 @@ jobs:
         run: bun install --frozen-lockfile
         working-directory: web
 
+      - name: Download current firmware assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-firmware
+          path: dist/current-firmware
+
+      - name: Capture web build date
+        run: echo "VITE_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
       - name: Bundle same-origin firmware releases
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          current_prerelease_arg=()
+          if [ "${{ needs.intent.outputs.isPrerelease }}" = "true" ]; then
+            current_prerelease_arg=(--current-prerelease)
+          fi
           python3 tools/firmware-bundle/build-web-bundle.py \
             --repo IvanLi-CN/isolappurr-usb-hub \
             --manifest web/public/firmware/releases-manifest.json \
             --output-dir web/public/firmware \
-            --limit 50
-
-      - name: Capture web build date
-        run: echo "VITE_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+            --limit 50 \
+            --current-release-tag "${{ needs.intent.outputs.tag }}" \
+            --current-release-version "${{ needs.intent.outputs.version }}" \
+            --current-published-at "$VITE_BUILD_DATE" \
+            --current-catalog dist/current-firmware/isolapurr-firmware-catalog.json \
+            --current-app-bin dist/current-firmware/isolapurr-usb-hub.app.bin \
+            --current-full-image dist/current-firmware/isolapurr-usb-hub.full.bin \
+            "${current_prerelease_arg[@]}"
 
       - name: Build web dist
         env:

@@ -88,7 +88,7 @@
 
 - When a `channel:stable` PR merge reaches `main`, the Release workflow resolves release intent, target SHA, and version.
 - Before any stable artifact build starts, the workflow creates or reuses a draft GitHub Release for the resolved stable tag.
-- The workflow builds host tools, firmware, desktop assets, and a single public `web/dist`.
+- The workflow builds firmware before the single public `web/dist`, and the web build must bundle the same release's firmware catalog plus app/recovery images ahead of older GitHub Release firmware entries.
 - During the stable public web build, hashed-asset retention uses existing stable GitHub Release web-dist assets as the prior-release source.
 - The same `web/dist` is packaged as the stable web release asset archive and uploaded as the Pages deploy artifact.
 - Release assets are uploaded while the release remains draft.
