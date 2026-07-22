@@ -169,6 +169,13 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def copy_file(source: Path, destination: Path) -> None:
+    if not source.is_file():
+        raise SystemExit(f"required firmware bundle input is missing: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+
+
 def synthesized_full_image_name(elf_name: str) -> str:
     if elf_name.endswith(".elf"):
         return f"{elf_name[:-4]}.full.bin"
@@ -254,6 +261,98 @@ def inject_synthesized_recovery_artifact(
     return recovery_artifact
 
 
+def current_release_manifest_entry(
+    *,
+    output_dir: Path,
+    tag_name: str,
+    version: str,
+    published_at: str,
+    prerelease: bool,
+    catalog_path: Path,
+    app_bin_path: Path,
+    full_image_path: Path | None,
+) -> tuple[dict[str, Any], bool]:
+    catalog = read_catalog(catalog_path)
+    app_artifact = artifact_by_target(catalog, "esp32s3_app")
+    if not app_artifact:
+        raise SystemExit("current firmware catalog does not include esp32s3_app")
+    app_file = first_file_by_kind(app_artifact, "app_bin")
+    if not app_file:
+        raise SystemExit("current firmware catalog does not include app_bin")
+    app_asset_name = app_file.get("path")
+    if not isinstance(app_asset_name, str) or not app_asset_name:
+        app_asset_name = app_bin_path.name
+
+    catalog_rel_path = output_path_for(tag_name, CATALOG_ASSET_NAME)
+    app_rel_path = output_path_for(tag_name, app_asset_name)
+    catalog_out_path = output_dir / catalog_rel_path
+    app_out_path = output_dir / app_rel_path
+    catalog_out_path.parent.mkdir(parents=True, exist_ok=True)
+    write_catalog(catalog_out_path, catalog)
+    copy_file(app_bin_path, app_out_path)
+
+    recovery_entry: dict[str, Any] | None = None
+    bundled_recovery = False
+    recovery_artifact = artifact_by_target(catalog, "esp32s3_full")
+    recovery_file = first_file_by_kind(recovery_artifact, "full_image")
+    if full_image_path is not None and recovery_artifact and recovery_file:
+        recovery_asset_name = recovery_file.get("path")
+        if not isinstance(recovery_asset_name, str) or not recovery_asset_name:
+            recovery_asset_name = full_image_path.name
+        recovery_rel_path = output_path_for(tag_name, recovery_asset_name)
+        recovery_out_path = output_dir / recovery_rel_path
+        copy_file(full_image_path, recovery_out_path)
+        recovery_entry = {
+            "artifactId": recovery_artifact["artifactId"],
+            "assetPath": f"firmware/{recovery_rel_path}",
+            "fileName": recovery_asset_name,
+            "fileKind": "full_image",
+            "flashAddress": recovery_file.get("flashAddress", 0),
+            "sha256": recovery_file.get("sha256") or sha256_file(recovery_out_path),
+            "size": recovery_file.get("size") or recovery_out_path.stat().st_size,
+        }
+        bundled_recovery = True
+
+    return (
+        {
+            "tagName": tag_name,
+            "version": version,
+            "publishedAt": published_at,
+            "prerelease": prerelease,
+            "catalogPath": f"firmware/{catalog_rel_path}",
+            "app": {
+                "artifactId": app_artifact["artifactId"],
+                "assetPath": f"firmware/{app_rel_path}",
+                "fileName": app_asset_name,
+                "fileKind": "app_bin",
+                "flashAddress": app_file.get("flashAddress", 0x10000),
+                "sha256": app_file.get("sha256") or sha256_file(app_out_path),
+                "size": app_file.get("size") or app_out_path.stat().st_size,
+            },
+            "recovery": recovery_entry,
+        },
+        bundled_recovery,
+    )
+
+
+def current_release_args_present(args: argparse.Namespace) -> bool:
+    fields = [
+        args.current_release_tag,
+        args.current_release_version,
+        args.current_published_at,
+        args.current_catalog,
+        args.current_app_bin,
+    ]
+    present = [field is not None and field != "" for field in fields]
+    if any(present) and not all(present):
+        raise SystemExit(
+            "current release injection requires --current-release-tag, "
+            "--current-release-version, --current-published-at, "
+            "--current-catalog, and --current-app-bin"
+        )
+    return all(present)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True, help="GitHub owner/repo")
@@ -261,6 +360,13 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--github-token-env", default="GITHUB_TOKEN")
+    parser.add_argument("--current-release-tag")
+    parser.add_argument("--current-release-version")
+    parser.add_argument("--current-published-at")
+    parser.add_argument("--current-prerelease", action="store_true")
+    parser.add_argument("--current-catalog", type=Path)
+    parser.add_argument("--current-app-bin", type=Path)
+    parser.add_argument("--current-full-image", type=Path)
     args = parser.parse_args()
 
     token = os.getenv(args.github_token_env)
@@ -274,8 +380,28 @@ def main() -> int:
     if not isinstance(releases, list):
         raise SystemExit("GitHub releases API did not return a list")
 
+    has_current_release = current_release_args_present(args)
     selected = select_release_window(releases, args.limit)
-    recovery_tags = select_recovery_tags(selected)
+    if has_current_release:
+        selected = [
+            release
+            for release in selected
+            if release.get("tag_name") != args.current_release_tag
+        ][: max(args.limit - 1, 0)]
+    recovery_release_window = [
+        *(
+            [
+                {
+                    "tag_name": args.current_release_tag,
+                    "prerelease": args.current_prerelease,
+                }
+            ]
+            if has_current_release
+            else []
+        ),
+        *selected,
+    ]
+    recovery_tags = select_recovery_tags(recovery_release_window)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for child in args.output_dir.iterdir():
@@ -286,6 +412,21 @@ def main() -> int:
 
     manifest_entries: list[dict[str, Any]] = []
     bundled_recovery_tags: set[str] = set()
+    if has_current_release:
+        current_entry, bundled_recovery = current_release_manifest_entry(
+            output_dir=args.output_dir,
+            tag_name=args.current_release_tag,
+            version=args.current_release_version,
+            published_at=args.current_published_at,
+            prerelease=args.current_prerelease,
+            catalog_path=args.current_catalog,
+            app_bin_path=args.current_app_bin,
+            full_image_path=args.current_full_image,
+        )
+        manifest_entries.append(current_entry)
+        if bundled_recovery:
+            bundled_recovery_tags.add(args.current_release_tag)
+
     for release in selected:
         tag_name = release["tag_name"]
         assets = asset_map(release)

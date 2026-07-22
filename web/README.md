@@ -43,7 +43,7 @@ Production social preview metadata uses an absolute image URL on GitHub Pages. F
 ## Bundled firmware releases
 
 - `web/public/firmware/releases-manifest.json` is the checked-in offline/default manifest for local development and PR validation.
-- Release builds replace that file at build time by running `tools/firmware-bundle/build-web-bundle.py`, which fetches the current non-draft GitHub Releases from `IvanLi-CN/isolappurr-usb-hub` and synthesizes merged `full_image` recovery assets when a legacy release only ships an ELF recovery artifact.
+- Release builds replace that file at build time by running `tools/firmware-bundle/build-web-bundle.py`, which injects the current release firmware artifact before fetching older non-draft GitHub Releases from `IvanLi-CN/isolappurr-usb-hub`; this keeps the just-published firmware at the top of the installed Web/PWA flash list.
 - The generated web bundle keeps the most recent 50 app-upgrade releases and only the latest stable plus latest prerelease recovery images.
 - Firmware assets stay same-origin under `firmware/releases/**` and are fetched on demand by `/flash`; they are intentionally excluded from service-worker install-time precache.
 
