@@ -2,13 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { tryBootstrapDesktopAgent } from "../domain/desktopAgent";
 import type { StoredDevice } from "../domain/devices";
-import {
-  type BundledFirmwareAsset,
-  type BundledFirmwareManifest,
-  DEMO_BUNDLED_FIRMWARE_MANIFEST,
-  emptyBundledFirmwareManifest,
-  loadBundledFirmwareManifest,
-} from "../domain/firmwareBundle";
+import type { BundledFirmwareAsset } from "../domain/firmwareBundle";
 import {
   clearFlashTransportLock,
   clearGlobalFlashTransportLock,
@@ -62,6 +56,7 @@ import {
   type WebSerialProbeOptions,
   type WebSerialSelectionState,
 } from "./firmwareFlashShared";
+import { useBundledFirmwareManifest } from "./useBundledFirmwareManifest";
 import { useFirmwareFlashProbeDeadline } from "./useFirmwareFlashProbeDeadline";
 
 export function useFirmwareFlashConnection({
@@ -88,15 +83,8 @@ export function useFirmwareFlashConnection({
   const [flashMode, setFlashMode] = useState<FlashMode>("normal");
   const [flashModeReason, setFlashModeReason] =
     useState<FlashModeReason>("normal");
-  const [manifest, setManifest] = useState<BundledFirmwareManifest>(
-    demoEnabled
-      ? DEMO_BUNDLED_FIRMWARE_MANIFEST
-      : emptyBundledFirmwareManifest(),
-  );
-  const [manifestError, setManifestError] = useState<string | null>(null);
-  const [selectedReleaseTag, setSelectedReleaseTag] = useState<string | null>(
-    null,
-  );
+  const { manifest, manifestError, selectedReleaseTag, setSelectedReleaseTag } =
+    useBundledFirmwareManifest(demoEnabled);
   const [localUsbPorts, setLocalUsbPorts] = useState<SerialPortInfo[]>([]);
   const [selectedLocalUsbPort, setSelectedLocalUsbPort] = useState(
     currentLocalUsbPath ?? "",
@@ -207,42 +195,6 @@ export function useFirmwareFlashConnection({
       }
     };
   }, []);
-  useEffect(() => {
-    if (demoEnabled) {
-      setManifest(DEMO_BUNDLED_FIRMWARE_MANIFEST);
-      setSelectedReleaseTag(
-        DEMO_BUNDLED_FIRMWARE_MANIFEST.releases[0]?.tagName ?? null,
-      );
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const next = await loadBundledFirmwareManifest();
-        if (cancelled) {
-          return;
-        }
-        setManifest(next);
-        setManifestError(null);
-        setSelectedReleaseTag(
-          (current) => current ?? next.releases[0]?.tagName ?? null,
-        );
-      } catch (err) {
-        if (cancelled) {
-          return;
-        }
-        setManifestError(
-          err instanceof Error
-            ? err.message
-            : "Bundled firmware manifest failed to load.",
-        );
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [demoEnabled]);
-
   useEffect(() => {
     if (!currentLocalUsbPath) {
       return;
@@ -400,7 +352,7 @@ export function useFirmwareFlashConnection({
       return;
     }
     setSelectedReleaseTag(releaseChoices[0]?.tagName ?? null);
-  }, [releaseChoices, selectedReleaseTag]);
+  }, [releaseChoices, selectedReleaseTag, setSelectedReleaseTag]);
 
   const selectedRelease = useMemo(
     () =>

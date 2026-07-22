@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   emptyBundledFirmwareManifest,
+  loadBundledFirmwareManifest,
   parseBundledFirmwareManifest,
 } from "./firmwareBundle";
 
@@ -55,5 +56,56 @@ describe("parseBundledFirmwareManifest", () => {
     expect(parsed.releases[0]?.tagName).toBe("v0.5.1");
     expect(parsed.releases[0]?.recovery?.flashAddress).toBe(0);
     expect(parsed.releases[0]?.recovery?.fileKind).toBe("full_image");
+  });
+});
+
+describe("loadBundledFirmwareManifest", () => {
+  test("loads the release manifest through a cache-busted network URL first", async () => {
+    const requestedUrls: string[] = [];
+
+    const manifest = await loadBundledFirmwareManifest({
+      fetchImpl: async (input) => {
+        requestedUrls.push(String(input));
+        return Response.json({
+          schemaVersion: "1",
+          repo: "IvanLi-CN/isolappurr-usb-hub",
+          generatedAt: "2026-07-22T00:00:00Z",
+          releases: [],
+        });
+      },
+      now: () => 1234,
+    });
+
+    expect(manifest.generatedAt).toBe("2026-07-22T00:00:00Z");
+    expect(requestedUrls).toEqual([
+      "/firmware/releases-manifest.json?refresh=1234",
+    ]);
+  });
+
+  test("falls back to the stable manifest URL for offline PWA caches", async () => {
+    const requestedUrls: string[] = [];
+
+    const manifest = await loadBundledFirmwareManifest({
+      fetchImpl: async (input) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url.includes("?refresh=")) {
+          throw new TypeError("offline");
+        }
+        return Response.json({
+          schemaVersion: "1",
+          repo: "IvanLi-CN/isolappurr-usb-hub",
+          generatedAt: "2026-07-21T00:00:00Z",
+          releases: [],
+        });
+      },
+      now: () => 5678,
+    });
+
+    expect(manifest.generatedAt).toBe("2026-07-21T00:00:00Z");
+    expect(requestedUrls).toEqual([
+      "/firmware/releases-manifest.json?refresh=5678",
+      "/firmware/releases-manifest.json",
+    ]);
   });
 });

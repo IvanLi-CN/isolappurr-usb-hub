@@ -27,6 +27,11 @@ export type BundledFirmwareManifest = {
   releases: BundledFirmwareRelease[];
 };
 
+export type BundledFirmwareManifestLoadOptions = {
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+};
+
 function normalizeBaseUrl(raw: string | undefined): string {
   const trimmed = raw?.trim() ?? "";
   if (!trimmed) {
@@ -165,17 +170,37 @@ export function emptyBundledFirmwareManifest(): BundledFirmwareManifest {
   };
 }
 
-export async function loadBundledFirmwareManifest(): Promise<BundledFirmwareManifest> {
-  const res = await fetch(
-    normalizeAssetPath("firmware/releases-manifest.json"),
-    {
-      cache: "no-store",
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`Firmware manifest request failed (${res.status})`);
+function cacheBustedUrl(url: string, now: () => number): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}refresh=${encodeURIComponent(String(now()))}`;
+}
+
+export async function loadBundledFirmwareManifest({
+  fetchImpl = fetch,
+  now = Date.now,
+}: BundledFirmwareManifestLoadOptions = {}): Promise<BundledFirmwareManifest> {
+  const stableUrl = normalizeAssetPath("firmware/releases-manifest.json");
+  const urls = [cacheBustedUrl(stableUrl, now), stableUrl];
+  let lastError: unknown = null;
+
+  for (const url of urls) {
+    try {
+      const res = await fetchImpl(url, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        throw new Error(`Firmware manifest request failed (${res.status})`);
+      }
+      return parseBundledFirmwareManifest((await res.json()) as unknown);
+    } catch (error) {
+      lastError = error;
+    }
   }
-  return parseBundledFirmwareManifest((await res.json()) as unknown);
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("Firmware manifest request failed.");
 }
 
 export async function fetchBundledFirmwareAssetFile(

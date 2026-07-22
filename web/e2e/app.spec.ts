@@ -732,6 +732,58 @@ test("publishes PWA metadata and offline app shell", async ({
   await context.setOffline(false);
 });
 
+test("refreshes the firmware release list when a PWA update is available", async ({
+  page,
+}) => {
+  let latestVersion = "0.5.1";
+  const manifestFor = (version: string) => ({
+    schemaVersion: "1",
+    repo: "IvanLi-CN/isolappurr-usb-hub",
+    generatedAt: "2026-07-22T00:00:00Z",
+    releaseCount: 1,
+    recoveryTags: [],
+    releases: [
+      {
+        tagName: `v${version}`,
+        version,
+        publishedAt: "2026-07-22T00:00:00Z",
+        prerelease: false,
+        catalogPath: `firmware/releases/v${version}/isolapurr-firmware-catalog.json`,
+        app: {
+          artifactId: `isolapurr-${version}`,
+          assetPath: `firmware/releases/v${version}/isolapurr-usb-hub.app.bin`,
+          fileName: "isolapurr-usb-hub.app.bin",
+          fileKind: "app_bin",
+          flashAddress: 0x10000,
+        },
+        recovery: null,
+      },
+    ],
+  });
+
+  await page.route("**/firmware/releases-manifest.json**", async (route) => {
+    await route.fulfill({ json: manifestFor(latestVersion) });
+  });
+
+  await page.goto("/flash");
+  await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
+  await expect(
+    page.getByRole("button").filter({ hasText: "v0.5.1" }),
+  ).toHaveCount(1);
+
+  latestVersion = "0.6.7";
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("isolapurr:pwa-update-available"));
+  });
+
+  await expect(
+    page.getByRole("button").filter({ hasText: "v0.6.7" }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("button").filter({ hasText: "v0.5.1" }),
+  ).toHaveCount(0);
+});
+
 test("shows a native install CTA and then hides it after installation", async ({
   page,
 }) => {
