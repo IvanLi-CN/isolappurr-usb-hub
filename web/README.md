@@ -46,6 +46,7 @@ Production social preview metadata uses an absolute image URL on GitHub Pages. F
 - Release builds replace that file at build time by running `tools/firmware-bundle/build-web-bundle.py`, which injects the current release firmware artifact before fetching older non-draft GitHub Releases from `IvanLi-CN/isolappurr-usb-hub`; this keeps the just-published firmware at the top of the installed Web/PWA flash list.
 - The generated web bundle keeps the most recent 50 app-upgrade releases and only the latest stable plus latest prerelease recovery images.
 - Firmware metadata JSON stays same-origin under `firmware/**` and is service-worker precached so installed PWAs can open `/flash` and render the bundled release list offline; `.bin` / `.elf` firmware images are still fetched on demand by `/flash` and intentionally excluded from install-time precache.
+- The `/flash` page refreshes the bundled release manifest through a cache-busted network request on entry, foreground, reconnect, PWA update availability, and 60-minute polling; if that request fails offline, it falls back to the stable manifest URL that the service worker can precache.
 
 ## PWA install surface
 

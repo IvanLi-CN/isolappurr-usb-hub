@@ -1,6 +1,7 @@
 import { registerSW } from "virtual:pwa-register";
 import { toast } from "sonner";
 
+import { PWA_UPDATE_AVAILABLE_EVENT } from "./events";
 import {
   createPwaUpdateCandidateStore,
   createPwaUpdateScheduler,
@@ -26,6 +27,7 @@ export function registerPwaUpdatePrompt() {
   const updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
+      window.dispatchEvent(new Event(PWA_UPDATE_AVAILABLE_EVENT));
       const candidateFingerprint =
         updateScheduler?.getCurrentFingerprint() ?? "waiting-worker";
       if (!updateCandidateStore.shouldPrompt(candidateFingerprint)) {

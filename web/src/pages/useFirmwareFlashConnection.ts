@@ -33,6 +33,7 @@ import {
   cacheWebSerialHardware,
   readCachedWebSerialHardware,
 } from "../domain/webSerialHardwareCache";
+import { PWA_UPDATE_AVAILABLE_EVENT } from "../pwa/events";
 import { readLocalUsbInfo } from "../ui/dialogs/AddDeviceDialog.helpers";
 import type { FirmwareFlashLogEntry } from "../ui/panels/FirmwareFlashLogPanel";
 import {
@@ -63,6 +64,8 @@ import {
   type WebSerialSelectionState,
 } from "./firmwareFlashShared";
 import { useFirmwareFlashProbeDeadline } from "./useFirmwareFlashProbeDeadline";
+
+const FIRMWARE_MANIFEST_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
 export function useFirmwareFlashConnection({
   currentDevice,
@@ -158,6 +161,7 @@ export function useFirmwareFlashConnection({
   const flashLogSerialRef = useRef(0);
   const flashOperationStartedAtRef = useRef<number | null>(null);
   const pseudoFlashProgressTimerRef = useRef<number | null>(null);
+  const manifestRefreshSerialRef = useRef(0);
 
   const clearPseudoFlashProgress = () => {
     if (pseudoFlashProgressTimerRef.current !== null) {
@@ -216,19 +220,24 @@ export function useFirmwareFlashConnection({
       return;
     }
     let cancelled = false;
-    void (async () => {
+
+    const refreshManifest = async () => {
+      const refreshSerial = ++manifestRefreshSerialRef.current;
       try {
         const next = await loadBundledFirmwareManifest();
-        if (cancelled) {
+        if (cancelled || refreshSerial !== manifestRefreshSerialRef.current) {
           return;
         }
         setManifest(next);
         setManifestError(null);
-        setSelectedReleaseTag(
-          (current) => current ?? next.releases[0]?.tagName ?? null,
+        setSelectedReleaseTag((current) =>
+          current &&
+          next.releases.some((release) => release.tagName === current)
+            ? current
+            : (next.releases[0]?.tagName ?? null),
         );
       } catch (err) {
-        if (cancelled) {
+        if (cancelled || refreshSerial !== manifestRefreshSerialRef.current) {
           return;
         }
         setManifestError(
@@ -237,9 +246,33 @@ export function useFirmwareFlashConnection({
             : "Bundled firmware manifest failed to load.",
         );
       }
-    })();
+    };
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void refreshManifest();
+    };
+
+    const intervalId = window.setInterval(
+      refreshWhenVisible,
+      FIRMWARE_MANIFEST_REFRESH_INTERVAL_MS,
+    );
+    void refreshManifest();
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("online", refreshWhenVisible);
+    window.addEventListener(PWA_UPDATE_AVAILABLE_EVENT, refreshWhenVisible);
+
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("online", refreshWhenVisible);
+      window.removeEventListener(
+        PWA_UPDATE_AVAILABLE_EVENT,
+        refreshWhenVisible,
+      );
     };
   }, [demoEnabled]);
 

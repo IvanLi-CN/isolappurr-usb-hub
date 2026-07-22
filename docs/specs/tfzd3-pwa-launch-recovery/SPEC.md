@@ -17,7 +17,7 @@
 - 保持健康会话的 `prompt` 更新体验，只在故障启动路径上自动接管恢复。
 - 为健康会话补主动更新发现调度层，让 owner 不必完全依赖手动重开才能发现新版本。
 - 为 GitHub Pages 发布定义短期旧 hash 资源保留窗口，避免 stale `index.html` 立即打到 `404`。
-- 将 firmware flash workbench 固定为 PWA 内的一等页面，保证已安装 PWA 可以打开 `/flash` 并看到 bundled release 元数据。
+- 将 firmware flash workbench 固定为 PWA 内的一等页面，保证已安装 PWA 可以打开 `/flash`，离线看到 bundled release 元数据，并在健康会话中主动刷新 release 列表。
 - 为该主题绑定稳定的视觉证据与自动化回归，阻止白屏回归重新进入主干。
 
 ### Non-goals
@@ -34,7 +34,7 @@
 - `web/index.html` 级别的启动壳、失败壳、standalone 启动超时与错误监听。
 - React 主应用挂载成功信号与启动失败上报桥接。
 - 启动故障态下的 service worker 更新检查、`waiting` 激活、自愈 reload、缓存清理恢复动作。
-- PWA manifest shortcut、SPA navigation fallback、firmware release metadata precache 与 `/flash` 离线可见性。
+- PWA manifest shortcut、SPA navigation fallback、firmware release metadata precache、`/flash` 离线可见性与 release manifest 主动刷新。
 - GitHub Pages 发布产物的旧 hash 资源 retention 清单与并包规则。
 - Storybook 启动壳 visual evidence 与 Playwright 回归。
 
@@ -65,6 +65,8 @@
 - Service worker precache 必须包含 `/flash` 页面所需的 app shell、`firmware/releases-manifest.json` 与 bundled release catalog JSON 元数据。
 - Service worker install-time precache 不得包含 `.bin` / `.elf` 固件镜像；这些大文件必须继续由 `/flash` 按需从同源 `firmware/releases/**` 获取。
 - 当 PWA 已受 service worker 控制且离线时，直接打开 `/flash` 必须显示 firmware flash workbench 与 bundled release 列表，不得退化为空白页或 manifest 加载错误。
+- `/flash` 在线加载 bundled release manifest 时，必须先使用 cache-busted same-origin URL 发起 `cache: "no-store"` 请求，避免健康会话继续读取旧 service-worker precache；该请求失败时，必须回退到稳定 manifest URL，让离线 PWA 仍可从 precache 渲染 release list。
+- `/flash` 必须在页面进入、页面回到前台、网络恢复、PWA 更新候选出现以及 60 分钟节流轮询时刷新 bundled release manifest；当前已选 release 仍存在时必须保留选择，否则切到最新可用 release。
 - 启动壳与失败壳都必须有稳定 visual evidence；自动化必须覆盖健康冷启动、stale shell 404、自愈成功、失败壳修复且设备数据保留。
 
 ### SHOULD
@@ -90,6 +92,8 @@
 - 当健康会话的更新 toast 被 owner 用 `Later` 关闭时，运行时把该候选更新指纹记录到标签页级会话存储，并对同一候选更新静默到本次标签页结束。
 - 当 Pages 发布新版本时，构建脚本优先从 GitHub stable Release 的 web-dist 资产读取仍受支持的旧 hash 资源；没有 GitHub Release 凭证，或 GitHub API 成功但没有匹配 web-dist 资产的 bootstrap 路径，才退回线上 retention 清单或线上 `sw.js`。脚本把这些旧资源并入当前 `dist/`，再写出新的 `asset-retention.json`。
 - `/flash` 与 `/` 共享同一个 PWA app shell；manifest shortcut 指向 `/flash`，离线导航通过 `navigateFallback` 回到 `index.html`，release manifest 与 catalog JSON 由 Workbox precache 供离线 workbench 渲染列表使用。
+- `/flash` 的 bundled release manifest 加载采用 network-first 刷新策略：先请求带 `refresh` 参数的 manifest URL，成功后立即替换当前 release list；如果 cache-busted 请求因离线或网络错误失败，再请求稳定 manifest URL 以命中 service-worker precache。
+- 当 PWA 运行时发现新的 waiting worker 并进入健康会话更新提示流程时，运行时派发 `isolapurr:pwa-update-available`，`/flash` 收到后必须刷新 release manifest，即使 owner 此时选择 `Later` 也不会让当前页面继续卡在旧 release list。
 
 ### Edge cases / errors
 
@@ -103,6 +107,8 @@
 - `window.__ISOLAPURR_PWA_BOOT__`
   - `markAppMounted(): void`
   - `reportStartupFailure(detail?: unknown): void`
+- `isolapurr:pwa-update-available`
+  - 内部浏览器事件；由健康会话 PWA update prompt 流程在发现更新候选时派发，用于触发 `/flash` 当前页面刷新 bundled release manifest。
 - 发布工件新增：
   - `web/public/boot-shell.js` 作为稳定路径启动恢复运行时
   - `dist/asset-retention.json` 作为 Pages 旧资源保留清单
@@ -157,12 +163,20 @@
   When 浏览器离线并直接打开 `/flash`
   Then 页面必须显示 firmware flash workbench 与 bundled release list。
 
+- Given `/flash` 已在健康 PWA 会话中打开
+  When PWA 运行时发现新的更新候选
+  Then 页面必须重新请求 bundled release manifest，并把 release list 更新为最新可用版本。
+
+- Given `/flash` 在离线 PWA 会话中加载 bundled release manifest
+  When cache-busted manifest 请求失败
+  Then 页面必须回退到稳定 manifest URL，并可从 service-worker precache 渲染 release list。
+
 ## 验收清单（Acceptance checklist）
 
 - [x] 启动壳、失败壳、自愈状态机的 owner-facing 行为已冻结。
 - [x] 健康会话 `prompt` 与故障启动自动修复的边界已冻结。
 - [x] Pages retention 窗口与产物清单 contract 已冻结。
-- [x] Firmware flash workbench 的 PWA 内页面、manifest shortcut 与离线 release metadata 可见性已冻结。
+- [x] Firmware flash workbench 的 PWA 内页面、manifest shortcut、离线 release metadata 可见性与健康会话 manifest 刷新已冻结。
 - [x] 视觉证据与自动化覆盖面已经写清楚。
 
 ## 非功能性验收 / 质量门槛（Quality Gates）
