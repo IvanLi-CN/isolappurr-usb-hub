@@ -13,6 +13,7 @@
 - 2026-07-20: 把 stable public deploy retention 从 `pages.yml` 收回到 `release.yml`，让 PWA 更新发现与 stable 发布面回到同一合同。
 - 2026-07-22: 将 Pages 旧 hash retention 的 stable 历史源切到 GitHub Release web-dist 资产，避免线上 `asset-retention.json` 已被截断时继续丢弃仍在 14 天窗口内的旧入口资源。
 - 2026-07-22: 线上 Chrome 安装态发现 `display-mode` 不一定命中 standalone；启动壳恢复逻辑改为健康时可隐藏、显式启动故障时必须可见，并在没有 `waiting` worker 时主动 `registration.update()`，避免旧 shell 崩溃后只能白屏，同时避免普通 browser 慢挂载被误判为 PWA 故障。
+- 2026-07-22: 将 firmware flash workbench 明确收为 PWA 内页面合同；service worker precache 包含 release manifest 与 catalog JSON 元数据，但继续排除 `.bin` / `.elf` 固件镜像，避免安装态离线打开 `/flash` 时丢失 bundled release list。
 
 ## Key Reasons / Replacements
 

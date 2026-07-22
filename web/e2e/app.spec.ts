@@ -723,6 +723,12 @@ test("publishes PWA metadata and offline app shell", async ({
   await context.setOffline(true);
   await page.goto("/");
   await expect(page.getByTestId("dashboard")).toBeVisible();
+  await page.goto("/flash");
+  await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
+  await expect(page.getByText("Firmware source")).toBeVisible();
+  await expect(
+    page.getByRole("button").filter({ hasText: "v0.5.1" }),
+  ).toHaveCount(1);
   await context.setOffline(false);
 });
 
