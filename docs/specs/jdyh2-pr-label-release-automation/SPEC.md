@@ -152,6 +152,11 @@
   When required checks are listed
   Then the stable required-check set appears with the exact names declared in `.github/quality-gates.json`.
 
+## Visual Evidence
+
+- PR: none
+- This spec governs release automation, GitHub Pages deployment, workflow checks, and release artifact contracts; it has no owner-facing UI rendering surface.
+
 ## Milestones
 
 - [x] Release label policy and Label Gate added.
