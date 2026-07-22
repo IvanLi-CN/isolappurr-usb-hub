@@ -6,7 +6,7 @@
 
 - Implementation: 已实现
 - Lifecycle: active
-- Catalog note: installed-PWA startup shell, failure recovery shell, proactive prompt-preserving update discovery, and Pages hashed-asset retention
+- Catalog note: installed-PWA startup shell, failure recovery shell, proactive prompt-preserving update discovery, Pages hashed-asset retention, and `/flash` PWA workbench metadata caching
 
 ## Coverage / rollout summary
 
@@ -15,9 +15,10 @@
 - `web/src/main.tsx` 与 `web/src/pwa/boot-shell-client.tsx` 已为应用挂载成功和同步启动失败提供桥接信号。
 - `web/src/pwa/register.ts` 与 `web/src/pwa/update.ts` 现在保留健康会话的 `prompt` 更新策略，同时在启动、回前台、重新联网和 60 分钟轮询时主动检查 `sw.js` / `registration.update()`。
 - 健康会话的更新 toast 现在支持按候选更新指纹做标签页级 `Later` 去重，同一候选更新在同一标签页会话内只提示一次。
+- `web/vite.config.ts` 现在把 firmware flash workbench 固定为 PWA shortcut/screenshot 面，并让 Workbox precache 包含 release manifest 与 catalog JSON 元数据；`.bin` / `.elf` 固件镜像仍按需获取，不进入 service worker install-time precache。
 - `.github/workflows/release.yml` 现在在 stable public deploy 构建里执行旧 hash 资源 retention，并把 GitHub Release web-dist 资产作为 stable 历史真相源；没有 GitHub Release 凭证，或 GitHub API 成功但没有匹配 web-dist 资产的 bootstrap 路径，才退回线上 retention 清单或线上 `sw.js`。该步骤产出 `asset-retention.json`；`.github/workflows/pages.yml` 只承担 PR build 与 `release_tag` backfill。
 - `web/scripts/retain-pages-assets.ts` 从既有 Release web-dist archive 恢复旧 hash 时，会优先读取 archive 内 `asset-retention.json` 中匹配 release id 的资产列表，避免把更旧 release 的继承保留资产继续滚入后续 release。
-- Storybook 已覆盖 `PWA/StartupShell` 与 `PWA/UpdateToast`；Playwright E2E 已覆盖健康冷启动、自愈成功与修复后保存设备保留。
+- Storybook 已覆盖 `PWA/StartupShell` 与 `PWA/UpdateToast`；Playwright E2E 已覆盖健康冷启动、自愈成功、修复后保存设备保留，以及离线 service-worker 控制下直接打开 `/flash` 时 workbench 与 bundled release list 可见。
 - 2026-07-20 已完成一轮 same-machine Chrome acceptance：基于本地 `web/dist` preview 验证了候选更新 toast 的 `Later` 同候选去重，以及 `Update` 触发 reload 后重新进入应用。
 - 2026-07-22 的线上 Chrome 安装态诊断确认：旧窗口可持有已删除 hash 入口资产，刷新进入新版本后还会因为旧设备 `pd-diagnostics` 缺少 `thermal` 而白屏；当前实现通过 Release web-dist retention 和旧 schema E2E 回归同时覆盖这两段链路。
 - 2026-07-22 的线上 Chrome 安装态复核确认：Chrome 安装窗口可能不匹配 `display-mode: standalone`，导致旧 boot shell 没有挂载失败观察器；当前实现改为健康时隐藏、显式启动故障时仍显示恢复壳，并在没有 `waiting` worker 时先主动 `registration.update()`。
@@ -37,6 +38,7 @@
 - `web/src/pwa/PwaStartupShell.tsx`
 - `web/src/pwa/PwaStartupShell.stories.tsx`
 - `web/src/pwa/PwaUpdateToastDemo.stories.tsx`
+- `web/vite.config.ts`
 - `web/scripts/retain-pages-assets.ts`
 - `web/scripts/retain-pages-assets.test.ts`
 - `web/src/pwa/update.test.ts`

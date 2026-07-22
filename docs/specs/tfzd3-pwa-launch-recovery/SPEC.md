@@ -17,6 +17,7 @@
 - 保持健康会话的 `prompt` 更新体验，只在故障启动路径上自动接管恢复。
 - 为健康会话补主动更新发现调度层，让 owner 不必完全依赖手动重开才能发现新版本。
 - 为 GitHub Pages 发布定义短期旧 hash 资源保留窗口，避免 stale `index.html` 立即打到 `404`。
+- 将 firmware flash workbench 固定为 PWA 内的一等页面，保证已安装 PWA 可以打开 `/flash` 并看到 bundled release 元数据。
 - 为该主题绑定稳定的视觉证据与自动化回归，阻止白屏回归重新进入主干。
 
 ### Non-goals
@@ -33,6 +34,7 @@
 - `web/index.html` 级别的启动壳、失败壳、standalone 启动超时与错误监听。
 - React 主应用挂载成功信号与启动失败上报桥接。
 - 启动故障态下的 service worker 更新检查、`waiting` 激活、自愈 reload、缓存清理恢复动作。
+- PWA manifest shortcut、SPA navigation fallback、firmware release metadata precache 与 `/flash` 离线可见性。
 - GitHub Pages 发布产物的旧 hash 资源 retention 清单与并包规则。
 - Storybook 启动壳 visual evidence 与 Playwright 回归。
 
@@ -59,6 +61,10 @@
 - retention 窗口必须满足“最近两版或 14 天，以较晚到达者为准”的保留规则。
 - stable 发布环境存在 GitHub Release 访问能力且能发现既有 stable Release web-dist 资产时，retention 必须优先从这些资产恢复旧 hash 资源；不得只依赖当前线上 Pages manifest 作为历史真相源。若 GitHub API 成功但尚无匹配 web-dist 资产，允许退回线上 retention 清单或线上 `sw.js` 作为过渡期 bootstrap；GitHub API 失败仍必须失败。
 - 当从既有 Release web-dist archive 恢复旧 hash 资源时，若 archive 内含 `asset-retention.json`，只能读取与该 release id 匹配的资产列表，不得把 archive 中继承自更旧 release 的保留资产继续归属给当前 release。
+- `/flash` 必须是已安装 PWA scope 内页面，并通过 PWA manifest shortcut 暴露为 Firmware flash workbench。
+- Service worker precache 必须包含 `/flash` 页面所需的 app shell、`firmware/releases-manifest.json` 与 bundled release catalog JSON 元数据。
+- Service worker install-time precache 不得包含 `.bin` / `.elf` 固件镜像；这些大文件必须继续由 `/flash` 按需从同源 `firmware/releases/**` 获取。
+- 当 PWA 已受 service worker 控制且离线时，直接打开 `/flash` 必须显示 firmware flash workbench 与 bundled release 列表，不得退化为空白页或 manifest 加载错误。
 - 启动壳与失败壳都必须有稳定 visual evidence；自动化必须覆盖健康冷启动、stale shell 404、自愈成功、失败壳修复且设备数据保留。
 
 ### SHOULD
@@ -83,6 +89,7 @@
 - 当健康会话的 service worker 注册完成、页面重新可见、网络重新联通或 60 分钟轮询触发时，运行时对 `sw.js` 发起 `cache: "no-store"` 探测；只有脚本指纹变化时才调用 `registration.update()`。
 - 当健康会话的更新 toast 被 owner 用 `Later` 关闭时，运行时把该候选更新指纹记录到标签页级会话存储，并对同一候选更新静默到本次标签页结束。
 - 当 Pages 发布新版本时，构建脚本优先从 GitHub stable Release 的 web-dist 资产读取仍受支持的旧 hash 资源；没有 GitHub Release 凭证，或 GitHub API 成功但没有匹配 web-dist 资产的 bootstrap 路径，才退回线上 retention 清单或线上 `sw.js`。脚本把这些旧资源并入当前 `dist/`，再写出新的 `asset-retention.json`。
+- `/flash` 与 `/` 共享同一个 PWA app shell；manifest shortcut 指向 `/flash`，离线导航通过 `navigateFallback` 回到 `index.html`，release manifest 与 catalog JSON 由 Workbox precache 供离线 workbench 渲染列表使用。
 
 ### Edge cases / errors
 
@@ -146,11 +153,16 @@
   When 产物打包完成
   Then `dist/` 中同时包含当前 hash 资源与 retention 窗口内的旧 hash 资源，并写出对应 `asset-retention.json`。
 
+- Given 已安装 PWA 已受 service worker 控制
+  When 浏览器离线并直接打开 `/flash`
+  Then 页面必须显示 firmware flash workbench 与 bundled release list。
+
 ## 验收清单（Acceptance checklist）
 
 - [x] 启动壳、失败壳、自愈状态机的 owner-facing 行为已冻结。
 - [x] 健康会话 `prompt` 与故障启动自动修复的边界已冻结。
 - [x] Pages retention 窗口与产物清单 contract 已冻结。
+- [x] Firmware flash workbench 的 PWA 内页面、manifest shortcut 与离线 release metadata 可见性已冻结。
 - [x] 视觉证据与自动化覆盖面已经写清楚。
 
 ## 非功能性验收 / 质量门槛（Quality Gates）
@@ -160,6 +172,7 @@
 - `cd web && bun run test:unit`
 - `cd web && bun run check`
 - `cd web && bun run build`
+- `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .github/scripts -p "test_pwa_contracts.py"`
 - `cd web && bun run build-storybook`
 - `cd web && bun run test:storybook`
 - `cd web && bun run test:e2e`

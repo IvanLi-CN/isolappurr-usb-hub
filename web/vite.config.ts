@@ -194,13 +194,14 @@ export default defineConfig(() => {
         workbox: {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest}"],
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest,json}"],
           globIgnores: [
             "**/brand/isolapurr-product-poster.png",
             "**/brand/isolapurr-product-render.png",
             "**/brand/isolapurr-product-render-full.png",
             "**/brand/isolapurr-product-render-cutout.png",
-            "**/firmware/**/*",
+            "**/firmware/**/*.bin",
+            "**/firmware/**/*.elf",
           ],
           navigateFallback: `${base}index.html`,
         },
