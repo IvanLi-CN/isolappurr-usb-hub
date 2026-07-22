@@ -58,6 +58,7 @@
 - GitHub Pages 发布产物必须同时包含当前版本和 retention 窗口内仍受支持的旧 hash 资源。
 - retention 窗口必须满足“最近两版或 14 天，以较晚到达者为准”的保留规则。
 - stable 发布环境存在 GitHub Release 访问能力且能发现既有 stable Release web-dist 资产时，retention 必须优先从这些资产恢复旧 hash 资源；不得只依赖当前线上 Pages manifest 作为历史真相源。若 GitHub API 成功但尚无匹配 web-dist 资产，允许退回线上 retention 清单或线上 `sw.js` 作为过渡期 bootstrap；GitHub API 失败仍必须失败。
+- 当从既有 Release web-dist archive 恢复旧 hash 资源时，若 archive 内含 `asset-retention.json`，只能读取与该 release id 匹配的资产列表，不得把 archive 中继承自更旧 release 的保留资产继续归属给当前 release。
 - 启动壳与失败壳都必须有稳定 visual evidence；自动化必须覆盖健康冷启动、stale shell 404、自愈成功、失败壳修复且设备数据保留。
 
 ### SHOULD

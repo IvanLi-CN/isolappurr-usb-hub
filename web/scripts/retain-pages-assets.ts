@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readdir,
+  readFile,
   rm,
   stat,
   writeFile,
@@ -345,6 +346,7 @@ async function downloadRetainedAssetFromOrigin(
 
 async function downloadAndExtractReleaseAssets(
   webDistUrl: string,
+  releaseId: string,
   githubToken: string | undefined,
 ): Promise<{ assetPaths: string[]; sourceDir: string }> {
   const headers: Record<string, string> = {
@@ -369,8 +371,48 @@ async function downloadAndExtractReleaseAssets(
   const archivePath = resolve(sourceDir, "release-web-dist.tar.gz");
   await writeFile(archivePath, Buffer.from(await response.arrayBuffer()));
   await execFileAsync("tar", ["-xzf", archivePath, "-C", sourceDir]);
-  const assetPaths = await collectCurrentAssetPaths(sourceDir);
+  const assetPaths = await collectReleaseArchiveAssetPaths(
+    sourceDir,
+    releaseId,
+  );
   return { assetPaths, sourceDir };
+}
+
+async function collectReleaseArchiveAssetPaths(
+  sourceDir: string,
+  releaseId: string,
+): Promise<string[]> {
+  const manifestPath = resolve(sourceDir, "asset-retention.json");
+  const manifestText = await readFile(manifestPath, "utf8").catch(
+    (error: unknown) => {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        (error as { code?: string }).code === "ENOENT"
+      ) {
+        return null;
+      }
+      throw error;
+    },
+  );
+
+  if (manifestText === null) {
+    return collectCurrentAssetPaths(sourceDir);
+  }
+
+  const manifest = JSON.parse(manifestText) as Partial<AssetRetentionManifest>;
+  const release =
+    Array.isArray(manifest.releases) &&
+    manifest.releases
+      .map((candidate) => normalizeRelease(candidate))
+      .find((candidate) => candidate?.id === releaseId);
+  if (!release) {
+    throw new Error(
+      `Release web dist archive is missing retention metadata for ${releaseId}`,
+    );
+  }
+
+  return release.assets;
 }
 
 async function fetchGitHubReleaseMetadata(
@@ -503,6 +545,7 @@ export async function retainPreviousAssets({
     if ("webDistUrl" in retainedRelease) {
       const { assetPaths, sourceDir } = await downloadAndExtractReleaseAssets(
         retainedRelease.webDistUrl,
+        release.id,
         githubToken,
       );
       retainedReleaseById.set(release.id, {
