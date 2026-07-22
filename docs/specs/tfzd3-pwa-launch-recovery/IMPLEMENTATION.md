@@ -15,7 +15,7 @@
 - `web/src/main.tsx` 与 `web/src/pwa/boot-shell-client.tsx` 已为应用挂载成功和同步启动失败提供桥接信号。
 - `web/src/pwa/register.ts` 与 `web/src/pwa/update.ts` 现在保留健康会话的 `prompt` 更新策略，同时在启动、回前台、重新联网和 60 分钟轮询时主动检查 `sw.js` / `registration.update()`。
 - 健康会话的更新 toast 现在支持按候选更新指纹做标签页级 `Later` 去重，同一候选更新在同一标签页会话内只提示一次。
-- `web/vite.config.ts` 现在把 firmware flash workbench 固定为 PWA shortcut/screenshot 面，并让 Workbox precache 包含 release manifest 与 catalog JSON 元数据；`.bin` / `.elf` 固件镜像仍按需获取，不进入 service worker install-time precache。
+- `web/vite.config.ts` 现在把 firmware flash workbench 固定为 PWA shortcut/screenshot 面，`web/scripts/copy-spa-shells.ts` 为稳定 Pages build 生成 `/flash/` 实体 SPA shell，并让 Workbox precache 包含 release manifest 与 catalog JSON 元数据；`.bin` / `.elf` 固件镜像仍按需获取，不进入 service worker install-time precache。
 - `web/src/domain/firmwareBundle.ts` 现在以 cache-busted manifest URL 作为在线首选读取路径，并在失败时回退到稳定 URL，让健康会话避开旧 precache，同时保留离线 PWA 的 metadata fallback。
 - `web/src/pages/useFirmwareFlashConnection.ts` 现在会在 `/flash` 进入、回到前台、重新联网、收到 PWA 更新候选事件以及 60 分钟轮询时刷新 release manifest；当前选择仍存在时保留，否则切到最新 release。
 - `web/src/pwa/register.ts` 在发现健康会话更新候选时派发 `isolapurr:pwa-update-available`，供 `/flash` 在 owner 点击 `Later` 或尚未刷新 shell 前先更新 release list。

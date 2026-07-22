@@ -65,7 +65,7 @@ const captures = [
   },
   {
     path: resolve(outputDir, "flash-wide.png"),
-    route: "/flash?demo=true",
+    route: "/flash/?demo=true",
     waitFor: "[data-testid='firmware-flash-page']",
   },
 ];

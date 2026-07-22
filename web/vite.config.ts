@@ -136,7 +136,7 @@ export default defineConfig(() => {
               short_name: "Flash",
               description:
                 "Open the standalone flash workbench for provisioning, recovery, and release installs.",
-              url: "flash",
+              url: "flash/",
               icons: [
                 {
                   src: versionedInstallIconPath("icons/pwa-192.png"),
