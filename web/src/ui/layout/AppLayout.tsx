@@ -50,7 +50,8 @@ export function AppLayout({
   const routeKey = `${location.pathname}${location.search}`;
 
   const showTheme = location.pathname === "/" || location.pathname === "/about";
-  const showDemoControl = demoEnabled && location.pathname !== "/flash";
+  const showDemoControl =
+    demoEnabled && location.pathname.replace(/\/$/, "") !== "/flash";
   const showInstallCta = canPromptInstall && !isInstalled;
   const mobileBrandLabel = headerInfo?.mobileTitle ?? headerInfo?.title;
   const headerBrandVariant = theme === "isolapurr-dark" ? "dark" : "light";

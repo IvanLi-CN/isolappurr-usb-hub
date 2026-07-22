@@ -150,7 +150,7 @@ export function DashboardPage() {
             addDeviceCardSpan,
           ].join(" ")}
           type="button"
-          onClick={() => navigate("/flash")}
+          onClick={() => navigate("/flash/")}
           data-testid="dashboard-flash-card"
         >
           <div className="rounded-full bg-[var(--panel)] px-4 py-2 text-[12px] font-bold text-[var(--primary)]">

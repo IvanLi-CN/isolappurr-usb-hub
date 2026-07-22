@@ -784,7 +784,7 @@ export function AddDeviceDialog({
             tone="secondary"
             onClick={() => {
               onClose();
-              navigate("/flash");
+              navigate("/flash/");
             }}
           >
             Open firmware flash

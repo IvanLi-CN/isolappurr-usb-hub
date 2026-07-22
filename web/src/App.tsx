@@ -33,7 +33,8 @@ function RootLayout() {
   const { enabled: demoEnabled } = useDemoMode();
   const { devices, addDevice, getDevice, upsertDevice } = useDevices();
   const navigate = useDemoNavigate();
-  const forceEmptySidebar = demoEnabled && location.pathname === "/flash";
+  const forceEmptySidebar =
+    demoEnabled && location.pathname.replace(/\/$/, "") === "/flash";
   const isDashboardRoute = location.pathname === "/";
   const isDeviceDetailRoute = Boolean(
     deviceId &&

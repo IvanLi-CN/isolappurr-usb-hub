@@ -61,7 +61,7 @@
 - retention 窗口必须满足“最近两版或 14 天，以较晚到达者为准”的保留规则。
 - stable 发布环境存在 GitHub Release 访问能力且能发现既有 stable Release web-dist 资产时，retention 必须优先从这些资产恢复旧 hash 资源；不得只依赖当前线上 Pages manifest 作为历史真相源。若 GitHub API 成功但尚无匹配 web-dist 资产，允许退回线上 retention 清单或线上 `sw.js` 作为过渡期 bootstrap；GitHub API 失败仍必须失败。
 - 当从既有 Release web-dist archive 恢复旧 hash 资源时，若 archive 内含 `asset-retention.json`，只能读取与该 release id 匹配的资产列表，不得把 archive 中继承自更旧 release 的保留资产继续归属给当前 release。
-- `/flash` 必须是已安装 PWA scope 内页面，并通过 PWA manifest shortcut 暴露为 Firmware flash workbench。
+- `/flash/` 必须是已安装 PWA scope 内页面，并通过 PWA manifest shortcut 暴露为 Firmware flash workbench；稳定 Pages build 必须为该入口生成实体 SPA shell，避免 owner-facing flash 入口依赖 404 fallback。
 - Service worker precache 必须包含 `/flash` 页面所需的 app shell、`firmware/releases-manifest.json` 与 bundled release catalog JSON 元数据。
 - Service worker install-time precache 不得包含 `.bin` / `.elf` 固件镜像；这些大文件必须继续由 `/flash` 按需从同源 `firmware/releases/**` 获取。
 - 当 PWA 已受 service worker 控制且离线时，直接打开 `/flash` 必须显示 firmware flash workbench 与 bundled release 列表，不得退化为空白页或 manifest 加载错误。
@@ -91,7 +91,7 @@
 - 当健康会话的 service worker 注册完成、页面重新可见、网络重新联通或 60 分钟轮询触发时，运行时对 `sw.js` 发起 `cache: "no-store"` 探测；只有脚本指纹变化时才调用 `registration.update()`。
 - 当健康会话的更新 toast 被 owner 用 `Later` 关闭时，运行时把该候选更新指纹记录到标签页级会话存储，并对同一候选更新静默到本次标签页结束。
 - 当 Pages 发布新版本时，构建脚本优先从 GitHub stable Release 的 web-dist 资产读取仍受支持的旧 hash 资源；没有 GitHub Release 凭证，或 GitHub API 成功但没有匹配 web-dist 资产的 bootstrap 路径，才退回线上 retention 清单或线上 `sw.js`。脚本把这些旧资源并入当前 `dist/`，再写出新的 `asset-retention.json`。
-- `/flash` 与 `/` 共享同一个 PWA app shell；manifest shortcut 指向 `/flash`，离线导航通过 `navigateFallback` 回到 `index.html`，release manifest 与 catalog JSON 由 Workbox precache 供离线 workbench 渲染列表使用。
+- `/flash/` 与 `/` 共享同一个 PWA app shell；manifest shortcut 指向 `/flash/`，稳定 Pages build 同时保留 `404.html` 给不可枚举 SPA 路由 fallback，离线导航通过 `navigateFallback` 回到 `index.html`，release manifest 与 catalog JSON 由 Workbox precache 供离线 workbench 渲染列表使用。
 - `/flash` 的 bundled release manifest 加载采用 network-first 刷新策略：先请求带 `refresh` 参数的 manifest URL，成功后立即替换当前 release list；如果 cache-busted 请求因离线或网络错误失败，再请求稳定 manifest URL 以命中 service-worker precache。
 - 当 PWA 运行时发现新的 waiting worker 并进入健康会话更新提示流程时，运行时派发 `isolapurr:pwa-update-available`，`/flash` 收到后必须刷新 release manifest，即使 owner 此时选择 `Later` 也不会让当前页面继续卡在旧 release list。
 

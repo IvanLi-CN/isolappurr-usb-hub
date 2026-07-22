@@ -665,7 +665,7 @@ test("publishes PWA metadata and offline app shell", async ({
       }),
       expect.objectContaining({
         name: "Firmware flash",
-        url: "flash",
+        url: "flash/",
       }),
     ]),
   );
@@ -723,7 +723,7 @@ test("publishes PWA metadata and offline app shell", async ({
   await context.setOffline(true);
   await page.goto("/");
   await expect(page.getByTestId("dashboard")).toBeVisible();
-  await page.goto("/flash");
+  await page.goto("/flash/");
   await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
   await expect(page.getByText("Firmware source")).toBeVisible();
   await expect(
@@ -765,7 +765,7 @@ test("refreshes the firmware release list when a PWA update is available", async
     await route.fulfill({ json: manifestFor(latestVersion) });
   });
 
-  await page.goto("/flash");
+  await page.goto("/flash/");
   await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
   await expect(
     page.getByRole("button").filter({ hasText: "v0.5.1" }),
@@ -1101,7 +1101,7 @@ test("renders standalone 404 fallback for unknown routes", async ({ page }) => {
 test("renders the repeatable firmware probe state in the demo workbench", async ({
   page,
 }) => {
-  await page.goto("/flash?demo=true&webUsb=authorized&probe=reading");
+  await page.goto("/flash/?demo=true&webUsb=authorized&probe=reading");
 
   await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
   await expect(page.getByText("Reading target identity…")).toBeVisible();
@@ -1115,7 +1115,7 @@ test("renders the repeatable firmware probe state in the demo workbench", async 
 test("keeps the probe countdown hidden before a demo read starts", async ({
   page,
 }) => {
-  await page.goto("/flash?demo=true&webUsb=authorized");
+  await page.goto("/flash/?demo=true&webUsb=authorized");
 
   await expect(page.getByTestId("firmware-flash-page")).toBeVisible();
   await expect(page.getByText("Probe window", { exact: true })).toHaveCount(0);
@@ -1124,7 +1124,7 @@ test("keeps the probe countdown hidden before a demo read starts", async ({
 test("renders an actionable Web Serial timeout in the demo workbench", async ({
   page,
 }) => {
-  await page.goto("/flash?demo=true&webUsb=authorized&probe=timeout");
+  await page.goto("/flash/?demo=true&webUsb=authorized&probe=timeout");
 
   await expect(
     page.getByText("Probe timed out.", { exact: true }),

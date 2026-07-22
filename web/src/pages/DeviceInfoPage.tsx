@@ -51,7 +51,7 @@ export function DeviceInfoPage() {
             runtime.setUsbCDownstreamRoute(device.id, route)
           }
           openFirmwareFlashPage={() =>
-            navigate(`/flash?deviceId=${encodeURIComponent(device.id)}`)
+            navigate(`/flash/?deviceId=${encodeURIComponent(device.id)}`)
           }
           deleteDevice={async () => {
             await removeDevice(device.id);
