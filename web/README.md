@@ -36,7 +36,7 @@ Production social preview metadata uses an absolute image URL on GitHub Pages. F
 
 - `web/public/boot-shell.js` is the stable-path startup recovery runtime for installed PWA launches.
 - `web/src/pwa/register.ts` keeps the healthy-session update UX in `prompt` mode; startup failure recovery is handled by the boot shell instead of forcing every update to auto-reload.
-- `bun run retain-pages-assets` builds `dist/asset-retention.json` and copies forward supported old hashed assets from the live Pages site.
+- `bun run retain-pages-assets` builds `dist/asset-retention.json` and copies forward supported old hashed assets. In stable release jobs it prefers existing GitHub Release web-dist assets via `GITHUB_REPOSITORY` + `GITHUB_TOKEN`; runs without those credentials, or with an authenticated GitHub listing that has no matching web-dist assets yet, fall back to the live Pages site.
 - Retention keeps the newest two releases or anything published in the last 14 days, whichever retains more versions.
 - The retention bootstrap path can fall back to the live `sw.js` precache list when `asset-retention.json` does not exist yet on the deployed site.
 

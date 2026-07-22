@@ -1,5 +1,11 @@
 # History
 
+## 2026-07-22
+
+- Kept the Web Dashboard compatible with older `pd-diagnostics` payloads that
+  omit the nested `thermal` object; the Dashboard now omits the TMP112 chip
+  instead of throwing during saved-device route render.
+
 ## 2026-07-11
 
 - Standardized Web live port telemetry to fixed three-decimal `V/A/W` output

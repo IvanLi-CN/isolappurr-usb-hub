@@ -11,6 +11,7 @@
 - 2026-07-20: 为健康会话补主动更新检查调度层，固定触发时机为注册完成、回到前台、重新联网和 60 分钟轮询。
 - 2026-07-20: 把 `Later` 行为冻结为“同一标签页会话内对同一候选更新只提示一次”，避免健康会话被重复打扰。
 - 2026-07-20: 把 stable public deploy retention 从 `pages.yml` 收回到 `release.yml`，让 PWA 更新发现与 stable 发布面回到同一合同。
+- 2026-07-22: 将 Pages 旧 hash retention 的 stable 历史源切到 GitHub Release web-dist 资产，避免线上 `asset-retention.json` 已被截断时继续丢弃仍在 14 天窗口内的旧入口资源。
 
 ## Key Reasons / Replacements
 

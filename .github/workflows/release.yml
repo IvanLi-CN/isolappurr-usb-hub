@@ -449,6 +449,7 @@ jobs:
         if: needs.intent.outputs.channel == 'stable'
         working-directory: web
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           PAGES_DEPLOY_ORIGIN: https://isolapurr.ivanli.cc
           VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}
           VITE_BUILD_SHA: ${{ needs.intent.outputs.targetSha }}

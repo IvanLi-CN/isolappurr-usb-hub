@@ -258,6 +258,9 @@ for diagnostics.
   The chip MUST use success styling below `80°C`, warning styling from
   `80.0°C` through `99.9°C`, and error styling at or above `100.0°C` so the
   Overview page mirrors the thermal derating and forced-off thresholds.
+- When a compatible older device returns `/api/v1/pd-diagnostics` without the
+  `thermal` object, the Web Dashboard MUST keep the saved-device page mounted
+  and omit the TMP112 temperature chip instead of throwing during render.
 - When live USB-C display badges are present and USB-C telemetry resolves
   cleanly, the Web Dashboard USB-C card header MUST render the shared
   mode/setpoint label plus the shared live state badge, and MAY prepend the

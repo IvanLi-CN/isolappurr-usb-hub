@@ -44,6 +44,7 @@ class ReleasePagesContractTest(unittest.TestCase):
             workflow,
         )
         self.assertIn("VITE_BUILD_DATE: ${{ env.VITE_BUILD_DATE }}", workflow)
+        self.assertIn("GITHUB_TOKEN: ${{ github.token }}", workflow)
 
     def test_release_workflow_finds_draft_releases_from_list_api(self) -> None:
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
