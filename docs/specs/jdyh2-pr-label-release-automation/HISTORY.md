@@ -16,6 +16,7 @@
 - 2026-07-21: 让 `desktop.yml` 的 required matrix checks 始终展开并在无桌面/Web 变更时 no-op 成功，修复 branch protection 只看到 `Desktop / ${{ matrix.name }}` 占位检查名的问题。
 - 2026-07-21: 让 release asset upload 显式传 `--repo "$GITHUB_REPOSITORY"`，修复 upload-assets job 没有根 `.git` checkout 时 `gh release upload` 直接失败的问题。
 - 2026-07-21: 让发布收尾的 `gh release edit` 也显式传 `--repo "$GITHUB_REPOSITORY"`，修复 release 已发布但 workflow 因无根 `.git` checkout 标红的问题。
+- 2026-07-22: 让 stable retention 使用 GitHub Release web-dist 资产作为旧 hash 历史源，修复 live Pages manifest 已截断时无法恢复仍在 retention 窗口内的旧入口资源的问题。
 
 ## Key Reasons / Replacements
 

@@ -365,11 +365,12 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
   const outputCurrentLimitBadge = formatOutputCurrentLimitBadge(
     pdDiagnostics?.tps_setpoint?.iout_limit_ma,
   );
+  const thermal = pdDiagnostics?.thermal ?? null;
   const tmpTemperatureBadge = formatTmpTemperatureBadge(
-    pdDiagnostics?.thermal.sensors.tmp112.temperature_deci_c,
+    thermal?.sensors?.tmp112.temperature_deci_c,
   );
   const tmpTemperatureTone = tmpTemperatureBadgeTone(
-    pdDiagnostics?.thermal.sensors.tmp112.temperature_deci_c,
+    thermal?.sensors?.tmp112.temperature_deci_c,
   );
   const hasResolvedUsbCPort =
     connectionState === "online"

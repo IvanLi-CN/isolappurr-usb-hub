@@ -200,6 +200,9 @@
   temperature like `37°C`, stays green below `80°C`, turns amber while the
   runtime thermal overlay is derating, and turns red once the TMP112 reading
   reaches the forced-off `100°C` threshold.
+- Kept the TMP112 Dashboard chip optional for compatible older devices whose
+  `/api/v1/pd-diagnostics` payload predates the nested `thermal` object; those
+  saved-device pages remain mounted and simply omit the temperature chip.
 - Updated the Web diagnostics contract to consume
   `tps_setpoint.iout_limit_ma` plus `tps_iout_limit_readback`, matching the
   clarified TPS55288 `IOUT_LIMIT` semantics used by CLI and firmware.

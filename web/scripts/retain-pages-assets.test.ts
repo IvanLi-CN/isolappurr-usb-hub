@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 
 import {
   extractAssetUrlsFromServiceWorker,
   resolveBuildDate,
+  retainPreviousAssets,
   selectRetainedReleases,
 } from "./retain-pages-assets";
+
+const execFileAsync = promisify(execFile);
 
 describe("extractAssetUrlsFromServiceWorker", () => {
   test("keeps only unique asset paths from the Workbox manifest", () => {
@@ -15,6 +23,94 @@ describe("extractAssetUrlsFromServiceWorker", () => {
       "assets/index-abc.js",
       "assets/index-def.css",
     ]);
+  });
+});
+
+describe("retainPreviousAssets", () => {
+  test("materializes retained assets from GitHub release web dist archives", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalRepository = process.env.GITHUB_REPOSITORY;
+    const originalToken = process.env.GITHUB_TOKEN;
+    const tempRoot = await mkdtemp(join(tmpdir(), "isolapurr-retain-test-"));
+    const distDir = resolve(tempRoot, "dist");
+    const releaseDistDir = resolve(tempRoot, "release-dist");
+    const archivePath = resolve(tempRoot, "previous-web-dist.tar.gz");
+
+    await mkdir(resolve(distDir, "assets"), { recursive: true });
+    await writeFile(resolve(distDir, "assets/index-current.js"), "current");
+    await mkdir(resolve(releaseDistDir, "assets"), { recursive: true });
+    await writeFile(resolve(releaseDistDir, "assets/index-old.js"), "old");
+    await execFileAsync("tar", [
+      "-czf",
+      archivePath,
+      "-C",
+      releaseDistDir,
+      ".",
+    ]);
+
+    process.env.GITHUB_REPOSITORY = "owner/repo";
+    process.env.GITHUB_TOKEN = "test-token";
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (
+        url === "https://api.github.com/repos/owner/repo/releases?per_page=100"
+      ) {
+        return new Response(
+          JSON.stringify([
+            {
+              assets: [
+                {
+                  name: "isolapurr-web-dist-v0.6.0.tar.gz",
+                  url: "https://api.github.com/repos/owner/repo/releases/assets/1",
+                },
+              ],
+              created_at: "2026-07-20T00:00:00Z",
+              draft: false,
+              prerelease: false,
+              published_at: "2026-07-20T00:00:00Z",
+              target_commitish: "de112a125eb60000000000000000000000000000",
+              tag_name: "v0.6.0",
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      if (url === "https://api.github.com/repos/owner/repo/releases/assets/1") {
+        return new Response(await readFile(archivePath), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    try {
+      const manifest = await retainPreviousAssets({
+        buildDate: "2026-07-22T00:00:00Z",
+        buildSha: "currentsha000000000000000000000000000000000",
+        distDir,
+        siteOrigin: "https://live.example",
+      });
+
+      expect(manifest.releases.map((release) => release.id)).toEqual([
+        "currentsha00",
+        "de112a125eb6",
+      ]);
+      expect(await stat(resolve(distDir, "assets/index-old.js"))).toBeTruthy();
+      expect(
+        manifest.releases.find((release) => release.id === "de112a125eb6")
+          ?.assets,
+      ).toEqual(["assets/index-old.js"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalRepository === undefined) {
+        delete process.env.GITHUB_REPOSITORY;
+      } else {
+        process.env.GITHUB_REPOSITORY = originalRepository;
+      }
+      if (originalToken === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = originalToken;
+      }
+    }
   });
 });
 

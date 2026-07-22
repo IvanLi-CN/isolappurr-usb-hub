@@ -216,6 +216,129 @@ async function stubServiceWorkerForBootRecovery(
   );
 }
 
+async function routeOnlineDeviceWithLegacyPdDiagnostics(page: Page) {
+  const jsonHeaders = {
+    "access-control-allow-origin": "*",
+    "content-type": "application/json",
+  };
+  const telemetry = {
+    status: "ok",
+    voltage_mv: 5000,
+    current_ma: 120,
+    power_mw: 600,
+    sample_uptime_ms: 123456,
+  };
+  const state = {
+    power_enabled: true,
+    data_connected: true,
+    replugging: false,
+    busy: false,
+  };
+  const capabilities = {
+    data_replug: true,
+    power_set: true,
+  };
+
+  await page.route("**/api/v1/ports", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        hub: {
+          upstream_connected: true,
+          isolated_usb_fault: false,
+          isolated_usb_ready: true,
+          usb_c_downstream_route: "usb_c",
+        },
+        ports: [
+          {
+            portId: "port_a",
+            label: "USB-A",
+            telemetry,
+            state,
+            capabilities,
+          },
+          {
+            portId: "port_c",
+            label: "USB-C",
+            telemetry,
+            state,
+            capabilities,
+          },
+        ],
+      }),
+      headers: jsonHeaders,
+      status: 200,
+    });
+  });
+
+  await page.route("**/api/v1/pd-diagnostics", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        usb_c_power_enabled: true,
+        sw2303_i2c_allowed: true,
+        sw2303_profile_applied: true,
+        sw2303_stable_reads: 3,
+        sw2303_error_latched: false,
+        tps_error_latched: false,
+        sw2303_readback_config: {
+          available: true,
+          matches_config: true,
+          power_watts: 60,
+          protocols: {
+            pd: true,
+            qc20: false,
+            qc30: false,
+            fcp: false,
+            afc: false,
+            scp: false,
+            pe20: false,
+            bc12: true,
+            sfcp: false,
+          },
+          pd: {
+            pps: true,
+            fixed_voltages_mv: [5000, 9000, 12000],
+          },
+          current: {
+            pps3_limit_ma: 3000,
+            pd_pps_5a: false,
+            type_c_broadcast_ma: 3000,
+            scp_limit_ma: null,
+            fcp_afc_sfcp_limit_ma: null,
+          },
+          fast_charge: {
+            qc20_20v_enabled: false,
+            qc30_20v_enabled: false,
+            pe20_20v_enabled: false,
+            non_pd_12v_enabled: false,
+          },
+        },
+        sw2303_request: { mv: 5000, ma: 3000 },
+        sw2303_vbus_mv: 5000,
+        sw2303_last_valid_request: { mv: 5000, ma: 3000 },
+        active_protocol: "pd",
+        display: {
+          mode: { kind: "pd", label: "PD" },
+          measurements_visible: true,
+          badge: { kind: "voltage", label: "5.0 V" },
+        },
+        usb_c_actual: telemetry,
+        tps_setpoint: {
+          output_enabled: true,
+          discharge_enabled: false,
+          mv: 5000,
+          iout_limit_ma: 3000,
+        },
+        tps_iout_limit_readback: {
+          enabled: true,
+          ma: 3000,
+        },
+      }),
+      headers: jsonHeaders,
+      status: 200,
+    });
+  });
+}
+
 test("renders devices list and mock dashboard", async ({ page }) => {
   const storageKey = "isolapurr_usb_hub.devices";
   const themeStorageKey = "isolapurr_usb_hub.theme";
@@ -345,6 +468,39 @@ test("promotes saved-device identity into the desktop shell header", async ({
     "Demo Hub",
   );
   await expect(page.getByTestId("device-power-page")).toBeVisible();
+});
+
+test("keeps saved-device dashboard mounted with legacy PD diagnostics", async ({
+  page,
+}) => {
+  const storageKey = "isolapurr_usb_hub.devices";
+  const device = {
+    id: "aabbcc001122",
+    name: "Demo Hub",
+    baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
+  };
+
+  await routeOnlineDeviceWithLegacyPdDiagnostics(page);
+  await page.addInitScript(
+    ({ storageKey, device }) => {
+      window.localStorage.setItem(storageKey, JSON.stringify([device]));
+    },
+    { storageKey, device },
+  );
+
+  await page.goto("/devices/aabbcc001122");
+
+  await expect(page.getByTestId("device-overview-page")).toBeVisible();
+  await expect(page.getByTestId("device-dashboard")).toBeVisible();
+  await expect(page.getByTestId("port-card-port_a")).toBeVisible();
+  await expect(page.getByTestId("port-card-port_c")).toBeVisible();
+  await expect(page.getByTestId("dashboard-usb-c-live-mode")).toHaveText("PD");
+  await expect(page.getByTestId("dashboard-usb-c-iout-limit")).toHaveText(
+    "3.00 A",
+  );
+  await expect(page.getByTestId("dashboard-usb-c-tmp-temperature")).toHaveCount(
+    0,
+  );
 });
 
 test("uses a mobile device drawer for dashboard and saved-device routes", async ({
