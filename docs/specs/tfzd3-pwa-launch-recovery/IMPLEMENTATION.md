@@ -47,6 +47,7 @@
 - `web/scripts/retain-pages-assets.test.ts`
 - `web/src/pwa/update.test.ts`
 - `web/src/domain/firmwareBundle.test.ts`
+- `web/src/pages/useBundledFirmwareManifest.ts`
 - `.github/workflows/release.yml`
 - `.github/workflows/pages.yml`
 - `web/e2e/app.spec.ts`

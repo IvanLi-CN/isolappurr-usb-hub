@@ -2,13 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { tryBootstrapDesktopAgent } from "../domain/desktopAgent";
 import type { StoredDevice } from "../domain/devices";
-import {
-  type BundledFirmwareAsset,
-  type BundledFirmwareManifest,
-  DEMO_BUNDLED_FIRMWARE_MANIFEST,
-  emptyBundledFirmwareManifest,
-  loadBundledFirmwareManifest,
-} from "../domain/firmwareBundle";
+import type { BundledFirmwareAsset } from "../domain/firmwareBundle";
 import {
   clearFlashTransportLock,
   clearGlobalFlashTransportLock,
@@ -33,7 +27,6 @@ import {
   cacheWebSerialHardware,
   readCachedWebSerialHardware,
 } from "../domain/webSerialHardwareCache";
-import { PWA_UPDATE_AVAILABLE_EVENT } from "../pwa/events";
 import { readLocalUsbInfo } from "../ui/dialogs/AddDeviceDialog.helpers";
 import type { FirmwareFlashLogEntry } from "../ui/panels/FirmwareFlashLogPanel";
 import {
@@ -63,9 +56,8 @@ import {
   type WebSerialProbeOptions,
   type WebSerialSelectionState,
 } from "./firmwareFlashShared";
+import { useBundledFirmwareManifest } from "./useBundledFirmwareManifest";
 import { useFirmwareFlashProbeDeadline } from "./useFirmwareFlashProbeDeadline";
-
-const FIRMWARE_MANIFEST_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
 export function useFirmwareFlashConnection({
   currentDevice,
@@ -91,15 +83,8 @@ export function useFirmwareFlashConnection({
   const [flashMode, setFlashMode] = useState<FlashMode>("normal");
   const [flashModeReason, setFlashModeReason] =
     useState<FlashModeReason>("normal");
-  const [manifest, setManifest] = useState<BundledFirmwareManifest>(
-    demoEnabled
-      ? DEMO_BUNDLED_FIRMWARE_MANIFEST
-      : emptyBundledFirmwareManifest(),
-  );
-  const [manifestError, setManifestError] = useState<string | null>(null);
-  const [selectedReleaseTag, setSelectedReleaseTag] = useState<string | null>(
-    null,
-  );
+  const { manifest, manifestError, selectedReleaseTag, setSelectedReleaseTag } =
+    useBundledFirmwareManifest(demoEnabled);
   const [localUsbPorts, setLocalUsbPorts] = useState<SerialPortInfo[]>([]);
   const [selectedLocalUsbPort, setSelectedLocalUsbPort] = useState(
     currentLocalUsbPath ?? "",
@@ -161,7 +146,6 @@ export function useFirmwareFlashConnection({
   const flashLogSerialRef = useRef(0);
   const flashOperationStartedAtRef = useRef<number | null>(null);
   const pseudoFlashProgressTimerRef = useRef<number | null>(null);
-  const manifestRefreshSerialRef = useRef(0);
 
   const clearPseudoFlashProgress = () => {
     if (pseudoFlashProgressTimerRef.current !== null) {
@@ -211,71 +195,6 @@ export function useFirmwareFlashConnection({
       }
     };
   }, []);
-  useEffect(() => {
-    if (demoEnabled) {
-      setManifest(DEMO_BUNDLED_FIRMWARE_MANIFEST);
-      setSelectedReleaseTag(
-        DEMO_BUNDLED_FIRMWARE_MANIFEST.releases[0]?.tagName ?? null,
-      );
-      return;
-    }
-    let cancelled = false;
-
-    const refreshManifest = async () => {
-      const refreshSerial = ++manifestRefreshSerialRef.current;
-      try {
-        const next = await loadBundledFirmwareManifest();
-        if (cancelled || refreshSerial !== manifestRefreshSerialRef.current) {
-          return;
-        }
-        setManifest(next);
-        setManifestError(null);
-        setSelectedReleaseTag((current) =>
-          current &&
-          next.releases.some((release) => release.tagName === current)
-            ? current
-            : (next.releases[0]?.tagName ?? null),
-        );
-      } catch (err) {
-        if (cancelled || refreshSerial !== manifestRefreshSerialRef.current) {
-          return;
-        }
-        setManifestError(
-          err instanceof Error
-            ? err.message
-            : "Bundled firmware manifest failed to load.",
-        );
-      }
-    };
-
-    const refreshWhenVisible = () => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-      void refreshManifest();
-    };
-
-    const intervalId = window.setInterval(
-      refreshWhenVisible,
-      FIRMWARE_MANIFEST_REFRESH_INTERVAL_MS,
-    );
-    void refreshManifest();
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.addEventListener("online", refreshWhenVisible);
-    window.addEventListener(PWA_UPDATE_AVAILABLE_EVENT, refreshWhenVisible);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.removeEventListener("online", refreshWhenVisible);
-      window.removeEventListener(
-        PWA_UPDATE_AVAILABLE_EVENT,
-        refreshWhenVisible,
-      );
-    };
-  }, [demoEnabled]);
-
   useEffect(() => {
     if (!currentLocalUsbPath) {
       return;
@@ -433,7 +352,7 @@ export function useFirmwareFlashConnection({
       return;
     }
     setSelectedReleaseTag(releaseChoices[0]?.tagName ?? null);
-  }, [releaseChoices, selectedReleaseTag]);
+  }, [releaseChoices, selectedReleaseTag, setSelectedReleaseTag]);
 
   const selectedRelease = useMemo(
     () =>
