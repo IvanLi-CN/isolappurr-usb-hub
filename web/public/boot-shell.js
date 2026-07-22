@@ -8,6 +8,7 @@
   const RECOVERY_PARAM = "__pwa_recover";
   const STARTUP_TIMEOUT_MS = 8000;
   const WAITING_SW_TIMEOUT_MS = 2800;
+  const UPDATE_SW_TIMEOUT_MS = 5000;
   const FAILED_TITLE = "App launch failed";
   const FAILED_MESSAGE =
     "The installed console could not finish loading this app shell.";
@@ -122,9 +123,102 @@
     return FAILED_MESSAGE;
   }
 
-  async function promoteWaitingWorker() {
+  async function getServiceWorkerRegistration() {
     const serviceWorker = window.navigator.serviceWorker;
     if (!serviceWorker || typeof serviceWorker.getRegistration !== "function") {
+      return null;
+    }
+
+    try {
+      return await serviceWorker.getRegistration();
+    } catch {
+      return null;
+    }
+  }
+
+  function waitForWaitingWorker(registration) {
+    if (registration.waiting) {
+      return Promise.resolve(registration);
+    }
+
+    return new Promise((resolve) => {
+      let installingWorker = null;
+      let stateListener = null;
+      let settled = false;
+
+      const finish = (nextRegistration) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timer);
+        window.clearInterval(poller);
+        try {
+          registration.removeEventListener("updatefound", inspect);
+        } catch {
+          // Ignore listener cleanup failures.
+        }
+        try {
+          if (installingWorker && stateListener) {
+            installingWorker.removeEventListener("statechange", stateListener);
+          }
+        } catch {
+          // Ignore listener cleanup failures.
+        }
+        resolve(nextRegistration);
+      };
+
+      const inspect = () => {
+        if (registration.waiting) {
+          finish(registration);
+          return;
+        }
+
+        const nextInstallingWorker = registration.installing;
+        if (
+          !nextInstallingWorker ||
+          nextInstallingWorker === installingWorker
+        ) {
+          return;
+        }
+
+        if (installingWorker && stateListener) {
+          try {
+            installingWorker.removeEventListener("statechange", stateListener);
+          } catch {
+            // Ignore listener cleanup failures.
+          }
+        }
+
+        installingWorker = nextInstallingWorker;
+        stateListener = () => {
+          if (registration.waiting) {
+            finish(registration);
+          }
+        };
+
+        try {
+          installingWorker.addEventListener("statechange", stateListener);
+        } catch {
+          // Older browser mocks may not expose worker events.
+        }
+      };
+
+      const timer = window.setTimeout(() => finish(null), UPDATE_SW_TIMEOUT_MS);
+      const poller = window.setInterval(inspect, 100);
+
+      try {
+        registration.addEventListener("updatefound", inspect);
+      } catch {
+        // Older browser mocks may not expose registration events.
+      }
+      inspect();
+    });
+  }
+
+  async function promoteWaitingWorker(existingRegistration) {
+    const serviceWorker = window.navigator.serviceWorker;
+    if (!serviceWorker) {
       return false;
     }
 
@@ -133,12 +227,8 @@
       return false;
     }
 
-    let registration;
-    try {
-      registration = await serviceWorker.getRegistration();
-    } catch {
-      return false;
-    }
+    const registration =
+      existingRegistration || (await getServiceWorkerRegistration());
 
     if (!registration || !registration.waiting) {
       return false;
@@ -200,6 +290,40 @@
     });
   }
 
+  async function refreshServiceWorkerForRecovery() {
+    const registration = await getServiceWorkerRegistration();
+    if (!registration || typeof registration.update !== "function") {
+      return false;
+    }
+
+    if (registration.waiting) {
+      return await promoteWaitingWorker(registration);
+    }
+
+    setShellState("recovering", {
+      chip: "Repairing app shell",
+      title: "Repairing console…",
+      message: "Checking for the newest offline app shell.",
+      detail: "",
+      showActions: false,
+      showNote: false,
+      showProgress: true,
+    });
+
+    try {
+      await registration.update();
+    } catch {
+      return false;
+    }
+
+    const updatedRegistration = await waitForWaitingWorker(registration);
+    if (!updatedRegistration) {
+      return false;
+    }
+
+    return await promoteWaitingWorker(updatedRegistration);
+  }
+
   function markAppMounted() {
     if (appMounted) {
       return;
@@ -244,6 +368,10 @@
     setVisible(true);
 
     if (await promoteWaitingWorker()) {
+      return;
+    }
+
+    if (await refreshServiceWorkerForRecovery()) {
       return;
     }
 
@@ -365,25 +493,29 @@
     },
   };
 
-  if (!isStandalone()) {
-    setVisible(false);
-    return;
-  }
-
-  setVisible(true);
-  setShellState("launching", {
-    chip: "Installed console",
-    title: "Starting console…",
-    message: "Loading your offline app shell.",
-    detail: "",
-    showActions: false,
-    showNote: false,
-    showProgress: true,
-  });
-
   attachActionHandlers();
   attachFailureObservers();
-  startupTimer = window.setTimeout(() => {
-    void handleStartupFailure(TIMEOUT_DETAIL);
-  }, STARTUP_TIMEOUT_MS);
+
+  const standaloneLaunch = isStandalone();
+
+  if (standaloneLaunch) {
+    setVisible(true);
+    setShellState("launching", {
+      chip: "Installed console",
+      title: "Starting console…",
+      message: "Loading your offline app shell.",
+      detail: "",
+      showActions: false,
+      showNote: false,
+      showProgress: true,
+    });
+  } else {
+    setVisible(false);
+  }
+
+  if (standaloneLaunch) {
+    startupTimer = window.setTimeout(() => {
+      void handleStartupFailure(TIMEOUT_DETAIL);
+    }, STARTUP_TIMEOUT_MS);
+  }
 })();
