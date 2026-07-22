@@ -57,7 +57,7 @@
 - 故障启动路径必须优先尝试激活 `waiting` service worker 并 reload；只有该路径无效时，才进入失败壳并允许缓存修复。
 - GitHub Pages 发布产物必须同时包含当前版本和 retention 窗口内仍受支持的旧 hash 资源。
 - retention 窗口必须满足“最近两版或 14 天，以较晚到达者为准”的保留规则。
-- stable 发布环境存在 GitHub Release 访问能力时，retention 必须优先从既有 stable Release 的 web-dist 资产恢复旧 hash 资源；不得只依赖当前线上 Pages manifest 作为历史真相源。
+- stable 发布环境存在 GitHub Release 访问能力且能发现既有 stable Release web-dist 资产时，retention 必须优先从这些资产恢复旧 hash 资源；不得只依赖当前线上 Pages manifest 作为历史真相源。若 GitHub API 成功但尚无匹配 web-dist 资产，允许退回线上 retention 清单或线上 `sw.js` 作为过渡期 bootstrap；GitHub API 失败仍必须失败。
 - 启动壳与失败壳都必须有稳定 visual evidence；自动化必须覆盖健康冷启动、stale shell 404、自愈成功、失败壳修复且设备数据保留。
 
 ### SHOULD
@@ -80,7 +80,7 @@
 - 当用户点击 `Repair app` 时，运行时注销现有 service worker、清理 Cache Storage、保留持久数据，然后 reload。
 - 当健康会话的 service worker 注册完成、页面重新可见、网络重新联通或 60 分钟轮询触发时，运行时对 `sw.js` 发起 `cache: "no-store"` 探测；只有脚本指纹变化时才调用 `registration.update()`。
 - 当健康会话的更新 toast 被 owner 用 `Later` 关闭时，运行时把该候选更新指纹记录到标签页级会话存储，并对同一候选更新静默到本次标签页结束。
-- 当 Pages 发布新版本时，构建脚本优先从 GitHub stable Release 的 web-dist 资产读取仍受支持的旧 hash 资源；没有 GitHub Release 凭证的本地/bootstrap 路径才退回线上 retention 清单或线上 `sw.js`。脚本把这些旧资源并入当前 `dist/`，再写出新的 `asset-retention.json`。
+- 当 Pages 发布新版本时，构建脚本优先从 GitHub stable Release 的 web-dist 资产读取仍受支持的旧 hash 资源；没有 GitHub Release 凭证，或 GitHub API 成功但没有匹配 web-dist 资产的 bootstrap 路径，才退回线上 retention 清单或线上 `sw.js`。脚本把这些旧资源并入当前 `dist/`，再写出新的 `asset-retention.json`。
 
 ### Edge cases / errors
 
@@ -162,7 +162,7 @@
 - `.github/workflows/release.yml` must run the retention step for stable public deploy builds.
 - `.github/workflows/pages.yml` must limit itself to PR build checks and `release_tag` backfill.
 - `web/scripts/retain-pages-assets.ts` must remain able to bootstrap from live `sw.js` when `asset-retention.json` does not exist yet.
-- `web/scripts/retain-pages-assets.ts` must prefer authenticated GitHub Release web-dist assets when `GITHUB_REPOSITORY` and `GITHUB_TOKEN` are present, so a truncated live Pages manifest cannot drop still-supported releases.
+- `web/scripts/retain-pages-assets.ts` must prefer authenticated GitHub Release web-dist assets when `GITHUB_REPOSITORY` and `GITHUB_TOKEN` are present, so a truncated live Pages manifest cannot drop still-supported releases; if that authenticated listing succeeds but contains no matching web-dist assets, the script falls back to the live retention manifest/bootstrap path.
 
 ## Visual Evidence
 

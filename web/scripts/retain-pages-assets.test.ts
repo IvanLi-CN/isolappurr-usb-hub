@@ -112,6 +112,85 @@ describe("retainPreviousAssets", () => {
       }
     }
   });
+
+  test("falls back to live manifest when release web dist assets are absent", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalRepository = process.env.GITHUB_REPOSITORY;
+    const originalToken = process.env.GITHUB_TOKEN;
+    const tempRoot = await mkdtemp(join(tmpdir(), "isolapurr-retain-test-"));
+    const distDir = resolve(tempRoot, "dist");
+
+    await mkdir(resolve(distDir, "assets"), { recursive: true });
+    await writeFile(resolve(distDir, "assets/index-current.js"), "current");
+
+    process.env.GITHUB_REPOSITORY = "owner/repo";
+    process.env.GITHUB_TOKEN = "test-token";
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (
+        url === "https://api.github.com/repos/owner/repo/releases?per_page=100"
+      ) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url === "https://live.example/asset-retention.json") {
+        return new Response(
+          JSON.stringify({
+            generatedAt: "2026-07-21T00:00:00Z",
+            policy: {
+              maxAgeDays: 14,
+              maxReleaseCount: 2,
+            },
+            releases: [
+              {
+                assets: ["assets/index-live-old.js"],
+                createdAt: "2026-07-21T00:00:00Z",
+                id: "liveold000000",
+              },
+            ],
+            schemaVersion: 1,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === "https://live.example/assets/index-live-old.js") {
+        return new Response("live-old", { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    try {
+      const manifest = await retainPreviousAssets({
+        buildDate: "2026-07-22T00:00:00Z",
+        buildSha: "currentsha000000000000000000000000000000000",
+        distDir,
+        siteOrigin: "https://live.example",
+      });
+
+      expect(manifest.releases.map((release) => release.id)).toEqual([
+        "currentsha00",
+        "liveold000000",
+      ]);
+      expect(
+        await stat(resolve(distDir, "assets/index-live-old.js")),
+      ).toBeTruthy();
+      expect(
+        manifest.releases.find((release) => release.id === "liveold000000")
+          ?.assets,
+      ).toEqual(["assets/index-live-old.js"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalRepository === undefined) {
+        delete process.env.GITHUB_REPOSITORY;
+      } else {
+        process.env.GITHUB_REPOSITORY = originalRepository;
+      }
+      if (originalToken === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = originalToken;
+      }
+    }
+  });
 });
 
 describe("selectRetainedReleases", () => {

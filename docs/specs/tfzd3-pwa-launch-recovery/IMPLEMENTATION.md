@@ -15,7 +15,7 @@
 - `web/src/main.tsx` 与 `web/src/pwa/boot-shell-client.tsx` 已为应用挂载成功和同步启动失败提供桥接信号。
 - `web/src/pwa/register.ts` 与 `web/src/pwa/update.ts` 现在保留健康会话的 `prompt` 更新策略，同时在启动、回前台、重新联网和 60 分钟轮询时主动检查 `sw.js` / `registration.update()`。
 - 健康会话的更新 toast 现在支持按候选更新指纹做标签页级 `Later` 去重，同一候选更新在同一标签页会话内只提示一次。
-- `.github/workflows/release.yml` 现在在 stable public deploy 构建里执行旧 hash 资源 retention，并把 GitHub Release web-dist 资产作为 stable 历史真相源；没有 GitHub Release 凭证的本地/bootstrap 路径才退回线上 retention 清单或线上 `sw.js`。该步骤产出 `asset-retention.json`；`.github/workflows/pages.yml` 只承担 PR build 与 `release_tag` backfill。
+- `.github/workflows/release.yml` 现在在 stable public deploy 构建里执行旧 hash 资源 retention，并把 GitHub Release web-dist 资产作为 stable 历史真相源；没有 GitHub Release 凭证，或 GitHub API 成功但没有匹配 web-dist 资产的 bootstrap 路径，才退回线上 retention 清单或线上 `sw.js`。该步骤产出 `asset-retention.json`；`.github/workflows/pages.yml` 只承担 PR build 与 `release_tag` backfill。
 - Storybook 已覆盖 `PWA/StartupShell` 与 `PWA/UpdateToast`；Playwright E2E 已覆盖健康冷启动、自愈成功与修复后保存设备保留。
 - 2026-07-20 已完成一轮 same-machine Chrome acceptance：基于本地 `web/dist` preview 验证了候选更新 toast 的 `Later` 同候选去重，以及 `Update` 触发 reload 后重新进入应用。
 - 2026-07-22 的线上 Chrome 安装态诊断确认：旧窗口可持有已删除 hash 入口资产，刷新进入新版本后还会因为旧设备 `pd-diagnostics` 缺少 `thermal` 而白屏；当前实现通过 Release web-dist retention 和旧 schema E2E 回归同时覆盖这两段链路。

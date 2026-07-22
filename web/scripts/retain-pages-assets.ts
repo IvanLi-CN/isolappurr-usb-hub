@@ -438,6 +438,16 @@ async function fetchGitHubReleaseMetadata(
     });
 }
 
+async function fetchLiveRetentionSources(
+  siteOrigin: string,
+  buildDate: string,
+): Promise<AssetRetentionRelease[]> {
+  return (
+    (await fetchPreviousManifest(siteOrigin))?.releases ??
+    (await bootstrapPreviousRelease(siteOrigin, buildDate))
+  );
+}
+
 export async function retainPreviousAssets({
   buildDate,
   buildSha,
@@ -447,11 +457,14 @@ export async function retainPreviousAssets({
   const currentAssets = await collectCurrentAssetPaths(distDir);
   const githubRepository = process.env.GITHUB_REPOSITORY?.trim();
   const githubToken = process.env.GITHUB_TOKEN?.trim();
-  const previousReleases =
+  const githubReleases =
     githubRepository && githubToken
       ? await fetchGitHubReleaseMetadata(githubRepository, githubToken)
-      : ((await fetchPreviousManifest(siteOrigin))?.releases ??
-        (await bootstrapPreviousRelease(siteOrigin, buildDate)));
+      : [];
+  const previousReleases =
+    githubRepository && githubToken && githubReleases.length > 0
+      ? githubReleases
+      : await fetchLiveRetentionSources(siteOrigin, buildDate);
 
   const currentRelease: AssetRetentionRelease = {
     id: buildSha.slice(0, 12),
