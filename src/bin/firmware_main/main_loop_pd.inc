@@ -852,7 +852,8 @@
 
         if sw2303_power_gate.requires_tps_off() {
             setpoint.output_enabled = false;
-            setpoint.discharge_enabled = sw2303_power_gate.requires_active_discharge();
+            setpoint.discharge_enabled =
+                sw2303_power_gate.requires_active_discharge() || runtime_tps_discharge_enabled;
         } else if usb_c_pd_power_on {
             setpoint.output_enabled = true;
             setpoint.discharge_enabled = false;

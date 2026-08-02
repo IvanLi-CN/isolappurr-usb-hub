@@ -503,8 +503,8 @@ Thermal runtime overlay:
   reporting success when I2C merely becomes permissible.
 - The forced TPS discharge is limited to the measured off window. An output-off
   state that remains off enters a parked phase with discharge disabled, so the
-  owner-facing discharge preference is not silently overridden after restart
-  safety has completed.
+  owner-facing discharge preference is then reapplied to the physical TPS
+  setpoint instead of being silently overridden after restart safety completes.
 - A profile write error or readback mismatch resolves a pending runtime-on
   action as a failure immediately; the existing profile retry cadence remains
   available for a later explicit request.

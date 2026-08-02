@@ -37,8 +37,9 @@
   `runtime.discharge_enabled=false`.
 - Hardened the completion path so a profile write error or readback mismatch
   fails a pending runtime-on request immediately. The gate now parks a steady
-  output-off state without forced discharge after the measured off window,
-  while preserving forced discharge during the restart window itself.
+  output-off state after the measured off window and reapplies the requested
+  discharge preference, while preserving forced discharge during the restart
+  window itself.
 
 ## 2026-07-22
 

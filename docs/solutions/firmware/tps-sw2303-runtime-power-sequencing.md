@@ -31,7 +31,7 @@ software state without relying on recovery retries or a physical replug.
 The owner-facing runtime discharge preference is not sufficient to control the
 restart safety sequence. The firmware must force discharge only while the
 restart window is active, then park the output off without discharge when the
-window has elapsed and return to the requested preference on subsequent writes.
+window has elapsed and apply the requested preference while output remains off.
 
 ## Evidence
 
