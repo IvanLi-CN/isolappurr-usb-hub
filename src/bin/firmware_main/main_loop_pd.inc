@@ -832,10 +832,12 @@
             continue;
         }
 
-        if usb_c_pd_power_on {
-            setpoint.output_enabled = !sw2303_power_gate.requires_tps_off();
-            setpoint.discharge_enabled =
-                runtime_tps_discharge_enabled && sw2303_power_gate.requires_tps_off();
+        if sw2303_power_gate.requires_tps_off() {
+            setpoint.output_enabled = false;
+            setpoint.discharge_enabled = sw2303_power_gate.requires_active_discharge();
+        } else if usb_c_pd_power_on {
+            setpoint.output_enabled = true;
+            setpoint.discharge_enabled = false;
         }
 
         let gate_waiting_for_tps_off_apply = sw2303_power_gate.waiting_for_tps_off_apply();

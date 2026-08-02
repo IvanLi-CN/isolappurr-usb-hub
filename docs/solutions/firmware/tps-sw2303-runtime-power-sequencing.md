@@ -15,7 +15,7 @@ related_specs:
 symptoms:
   - A short runtime TPS output off/on cycle can leave the USB-C sink without output.
   - Repeated power actions can eventually recover output without changing the saved configuration.
-root_cause: The restart sequence could expose SW2303 I2C transactions before a deterministic TPS-off interval and before its TPS boot/POR sequence had completed.
+root_cause: A runtime output-off setpoint could leave TPS discharge disabled, so short cycles did not reliably reset the SW2303 even though firmware reported TPS enabled and I2C allowed.
 resolution_type: runtime-state-machine
 ---
 
@@ -28,22 +28,29 @@ does not change the saved source-capability configuration. A rapid off/on
 transition must keep the SW2303 control path in a defined electrical and
 software state without relying on recovery retries or a physical replug.
 
+The owner-facing runtime discharge preference is not sufficient to control the
+restart safety sequence. The firmware must force discharge only while the
+runtime power gate holds TPS output off, then clear it before the 5 V boot
+setpoint.
+
 ## Evidence
 
-The specified board `f293cc9c139e` was tested with its existing 5.1 kOhm sink
-through the released host CLI runtime-output path. No other hardware was
-connected, changed, or operated.
+The specified board `f293cc9c139e` was tested through the released host CLI
+runtime-output path with the PPS-capable PD sink supplied by the owner. No
+hardware was modified.
 
-For both `discharge=false` and `discharge=true`, candidates
-`0/10/25/50/100/200/500 ms` each completed 20 consecutive off/on cycles. A
-cycle passed when, within 3 seconds, diagnostics reported TPS output enabled,
-SW2303 I2C allowed, and SW2303 VBUS at least 4.5 V. The first full-pass
-candidate was 0 ms for both states. The final source value is therefore 50 ms:
-`max(Tmin_discharge_off, Tmin_discharge_on) + 50 ms`, rounded to 10 ms.
+The failed signature was precise: after a short cycle, firmware reported TPS
+output enabled and SW2303 I2C allowed, but SW2303 VBUS was 585 mV, USB-C was
+`not_inserted`, and measurement rendering was off. That rules out a display
+refresh failure.
 
-At the final 50 ms value, 200 cycles passed with discharge disabled and 200
-cycles passed with discharge enabled. The maximum observed VBUS-ready time was
-300 ms. No cycle used runtime recovery, replugging, or manual intervention.
+With forced discharge during the gate, 50 ms failed and each candidate from 60
+through 100 ms passed 20 immediate cycles. The measured `Tmin` is 60 ms; the
+production value is therefore 110 ms after adding 50 ms margin and rounding to
+10 ms. At 110 ms, 200 immediate cycles passed with runtime discharge disabled
+and another 200 passed with it enabled. Every pass produced TPS enabled,
+SW2303 I2C allowed, VBUS at least 4.5 V, `usb_c_actual.status=ok`, and visible
+measurements within 700 ms.
 
 The bench result also established an important distinction: while TPS output
 is off, the unpowered SW2303 can clamp SDA/SCL low. Physical I2C-pin release
@@ -54,9 +61,9 @@ boot.
 
 Use a small portable state machine for the runtime sequence:
 
-1. Park GPIO39/GPIO40 as open-drain low with no internal pull and apply the
-   TPS output-off setpoint.
-2. Begin the 50 ms off hold only after that TPS write succeeds. Keep a new
+1. Park GPIO39/GPIO40 as open-drain low with no internal pull and apply a TPS
+   output-off setpoint with discharge enabled.
+2. Begin the 110 ms off hold only after that TPS write succeeds. Keep a new
    output-on request pending during the hold.
 3. Release the GPIO pins physically after the hold, but do not allow an I2C
    transaction yet.
@@ -73,10 +80,14 @@ either timer or fabricate a successful runtime-output response.
 - Keep the measured TPS off hold separate from `SW2303_POR_RELEASE_MS`; the
   former is a runtime restart guard, while the latter starts only after TPS 5 V
   boot application.
+- Never let the owner-facing runtime discharge preference disable the temporary
+  TPS discharge required by this restart guard. Preserve the preference in the
+  API and saved configuration; clear the transient bit before boot.
 - Do not use line-high sampling of an unpowered SW2303 as a prerequisite for
   TPS boot. It is expected to be low until the TPS path powers the chip.
 - Keep the state machine in the `no_std` shared core and test timer/error
-  transitions on the host. Verify electrical output and diagnostics with HIL.
+  transitions on the host. HIL verdicts must include USB-C telemetry visibility
+  and attachment status, not only TPS command success or SW2303 VBUS.
 - This is a firmware sequencing rule. It does not require a PCB, schematic,
   BOM, or other hardware change.
 

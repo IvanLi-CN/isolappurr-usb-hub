@@ -2,17 +2,20 @@
 
 ## Runtime TPS Off Window
 
-- Added a measured 50 ms TPS output-off guard before a runtime restart, while
+- Established a 110 ms TPS output-off guard before a runtime restart, while
   retaining the distinct 100 ms SW2303 POR interval after the TPS 5 V boot
-  setpoint succeeds.
-- Recorded the required order: park I2C before TPS off; release the physical
-  pins after the guard without permitting transactions; apply TPS boot; then
-  enable SW2303 I2C only after POR. This avoids misclassifying the unpowered
-  SW2303's low I2C clamp as a failed line release.
-- Verified the final timing on `f293cc9c139e` and its existing 5.1 kOhm sink
-  without altering any hardware: the candidate sweep passed at every tested
-  hold from 0 to 500 ms, and the final 50 ms window passed 200 cycles with
-  discharge disabled plus 200 cycles with discharge enabled.
+  setpoint succeeds. The value is the measured 60 ms minimum plus 50 ms
+  margin, rounded to 10 ms.
+- Recorded the required order: park I2C before TPS off; enable a transient TPS
+  discharge during the off hold; release the physical pins after the guard
+  without permitting transactions; apply TPS boot; then enable SW2303 I2C only
+  after POR. The transient discharge does not alter the owner-facing runtime
+  preference or saved power configuration.
+- Verified the timing on `f293cc9c139e` with the owner-supplied PPS-capable PD
+  sink and no hardware changes. A 50 ms candidate failed with VBUS at 585 mV
+  and `not_inserted`; 60/70/80/90/100 ms each passed 20 immediate cycles. The
+  final 110 ms firmware passed 200 immediate cycles with runtime discharge
+  disabled and 200 with it enabled, with USB-C telemetry visible within 700 ms.
 
 ## 2026-07-22
 

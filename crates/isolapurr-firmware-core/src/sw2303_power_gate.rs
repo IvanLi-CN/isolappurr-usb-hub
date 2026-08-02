@@ -49,6 +49,12 @@ impl Sw2303PowerGate {
         )
     }
 
+    /// The SW2303 restart sequence needs an actual TPS discharge, even when
+    /// the owner-facing runtime discharge preference is disabled.
+    pub const fn requires_active_discharge(&self) -> bool {
+        self.requires_tps_off()
+    }
+
     pub const fn requires_boot_setpoint(&self) -> bool {
         matches!(
             self.phase,
@@ -169,6 +175,7 @@ mod tests {
 
         gate.set_output_requested(false);
         assert!(gate.requires_tps_off());
+        assert!(gate.requires_active_discharge());
         gate.mark_tps_off_applied(200);
         assert!(gate.off_transition_complete());
 
@@ -178,6 +185,9 @@ mod tests {
         gate.advance(280);
         assert!(gate.should_release_i2c());
         assert!(gate.should_park_i2c());
+        assert!(gate.requires_active_discharge());
+        gate.mark_pre_boot_i2c_released();
+        assert!(!gate.requires_active_discharge());
     }
 
     #[test]

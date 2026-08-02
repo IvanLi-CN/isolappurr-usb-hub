@@ -420,12 +420,15 @@ for diagnostics.
   before resuming follow or manual behavior.
 - Given runtime output is turned off, when the PD/TPS coordinator processes the
   request, then it first parks GPIO39 and GPIO40 as open-drain low with no
-  internal pull before applying the TPS55288 output-off setpoint.
+  internal pull before applying the TPS55288 output-off setpoint. That transient
+  setpoint MUST enable TPS discharge while the runtime restart gate is closed,
+  regardless of the owner-facing runtime discharge preference; it MUST clear the
+  discharge bit again before the TPS boot setpoint is applied.
 - Given TPS55288 output-off application succeeds, when the runtime output is
-  requested on before `TPS_RUNTIME_OFF_HOLD_MS=50`, then firmware keeps TPS
+  requested on before `TPS_RUNTIME_OFF_HOLD_MS=110`, then firmware keeps TPS
   output off and keeps the SW2303 I2C bus parked; a failed TPS write MUST NOT
   start or satisfy that hold interval.
-- Given the 50 ms off hold has elapsed and runtime output is still requested,
+- Given the 110 ms off hold has elapsed and runtime output is still requested,
   when firmware begins the restart sequence, then it physically releases
   GPIO39/GPIO40 without sending SW2303 I2C transactions, applies the TPS 5 V
   boot setpoint, waits `SW2303_POR_RELEASE_MS=100`, and only then permits

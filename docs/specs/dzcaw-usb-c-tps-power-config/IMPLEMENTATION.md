@@ -497,8 +497,10 @@ Thermal runtime overlay:
   pending early enable requests, pre-boot line release, and the separate TPS
   off/POR timing boundaries.
 - Runtime output-off now parks GPIO39/GPIO40 as open-drain low with no internal
-  pull before TPS55288 `OE` is cleared. The 50 ms hold begins only after that
-  TPS output-off write succeeds.
+  pull before TPS55288 `OE` is cleared. The transient output-off setpoint
+  always enables TPS discharge while the restart gate is closed, without
+  changing the owner-facing runtime preference or saved power configuration.
+  The 110 ms hold begins only after that TPS output-off write succeeds.
 - A pending output-on request releases the GPIO pins physically after the hold
   but keeps the SW2303 transaction gate closed. Firmware then applies the 5 V
   TPS boot setpoint, waits the existing 100 ms SW2303 POR interval, and only
@@ -506,11 +508,15 @@ Thermal runtime overlay:
 - The pre-boot release deliberately does not require both lines to sample high:
   an unpowered SW2303 can hold them low. Treating that electrical state as a
   transaction failure prevented the TPS boot path from restoring output.
-- HIL on `f293cc9c139e` with the existing 5.1 kOhm sink measured `0 ms` as the
-  first fully passing candidate with both TPS discharge states across 20
-  off/on cycles for each candidate `0/10/25/50/100/200/500 ms`. The production
-  window is therefore `max(0, 0) + 50 ms`, rounded to `50 ms`.
-- With the final production constant, 200 consecutive off/on cycles passed for
-  each discharge state. Every cycle reached TPS output enabled, SW2303 I2C
-  allowed, and at least 4.5 V VBUS within 300 ms; no runtime-recovery action
-  or manual replug was used.
+- HIL on `f293cc9c139e` with the owner-supplied PPS-capable PD sink found that
+  an earlier 50 ms implementation could fail on its second immediate cycle:
+  firmware reported TPS enabled and SW2303 I2C allowed, while VBUS was only
+  585 mV and USB-C remained `not_inserted`. A 50 ms candidate failed, while
+  60/70/80/90/100 ms each completed 20 immediate off/on cycles with the
+  complete USB-C telemetry and display-visible predicate. The measured minimum
+  is therefore 60 ms, and the production hold is `60 + 50 = 110 ms`.
+- After flashing the 110 ms firmware to the same confirmed board, 200
+  immediate off/on cycles passed with runtime discharge disabled and another
+  200 passed with it enabled. Every cycle reached TPS output enabled, SW2303
+  I2C allowed, at least 4.5 V VBUS, and visible USB-C telemetry within 700 ms;
+  no runtime-recovery action, replug, or manual intervention was used.
