@@ -496,6 +496,11 @@ Thermal runtime overlay:
   `isolapurr-firmware-core`; host tests cover failed TPS-off application,
   pending early enable requests, pre-boot line release, and the separate TPS
   off/POR timing boundaries.
+- Runtime output-on now keeps `POWER_RUNTIME_RESULT` pending past the 100 ms
+  POR interval until the restarted SW2303 source profile has a matching
+  readback and neither TPS nor SW2303 I2C has latched an error. This keeps the
+  owner-facing Power control busy during controller reconfiguration instead of
+  reporting success when I2C merely becomes permissible.
 - Runtime output-off now parks GPIO39/GPIO40 as open-drain low with no internal
   pull before TPS55288 `OE` is cleared. The transient output-off setpoint
   always enables TPS discharge while the restart gate is closed, without

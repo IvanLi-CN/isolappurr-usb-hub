@@ -15,7 +15,7 @@ related_specs:
 symptoms:
   - A short runtime TPS output off/on cycle can leave the USB-C sink without output.
   - Repeated power actions can eventually recover output without changing the saved configuration.
-root_cause: A runtime output-off setpoint could leave TPS discharge disabled, so short cycles did not reliably reset the SW2303 even though firmware reported TPS enabled and I2C allowed.
+root_cause: A runtime output-off setpoint could leave TPS discharge disabled, and runtime output-on could report success as soon as POR allowed I2C even though SW2303 source reconfiguration and sink output were still incomplete.
 resolution_type: runtime-state-machine
 ---
 
@@ -57,6 +57,18 @@ is off, the unpowered SW2303 can clamp SDA/SCL low. Physical I2C-pin release
 cannot be validated by requiring both sampled lines to read high before TPS
 boot.
 
+A later manual-reproduction pass found a second timing boundary. The Web HTTP
+output-on action returned in 222-276 ms at POR completion, but the attached
+PPS sink required a further 600-970 ms before VBUS and telemetry returned. At
+that point SW2303 profile application was still pending, so the Web control
+could accept another click while the controller was not yet source-ready.
+
+After making action completion wait for matching SW2303 profile readback, the
+same path returned in about 1.48 s with PD telemetry already present. The
+specified board passed 200 immediate cycles with runtime discharge disabled
+and 200 with it enabled, each checked for TPS output, SW2303 I2C permission,
+VBUS of at least 4.5 V, and visible USB-C telemetry within 3 s.
+
 ## Resolution
 
 Use a small portable state machine for the runtime sequence:
@@ -71,6 +83,9 @@ Use a small portable state machine for the runtime sequence:
    POR interval.
 5. Enable SW2303 I2C access only after POR and resume profile/configuration
    work normally.
+6. Complete the runtime output-on action only after source-profile readback
+   matches the active config and neither TPS nor SW2303 I2C has latched an
+   error. POR completion alone is not a source-ready result.
 
 TPS write errors retain the existing error-latch behavior. They do not advance
 either timer or fabricate a successful runtime-output response.
@@ -88,6 +103,9 @@ either timer or fabricate a successful runtime-output response.
 - Keep the state machine in the `no_std` shared core and test timer/error
   transitions on the host. HIL verdicts must include USB-C telemetry visibility
   and attachment status, not only TPS command success or SW2303 VBUS.
+- Do not use the output-on HTTP response as a proxy for POR completion. The
+  response is the owner-facing source-ready boundary and must remain pending
+  through SW2303 profile reapplication.
 - This is a firmware sequencing rule. It does not require a PCB, schematic,
   BOM, or other hardware change.
 

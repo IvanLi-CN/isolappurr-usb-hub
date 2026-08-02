@@ -416,8 +416,11 @@ for diagnostics.
   succeeds, then TPS55288 clears `OE`, the API reports
   `runtime.output_enabled=false`, and the saved power config remains unchanged.
 - Given the runtime `Power` action turns output on again, when the request
-  succeeds, then the PD/TPS coordinator restarts from its boot setpoint path
-  before resuming follow or manual behavior.
+  succeeds, then the PD/TPS coordinator has restarted from its boot setpoint
+  path, the SW2303 source-profile readback matches the active configuration,
+  and neither TPS nor SW2303 I2C has latched an error before resuming follow or
+  manual behavior. The action MUST remain pending through the POR-only phase;
+  releasing the I2C gate alone is not a successful output-on result.
 - Given runtime output is turned off, when the PD/TPS coordinator processes the
   request, then it first parks GPIO39 and GPIO40 as open-drain low with no
   internal pull before applying the TPS55288 output-off setpoint. That transient

@@ -447,11 +447,6 @@
         if gate_became_ready && !sw2303_i2c_parked {
             sw2303_i2c_allowed = true;
             sw2303_error_latched = false;
-            if power_runtime_result_inflight && runtime_tps_output_enabled {
-                runtime_tps_output_enabled_reported = true;
-                runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
-                power_runtime_result_pending = Some(true);
-            }
             info!("sw2303 power gate: SW2303 POR elapsed; PD I2C transactions enabled");
         }
 
@@ -632,6 +627,15 @@
                 }
             }
         }
+
+        // A runtime on request must keep the owner-facing control busy until
+        // the restarted controller has accepted its source profile. POR alone
+        // only means I2C may be used; it does not mean USB-C output is ready.
+        let power_runtime_on_ready = runtime_tps_output_enabled
+            && sw2303_power_gate.on_transition_complete()
+            && sw2303_profile_applied
+            && !sw2303_error_latched
+            && !tps_error_latched;
 
         if let Some(request) = request {
             if power_request_changed_for_logging(last_request, request) {
@@ -858,7 +862,7 @@
         {
             if power_runtime_result_inflight
                 && !tps_apply_needed
-                && (!runtime_tps_output_enabled || sw2303_power_gate.on_transition_complete())
+                && (!runtime_tps_output_enabled || power_runtime_on_ready)
             {
                 runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
                 runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
@@ -909,7 +913,7 @@
                 runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
             }
             if power_runtime_result_inflight
-                && (!runtime_tps_output_enabled || sw2303_power_gate.on_transition_complete())
+                && (!runtime_tps_output_enabled || power_runtime_on_ready)
             {
                 power_runtime_result_pending = Some(true);
             }

@@ -17,6 +17,25 @@
   final 110 ms firmware passed 200 immediate cycles with runtime discharge
   disabled and 200 with it enabled, with USB-C telemetry visible within 700 ms.
 
+## Runtime Output Completion
+
+- A subsequent manual-reproduction investigation showed that the original
+  runtime output-on response returned after the 100 ms POR gate, roughly
+  222-276 ms after the request, while the PPS sink still needed another
+  600-970 ms to regain VBUS and telemetry. At that early response point the
+  SW2303 profile had not yet been applied.
+- Kept the 110 ms measured TPS off window unchanged and changed only the
+  runtime action completion condition: output-on succeeds after matching
+  SW2303 profile readback with no TPS/SW2303 error latch, not merely after POR.
+  On the same board and sink, the response then completed in about 1.48 s with
+  PD telemetry already present.
+- Verified the corrected Web-HTTP `POST /api/v1/power/runtime` path with 200
+  immediate off/on cycles at `runtime.discharge_enabled=false` and another 200
+  at `true`. Both sets completed without failures; after each successful
+  response TPS output, SW2303 I2C, VBUS at or above 4.5 V, and visible USB-C
+  telemetry were present within 3 s. The test restored
+  `runtime.discharge_enabled=false`.
+
 ## 2026-07-22
 
 - Kept the Web Dashboard compatible with older `pd-diagnostics` payloads that
