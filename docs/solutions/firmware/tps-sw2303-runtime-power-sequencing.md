@@ -30,8 +30,8 @@ software state without relying on recovery retries or a physical replug.
 
 The owner-facing runtime discharge preference is not sufficient to control the
 restart safety sequence. The firmware must force discharge only while the
-runtime power gate holds TPS output off, then clear it before the 5 V boot
-setpoint.
+restart window is active, then park the output off without discharge when the
+window has elapsed and return to the requested preference on subsequent writes.
 
 ## Evidence
 
@@ -86,6 +86,9 @@ Use a small portable state machine for the runtime sequence:
 6. Complete the runtime output-on action only after source-profile readback
    matches the active config and neither TPS nor SW2303 I2C has latched an
    error. POR completion alone is not a source-ready result.
+7. Resolve a pending runtime-on action as a failure when profile application
+   errors or readback mismatches; do not leave the caller waiting for the
+   throttled profile retry.
 
 TPS write errors retain the existing error-latch behavior. They do not advance
 either timer or fabricate a successful runtime-output response.

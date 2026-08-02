@@ -8,6 +8,7 @@
 pub enum Sw2303PowerGatePhase {
     WaitingForOffApply,
     HoldingOff { since_ms: u64 },
+    Off,
     WaitingForPreBootI2cRelease,
     WaitingForBootApply,
     HoldingPor { since_ms: u64 },
@@ -45,6 +46,7 @@ impl Sw2303PowerGate {
             self.phase,
             Sw2303PowerGatePhase::WaitingForOffApply
                 | Sw2303PowerGatePhase::HoldingOff { .. }
+                | Sw2303PowerGatePhase::Off
                 | Sw2303PowerGatePhase::WaitingForPreBootI2cRelease
         )
     }
@@ -52,7 +54,12 @@ impl Sw2303PowerGate {
     /// The SW2303 restart sequence needs an actual TPS discharge, even when
     /// the owner-facing runtime discharge preference is disabled.
     pub const fn requires_active_discharge(&self) -> bool {
-        self.requires_tps_off()
+        matches!(
+            self.phase,
+            Sw2303PowerGatePhase::WaitingForOffApply
+                | Sw2303PowerGatePhase::HoldingOff { .. }
+                | Sw2303PowerGatePhase::WaitingForPreBootI2cRelease
+        )
     }
 
     pub const fn requires_boot_setpoint(&self) -> bool {
@@ -75,6 +82,7 @@ impl Sw2303PowerGate {
             self.phase,
             Sw2303PowerGatePhase::WaitingForOffApply
                 | Sw2303PowerGatePhase::HoldingOff { .. }
+                | Sw2303PowerGatePhase::Off
                 | Sw2303PowerGatePhase::WaitingForPreBootI2cRelease
         )
     }
@@ -91,7 +99,10 @@ impl Sw2303PowerGate {
     }
 
     pub const fn off_transition_complete(&self) -> bool {
-        matches!(self.phase, Sw2303PowerGatePhase::HoldingOff { .. }) && !self.output_requested
+        matches!(
+            self.phase,
+            Sw2303PowerGatePhase::HoldingOff { .. } | Sw2303PowerGatePhase::Off
+        ) && !self.output_requested
     }
 
     pub const fn on_transition_complete(&self) -> bool {
@@ -100,12 +111,16 @@ impl Sw2303PowerGate {
 
     pub fn set_output_requested(&mut self, enabled: bool) {
         self.output_requested = enabled;
-        if !enabled
-            && !matches!(
-                self.phase,
-                Sw2303PowerGatePhase::WaitingForOffApply | Sw2303PowerGatePhase::HoldingOff { .. }
-            )
-        {
+        if enabled {
+            if matches!(self.phase, Sw2303PowerGatePhase::Off) {
+                self.phase = Sw2303PowerGatePhase::WaitingForPreBootI2cRelease;
+            }
+        } else if !matches!(
+            self.phase,
+            Sw2303PowerGatePhase::WaitingForOffApply
+                | Sw2303PowerGatePhase::HoldingOff { .. }
+                | Sw2303PowerGatePhase::Off
+        ) {
             self.phase = Sw2303PowerGatePhase::WaitingForOffApply;
         }
     }
@@ -125,9 +140,13 @@ impl Sw2303PowerGate {
     pub fn advance(&mut self, now_ms: u64) {
         match self.phase {
             Sw2303PowerGatePhase::HoldingOff { since_ms }
-                if self.output_requested && now_ms.saturating_sub(since_ms) >= self.off_hold_ms =>
+                if now_ms.saturating_sub(since_ms) >= self.off_hold_ms =>
             {
-                self.phase = Sw2303PowerGatePhase::WaitingForPreBootI2cRelease;
+                self.phase = if self.output_requested {
+                    Sw2303PowerGatePhase::WaitingForPreBootI2cRelease
+                } else {
+                    Sw2303PowerGatePhase::Off
+                };
             }
             Sw2303PowerGatePhase::HoldingPor { since_ms }
                 if now_ms.saturating_sub(since_ms) >= self.por_hold_ms =>
@@ -188,6 +207,24 @@ mod tests {
         assert!(gate.requires_active_discharge());
         gate.mark_pre_boot_i2c_released();
         assert!(!gate.requires_active_discharge());
+    }
+
+    #[test]
+    fn steady_off_releases_forced_discharge_after_the_window() {
+        let mut gate = Sw2303PowerGate::new(OFF_HOLD_MS, POR_HOLD_MS);
+        gate.set_output_requested(false);
+        gate.mark_tps_off_applied(0);
+        gate.advance(OFF_HOLD_MS);
+
+        assert_eq!(gate.phase(), Sw2303PowerGatePhase::Off);
+        assert!(gate.requires_tps_off());
+        assert!(gate.should_park_i2c());
+        assert!(!gate.requires_active_discharge());
+        assert!(gate.off_transition_complete());
+
+        gate.set_output_requested(true);
+        assert!(gate.should_release_i2c());
+        assert!(gate.requires_active_discharge());
     }
 
     #[test]

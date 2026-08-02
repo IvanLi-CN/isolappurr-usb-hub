@@ -501,6 +501,13 @@ Thermal runtime overlay:
   readback and neither TPS nor SW2303 I2C has latched an error. This keeps the
   owner-facing Power control busy during controller reconfiguration instead of
   reporting success when I2C merely becomes permissible.
+- The forced TPS discharge is limited to the measured off window. An output-off
+  state that remains off enters a parked phase with discharge disabled, so the
+  owner-facing discharge preference is not silently overridden after restart
+  safety has completed.
+- A profile write error or readback mismatch resolves a pending runtime-on
+  action as a failure immediately; the existing profile retry cadence remains
+  available for a later explicit request.
 - Runtime output-off now parks GPIO39/GPIO40 as open-drain low with no internal
   pull before TPS55288 `OE` is cleared. The transient output-off setpoint
   always enables TPS discharge while the restart gate is closed, without

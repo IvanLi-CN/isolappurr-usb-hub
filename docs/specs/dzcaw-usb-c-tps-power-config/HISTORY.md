@@ -35,6 +35,10 @@
   response TPS output, SW2303 I2C, VBUS at or above 4.5 V, and visible USB-C
   telemetry were present within 3 s. The test restored
   `runtime.discharge_enabled=false`.
+- Hardened the completion path so a profile write error or readback mismatch
+  fails a pending runtime-on request immediately. The gate now parks a steady
+  output-off state without forced discharge after the measured off window,
+  while preserving forced discharge during the restart window itself.
 
 ## 2026-07-22
 

@@ -426,7 +426,8 @@ for diagnostics.
   internal pull before applying the TPS55288 output-off setpoint. That transient
   setpoint MUST enable TPS discharge while the runtime restart gate is closed,
   regardless of the owner-facing runtime discharge preference; it MUST clear the
-  discharge bit again before the TPS boot setpoint is applied.
+  discharge bit again after the minimum off window has elapsed while output
+  remains off, and before the TPS boot setpoint is applied.
 - Given TPS55288 output-off application succeeds, when the runtime output is
   requested on before `TPS_RUNTIME_OFF_HOLD_MS=110`, then firmware keeps TPS
   output off and keeps the SW2303 I2C bus parked; a failed TPS write MUST NOT
@@ -436,6 +437,10 @@ for diagnostics.
   GPIO39/GPIO40 without sending SW2303 I2C transactions, applies the TPS 5 V
   boot setpoint, waits `SW2303_POR_RELEASE_MS=100`, and only then permits
   SW2303 reads, configuration, or protocol negotiation.
+- Given a runtime output-on request reaches SW2303 profile application, when the
+  profile write fails or its readback does not match the active configuration,
+  the pending runtime action MUST fail promptly; it MUST NOT remain pending
+  until a later retry interval.
 - Given the unpowered SW2303 clamps its I2C pins low, when GPIO39/GPIO40 are
   physically released before the TPS boot setpoint, then firmware MUST NOT
   treat a low sampled line as a release failure; the I2C transaction gate

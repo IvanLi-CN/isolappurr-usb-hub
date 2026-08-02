@@ -561,6 +561,7 @@
 
         // Boot profile apply waits for stable target reads; runtime config changes
         // apply immediately once SW2303 I2C is usable so source caps do not lag EEPROM.
+        let mut sw2303_profile_apply_failed = false;
         if !sw2303_profile_applied
             && sw2303_i2c_allowed
             && (sw2303_recontract_pending
@@ -612,12 +613,14 @@
                                 tps_state.light_load_mode = None;
                             }
                         } else {
+                            sw2303_profile_apply_failed = true;
                             defmt::warn!(
                                 "sw2303 profile: readback did not match requested power config; keeping profile_applied=false"
                             );
                         }
                     }
                     Err(err) => {
+                        sw2303_profile_apply_failed = true;
                         sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
                         defmt::warn!(
                             "sw2303 profile: apply failed after stable target reads: {:?}",
@@ -626,6 +629,17 @@
                     }
                 }
             }
+        }
+
+        if sw2303_profile_apply_failed
+            && power_runtime_result_inflight
+            && runtime_tps_output_enabled
+            && sw2303_power_gate.on_transition_complete()
+        {
+            // A failed profile cannot become a source-ready runtime-on result.
+            // Resolve the waiting request now; the normal retry path may try
+            // the profile again without leaving the caller blocked.
+            power_runtime_result_pending = Some(false);
         }
 
         // A runtime on request must keep the owner-facing control busy until
