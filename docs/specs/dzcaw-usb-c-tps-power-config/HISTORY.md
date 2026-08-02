@@ -1,5 +1,19 @@
 # History
 
+## Runtime TPS Off Window
+
+- Added a measured 50 ms TPS output-off guard before a runtime restart, while
+  retaining the distinct 100 ms SW2303 POR interval after the TPS 5 V boot
+  setpoint succeeds.
+- Recorded the required order: park I2C before TPS off; release the physical
+  pins after the guard without permitting transactions; apply TPS boot; then
+  enable SW2303 I2C only after POR. This avoids misclassifying the unpowered
+  SW2303's low I2C clamp as a failed line release.
+- Verified the final timing on `f293cc9c139e` and its existing 5.1 kOhm sink
+  without altering any hardware: the candidate sweep passed at every tested
+  hold from 0 to 500 ms, and the final 50 ms window passed 200 cycles with
+  discharge disabled plus 200 cycles with discharge enabled.
+
 ## 2026-07-22
 
 - Kept the Web Dashboard compatible with older `pd-diagnostics` payloads that

@@ -489,3 +489,28 @@ Thermal runtime overlay:
 - Web Power diagnostics now refresh on the same `1 s` cadence as the rest of
   PD diagnostics and include dedicated Storybook states for normal, derating,
   shutdown, rearm-required, and sensor-fault output conditions.
+
+## Runtime TPS Off Window
+
+- Added the portable `Sw2303PowerGate` state machine in
+  `isolapurr-firmware-core`; host tests cover failed TPS-off application,
+  pending early enable requests, pre-boot line release, and the separate TPS
+  off/POR timing boundaries.
+- Runtime output-off now parks GPIO39/GPIO40 as open-drain low with no internal
+  pull before TPS55288 `OE` is cleared. The 50 ms hold begins only after that
+  TPS output-off write succeeds.
+- A pending output-on request releases the GPIO pins physically after the hold
+  but keeps the SW2303 transaction gate closed. Firmware then applies the 5 V
+  TPS boot setpoint, waits the existing 100 ms SW2303 POR interval, and only
+  then resumes SW2303 I2C reads and runtime configuration.
+- The pre-boot release deliberately does not require both lines to sample high:
+  an unpowered SW2303 can hold them low. Treating that electrical state as a
+  transaction failure prevented the TPS boot path from restoring output.
+- HIL on `f293cc9c139e` with the existing 5.1 kOhm sink measured `0 ms` as the
+  first fully passing candidate with both TPS discharge states across 20
+  off/on cycles for each candidate `0/10/25/50/100/200/500 ms`. The production
+  window is therefore `max(0, 0) + 50 ms`, rounded to `50 ms`.
+- With the final production constant, 200 consecutive off/on cycles passed for
+  each discharge state. Every cycle reached TPS output enabled, SW2303 I2C
+  allowed, and at least 4.5 V VBUS within 300 ms; no runtime-recovery action
+  or manual replug was used.

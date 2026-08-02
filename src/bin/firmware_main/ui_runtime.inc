@@ -73,6 +73,7 @@ const PRESS_SHORT_MAX: Duration = Duration::from_millis(500);
 const PRESS_LONG_MIN: Duration = Duration::from_millis(1000);
 const PRESS_LONG_MAX: Duration = Duration::from_millis(5000);
 const SETTINGS_MENU_MS: u64 = 5_000;
+const TPS_RUNTIME_OFF_HOLD_MS: u64 = 50;
 const SW2303_POR_RELEASE_MS: u64 = 100;
 const PD_I2C_KHZ: u32 = 400;
 const PD_I2C_TIMEOUT_MS: u64 = 10;
@@ -478,7 +479,6 @@ fn log_sw2303_profile_status(context: &'static str, status: &EnableProfileStatus
     }
 }
 
-#[cfg(feature = "net_http")]
 fn uptime_ms_from_instant(now: Instant) -> u64 {
     (now.duration_since_epoch().as_micros() / 1_000) as u64
 }

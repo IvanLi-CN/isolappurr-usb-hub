@@ -418,6 +418,22 @@ for diagnostics.
 - Given the runtime `Power` action turns output on again, when the request
   succeeds, then the PD/TPS coordinator restarts from its boot setpoint path
   before resuming follow or manual behavior.
+- Given runtime output is turned off, when the PD/TPS coordinator processes the
+  request, then it first parks GPIO39 and GPIO40 as open-drain low with no
+  internal pull before applying the TPS55288 output-off setpoint.
+- Given TPS55288 output-off application succeeds, when the runtime output is
+  requested on before `TPS_RUNTIME_OFF_HOLD_MS=50`, then firmware keeps TPS
+  output off and keeps the SW2303 I2C bus parked; a failed TPS write MUST NOT
+  start or satisfy that hold interval.
+- Given the 50 ms off hold has elapsed and runtime output is still requested,
+  when firmware begins the restart sequence, then it physically releases
+  GPIO39/GPIO40 without sending SW2303 I2C transactions, applies the TPS 5 V
+  boot setpoint, waits `SW2303_POR_RELEASE_MS=100`, and only then permits
+  SW2303 reads, configuration, or protocol negotiation.
+- Given the unpowered SW2303 clamps its I2C pins low, when GPIO39/GPIO40 are
+  physically released before the TPS boot setpoint, then firmware MUST NOT
+  treat a low sampled line as a release failure; the I2C transaction gate
+  remains closed until TPS boot and the 100 ms POR interval complete.
 - Given live PD diagnostics are read over HTTP, Web Serial JSONL, or the host
   bridge, when thermal sampling succeeds, then the response includes one
   `thermal` object with MCU plus TMP112 temperatures, per-sensor status,
