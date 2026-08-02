@@ -1,5 +1,46 @@
 # History
 
+## Runtime TPS Off Window
+
+- Established a 110 ms TPS output-off guard before a runtime restart, while
+  retaining the distinct 100 ms SW2303 POR interval after the TPS 5 V boot
+  setpoint succeeds. The value is the measured 60 ms minimum plus 50 ms
+  margin, rounded to 10 ms.
+- Recorded the required order: park I2C before TPS off; enable a transient TPS
+  discharge during the off hold; release the physical pins after the guard
+  without permitting transactions; apply TPS boot; then enable SW2303 I2C only
+  after POR. The transient discharge does not alter the owner-facing runtime
+  preference or saved power configuration.
+- Verified the timing on `f293cc9c139e` with the owner-supplied PPS-capable PD
+  sink and no hardware changes. A 50 ms candidate failed with VBUS at 585 mV
+  and `not_inserted`; 60/70/80/90/100 ms each passed 20 immediate cycles. The
+  final 110 ms firmware passed 200 immediate cycles with runtime discharge
+  disabled and 200 with it enabled, with USB-C telemetry visible within 700 ms.
+
+## Runtime Output Completion
+
+- A subsequent manual-reproduction investigation showed that the original
+  runtime output-on response returned after the 100 ms POR gate, roughly
+  222-276 ms after the request, while the PPS sink still needed another
+  600-970 ms to regain VBUS and telemetry. At that early response point the
+  SW2303 profile had not yet been applied.
+- Kept the 110 ms measured TPS off window unchanged and changed only the
+  runtime action completion condition: output-on succeeds after matching
+  SW2303 profile readback with no TPS/SW2303 error latch, not merely after POR.
+  On the same board and sink, the response then completed in about 1.48 s with
+  PD telemetry already present.
+- Verified the corrected Web-HTTP `POST /api/v1/power/runtime` path with 200
+  immediate off/on cycles at `runtime.discharge_enabled=false` and another 200
+  at `true`. Both sets completed without failures; after each successful
+  response TPS output, SW2303 I2C, VBUS at or above 4.5 V, and visible USB-C
+  telemetry were present within 3 s. The test restored
+  `runtime.discharge_enabled=false`.
+- Hardened the completion path so a profile write error or readback mismatch
+  fails a pending runtime-on request immediately. The gate now parks a steady
+  output-off state after the measured off window and reapplies the requested
+  discharge preference, while preserving forced discharge during the restart
+  window itself.
+
 ## 2026-07-22
 
 - Kept the Web Dashboard compatible with older `pd-diagnostics` payloads that

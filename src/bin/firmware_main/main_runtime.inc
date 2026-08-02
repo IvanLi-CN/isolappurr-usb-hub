@@ -185,6 +185,10 @@
         "sw2303 i2c: I2C0@{}kHz async SDA=GPIO39 SCL=GPIO40 allowlist=[0x3C]",
         PD_I2C_KHZ
     );
+    let sw2303_i2c_park_input_cfg = InputConfig::default().with_pull(Pull::None);
+    let sw2303_i2c_park_output_cfg = OutputConfig::default()
+        .with_drive_mode(DriveMode::OpenDrain)
+        .with_pull(Pull::None);
     let sw2303_i2c_release_input_cfg = InputConfig::default().with_pull(Pull::Up);
     let sw2303_i2c_release_output_cfg = OutputConfig::default()
         .with_drive_mode(DriveMode::OpenDrain)
@@ -209,6 +213,9 @@
     let mut last_pd_runtime_recovery: Option<Instant> = None;
     let mut pd_runtime_recovery_count: u32 = 0;
     let mut tps_5v_setpoint_since: Option<Instant> = None;
+    let mut sw2303_power_gate =
+        Sw2303PowerGate::new(TPS_RUNTIME_OFF_HOLD_MS, SW2303_POR_RELEASE_MS);
+    let mut sw2303_i2c_parked = false;
     let mut thermal_controller = ThermalController::new();
     let mut last_thermal_sample_at: Option<Instant> = None;
     let mut last_thermal_effective_power_watts: Option<u8> = None;
@@ -222,9 +229,8 @@
     let pd_boot_started = Instant::now();
     let mut boot_recovery_cycled = false;
     let boot_sp = boot_supply_setpoint();
-    // CE_TPS has held TPS/SW2303 off since GPIO init. Release TPS only after
-    // SDA/SCL have been held high, then program TPS; SW2303 POR starts after
-    // the final TPS OE write completes.
+    // Keep the established cold-boot I2C setup. Runtime output transitions
+    // park GPIO39/40 before TPS output is switched off.
     let _ = ce_tps.set_low();
     Timer::after_millis(BOOT_CE_RELEASE_SETTLE_MS).await;
     match stop_output_and_enable_discharge(&mut telemetry_i2c).await {
@@ -264,6 +270,7 @@
                 tps_error_latched = false;
                 tps_boot_ready = true;
                 tps_5v_setpoint_since = Some(Instant::now());
+                sw2303_power_gate.mark_tps_boot_applied(uptime_ms_from_instant(Instant::now()));
                 info!(
                     "tps55288 boot supply applied (attempt {}/4): v={}mV ilim={}mA elapsed_ms={}",
                     attempt,
@@ -276,6 +283,7 @@
                     SW2303_POR_RELEASE_MS
                 );
                 Timer::after_millis(SW2303_POR_RELEASE_MS).await;
+                sw2303_power_gate.advance(uptime_ms_from_instant(Instant::now()));
                 sw2303_i2c_allowed = true;
                 info!(
                     "sw2303 power gate: SW2303 POR delay elapsed elapsed_ms={}",

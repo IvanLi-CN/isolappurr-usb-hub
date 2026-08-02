@@ -489,3 +489,49 @@ Thermal runtime overlay:
 - Web Power diagnostics now refresh on the same `1 s` cadence as the rest of
   PD diagnostics and include dedicated Storybook states for normal, derating,
   shutdown, rearm-required, and sensor-fault output conditions.
+
+## Runtime TPS Off Window
+
+- Added the portable `Sw2303PowerGate` state machine in
+  `isolapurr-firmware-core`; host tests cover failed TPS-off application,
+  pending early enable requests, pre-boot line release, and the separate TPS
+  off/POR timing boundaries.
+- Runtime output-on now keeps `POWER_RUNTIME_RESULT` pending past the 100 ms
+  POR interval until the restarted SW2303 source profile has a matching
+  readback and neither TPS nor SW2303 I2C has latched an error. This keeps the
+  owner-facing Power control busy during controller reconfiguration instead of
+  reporting success when I2C merely becomes permissible.
+- The forced TPS discharge is limited to the measured off window. An output-off
+  state that remains off enters a parked phase with discharge disabled, so the
+  owner-facing discharge preference is then reapplied to the physical TPS
+  setpoint instead of being silently overridden after restart safety completes.
+- A profile write error or readback mismatch resolves a pending runtime-on
+  action as a failure immediately; the existing profile retry cadence remains
+  available for a later explicit request.
+- A post-POR SW2303 read failure likewise resolves the pending runtime-on
+  action as a failure when the existing I2C error latch is set, preventing a
+  persistent controller fault from blocking all later Power actions.
+- Runtime output-off now parks GPIO39/GPIO40 as open-drain low with no internal
+  pull before TPS55288 `OE` is cleared. The transient output-off setpoint
+  always enables TPS discharge while the restart gate is closed, without
+  changing the owner-facing runtime preference or saved power configuration.
+  The 110 ms hold begins only after that TPS output-off write succeeds.
+- A pending output-on request releases the GPIO pins physically after the hold
+  but keeps the SW2303 transaction gate closed. Firmware then applies the 5 V
+  TPS boot setpoint, waits the existing 100 ms SW2303 POR interval, and only
+  then resumes SW2303 I2C reads and runtime configuration.
+- The pre-boot release deliberately does not require both lines to sample high:
+  an unpowered SW2303 can hold them low. Treating that electrical state as a
+  transaction failure prevented the TPS boot path from restoring output.
+- HIL on `f293cc9c139e` with the owner-supplied PPS-capable PD sink found that
+  an earlier 50 ms implementation could fail on its second immediate cycle:
+  firmware reported TPS enabled and SW2303 I2C allowed, while VBUS was only
+  585 mV and USB-C remained `not_inserted`. A 50 ms candidate failed, while
+  60/70/80/90/100 ms each completed 20 immediate off/on cycles with the
+  complete USB-C telemetry and display-visible predicate. The measured minimum
+  is therefore 60 ms, and the production hold is `60 + 50 = 110 ms`.
+- After flashing the 110 ms firmware to the same confirmed board, 200
+  immediate off/on cycles passed with runtime discharge disabled and another
+  200 passed with it enabled. Every cycle reached TPS output enabled, SW2303
+  I2C allowed, at least 4.5 V VBUS, and visible USB-C telemetry within 700 ms;
+  no runtime-recovery action, replug, or manual intervention was used.

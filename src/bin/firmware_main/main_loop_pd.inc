@@ -396,15 +396,33 @@
         };
         let mut requested_i_lim_ma = boot_sp.i_lim_ma;
 
-        let allow_sw2303_probe = usb_c_pd_power_on
-            && (!sw2303_error_latched
-                || last_sw2303_read_attempt
-                    .map(|attempt| {
-                        attempt.elapsed() >= Duration::from_millis(SW2303_ERROR_RETRY_MS)
-                    })
-                    .unwrap_or(true));
-        if !sw2303_i2c_allowed && allow_sw2303_probe {
-            last_sw2303_read_attempt = Some(Instant::now());
+        sw2303_power_gate
+            .set_output_requested(usb_c_pd_power_on && runtime_tps_output_enabled);
+        let gate_was_ready = sw2303_power_gate.allows_sw2303_i2c();
+        sw2303_power_gate.advance(uptime_ms_from_instant(Instant::now()));
+        let gate_became_ready = !gate_was_ready && sw2303_power_gate.allows_sw2303_i2c();
+
+        if sw2303_power_gate.should_park_i2c() && !sw2303_i2c_parked {
+            let i2c_inner = sw2303_i2c.into_inner();
+            let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
+            let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
+            pd_sda.set_input_enable(true);
+            pd_scl.set_input_enable(true);
+            pd_sda.apply_input_config(&sw2303_i2c_park_input_cfg);
+            pd_scl.apply_input_config(&sw2303_i2c_park_input_cfg);
+            pd_sda.apply_output_config(&sw2303_i2c_park_output_cfg);
+            pd_scl.apply_output_config(&sw2303_i2c_park_output_cfg);
+            pd_sda.set_low();
+            pd_scl.set_low();
+            pd_sda.set_output_enable(true);
+            pd_scl.set_output_enable(true);
+            sw2303_i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
+            sw2303_i2c_allowed = false;
+            sw2303_i2c_parked = true;
+            info!("sw2303 power gate: PD I2C parked low");
+        }
+
+        if sw2303_power_gate.should_release_i2c() && sw2303_i2c_parked {
             let i2c_inner = sw2303_i2c.into_inner();
             let mut pd_sda = Flex::new(unsafe { AnyPin::steal(39) });
             let mut pd_scl = Flex::new(unsafe { AnyPin::steal(40) });
@@ -418,23 +436,35 @@
             pd_scl.set_high();
             pd_sda.set_output_enable(false);
             pd_scl.set_output_enable(false);
-            Timer::after_millis(10).await;
-            let bus_released = pd_sda.is_high() && pd_scl.is_high();
-            if bus_released {
-                info!("sw2303 power gate: PD I2C released after runtime line check");
-                sw2303_i2c_allowed = true;
-                sw2303_error_latched = false;
-            }
-            let i2c_inner = i2c_inner.with_sda(pd_sda).with_scl(pd_scl);
-            sw2303_i2c = I2cAllowlist::new(i2c_inner);
+            Timer::after_millis(BOOT_PD_RELEASE_SETTLE_MS).await;
+            sw2303_power_gate.mark_pre_boot_i2c_released();
+            sw2303_i2c_allowed = false;
+            sw2303_i2c_parked = false;
+            info!("sw2303 power gate: PD I2C released before TPS boot setpoint");
+            sw2303_i2c = I2cAllowlist::new(i2c_inner.with_sda(pd_sda).with_scl(pd_scl));
         }
-        let sw2303_power_gate_ready = tps_5v_setpoint_since
-            .map(|since| since.elapsed() >= Duration::from_millis(SW2303_POR_RELEASE_MS))
-            .unwrap_or(false);
-        let allow_sw2303_read = sw2303_i2c_allowed && allow_sw2303_probe && sw2303_power_gate_ready;
-        (request, setpoint) = if !usb_c_pd_power_on {
+
+        if gate_became_ready && !sw2303_i2c_parked {
+            sw2303_i2c_allowed = true;
+            sw2303_error_latched = false;
+            info!("sw2303 power gate: SW2303 POR elapsed; PD I2C transactions enabled");
+        }
+
+        let allow_sw2303_probe = usb_c_pd_power_on
+            && sw2303_power_gate.allows_sw2303_i2c()
+            && (!sw2303_error_latched
+                || last_sw2303_read_attempt
+                    .map(|attempt| {
+                        attempt.elapsed() >= Duration::from_millis(SW2303_ERROR_RETRY_MS)
+                    })
+                    .unwrap_or(true));
+        let allow_sw2303_read = sw2303_i2c_allowed && allow_sw2303_probe;
+        (request, setpoint) = if sw2303_power_gate.requires_tps_off() || !usb_c_pd_power_on {
             requested_i_lim_ma = 0;
             (None, usb_c_power_off_setpoint)
+        } else if sw2303_power_gate.requires_boot_setpoint() {
+            requested_i_lim_ma = boot_sp.i_lim_ma;
+            (None, boot_sp)
         } else if allow_sw2303_read {
             last_sw2303_read_attempt = Some(Instant::now());
             let mut retry = 0;
@@ -531,6 +561,7 @@
 
         // Boot profile apply waits for stable target reads; runtime config changes
         // apply immediately once SW2303 I2C is usable so source caps do not lag EEPROM.
+        let mut sw2303_profile_apply_failed = false;
         if !sw2303_profile_applied
             && sw2303_i2c_allowed
             && (sw2303_recontract_pending
@@ -582,12 +613,14 @@
                                 tps_state.light_load_mode = None;
                             }
                         } else {
+                            sw2303_profile_apply_failed = true;
                             defmt::warn!(
                                 "sw2303 profile: readback did not match requested power config; keeping profile_applied=false"
                             );
                         }
                     }
                     Err(err) => {
+                        sw2303_profile_apply_failed = true;
                         sw2303_readback_config = Sw2303CapabilityReadback::unavailable();
                         defmt::warn!(
                             "sw2303 profile: apply failed after stable target reads: {:?}",
@@ -597,6 +630,27 @@
                 }
             }
         }
+
+        if power_runtime_result_inflight
+            && runtime_tps_output_enabled
+            && sw2303_power_gate.on_transition_complete()
+            && (sw2303_profile_apply_failed || sw2303_error_latched)
+        {
+            // A failed profile or post-POR read cannot become a source-ready
+            // runtime-on result. Resolve the waiting request now; the normal
+            // retry path may try the controller again without leaving the
+            // caller blocked.
+            power_runtime_result_pending = Some(false);
+        }
+
+        // A runtime on request must keep the owner-facing control busy until
+        // the restarted controller has accepted its source profile. POR alone
+        // only means I2C may be used; it does not mean USB-C output is ready.
+        let power_runtime_on_ready = runtime_tps_output_enabled
+            && sw2303_power_gate.on_transition_complete()
+            && sw2303_profile_applied
+            && !sw2303_error_latched
+            && !tps_error_latched;
 
         if let Some(request) = request {
             if power_request_changed_for_logging(last_request, request) {
@@ -797,18 +851,22 @@
             continue;
         }
 
-        if usb_c_pd_power_on {
-            setpoint.output_enabled = runtime_tps_output_enabled;
+        if sw2303_power_gate.requires_tps_off() {
+            setpoint.output_enabled = false;
             setpoint.discharge_enabled =
-                runtime_tps_discharge_enabled && !runtime_tps_output_enabled;
+                sw2303_power_gate.requires_active_discharge() || runtime_tps_discharge_enabled;
+        } else if usb_c_pd_power_on {
+            setpoint.output_enabled = true;
+            setpoint.discharge_enabled = false;
         }
 
-        let tps_apply_needed = tps_state.last != Some(setpoint);
+        let gate_waiting_for_tps_off_apply = sw2303_power_gate.waiting_for_tps_off_apply();
+        let gate_waiting_for_tps_boot_apply = sw2303_power_gate.waiting_for_tps_boot_apply();
+        let tps_apply_needed = tps_state.last != Some(setpoint)
+            || gate_waiting_for_tps_off_apply
+            || gate_waiting_for_tps_boot_apply;
         let tps_voltage_update_needed = setpoint.v_out_mv > boot_sp.v_out_mv;
-        let tps_boot_restore_needed = usb_c_pd_power_on
-            && setpoint == boot_sp
-            && tps_5v_setpoint_since.is_none()
-            && tps_apply_needed;
+        let tps_boot_restore_needed = gate_waiting_for_tps_boot_apply;
         let manual_tps_active = usb_c_pd_power_on && power_config.tps_mode == TpsMode::Manual;
         if (!manual_tps_active
             && usb_c_pd_power_on
@@ -818,7 +876,10 @@
             && !tps_boot_restore_needed)
             || (!tps_voltage_update_needed && !tps_apply_needed)
         {
-            if power_runtime_result_inflight && !tps_apply_needed {
+            if power_runtime_result_inflight
+                && !tps_apply_needed
+                && (!runtime_tps_output_enabled || power_runtime_on_ready)
+            {
                 runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
                 runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
                 power_runtime_result_pending = Some(true);
@@ -845,10 +906,31 @@
         } else {
             tps_error_latched = false;
             tps_consecutive_errors = 0;
-            tps_5v_setpoint_since.get_or_insert_with(Instant::now);
-            runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
-            runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
-            if power_runtime_result_inflight {
+            if gate_waiting_for_tps_off_apply {
+                sw2303_power_gate.mark_tps_off_applied(uptime_ms_from_instant(Instant::now()));
+                tps_5v_setpoint_since = None;
+                sw2303_i2c_allowed = false;
+                info!(
+                    "sw2303 power gate: TPS output disabled; starting off hold for {}ms",
+                    TPS_RUNTIME_OFF_HOLD_MS
+                );
+            } else if gate_waiting_for_tps_boot_apply {
+                sw2303_power_gate.mark_tps_boot_applied(uptime_ms_from_instant(Instant::now()));
+                tps_5v_setpoint_since = Some(Instant::now());
+                info!(
+                    "sw2303 power gate: TPS boot 5V applied; starting SW2303 POR for {}ms",
+                    SW2303_POR_RELEASE_MS
+                );
+            } else if setpoint.output_enabled {
+                tps_5v_setpoint_since.get_or_insert_with(Instant::now);
+            }
+            if !runtime_tps_output_enabled || sw2303_power_gate.on_transition_complete() {
+                runtime_tps_output_enabled_reported = runtime_tps_output_enabled;
+                runtime_tps_discharge_enabled_reported = runtime_tps_discharge_enabled;
+            }
+            if power_runtime_result_inflight
+                && (!runtime_tps_output_enabled || power_runtime_on_ready)
+            {
                 power_runtime_result_pending = Some(true);
             }
         }

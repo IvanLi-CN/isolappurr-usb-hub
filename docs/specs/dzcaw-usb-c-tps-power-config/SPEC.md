@@ -416,8 +416,40 @@ for diagnostics.
   succeeds, then TPS55288 clears `OE`, the API reports
   `runtime.output_enabled=false`, and the saved power config remains unchanged.
 - Given the runtime `Power` action turns output on again, when the request
-  succeeds, then the PD/TPS coordinator restarts from its boot setpoint path
-  before resuming follow or manual behavior.
+  succeeds, then the PD/TPS coordinator has restarted from its boot setpoint
+  path, the SW2303 source-profile readback matches the active configuration,
+  and neither TPS nor SW2303 I2C has latched an error before resuming follow or
+  manual behavior. The action MUST remain pending through the POR-only phase;
+  releasing the I2C gate alone is not a successful output-on result.
+- Given runtime output is turned off, when the PD/TPS coordinator processes the
+  request, then it first parks GPIO39 and GPIO40 as open-drain low with no
+  internal pull before applying the TPS55288 output-off setpoint. That transient
+  setpoint MUST enable TPS discharge while the runtime restart gate is closed,
+  regardless of the owner-facing runtime discharge preference. After the
+  minimum off window has elapsed while output remains off, the physical
+  discharge bit MUST reflect the owner-facing runtime discharge preference, and
+  it MUST be clear before the TPS boot setpoint is applied.
+- Given TPS55288 output-off application succeeds, when the runtime output is
+  requested on before `TPS_RUNTIME_OFF_HOLD_MS=110`, then firmware keeps TPS
+  output off and keeps the SW2303 I2C bus parked; a failed TPS write MUST NOT
+  start or satisfy that hold interval.
+- Given the 110 ms off hold has elapsed and runtime output is still requested,
+  when firmware begins the restart sequence, then it physically releases
+  GPIO39/GPIO40 without sending SW2303 I2C transactions, applies the TPS 5 V
+  boot setpoint, waits `SW2303_POR_RELEASE_MS=100`, and only then permits
+  SW2303 reads, configuration, or protocol negotiation.
+- Given a runtime output-on request reaches SW2303 profile application, when the
+  profile write fails or its readback does not match the active configuration,
+  the pending runtime action MUST fail promptly; it MUST NOT remain pending
+  until a later retry interval.
+- Given a runtime output-on request has completed the POR hold, when SW2303
+  reads remain unavailable and latch the existing I2C error state, the pending
+  runtime action MUST fail promptly; it MUST NOT permanently block later Power
+  actions.
+- Given the unpowered SW2303 clamps its I2C pins low, when GPIO39/GPIO40 are
+  physically released before the TPS boot setpoint, then firmware MUST NOT
+  treat a low sampled line as a release failure; the I2C transaction gate
+  remains closed until TPS boot and the 100 ms POR interval complete.
 - Given live PD diagnostics are read over HTTP, Web Serial JSONL, or the host
   bridge, when thermal sampling succeeds, then the response includes one
   `thermal` object with MCU plus TMP112 temperatures, per-sensor status,

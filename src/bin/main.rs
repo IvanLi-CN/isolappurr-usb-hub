@@ -56,6 +56,7 @@ use esp_hal::timer::timg::TimerGroup;
 #[cfg(feature = "net_http")]
 use esp_hal::usb_serial_jtag::UsbSerialJtag;
 use esp_hal::{dma_buffers, handler, ram};
+use isolapurr_firmware_core::sw2303_power_gate::Sw2303PowerGate;
 use isolapurr_usb_hub::buzzer::ledc::LedcBuzzer;
 use isolapurr_usb_hub::display_ui::{
     ActiveLowBacklight, DASHBOARD_BG_RGB8, DisplayUi, EspHalSpinTimer, NormalUiField, NormalUiPort,
