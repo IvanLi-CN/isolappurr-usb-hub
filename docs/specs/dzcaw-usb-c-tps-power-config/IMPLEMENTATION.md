@@ -508,6 +508,9 @@ Thermal runtime overlay:
 - A profile write error or readback mismatch resolves a pending runtime-on
   action as a failure immediately; the existing profile retry cadence remains
   available for a later explicit request.
+- A post-POR SW2303 read failure likewise resolves the pending runtime-on
+  action as a failure when the existing I2C error latch is set, preventing a
+  persistent controller fault from blocking all later Power actions.
 - Runtime output-off now parks GPIO39/GPIO40 as open-drain low with no internal
   pull before TPS55288 `OE` is cleared. The transient output-off setpoint
   always enables TPS discharge while the restart gate is closed, without

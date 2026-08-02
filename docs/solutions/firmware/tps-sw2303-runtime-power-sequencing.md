@@ -87,8 +87,9 @@ Use a small portable state machine for the runtime sequence:
    matches the active config and neither TPS nor SW2303 I2C has latched an
    error. POR completion alone is not a source-ready result.
 7. Resolve a pending runtime-on action as a failure when profile application
-   errors or readback mismatches; do not leave the caller waiting for the
-   throttled profile retry.
+   errors, readback mismatches, or post-POR SW2303 read failures; do not leave
+   the caller waiting for the throttled profile retry or a persistent I2C
+   fault.
 
 TPS write errors retain the existing error-latch behavior. They do not advance
 either timer or fabricate a successful runtime-output response.

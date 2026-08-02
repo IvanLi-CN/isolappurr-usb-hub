@@ -631,14 +631,15 @@
             }
         }
 
-        if sw2303_profile_apply_failed
-            && power_runtime_result_inflight
+        if power_runtime_result_inflight
             && runtime_tps_output_enabled
             && sw2303_power_gate.on_transition_complete()
+            && (sw2303_profile_apply_failed || sw2303_error_latched)
         {
-            // A failed profile cannot become a source-ready runtime-on result.
-            // Resolve the waiting request now; the normal retry path may try
-            // the profile again without leaving the caller blocked.
+            // A failed profile or post-POR read cannot become a source-ready
+            // runtime-on result. Resolve the waiting request now; the normal
+            // retry path may try the controller again without leaving the
+            // caller blocked.
             power_runtime_result_pending = Some(false);
         }
 

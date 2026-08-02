@@ -442,6 +442,10 @@ for diagnostics.
   profile write fails or its readback does not match the active configuration,
   the pending runtime action MUST fail promptly; it MUST NOT remain pending
   until a later retry interval.
+- Given a runtime output-on request has completed the POR hold, when SW2303
+  reads remain unavailable and latch the existing I2C error state, the pending
+  runtime action MUST fail promptly; it MUST NOT permanently block later Power
+  actions.
 - Given the unpowered SW2303 clamps its I2C pins low, when GPIO39/GPIO40 are
   physically released before the TPS boot setpoint, then firmware MUST NOT
   treat a low sampled line as a release failure; the I2C transaction gate
