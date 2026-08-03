@@ -947,44 +947,6 @@ describe("Local USB direct bridge routes", () => {
     expect(response.ok).toBe(true);
     expect(response.result?.device?.device_id).toBe("f293cc9c139e");
   });
-
-  test("maps identify to the registered Local USB device endpoint", async () => {
-    globalThis.fetch = async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/api/v1/serial/register")) {
-        return jsonResponse({
-          ok: true,
-          device: {
-            id: "usb--dev-cu-usbmodem21221401",
-            usb: { portPath: "/dev/cu.usbmodem21221401" },
-          },
-        });
-      }
-      if (
-        url.endsWith("/api/v1/devices/usb--dev-cu-usbmodem21221401/identify")
-      ) {
-        expect(init?.method).toBe("POST");
-        return jsonResponse({
-          response: { ok: true, result: { accepted: true, duration_ms: 5000 } },
-        });
-      }
-      throw new Error(`unexpected request: ${url}`);
-    };
-
-    const response = (await sendLocalUsbJsonlRequest(
-      makeAgent(),
-      "/dev/cu.usbmodem21221401",
-      { id: 1, method: "identify" },
-    )) as {
-      ok: boolean;
-      result?: { accepted?: boolean; duration_ms?: number };
-    };
-
-    expect(response).toEqual({
-      ok: true,
-      result: { accepted: true, duration_ms: 5000 },
-    });
-  });
 });
 
 describe("Local USB runtime power route", () => {

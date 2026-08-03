@@ -46,8 +46,8 @@ import { useDemoMode } from "./demo-mode";
 import { createDeviceRuntimeActions } from "./device-runtime-actions";
 import { createSharedMutationController } from "./device-runtime-command-state";
 import { DeviceRuntimeContext } from "./device-runtime-context";
+import { useDeviceRuntimePowerLock } from "./device-runtime-power-lock";
 import {
-  canResumePowerLock,
   clearPowerLockResume,
   createEmptyChannels,
   type DeviceRuntime,
@@ -83,7 +83,6 @@ export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
-
 export function DeviceRuntimeProvider({
   children,
 }: {
@@ -1081,72 +1080,14 @@ export function DeviceRuntimeProvider({
     [devices, markChannelResult, orderedTransports, requestTransport],
   );
 
-  const refreshCanonicalPowerConfig = useCallback(
-    async (
-      deviceId: string,
-      owner?: number,
-      fallback?: PowerConfigResponse,
-    ): Promise<Result<PowerConfigResponse>> => {
-      const snapshot = await runDeviceCommand<PowerConfigResponse>(
-        deviceId,
-        "power.config_get",
-      );
-      if (snapshot.ok) {
-        syncObservedPowerLock(deviceId, snapshot.value.lock, owner);
-        syncPowerConfigSnapshot(deviceId, snapshot.value);
-        return snapshot;
-      }
-      if (!fallback) {
-        return snapshot;
-      }
-      syncObservedPowerLock(deviceId, fallback.lock, owner);
-      syncPowerConfigSnapshot(deviceId, fallback);
-      return { ok: true, value: fallback };
-    },
-    [runDeviceCommand, syncObservedPowerLock, syncPowerConfigSnapshot],
-  );
-
-  useEffect(() => {
-    if (!isLeader) {
-      return () => {};
-    }
-    let cancelled = false;
-    const renewLocks = async () => {
-      for (const device of devices) {
-        const runtime = runtimeByIdRef.current[device.id];
-        const lock = runtime?.powerConfig?.lock;
-        const owner = getStablePowerLockOwner(device.id);
-        if (!lock || lock.owner !== owner || !canResumePowerLock(device.id)) {
-          continue;
-        }
-        const renewal = await runDeviceCommand<PowerConfigResponse>(
-          device.id,
-          "power.lock",
-          {
-            owner,
-            acquire: true,
-          },
-        );
-        if (cancelled) {
-          return;
-        }
-        if (renewal.ok) {
-          markPowerLockHeld(device.id);
-          await refreshCanonicalPowerConfig(device.id, owner, renewal.value);
-          continue;
-        }
-        const snapshot = await refreshCanonicalPowerConfig(device.id, owner);
-        if (!cancelled && snapshot.ok && snapshot.value.lock?.owner === owner) {
-          markPowerLockHeld(device.id);
-        }
-      }
-    };
-    const intervalId = window.setInterval(() => void renewLocks(), 8_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [devices, isLeader, refreshCanonicalPowerConfig, runDeviceCommand]);
+  const refreshCanonicalPowerConfig = useDeviceRuntimePowerLock({
+    devices,
+    isLeader,
+    runtimeByIdRef,
+    runDeviceCommand,
+    syncObservedPowerLock,
+    syncPowerConfigSnapshot,
+  });
 
   const {
     clearIdleBias,
