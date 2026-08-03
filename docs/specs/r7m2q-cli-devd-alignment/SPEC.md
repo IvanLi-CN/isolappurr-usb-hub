@@ -433,7 +433,6 @@ Storybook/autodocs fragment keeps the confirmation code visibly editable,
 focuses the input on open, enables the dangerous action only for an exact
 `FLASH` match, and stacks actions below `480px`:
 
-- PR: include
 - source_type: `storybook_docs`
 - capture_mode: `storybook_canvas`
 - target_program: `mock-only`
@@ -443,10 +442,13 @@ focuses the input on open, enables the dangerous action only for an exact
 - sensitive_exclusion: `No real device, desktop, or unrelated application data`
 - submission_gate: `approved`
 
+- PR: include
 ![Recovery strong confirmation resting](./assets/recovery-strong-confirmation-resting.png)
 
+- PR: include
 ![Recovery strong confirmation matched](./assets/recovery-strong-confirmation-matched.png)
 
+- PR: include
 ![Recovery strong confirmation mobile](./assets/recovery-strong-confirmation-mobile393.png)
 
 Bundled release list Storybook surface:
