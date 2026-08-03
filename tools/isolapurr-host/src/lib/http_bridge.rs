@@ -506,7 +506,11 @@ async fn device_identify(
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
     }
-    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+    let info = match require_compatible_project_firmware(&state, &id).await {
+        Ok(info) => info,
+        Err(err) => return error_from_anyhow(err),
+    };
+    if let Err(err) = validate_identify_capability(&info) {
         return error_from_anyhow(err);
     }
     match usb_jsonl_request(&state, &id, "identify", None).await {

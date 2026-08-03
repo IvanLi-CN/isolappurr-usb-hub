@@ -363,7 +363,19 @@ export function DeviceCard({
             </div>
           </div>
         </div>
-        <div className="pointer-events-none relative z-20 flex shrink-0 items-start gap-2">
+        <div className="pointer-events-none relative z-20 flex shrink-0 self-stretch flex-col items-end justify-between gap-2">
+          <div
+            className={[
+              "flex h-[22px] items-center justify-center rounded-full border",
+              badge.width,
+              badge.bg,
+              badge.border,
+              badge.text,
+              "text-[12px] font-semibold",
+            ].join(" ")}
+          >
+            {status}
+          </div>
           {onIdentify ? (
             <button
               aria-label="Locate device"
@@ -406,18 +418,6 @@ export function DeviceCard({
               )}
             </button>
           ) : null}
-          <div
-            className={[
-              "flex h-[22px] items-center justify-center rounded-full border",
-              badge.width,
-              badge.bg,
-              badge.border,
-              badge.text,
-              "text-[12px] font-semibold",
-            ].join(" ")}
-          >
-            {status}
-          </div>
         </div>
       </div>
     </div>

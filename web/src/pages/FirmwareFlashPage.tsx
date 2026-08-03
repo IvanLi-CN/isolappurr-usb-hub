@@ -56,7 +56,6 @@ export function FirmwareFlashPage() {
   const currentDevice = requestedDeviceId
     ? getDevice(requestedDeviceId)
     : undefined;
-  const currentDeviceId = currentDevice?.id;
   const currentLocalUsbPath = currentDevice
     ? (getLocalUsbDeviceLink(currentDevice.id) ??
       currentDevice.transports?.localUsbPortPath)
@@ -97,6 +96,7 @@ export function FirmwareFlashPage() {
     recoveryFlow,
     releaseAuthorizedWebUsb,
     releaseChoices,
+    identifySelectedTarget,
     selectedAsset,
     selectedLocalUsbPort,
     selectedLocalUsbPortInfo,
@@ -122,21 +122,35 @@ export function FirmwareFlashPage() {
     webSerialReadyForManualRead,
     webUsbPickerOpen,
   } = connection;
-  const canIdentify = Boolean(
+  const identifyDeviceId =
+    transportMode !== null
+      ? probe.deviceId
+      : (currentDevice?.id ?? probe.deviceId);
+  const runtimeCanIdentify = Boolean(
     currentDevice &&
-      probe.kind === "recognized" &&
       connectionState(currentDevice.id) === "online" &&
       runtimeById[currentDevice.id]?.identityVerified === true &&
       hub(currentDevice.id)?.capabilities?.identify === true,
   );
+  const directUsbCanIdentify = Boolean(
+    transportMode !== null && probe.capabilities?.identify === true,
+  );
+  const canIdentify = Boolean(
+    identifyDeviceId &&
+      (runtimeCanIdentify ||
+        (probe.kind === "recognized" && directUsbCanIdentify)),
+  );
   const requestIdentify = async () => {
-    if (!currentDevice) {
+    if (!identifyDeviceId) {
       return;
     }
-    const deviceId = currentDevice.id;
+    const deviceId = identifyDeviceId;
     setIdentifyBusy((previous) => new Set(previous).add(deviceId));
     try {
-      const result = await identify(deviceId);
+      const result =
+        transportMode !== null
+          ? await identifySelectedTarget()
+          : await identify(deviceId);
       if (!result.ok) {
         pushToast({ message: result.error.message, variant: "error" });
         return;
@@ -384,7 +398,8 @@ export function FirmwareFlashPage() {
       value: probe.kind === "recognized" ? probe.customHardwareName : undefined,
     },
   ].filter((row) => Boolean(row.value));
-  const showTargetRows = probeActivity === null && targetRows.length > 0;
+  const showTargetRows =
+    probeActivity === null && (targetRows.length > 0 || runtimeCanIdentify);
 
   return (
     <div className="flex flex-col gap-4" data-testid="firmware-flash-page">
@@ -532,16 +547,16 @@ export function FirmwareFlashPage() {
                   ))}
                 </dl>
                 <div className="mt-3 flex justify-end border-t border-[var(--border)] pt-3">
-                  <IconButton
-                    label="Locate device"
+                  <ActionButton
                     loading={
-                      currentDeviceId !== undefined &&
-                      identifyBusy.has(currentDeviceId)
+                      identifyDeviceId !== undefined &&
+                      identifyBusy.has(identifyDeviceId)
                     }
-                    disabled={!canIdentify}
+                    disabled={operationLocked || !canIdentify}
+                    size="sm"
                     tone={
-                      currentDeviceId !== undefined &&
-                      identifying.has(currentDeviceId)
+                      identifyDeviceId !== undefined &&
+                      identifying.has(identifyDeviceId)
                         ? "secondary"
                         : "quiet"
                     }
@@ -549,7 +564,7 @@ export function FirmwareFlashPage() {
                   >
                     <svg
                       aria-hidden="true"
-                      className="h-4 w-4"
+                      className="mr-1 inline-block h-4 w-4 align-text-bottom"
                       viewBox="0 0 16 16"
                     >
                       <circle
@@ -568,7 +583,8 @@ export function FirmwareFlashPage() {
                         strokeWidth="1.4"
                       />
                     </svg>
-                  </IconButton>
+                    Locate device
+                  </ActionButton>
                 </div>
               </>
             ) : (

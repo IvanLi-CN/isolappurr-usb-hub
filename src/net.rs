@@ -521,6 +521,11 @@ pub struct ApiSharedState {
     pub identify_sequence: u32,
     /// Uptime when the most recent identify request was accepted.
     pub identify_requested_at_ms: u64,
+    /// Most recent identify request whose first full display frame completed.
+    /// API success is withheld until this catches up with `identify_sequence`.
+    pub identify_rendered_sequence: u32,
+    /// Most recent identify request cancelled before its first frame completed.
+    pub identify_cancelled_sequence: u32,
     /// The display must have completed its first frame before identify can be accepted.
     pub identify_ui_ready: bool,
     pub ui_error_latched: bool,
@@ -537,6 +542,8 @@ impl ApiSharedState {
             idle_bias: ApiIdleBiasSnapshot::unknown(),
             identify_sequence: 0,
             identify_requested_at_ms: 0,
+            identify_rendered_sequence: 0,
+            identify_cancelled_sequence: 0,
             identify_ui_ready: false,
             ui_error_latched: false,
             pending: ApiPendingActions::empty(),

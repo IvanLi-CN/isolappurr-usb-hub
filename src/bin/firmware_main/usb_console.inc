@@ -81,12 +81,22 @@ async fn handle_usb_jsonl_request(
         || request.contains("\"method\": \"identify\"")
     {
         match net::try_request_identify(api_state).await {
-            Ok(()) => {
-                let _ = write!(
-                    body,
-                    "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"duration_ms\":5000}}}}",
-                    id.as_str()
-                );
+            Ok(sequence) => {
+                if net::wait_for_identify_render(api_state, sequence).await {
+                    let _ = write!(
+                        body,
+                        "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"duration_ms\":5000}}}}",
+                        id.as_str()
+                    );
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "display_unavailable",
+                        "display did not acknowledge the identify frame",
+                        true,
+                    );
+                }
             }
             Err(net::ApiActionError::Busy) => write_jsonl_error(
                 &mut body,

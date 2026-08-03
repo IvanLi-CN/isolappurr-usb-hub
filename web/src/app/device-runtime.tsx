@@ -1031,6 +1031,28 @@ export function DeviceRuntimeProvider({
           params,
         );
         markChannelResult(deviceId, transport, candidate);
+        if (method === "identify") {
+          res = candidate;
+          const definitePreDispatchOffline =
+            !candidate.ok &&
+            candidate.error.kind === "offline" &&
+            /web serial not connected|local usb service unavailable|local usb device not found|device has no active transport/i.test(
+              candidate.error.message,
+            );
+          if (
+            candidate.ok ||
+            !definitePreDispatchOffline ||
+            candidate.error.kind === "api_error" ||
+            candidate.error.kind === "busy"
+          ) {
+            // Identify is side-effecting. Once a request may have reached the
+            // device, never dispatch it through a fallback transport.
+            break;
+          }
+          // Definite reachability/browser failures happened before dispatch;
+          // continue to another usable transport.
+          continue;
+        }
         if (candidate.ok) {
           preferredTransportByDevice.current[deviceId] = transport;
           res = candidate;

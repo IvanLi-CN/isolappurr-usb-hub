@@ -8,6 +8,8 @@ const MENU_INK_RAW: u16 = rgb565_raw(0x21, 0x44, 0x57);
 const MENU_MUTED_RAW: u16 = rgb565_raw(0x6E, 0x84, 0x91);
 const MENU_ACCENT_RAW: u16 = rgb565_raw(0x4B, 0x63, 0xC7);
 const MENU_ACCENT_SOFT_RAW: u16 = rgb565_raw(0xE7, 0xEA, 0xFB);
+const IDENTIFY_SIGNAL_RAW: u16 = rgb565_raw(0xB9, 0x49, 0x5A);
+const IDENTIFY_BORDER_THICKNESS: i32 = 12;
 
 pub(super) fn render_settings_menu(surface: &mut FrameSurface<'_>, selected_index: usize) {
     surface.fill(MENU_BG_RAW);
@@ -122,18 +124,30 @@ pub(super) fn render_identify(
     border_phase_on: bool,
 ) {
     let border = if border_phase_on {
-        MENU_ACCENT_RAW
+        IDENTIFY_SIGNAL_RAW
     } else {
-        MENU_INK_RAW
+        MENU_BG_RAW
     };
 
     surface.fill(MENU_BG_RAW);
-    // A square 6px perimeter remains legible from a distance and makes the
-    // blink unambiguous without relying on a particular display backlight.
-    surface.fill_rect(0, 0, 320, 6, border);
-    surface.fill_rect(0, 166, 320, 6, border);
-    surface.fill_rect(0, 0, 6, 172, border);
-    surface.fill_rect(314, 0, 6, 172, border);
+    // Use a strong, full-perimeter pulse: the inactive phase deliberately
+    // clears into the display background so it remains visible at a glance.
+    surface.fill_rect(0, 0, 320, IDENTIFY_BORDER_THICKNESS, border);
+    surface.fill_rect(
+        0,
+        172 - IDENTIFY_BORDER_THICKNESS,
+        320,
+        IDENTIFY_BORDER_THICKNESS,
+        border,
+    );
+    surface.fill_rect(0, 0, IDENTIFY_BORDER_THICKNESS, 172, border);
+    surface.fill_rect(
+        320 - IDENTIFY_BORDER_THICKNESS,
+        0,
+        IDENTIFY_BORDER_THICKNESS,
+        172,
+        border,
+    );
     surface.fill_round_rect(18, 18, 284, 136, 12, MENU_BORDER_RAW);
     surface.fill_round_rect(20, 20, 280, 132, 10, MENU_PANEL_RAW);
     surface.draw_chip(
@@ -159,4 +173,30 @@ pub(super) fn trim_ascii_line<const N: usize>(line: &[u8; N]) -> &str {
         end -= 1;
     }
     core::str::from_utf8(&line[..end]).unwrap_or("")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identify_uses_a_high_contrast_pulse_border() {
+        let mut active = vec![0_u16; 320 * 172];
+        {
+            let mut surface = FrameSurface::new(&mut active);
+            render_identify(&mut surface, "ID", "IP", "HOST", true);
+        }
+        let mut inactive = vec![0_u16; 320 * 172];
+        {
+            let mut surface = FrameSurface::new(&mut inactive);
+            render_identify(&mut surface, "ID", "IP", "HOST", false);
+        }
+
+        assert_eq!(active[0], IDENTIFY_SIGNAL_RAW);
+        assert_eq!(inactive[0], MENU_BG_RAW);
+        assert_eq!(
+            active[IDENTIFY_BORDER_THICKNESS as usize * 320],
+            MENU_BG_RAW
+        );
+    }
 }

@@ -585,6 +585,8 @@
     let mut identify_was_active = false;
     #[cfg(feature = "net_http")]
     let mut identify_restore_requested = false;
+    #[cfg(feature = "net_http")]
+    let mut identify_pending_render = false;
 
     #[cfg(feature = "net_http")]
     let mut api_usb_a_present = false;

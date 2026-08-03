@@ -241,14 +241,26 @@ async fn handle_api_request(
         }
         ("POST", "/api/v1/identify") => {
             match try_request_identify(api_state).await {
-                Ok(()) => {
-                    write_json_response(
-                        socket,
-                        "200 OK",
-                        allow_origin,
-                        "{\"accepted\":true,\"duration_ms\":5000}",
-                    )
-                    .await?;
+                Ok(sequence) => {
+                    if wait_for_identify_render(api_state, sequence).await {
+                        write_json_response(
+                            socket,
+                            "200 OK",
+                            allow_origin,
+                            "{\"accepted\":true,\"duration_ms\":5000}",
+                        )
+                        .await?;
+                    } else {
+                        write_api_error(
+                            socket,
+                            "503 Service Unavailable",
+                            allow_origin,
+                            "display_unavailable",
+                            "display did not acknowledge the identify frame",
+                            true,
+                        )
+                        .await?;
+                    }
                 }
                 Err(ApiActionError::Busy) => {
                     write_api_error(

@@ -197,7 +197,8 @@ async fn dispatch_ipc_request(
         }
         "device.identify" => {
             let req: DeviceIdRequest = serde_json::from_value(params)?;
-            require_compatible_project_firmware(state, &req.device_id).await?;
+            let info = require_compatible_project_firmware(state, &req.device_id).await?;
+            validate_identify_capability(&info)?;
             Ok(redact_sensitive(
                 &usb_jsonl_request(state, &req.device_id, "identify", None).await?,
             ))
