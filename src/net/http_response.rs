@@ -537,8 +537,11 @@ const POWER_LOCK_TTL_MS: u64 = 15_000;
 const IDENTIFY_RENDER_ACK_POLL_MS: u64 = 20;
 const IDENTIFY_RENDER_ACK_TIMEOUT_MS: u64 = 1_000;
 
-fn identify_sequence_reached(rendered: u32, requested: u32) -> bool {
-    rendered == requested || rendered.wrapping_sub(requested) < (u32::MAX / 2 + 1)
+fn identify_sequence_matches(rendered: u32, requested: u32) -> bool {
+    // A newer identify request supersedes an older one. It must not satisfy
+    // the older request's first-frame acknowledgement while it waits for its
+    // own generation.
+    rendered == requested
 }
 
 pub async fn try_request_identify(
@@ -567,7 +570,7 @@ pub async fn wait_for_identify_render(api_state: &'static ApiSharedMutex, sequen
         if state.identify_cancelled_sequence == sequence {
             return false;
         }
-        if identify_sequence_reached(state.identify_rendered_sequence, sequence) {
+        if identify_sequence_matches(state.identify_rendered_sequence, sequence) {
             return true;
         }
         if state.ui_error_latched {
@@ -581,7 +584,7 @@ pub async fn wait_for_identify_render(api_state: &'static ApiSharedMutex, sequen
     if state.identify_cancelled_sequence == sequence {
         return false;
     }
-    if identify_sequence_reached(state.identify_rendered_sequence, sequence) {
+    if identify_sequence_matches(state.identify_rendered_sequence, sequence) {
         return true;
     }
     if state.identify_sequence == sequence {
@@ -957,4 +960,16 @@ async fn socket_write_all(
         buf = &buf[written..];
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::identify_sequence_matches;
+
+    #[test]
+    fn identify_ack_requires_the_exact_generation() {
+        assert!(identify_sequence_matches(7, 7));
+        assert!(!identify_sequence_matches(8, 7));
+        assert!(!identify_sequence_matches(7, 8));
+    }
 }
