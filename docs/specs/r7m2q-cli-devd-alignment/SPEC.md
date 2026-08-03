@@ -335,7 +335,6 @@ shared shell brand-slot repair. This capture proves the firmware workbench
 consumes the same owner-facing header contract as Dashboard while keeping the
 same controlled app-shell source used for manifest screenshot refresh.
 
-PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
@@ -349,7 +348,6 @@ shared shell brand-slot repair. This proves the route-level flash surface keeps
 the restored IsolaPurr mark + single-line label contract in `isolapurr-dark`
 without relying on informal chat-only screenshots.
 
-PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
@@ -401,7 +399,6 @@ Standalone `/flash?demo=true` workbench showing the live target version and the
 selected release as separate adjacent rows. `INSTALLED` comes from the target
 probe while `TO FLASH` follows the selected firmware source:
 
-PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
