@@ -6,6 +6,14 @@ import { DesktopAgentProvider } from "../src/app/desktop-agent-ui";
 import { ToastProvider } from "../src/ui/toast/ToastProvider";
 
 const ISOLAPURR_VIEWPORTS = {
+  mobile393: {
+    name: "Mobile 393 (393×852)",
+    styles: {
+      width: "393px",
+      height: "852px",
+    },
+    type: "mobile",
+  },
   isolapurrNarrow: {
     name: "Isolapurr Narrow (360×640)",
     styles: {

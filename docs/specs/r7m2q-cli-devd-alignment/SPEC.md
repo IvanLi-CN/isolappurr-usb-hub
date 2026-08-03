@@ -428,9 +428,26 @@ below it:
 
 ![Firmware flash sidebar buttons above log](./assets/flash-sidebar-buttons-above-log.png)
 
-Strong confirmation dialog for recovery on unconfirmed targets:
+Recovery strong confirmation input for unconfirmed targets. The reusable
+Storybook/autodocs fragment keeps the confirmation code visibly editable,
+focuses the input on open, enables the dangerous action only for an exact
+`FLASH` match, and stacks actions below `480px`:
 
-![Recovery strong confirmation](./assets/flash-strong-confirm.png)
+- PR: include
+- source_type: `storybook_docs`
+- capture_mode: `storybook_canvas`
+- target_program: `mock-only`
+- capture_scope: `component-viewport`
+- viewports: `1440x900`, `393x852`
+- states: resting, exact `FLASH` match, narrow stacked actions
+- sensitive_exclusion: `No real device, desktop, or unrelated application data`
+- submission_gate: `approved`
+
+![Recovery strong confirmation resting](./assets/recovery-strong-confirmation-resting.png)
+
+![Recovery strong confirmation matched](./assets/recovery-strong-confirmation-matched.png)
+
+![Recovery strong confirmation mobile](./assets/recovery-strong-confirmation-mobile393.png)
 
 Bundled release list Storybook surface:
 

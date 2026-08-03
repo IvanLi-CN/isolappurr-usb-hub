@@ -81,6 +81,11 @@
   target trust: confirmed IsolaPurr targets may choose either a normal update
   or a bundled recovery image, while non-project or identity-unknown recovery
   targets still require the stronger confirmation dialog before write.
+- The non-project recovery confirmation is now a reusable
+  `RecoveryStrongConfirmationDialog` fragment backed by the shared portal
+  dialog. It exposes a labeled `Confirmation code` input, focuses that input
+  on open, keeps the exact trimmed `FLASH` gate, prevents Enter from confirming,
+  and stacks actions below `480px`.
 - Web Serial flashing now retries the browser's transient `SerialPort.open`
   failure window after probe/reset instead of failing the whole recovery or
   normal-update action on the first reopening attempt.
