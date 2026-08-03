@@ -15,6 +15,14 @@ export type DeviceInfoResponse = {
       is_static: boolean;
     };
   };
+  capabilities?: {
+    identify?: boolean;
+  };
+};
+
+export type IdentifyResponse = {
+  accepted: true;
+  duration_ms: 5000;
 };
 
 export type DeviceApiError =
@@ -823,6 +831,14 @@ export async function getDeviceInfo(
 ): Promise<Result<DeviceInfoResponse>> {
   return fetchJson<DeviceInfoResponse>(baseUrl, "/api/v1/info", {
     method: "GET",
+  });
+}
+
+export async function identifyDevice(
+  baseUrl: string,
+): Promise<Result<IdentifyResponse>> {
+  return fetchJson<IdentifyResponse>(baseUrl, "/api/v1/identify", {
+    method: "POST",
   });
 }
 

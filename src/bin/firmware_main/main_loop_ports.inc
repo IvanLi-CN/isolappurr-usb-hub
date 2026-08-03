@@ -56,12 +56,85 @@
             }
         }
 
-        // 2 Hz (500ms) UI tick. Keep PD loop behavior intact outside this path.
-        if last_tick.elapsed() >= Duration::from_millis(500) {
+        #[cfg(feature = "net_http")]
+        let (identify_active, identify_ended, identify_started) = {
+            let (request_sequence, requested_at_ms) = {
+                let state = api_state.lock().await;
+                (state.identify_sequence, state.identify_requested_at_ms)
+            };
+            let now_ms = uptime_ms_from_instant(Instant::now());
+            let mut started = false;
+            if request_sequence != identify_sequence_seen {
+                identify_sequence_seen = request_sequence;
+                identify_state.trigger(requested_at_ms);
+                identify_was_active = true;
+                started = true;
+                ui.clear_toast();
+                prompt_tone.notify(SoundEvent::IdentifyStart);
+            }
+            if (sw2303_error_latched
+                || tps_error_latched
+                || thermal_controller.state().alarm_active()
+                || ui_error_latched)
+                && identify_state.is_active(now_ms)
+            {
+                identify_state.cancel();
+            }
+            let active = identify_state.is_active(now_ms);
+            let ended = identify_was_active && !active;
+            if ended {
+                prompt_tone.notify(SoundEvent::IdentifyStop);
+            }
+            identify_was_active = active;
+            (active, ended, started)
+        };
+        #[cfg(feature = "net_http")]
+        let identify_needs_normal_ui = {
+            let restore_requested = identify_restore_requested;
+            identify_restore_requested = false;
+            restore_requested || identify_ended || identify_started
+        };
+        #[cfg(not(feature = "net_http"))]
+        let identify_needs_normal_ui = false;
+
+        // Identification redraws at 4Hz to make its border toggle at 2Hz.
+        #[cfg(feature = "net_http")]
+        let ui_tick_interval_ms = if identify_active { 250 } else { 500 };
+        #[cfg(not(feature = "net_http"))]
+        let ui_tick_interval_ms = 500;
+
+        if identify_needs_normal_ui || last_tick.elapsed() >= Duration::from_millis(ui_tick_interval_ms) {
             let ui_tick_now = Instant::now();
             last_tick = ui_tick_now;
 
-            if ui.toast_active(ui_tick_now) {
+            #[cfg(feature = "net_http")]
+            if identify_active {
+                let mut hostname = alloc::string::String::from(device_names.hostname.as_str());
+                hostname.make_ascii_uppercase();
+                let device_id = alloc::format!("ID {}", device_names.device_id.as_str());
+                let ipv4 = match net_handles.as_ref() {
+                    Some(handles) => match (*handles.wifi_state.lock().await).ipv4 {
+                        Some(ipv4) => alloc::format!("IP {}", ipv4),
+                        None => alloc::string::String::from("NOT CONNECTED"),
+                    },
+                    None => alloc::string::String::from("NOT CONNECTED"),
+                };
+                if let Err(err) = ui
+                    .render_identify(
+                        device_id.as_str(),
+                        ipv4.as_str(),
+                        hostname.as_str(),
+                        identify_state.border_phase_on(uptime_ms_from_instant(ui_tick_now)),
+                    )
+                    .await
+                {
+                    if !ui_error_latched {
+                        defmt::warn!("display: identify render error: {:?}", defmt::Debug2Format(&err));
+                        ui_error_latched = true;
+                        api_state.lock().await.ui_error_latched = true;
+                    }
+                }
+            } else if ui.toast_active(ui_tick_now) {
                 // Pause normal UI updates while an action toast is active.
                 // Telemetry/PD loop continues unaffected.
             } else {
@@ -141,6 +214,7 @@
                 } else {
                     ui_error_latched = false;
                 }
+                api_state.lock().await.ui_error_latched = ui_error_latched;
 
                 if !ui_was_in_error && ui_error_latched {
                     prompt_tone.notify(SoundEvent::EnterError(ErrorKind::UiRender));

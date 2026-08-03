@@ -85,6 +85,8 @@ isolapurr devices
 isolapurr discover
 isolapurr status --device-id <device-id>
 isolapurr status --url http://<host-or-ip>
+isolapurr identify --device-id <device-id>
+isolapurr identify --url http://<host-or-ip>
 ```
 
 - Hardware memory:

@@ -535,6 +535,25 @@ pub enum ApiIdleBiasActionError {
 
 const POWER_LOCK_TTL_MS: u64 = 15_000;
 
+pub async fn try_request_identify(
+    api_state: &'static ApiSharedMutex,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    if guard.pd.sw2303_error_latched
+        || guard.pd.tps_error_latched
+        || guard.pd.thermal.state.alarm_active()
+        || !guard.identify_ui_ready
+        || guard.ui_error_latched
+        || guard.pending.settings_reset.is_some()
+    {
+        return Err(ApiActionError::Busy);
+    }
+
+    guard.identify_sequence = guard.identify_sequence.wrapping_add(1);
+    guard.identify_requested_at_ms = uptime_ms();
+    Ok(())
+}
+
 pub async fn try_set_power_lock(
     api_state: &'static ApiSharedMutex,
     owner: u32,

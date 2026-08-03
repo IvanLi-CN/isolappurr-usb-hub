@@ -7,6 +7,7 @@ import {
   getPorts,
   getPowerConfig,
   getWifiConfig,
+  identifyDevice,
   type PowerConfigInput,
   type Result,
   rebootDevice,
@@ -36,6 +37,9 @@ export async function requestHttpTransport<T>(
   }
   if (method === "info") {
     return getDeviceInfo(baseUrl) as Promise<Result<T>>;
+  }
+  if (method === "identify") {
+    return identifyDevice(baseUrl) as Promise<Result<T>>;
   }
   if (method === "wifi.get") {
     return getWifiConfig(baseUrl) as Promise<Result<T>>;

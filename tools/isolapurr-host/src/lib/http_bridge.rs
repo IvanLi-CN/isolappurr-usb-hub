@@ -34,6 +34,7 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
         .route("/api/v1/devices", get(list_devices))
         .route("/api/v1/devices/scan", post(scan_devices))
         .route("/api/v1/devices/{id}/status", get(device_status))
+        .route("/api/v1/devices/{id}/identify", post(device_identify))
         .route("/api/v1/devices/{id}/session", get(device_session))
         .route(
             "/api/v1/devices/{id}/wifi",
@@ -492,6 +493,23 @@ async fn device_ports(
         return error_from_anyhow(err);
     }
     match usb_jsonl_request(&state, &id, "ports.get", None).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_identify(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    match usb_jsonl_request(&state, &id, "identify", None).await {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }

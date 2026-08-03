@@ -1,6 +1,7 @@
 import type {
   DeviceApiError,
   DeviceInfoResponse,
+  IdentifyResponse,
   IdleBiasResponse,
   PdDiagnosticsResponse,
   PowerConfigResponse,
@@ -39,6 +40,7 @@ export type SharedRuntimeSnapshot = {
 export type RuntimeRpcMethod =
   | "refreshDevice"
   | "deviceInfo"
+  | "identify"
   | "wifiConfig"
   | "saveWifiConfig"
   | "clearWifiConfig"
@@ -63,6 +65,7 @@ export type RuntimeRpcKind = "query" | "mutation";
 export type RuntimeRpcResultMap = {
   refreshDevice: Result<{ ok: true }>;
   deviceInfo: Result<DeviceInfoResponse>;
+  identify: Result<IdentifyResponse>;
   wifiConfig: Result<WifiConfigResponse>;
   saveWifiConfig: Result<WifiMutationResponse>;
   clearWifiConfig: Result<WifiMutationResponse>;
@@ -140,6 +143,7 @@ const MUTATION_METHODS = new Set<RuntimeRpcMethod>([
   "setPower",
   "replug",
   "setUsbCDownstreamRoute",
+  "identify",
 ]);
 
 export function runtimeRpcMethodKind(method: RuntimeRpcMethod): RuntimeRpcKind {

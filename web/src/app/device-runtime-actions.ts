@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type {
   DeviceApiError,
   DeviceInfoResponse,
+  IdentifyResponse,
   IdleBiasResponse,
   PdDiagnosticsResponse,
   PowerConfigInput,
@@ -162,6 +163,31 @@ export function createDeviceRuntimeActions({
       return requestLeaderRpc("wifiConfig", [deviceId]);
     }
     return runDeviceCommand<WifiConfigResponse>(deviceId, "wifi.get");
+  };
+
+  const identify = async (
+    deviceId: string,
+    options?: SharedMutationInvocationOptions,
+  ): Promise<Result<IdentifyResponse>> => {
+    if (!isLeader && coordinationRole !== "unsupported") {
+      return requestLeaderRpc("identify", [deviceId]);
+    }
+    if (!runtimeByIdRef.current[deviceId]?.identityVerified) {
+      return {
+        ok: false,
+        error: {
+          kind: "invalid_response",
+          message: "device identity is not confirmed",
+        },
+      };
+    }
+    return runSharedMutation({
+      deviceId,
+      method: "identify",
+      requestId: options?.requestId,
+      sourceTabId: options?.sourceTabId,
+      invoke: () => runDeviceCommand<IdentifyResponse>(deviceId, "identify"),
+    });
   };
 
   const saveWifiConfig = async (
@@ -781,6 +807,12 @@ export function createDeviceRuntimeActions({
         case "deviceInfo":
           result = await deviceInfo(deviceId);
           break;
+        case "identify":
+          result = await identify(deviceId, {
+            requestId: message.requestId,
+            sourceTabId: message.originTabId,
+          });
+          break;
         case "wifiConfig":
           result = await wifiConfig(deviceId);
           break;
@@ -935,6 +967,7 @@ export function createDeviceRuntimeActions({
     clearIdleBias,
     clearWifi,
     deviceInfo,
+    identify,
     handleRuntimeRpcRequest,
     idleBias,
     pdDiagnostics,

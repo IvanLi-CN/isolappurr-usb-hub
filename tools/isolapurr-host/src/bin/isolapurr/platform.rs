@@ -194,6 +194,7 @@ fn map_devd_ipc_endpoint(
 
     let ipc_method = match (method.as_str(), suffix) {
         ("GET", "status") => "device.status",
+        ("POST", "identify") => "device.identify",
         ("GET", "wifi") => "device.wifi.get",
         ("POST", "wifi") => {
             merge_body(params_map, body);
@@ -407,6 +408,7 @@ fn map_http_endpoint(
     body: Option<Value>,
 ) -> anyhow::Result<(Method, String, Option<Value>)> {
     let mapped = match (method.as_str(), suffix) {
+        ("POST", "/identify") => (Method::POST, "/api/v1/identify".to_string(), None),
         ("GET", "/status") => (method, "/api/v1/info".to_string(), body),
         ("GET", "/wifi") => (method, "/api/v1/wifi".to_string(), body),
         ("POST", "/wifi") => (Method::POST, "/api/v1/wifi/set".to_string(), body),

@@ -516,6 +516,14 @@ pub struct ApiSharedState {
     pub pd: ApiPdSnapshot,
     pub power: ApiPowerSnapshot,
     pub idle_bias: ApiIdleBiasSnapshot,
+    /// Monotonically increments for each accepted identify request. The runtime
+    /// consumes this edge and restarts its fixed-duration local presentation.
+    pub identify_sequence: u32,
+    /// Uptime when the most recent identify request was accepted.
+    pub identify_requested_at_ms: u64,
+    /// The display must have completed its first frame before identify can be accepted.
+    pub identify_ui_ready: bool,
+    pub ui_error_latched: bool,
     pub pending: ApiPendingActions,
 }
 
@@ -527,6 +535,10 @@ impl ApiSharedState {
             pd: ApiPdSnapshot::unknown(),
             power: ApiPowerSnapshot::unknown(),
             idle_bias: ApiIdleBiasSnapshot::unknown(),
+            identify_sequence: 0,
+            identify_requested_at_ms: 0,
+            identify_ui_ready: false,
+            ui_error_latched: false,
             pending: ApiPendingActions::empty(),
         }
     }
@@ -538,6 +550,10 @@ pub fn init_http_api_state() -> &'static ApiSharedMutex {
     API_STATE_CELL.init(Mutex::new(ApiSharedState::new()))
 }
 
+pub fn init_device_names() -> &'static DeviceNames {
+    DEVICE_NAMES_CELL.init(derive_device_names(Efuse::read_base_mac_address()))
+}
+
 pub(crate) fn request_wifi_runtime_apply() {
     WIFI_APPLY_SIGNAL.signal(());
 }
@@ -546,6 +562,7 @@ pub fn spawn_wifi_mdns_http(
     spawner: &Spawner,
     wifi_peripheral: WIFI<'static>,
     api_state: &'static ApiSharedMutex,
+    device_names: &'static DeviceNames,
     credentials: Option<WifiCredentials>,
 ) -> Option<NetHandles> {
     let wifi_state = WIFI_STATE_CELL.init(Mutex::new(WifiState::new()));
@@ -577,9 +594,6 @@ pub fn spawn_wifi_mdns_http(
 
     let wifi_device: WifiDevice<'static> = wifi_interfaces.sta;
     let wifi_mac = wifi_device.mac_address();
-    let base_mac = Efuse::read_base_mac_address();
-    let device_names = DEVICE_NAMES_CELL.init(derive_device_names(base_mac));
-
     if credentials.is_none() {
         info!("Wi-Fi credentials not configured in EEPROM; network services idle until configured");
     }

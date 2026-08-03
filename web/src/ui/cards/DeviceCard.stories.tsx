@@ -20,6 +20,7 @@ const meta: Meta<typeof DeviceCard> = {
     transportBadges: [{ transport: "http", state: "primary" }],
     unselectedFill: "panel",
     onSelect: fn(),
+    onIdentify: fn(),
   },
 };
 
@@ -28,6 +29,26 @@ export default meta;
 type Story = StoryObj<typeof DeviceCard>;
 
 export const Default: Story = {};
+
+export const LocateAvailable: Story = {
+  args: {
+    identifyAvailable: true,
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Locate device" }),
+    );
+    await expect(args.onIdentify).toHaveBeenCalledWith(demoDevice.id);
+    await expect(args.onSelect).not.toHaveBeenCalled();
+  },
+};
+
+export const LocateUnavailable: Story = {
+  args: {
+    identifyAvailable: false,
+  },
+};
 
 export const Selected: Story = {
   args: {

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useAddDeviceUi } from "../../app/add-device-ui";
 import { useDeviceRuntime } from "../../app/device-runtime";
 import { resolveTransportBadgeState } from "../../app/device-runtime-support";
@@ -7,6 +7,7 @@ import { getLocalUsbDeviceLink } from "../../domain/localUsbLinks";
 import { getWebSerialDeviceTransport } from "../../domain/webSerialLinks";
 import { ActionButton } from "../actions/ActionButton";
 import { DeviceCard, type DeviceTransportBadge } from "../cards/DeviceCard";
+import { useToast } from "../toast/ToastProvider";
 
 const TRANSPORT_ORDER: DeviceTransportBadge["transport"][] = [
   "http",
@@ -34,8 +35,20 @@ export function DeviceListPanel({
   onBeforeAddDevice,
 }: DeviceListPanelProps) {
   const { openAddDevice } = useAddDeviceUi();
-  const { connectionState, transport, channelState, runtimeById } =
-    useDeviceRuntime();
+  const {
+    connectionState,
+    transport,
+    channelState,
+    hub,
+    identify,
+    runtimeById,
+  } = useDeviceRuntime();
+  const { pushToast } = useToast();
+  const [identifyBusy, setIdentifyBusy] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [identifying, setIdentifying] = useState<Set<string>>(() => new Set());
+  const identifyTimeout = useRef(new Map<string, number>());
 
   const transportBadges = (deviceId: string): DeviceTransportBadge[] => {
     const current = transport(deviceId);
@@ -75,6 +88,45 @@ export function DeviceListPanel({
       }
       return [{ transport: candidate, state }];
     });
+  };
+
+  const requestIdentify = async (deviceId: string) => {
+    setIdentifyBusy((current) => new Set(current).add(deviceId));
+    try {
+      const result = await identify(deviceId);
+      if (!result.ok) {
+        pushToast({ message: result.error.message, variant: "error" });
+        return;
+      }
+      const previousTimeout = identifyTimeout.current.get(deviceId);
+      if (previousTimeout !== undefined) {
+        window.clearTimeout(previousTimeout);
+      }
+      setIdentifying((current) => new Set(current).add(deviceId));
+      identifyTimeout.current.set(
+        deviceId,
+        window.setTimeout(() => {
+          setIdentifying((current) => {
+            const next = new Set(current);
+            next.delete(deviceId);
+            return next;
+          });
+          identifyTimeout.current.delete(deviceId);
+        }, result.value.duration_ms),
+      );
+    } catch (error) {
+      pushToast({
+        message:
+          error instanceof Error ? error.message : "Locate request failed",
+        variant: "error",
+      });
+    } finally {
+      setIdentifyBusy((current) => {
+        const next = new Set(current);
+        next.delete(deviceId);
+        return next;
+      });
+    }
   };
 
   return (
@@ -123,6 +175,14 @@ export function DeviceListPanel({
                   transportBadges={transportBadges(d.id)}
                   unselectedFill={selectedDeviceId ? "panel-2" : "panel"}
                   onSelect={onSelect}
+                  identifyAvailable={
+                    connectionState(d.id) === "online" &&
+                    runtimeById[d.id]?.identityVerified === true &&
+                    hub(d.id)?.capabilities?.identify === true
+                  }
+                  identifyBusy={identifyBusy.has(d.id)}
+                  identifying={identifying.has(d.id)}
+                  onIdentify={requestIdentify}
                 />
               ))}
             </div>

@@ -133,7 +133,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr-devd bridge-http --bind 127.0.0.1:<port> [--web-root <path>] [--allow-dev-cors]`
 - `isolapurr [--ipc <ipc-endpoint>] [--no-auto-start] ...`
 - `isolapurr hardware available|recent|list|save|forget|path`
-- `isolapurr devices`, `isolapurr discover`, `isolapurr status`
+- `isolapurr devices`, `isolapurr discover`, `isolapurr status`, `isolapurr identify`
 - `isolapurr wifi show|set|clear`
 - `isolapurr ports`
 - `isolapurr ports power --port <port_id> --enabled <true|false>`
@@ -164,7 +164,7 @@ Selector scope for the released CLI is part of the public contract:
 The IPC daemon protocol is newline-delimited JSON request/response. Requests include `{id, method, params}` and responses include `{id, ok, result|error}`. CLI-visible method families include:
 
 - `devices.list`, `devices.scan`
-- `device.status`, `device.session`, `device.wifi.get|set|clear`
+- `device.status`, `device.identify`, `device.session`, `device.wifi.get|set|clear`
 - `device.ports.get`, `device.port.power`, `device.port.replug`, `device.hub.route_set`
 - `device.power.config.get|set|defaults|lock|release`
 - `device.settings.reset`
@@ -179,6 +179,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `GET /api/v1/devices`
 - `POST /api/v1/devices/scan`
 - `GET /api/v1/devices/{id}/status`
+- `POST /api/v1/devices/{id}/identify`
 - `GET /api/v1/devices/{id}/session`
 - `POST /api/v1/serial/lease`
 - `POST|DELETE /api/v1/serial/lease/{lease_id}`

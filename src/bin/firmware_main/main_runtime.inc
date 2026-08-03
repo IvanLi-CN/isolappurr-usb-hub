@@ -38,6 +38,8 @@
     // Optional HTTP API state is shared by Wi-Fi and USB/native transports.
     #[cfg(feature = "net_http")]
     let api_state = net::init_http_api_state();
+    #[cfg(feature = "net_http")]
+    let device_names = net::init_device_names();
 
     let buzzer = LedcBuzzer::new(peripherals.LEDC, peripherals.GPIO21).expect("buzzer LEDC init");
     let mut prompt_tone = PromptToneManager::new(buzzer);
@@ -460,17 +462,16 @@
     }
     #[cfg(feature = "net_http")]
     let net_handles =
-        net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state, wifi_credentials);
+        net::spawn_wifi_mdns_http(&_spawner, peripherals.WIFI, api_state, device_names, wifi_credentials);
     #[cfg(feature = "net_http")]
     {
         let usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
-        let device_names = net_handles.as_ref().map(|handles| handles.device_names);
         let wifi_state = net_handles.as_ref().map(|handles| handles.wifi_state);
         if _spawner
             .spawn(usb_console_task(
                 usb_serial,
                 api_state,
-                device_names,
+                Some(device_names),
                 wifi_state,
             ))
             .is_err()
@@ -552,21 +553,38 @@
         elapsed_ms_since(pd_boot_started)
     );
 
-    if let Err(err) = ui.init().await {
+    let identify_ui_ready = if let Err(err) = ui.init().await {
         defmt::warn!(
             "display: init error (PD loop continues): {:?}",
             defmt::Debug2Format(&err)
         );
         prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::DisplayInit));
+        false
     } else if let Err(err) = ui.draw_frame().await {
         defmt::warn!(
             "display: draw_frame error (PD loop continues): {:?}",
             defmt::Debug2Format(&err)
         );
         prompt_tone.notify(SoundEvent::InitWarn(InitWarnReason::DisplayInit));
+        false
+    } else {
+        true
+    };
+    #[cfg(feature = "net_http")]
+    {
+        api_state.lock().await.identify_ui_ready = identify_ui_ready;
     }
 
     let mut last_tick = Instant::now();
+
+    #[cfg(feature = "net_http")]
+    let mut identify_state = IdentifyState::default();
+    #[cfg(feature = "net_http")]
+    let mut identify_sequence_seen = 0;
+    #[cfg(feature = "net_http")]
+    let mut identify_was_active = false;
+    #[cfg(feature = "net_http")]
+    let mut identify_restore_requested = false;
 
     #[cfg(feature = "net_http")]
     let mut api_usb_a_present = false;

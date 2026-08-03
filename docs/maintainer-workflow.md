@@ -58,7 +58,7 @@ The current user-facing truth source is the released CLI surface, not stale docs
 
 ### Stable command families
 
-- `status` by the released `device-id` or `url` selectors
+- `status` and `identify` by the released `device-id` or `url` selectors
 - `hardware save` by the released `device-id` selector plus a name and one transport binding
 - `isolapurr wifi show|set|clear`
 - `isolapurr ports`, `ports power`, `ports replug`, `ports route`

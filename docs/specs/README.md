@@ -65,6 +65,7 @@
 | u5b2c | USB 通信、固件更新与 Wi-Fi provisioning | 已验证 | `u5b2c-usb-console-provisioning/SPEC.md` | 2026-07-18 | Web Serial, Local USB, EEPROM Wi-Fi config, firmware update, saved-device shell header/drawer contract, and equal-grade communication path matrix |
 | tvhca | USB-C 下行通道路由切换 | 已完成 | `tvhca-usb-c-downstream-route/SPEC.md` | 2026-05-18 | MCU / USB-C route switching, EEPROM persistence, HTTP/USB JSONL API, Web UI, and dual-button shortcut |
 | r7m2q | CLI/devd host-tools alignment | 已验证 | `r7m2q-cli-devd-alignment/SPEC.md` | 2026-06-16 | Split `isolapurr-devd` + `isolapurr`, repo-managed workflow truth-source cleanup, maintainer doc routing, and released CLI command contract gates |
+| x6cua | Device identify and locate | 部分完成（4/5） | `x6cua-device-identify/SPEC.md` | 2026-08-03 | Fixed five-second device identity display, buzzer, explicit capability negotiation, and Web Locate controls |
 | jdyh2 | PR label driven automatic release | 已完成 | `jdyh2-pr-label-release-automation/SPEC.md` | 2026-07-20 | Label Gate, centralized Release workflow, stable-only public Pages deploy, single-build web artifact contract, and required-check alignment |
 | d8s4n | Source structure guard | 已完成 | `d8s4n-source-structure-guard/SPEC.md` | 2026-06-02 | Source length guard, generated-file exemption, and oversized source split |
 | k7p9x | Firmware Validation Contract | 已完成 | `k7p9x-firmware-validation-contract/SPEC.md` | 2026-06-13 | Shared no_std firmware core host tests plus firmware-check validation entrypoint |

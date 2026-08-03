@@ -114,6 +114,45 @@ pub(super) fn render_message_card(
     }
 }
 
+pub(super) fn render_identify(
+    surface: &mut FrameSurface<'_>,
+    device_id: &str,
+    ipv4: &str,
+    hostname: &str,
+    border_phase_on: bool,
+) {
+    let border = if border_phase_on {
+        MENU_ACCENT_RAW
+    } else {
+        MENU_INK_RAW
+    };
+
+    surface.fill(MENU_BG_RAW);
+    // A square 6px perimeter remains legible from a distance and makes the
+    // blink unambiguous without relying on a particular display backlight.
+    surface.fill_rect(0, 0, 320, 6, border);
+    surface.fill_rect(0, 166, 320, 6, border);
+    surface.fill_rect(0, 0, 6, 172, border);
+    surface.fill_rect(314, 0, 6, 172, border);
+    surface.fill_round_rect(18, 18, 284, 136, 12, MENU_BORDER_RAW);
+    surface.fill_round_rect(20, 20, 280, 132, 10, MENU_PANEL_RAW);
+    surface.draw_chip(
+        32,
+        30,
+        &dashboard_font::SMALL,
+        0,
+        8,
+        4,
+        "IDENTIFY",
+        blend565(MENU_PANEL_RAW, MENU_ACCENT_RAW, 34),
+        MENU_ACCENT_RAW,
+        blend565(MENU_PANEL_RAW, MENU_ACCENT_RAW, 92),
+    );
+    surface.draw_text_aa(32, 66, &dashboard_font::MEDIUM, 0, device_id, MENU_INK_RAW);
+    surface.draw_text_aa(32, 96, &dashboard_font::SMALL, 0, ipv4, MENU_MUTED_RAW);
+    surface.draw_text_aa(32, 122, &dashboard_font::SMALL, 0, hostname, MENU_MUTED_RAW);
+}
+
 pub(super) fn trim_ascii_line<const N: usize>(line: &[u8; N]) -> &str {
     let mut end = N;
     while end > 0 && line[end - 1] == b' ' {

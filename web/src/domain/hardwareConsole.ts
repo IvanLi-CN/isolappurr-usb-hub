@@ -663,6 +663,8 @@ function localUsbMethodEndpoint(
 ): { method: "GET" | "POST" | "PUT" | "DELETE"; path: string; body?: unknown } {
   const params = request.params ?? {};
   switch (request.method) {
+    case "identify":
+      return { method: "POST", path: `/api/v1/devices/${deviceId}/identify` };
     case "info":
       return { method: "GET", path: `/api/v1/devices/${deviceId}/status` };
     case "ports.get":

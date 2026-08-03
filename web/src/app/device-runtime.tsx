@@ -229,6 +229,7 @@ export function DeviceRuntimeProvider({
             lastOkAt: null,
             lastError: null,
             transport: null,
+            identityVerified: false,
             channels: createEmptyChannels(),
             hub: null,
             ports: null,
@@ -669,9 +670,9 @@ export function DeviceRuntimeProvider({
       try {
         let res: Result<PortsResponse> | null = null;
         let transport: DeviceTransport | null = null;
+        let identityVerified = false;
         for (const candidate of orderedTransports(deviceId)) {
-          const candidateRes = await requestTransport<PortsResponse>(
-            deviceId,
+          const candidateBaseUrl =
             candidate === "http"
               ? httpBaseUrlForDevice(
                   devices.find((device) => device.id === deviceId) ?? {
@@ -680,7 +681,10 @@ export function DeviceRuntimeProvider({
                     baseUrl,
                   },
                 )
-              : baseUrl,
+              : baseUrl;
+          const candidateRes = await requestTransport<PortsResponse>(
+            deviceId,
+            candidateBaseUrl,
             candidate,
             "ports.get",
           );
@@ -689,6 +693,17 @@ export function DeviceRuntimeProvider({
             res = candidateRes;
             transport = candidate;
             preferredTransportByDevice.current[deviceId] = candidate;
+            const infoRes = await requestTransport<DeviceInfoResponse>(
+              deviceId,
+              candidateBaseUrl,
+              candidate,
+              "info",
+            );
+            identityVerified =
+              infoRes.ok &&
+              isDeviceInfoResponse(infoRes.value) &&
+              infoRes.value.device.device_id?.trim().toLowerCase() ===
+                deviceId.trim().toLowerCase();
             break;
           }
           res = candidateRes;
@@ -702,7 +717,13 @@ export function DeviceRuntimeProvider({
             return prev;
           }
           if (res.ok) {
-            const hub = res.value.hub ?? null;
+            const hub = res.value.hub
+              ? {
+                  ...res.value.hub,
+                  capabilities:
+                    res.value.hub.capabilities ?? res.value.capabilities,
+                }
+              : null;
             const portA = res.value.ports.find((p) => p.portId === "port_a");
             const portC = res.value.ports.find((p) => p.portId === "port_c");
             if (!portA || !portC) {
@@ -725,6 +746,7 @@ export function DeviceRuntimeProvider({
                 lastOkAt: Date.now(),
                 lastError: null,
                 transport,
+                identityVerified,
                 hub,
                 ports: { port_a: portA, port_c: portC },
               },
@@ -936,6 +958,19 @@ export function DeviceRuntimeProvider({
           : res;
       markChannelResult(deviceId, activeTransport, checked);
       if (checked.ok) {
+        const identityVerified =
+          checked.value.device.device_id?.trim().toLowerCase() ===
+          deviceId.trim().toLowerCase();
+        setRuntimeById((prev) => {
+          const current = prev[deviceId];
+          if (!current || current.identityVerified === identityVerified) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [deviceId]: { ...current, identityVerified },
+          };
+        });
         preferredTransportByDevice.current[deviceId] = activeTransport;
         if (activeTransport === "http") {
           const rebound = verifiedWifiHttpBaseUrl(checked.value, deviceId);
@@ -1095,6 +1130,7 @@ export function DeviceRuntimeProvider({
     clearIdleBias,
     clearWifi,
     handleRuntimeRpcRequest,
+    identify,
     idleBias,
     pdDiagnostics,
     powerConfig,
@@ -1144,6 +1180,7 @@ export function DeviceRuntimeProvider({
       requestControlTakeover,
       refreshDevice,
       deviceInfo,
+      identify,
       wifiConfig,
       saveWifiConfig,
       clearWifiConfig: clearWifi,
@@ -1167,6 +1204,7 @@ export function DeviceRuntimeProvider({
     clearWifi,
     coordination,
     deviceInfo,
+    identify,
     idleBias,
     now,
     pdDiagnostics,

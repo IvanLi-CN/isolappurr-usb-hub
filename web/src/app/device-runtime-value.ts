@@ -18,6 +18,7 @@ type DeviceRuntimeValueParams = {
   | "requestControlTakeover"
   | "refreshDevice"
   | "deviceInfo"
+  | "identify"
   | "wifiConfig"
   | "saveWifiConfig"
   | "clearWifiConfig"
@@ -49,6 +50,7 @@ export function buildDeviceRuntimeContextValue({
   requestControlTakeover,
   refreshDevice,
   deviceInfo,
+  identify,
   wifiConfig,
   saveWifiConfig,
   clearWifiConfig,
@@ -148,6 +150,7 @@ export function buildDeviceRuntimeContextValue({
     requestControlTakeover,
     refreshDevice,
     deviceInfo,
+    identify,
     wifiConfig,
     saveWifiConfig,
     clearWifiConfig,
