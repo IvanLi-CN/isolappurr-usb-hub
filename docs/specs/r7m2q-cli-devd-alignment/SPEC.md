@@ -335,7 +335,7 @@ shared shell brand-slot repair. This capture proves the firmware workbench
 consumes the same owner-facing header contract as Dashboard while keeping the
 same controlled app-shell source used for manifest screenshot refresh.
 
-- PR: include
+PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
@@ -349,7 +349,7 @@ shared shell brand-slot repair. This proves the route-level flash surface keeps
 the restored IsolaPurr mark + single-line label contract in `isolapurr-dark`
 without relying on informal chat-only screenshots.
 
-- PR: include
+PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
@@ -401,7 +401,7 @@ Standalone `/flash?demo=true` workbench showing the live target version and the
 selected release as separate adjacent rows. `INSTALLED` comes from the target
 probe while `TO FLASH` follows the selected firmware source:
 
-- PR: include
+PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
@@ -442,13 +442,13 @@ focuses the input on open, enables the dangerous action only for an exact
 - sensitive_exclusion: `No real device, desktop, or unrelated application data`
 - submission_gate: `approved`
 
-- PR: include
+PR: include
 ![Recovery strong confirmation resting](./assets/recovery-strong-confirmation-resting.png)
 
-- PR: include
+PR: include
 ![Recovery strong confirmation matched](./assets/recovery-strong-confirmation-matched.png)
 
-- PR: include
+PR: include
 ![Recovery strong confirmation mobile](./assets/recovery-strong-confirmation-mobile393.png)
 
 Bundled release list Storybook surface:
