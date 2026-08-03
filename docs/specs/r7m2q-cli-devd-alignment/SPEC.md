@@ -335,7 +335,6 @@ shared shell brand-slot repair. This capture proves the firmware workbench
 consumes the same owner-facing header contract as Dashboard while keeping the
 same controlled app-shell source used for manifest screenshot refresh.
 
-- PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
@@ -349,7 +348,6 @@ shared shell brand-slot repair. This proves the route-level flash surface keeps
 the restored IsolaPurr mark + single-line label contract in `isolapurr-dark`
 without relying on informal chat-only screenshots.
 
-- PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
@@ -401,7 +399,6 @@ Standalone `/flash?demo=true` workbench showing the live target version and the
 selected release as separate adjacent rows. `INSTALLED` comes from the target
 probe while `TO FLASH` follows the selected firmware source:
 
-- PR: include
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
@@ -428,9 +425,28 @@ below it:
 
 ![Firmware flash sidebar buttons above log](./assets/flash-sidebar-buttons-above-log.png)
 
-Strong confirmation dialog for recovery on unconfirmed targets:
+Recovery strong confirmation input for unconfirmed targets. The reusable
+Storybook/autodocs fragment keeps the confirmation code visibly editable,
+focuses the input on open, enables the dangerous action only for an exact
+`FLASH` match, and stacks actions below `480px`:
 
-![Recovery strong confirmation](./assets/flash-strong-confirm.png)
+- source_type: `storybook_docs`
+- capture_mode: `storybook_canvas`
+- target_program: `mock-only`
+- capture_scope: `component-viewport`
+- viewports: `1440x900`, `393x852`
+- states: resting, exact `FLASH` match, narrow stacked actions
+- sensitive_exclusion: `No real device, desktop, or unrelated application data`
+- submission_gate: `approved`
+
+PR: include
+![Recovery strong confirmation resting](./assets/recovery-strong-confirmation-resting.png)
+
+PR: include
+![Recovery strong confirmation matched](./assets/recovery-strong-confirmation-matched.png)
+
+PR: include
+![Recovery strong confirmation mobile](./assets/recovery-strong-confirmation-mobile393.png)
 
 Bundled release list Storybook surface:
 

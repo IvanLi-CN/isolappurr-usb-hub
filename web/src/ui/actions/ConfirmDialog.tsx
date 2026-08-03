@@ -1,4 +1,10 @@
-import { useEffect, useId, useRef } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useRef,
+} from "react";
 import { createPortal } from "react-dom";
 import { ActionButton, type ActionTone } from "./ActionButton";
 
@@ -7,6 +13,10 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   confirmLabel,
   description,
+  children,
+  confirmDisabled = false,
+  initialFocusRef,
+  actionsLayout = "default",
   onCancel,
   onConfirm,
   open,
@@ -15,8 +25,12 @@ export function ConfirmDialog({
 }: {
   busy?: boolean;
   cancelLabel?: string;
+  children?: ReactNode;
   confirmLabel: string;
-  description: string;
+  confirmDisabled?: boolean;
+  description: ReactNode;
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  actionsLayout?: "default" | "stack-narrow";
   onCancel: () => void;
   onConfirm: () => void;
   open: boolean;
@@ -44,9 +58,10 @@ export function ConfirmDialog({
       return;
     }
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    const frame = window.requestAnimationFrame(() =>
-      cancelRef.current?.focus(),
-    );
+    (initialFocusRef?.current ?? cancelRef.current)?.focus();
+    const frame = window.requestAnimationFrame(() => {
+      (initialFocusRef?.current ?? cancelRef.current)?.focus();
+    });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busyRef.current) {
         event.preventDefault();
@@ -78,7 +93,7 @@ export function ConfirmDialog({
       document.removeEventListener("keydown", onKeyDown);
       previouslyFocused?.focus();
     };
-  }, [open]);
+  }, [initialFocusRef, open]);
 
   if (!open || typeof document === "undefined") {
     return null;
@@ -101,7 +116,10 @@ export function ConfirmDialog({
         <div className="iso-confirm__description" id={descriptionId}>
           {description}
         </div>
-        <div className="iso-confirm__actions">
+        {children ? (
+          <div className="iso-confirm__content">{children}</div>
+        ) : null}
+        <div className="iso-confirm__actions" data-layout={actionsLayout}>
           <ActionButton
             disabled={busy}
             ref={cancelRef}
@@ -112,6 +130,7 @@ export function ConfirmDialog({
           </ActionButton>
           <ActionButton
             emphasis={tone === "danger" ? "solid" : "soft"}
+            disabled={confirmDisabled}
             loading={busy}
             tone={tone}
             onClick={onConfirm}

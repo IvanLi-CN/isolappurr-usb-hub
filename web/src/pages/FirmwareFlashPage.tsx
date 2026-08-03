@@ -5,6 +5,7 @@ import { useDevices } from "../app/devices-store";
 import { isWebSerialSupported } from "../domain/hardwareConsole";
 import { getLocalUsbDeviceLink } from "../domain/localUsbLinks";
 import { ActionButton, IconButton } from "../ui/actions/ActionButton";
+import { RecoveryStrongConfirmationDialog } from "../ui/dialogs/RecoveryStrongConfirmationDialog";
 import { FirmwareFlashLogPanel } from "../ui/panels/FirmwareFlashLogPanel";
 import { FirmwareFlashSelectionSummary } from "../ui/panels/FirmwareFlashSelectionSummary";
 import { FirmwareFlashTargetState } from "../ui/panels/FirmwareFlashTargetState";
@@ -753,67 +754,20 @@ export function FirmwareFlashPage() {
         </div>
       ) : null}
 
-      {strongConfirmOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6"
-          role="presentation"
-        >
-          <div
-            className="w-full max-w-[480px] rounded-[16px] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-2xl"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="flash-strong-confirm-title"
-            aria-describedby="flash-strong-confirm-description"
-          >
-            <div
-              id="flash-strong-confirm-title"
-              className="text-[16px] font-bold"
-            >
-              Flash a target that is not confirmed as IsolaPurr?
-            </div>
-            <div
-              id="flash-strong-confirm-description"
-              className="mt-3 text-[13px] font-semibold leading-6 text-[var(--muted)]"
-            >
-              This recovery write may target a download-mode board, damaged
-              firmware, or non-IsolaPurr hardware. Type{" "}
-              <span className="font-mono text-[var(--text)]">FLASH</span> to
-              continue with the selected recovery image.
-            </div>
-            <input
-              className="input input-sm mt-4 h-11 w-full font-mono"
-              value={strongConfirmText}
-              onChange={(event) => setStrongConfirmText(event.target.value)}
-              placeholder="Type FLASH"
-            />
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <ActionButton
-                fullWidth
-                tone="secondary"
-                onClick={() => {
-                  setStrongConfirmOpen(false);
-                  setStrongConfirmText("");
-                }}
-              >
-                Cancel
-              </ActionButton>
-              <ActionButton
-                emphasis="solid"
-                fullWidth
-                tone="danger"
-                disabled={strongConfirmText.trim() !== "FLASH"}
-                onClick={() => {
-                  setStrongConfirmOpen(false);
-                  setStrongConfirmText("");
-                  void performFlash(true);
-                }}
-              >
-                Confirm recovery flash
-              </ActionButton>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <RecoveryStrongConfirmationDialog
+        open={strongConfirmOpen}
+        value={strongConfirmText}
+        onCancel={() => {
+          setStrongConfirmOpen(false);
+          setStrongConfirmText("");
+        }}
+        onChange={setStrongConfirmText}
+        onConfirm={() => {
+          setStrongConfirmOpen(false);
+          setStrongConfirmText("");
+          void performFlash(true);
+        }}
+      />
     </div>
   );
 }
