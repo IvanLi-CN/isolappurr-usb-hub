@@ -99,6 +99,7 @@ function buildDemoDevice({
         is_static: false,
       },
     },
+    capabilities: { identify: true },
   };
 
   const hub: HubState = {
@@ -108,6 +109,7 @@ function buildDemoDevice({
     isolated_usb_ready: true,
     usb_c_downstream_route: "usb_c",
     usb_c_downstream_persisted: true,
+    capabilities: { identify: true },
   };
 
   const port = (
@@ -152,6 +154,7 @@ function buildDemoDevice({
     info,
     ports: {
       hub,
+      capabilities: { identify: true },
       ports: [
         port("port_a", "USB-A", {
           voltage_mv: 5050,

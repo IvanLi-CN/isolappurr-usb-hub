@@ -77,12 +77,44 @@ async fn handle_usb_jsonl_request(
         return body;
     }
 
+    if request.contains("\"method\":\"identify\"")
+        || request.contains("\"method\": \"identify\"")
+    {
+        match net::try_request_identify(api_state).await {
+            Ok(sequence) => {
+                if net::wait_for_identify_render(api_state, sequence).await {
+                    let _ = write!(
+                        body,
+                        "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true,\"duration_ms\":5000}}}}",
+                        id.as_str()
+                    );
+                } else {
+                    write_jsonl_error(
+                        &mut body,
+                        id.as_str(),
+                        "display_unavailable",
+                        "display did not acknowledge the identify frame",
+                        true,
+                    );
+                }
+            }
+            Err(net::ApiActionError::Busy) => write_jsonl_error(
+                &mut body,
+                id.as_str(),
+                "busy",
+                "device is in a safety or reset state",
+                true,
+            ),
+        }
+        return body;
+    }
+
     if request.contains("\"method\":\"ports.get\"") || request.contains("\"method\": \"ports.get\"")
     {
         let state = { *api_state.lock().await };
         let _ = write!(
             body,
-            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{},\"isolated_usb_fault\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{},\"usb_c_downstream_route\":\"{}\",\"usb_c_downstream_persisted\":{}}},\"ports\":[",
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{},\"isolated_usb_fault\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{},\"usb_c_downstream_route\":\"{}\",\"usb_c_downstream_persisted\":{}}},\"capabilities\":{{\"identify\":true}},\"ports\":[",
             id.as_str(),
             state.hub.upstream_connected,
             state.hub.isolated_usb_fault,
@@ -1032,7 +1064,7 @@ fn write_usb_info_json(
         firmware_uptime_ms()
     );
     write_usb_wifi_object(body, wifi);
-    let _ = body.push_str("}}}");
+    let _ = body.push_str("},\"capabilities\":{\"identify\":true}}}");
 }
 
 include!(concat!(

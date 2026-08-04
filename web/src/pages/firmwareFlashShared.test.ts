@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { SerialLikePort } from "../domain/hardwareConsole";
 import {
+  classifyProbe,
   formatFirmwareVersion,
   hardwareFromFirmwareInfo,
 } from "./firmwareFlashShared";
 
-const projectInfo = (hardware?: Record<string, unknown>) => ({
+const projectInfo = (
+  hardware?: Record<string, unknown>,
+  capabilities?: { identify: boolean },
+) => ({
   id: 1,
   ok: true,
   result: {
@@ -16,6 +20,7 @@ const projectInfo = (hardware?: Record<string, unknown>) => ({
       firmware: { name: "isolapurr-usb-hub", version: "0.5.1" },
       ...(hardware ? { hardware } : {}),
     },
+    ...(capabilities ? { capabilities } : {}),
   },
 });
 
@@ -71,5 +76,21 @@ describe("hardwareFromFirmwareInfo", () => {
     const value = projectInfo();
     value.result.device.firmware.name = "other-firmware";
     expect(hardwareFromFirmwareInfo(value, esp32S3Port)).toBeUndefined();
+  });
+});
+
+describe("classifyProbe", () => {
+  test("preserves explicit identify capability from the selected USB target", () => {
+    const value = projectInfo(undefined, { identify: true });
+    expect(classifyProbe(value, "missing metadata")).toMatchObject({
+      kind: "recognized",
+      capabilities: { identify: true },
+    });
+  });
+
+  test("does not infer identify support when the capability is absent", () => {
+    expect(classifyProbe(projectInfo(), "missing metadata").capabilities).toBe(
+      undefined,
+    );
   });
 });

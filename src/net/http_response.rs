@@ -534,6 +534,64 @@ pub enum ApiIdleBiasActionError {
 }
 
 const POWER_LOCK_TTL_MS: u64 = 15_000;
+const IDENTIFY_RENDER_ACK_POLL_MS: u64 = 20;
+const IDENTIFY_RENDER_ACK_TIMEOUT_MS: u64 = 1_000;
+
+fn identify_sequence_matches(rendered: u32, requested: u32) -> bool {
+    // A newer identify request supersedes an older one. It must not satisfy
+    // the older request's first-frame acknowledgement while it waits for its
+    // own generation.
+    rendered == requested
+}
+
+pub async fn try_request_identify(
+    api_state: &'static ApiSharedMutex,
+) -> Result<u32, ApiActionError> {
+    let mut guard = api_state.lock().await;
+    if guard.pd.sw2303_error_latched
+        || guard.pd.tps_error_latched
+        || guard.pd.thermal.state.alarm_active()
+        || !guard.identify_ui_ready
+        || guard.ui_error_latched
+        || guard.pending.settings_reset.is_some()
+    {
+        return Err(ApiActionError::Busy);
+    }
+
+    guard.identify_sequence = guard.identify_sequence.wrapping_add(1);
+    guard.identify_requested_at_ms = uptime_ms();
+    Ok(guard.identify_sequence)
+}
+
+pub async fn wait_for_identify_render(api_state: &'static ApiSharedMutex, sequence: u32) -> bool {
+    let mut waited_ms = 0;
+    while waited_ms < IDENTIFY_RENDER_ACK_TIMEOUT_MS {
+        let state = api_state.lock().await;
+        if state.identify_cancelled_sequence == sequence {
+            return false;
+        }
+        if identify_sequence_matches(state.identify_rendered_sequence, sequence) {
+            return true;
+        }
+        if state.ui_error_latched {
+            return false;
+        }
+        drop(state);
+        Timer::after(Duration::from_millis(IDENTIFY_RENDER_ACK_POLL_MS)).await;
+        waited_ms += IDENTIFY_RENDER_ACK_POLL_MS;
+    }
+    let mut state = api_state.lock().await;
+    if state.identify_cancelled_sequence == sequence {
+        return false;
+    }
+    if identify_sequence_matches(state.identify_rendered_sequence, sequence) {
+        return true;
+    }
+    if state.identify_sequence == sequence {
+        state.identify_cancelled_sequence = sequence;
+    }
+    false
+}
 
 pub async fn try_set_power_lock(
     api_state: &'static ApiSharedMutex,
@@ -902,4 +960,16 @@ async fn socket_write_all(
         buf = &buf[written..];
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::identify_sequence_matches;
+
+    #[test]
+    fn identify_ack_requires_the_exact_generation() {
+        assert!(identify_sequence_matches(7, 7));
+        assert!(!identify_sequence_matches(8, 7));
+        assert!(!identify_sequence_matches(7, 8));
+    }
 }

@@ -8,6 +8,8 @@ const MENU_INK_RAW: u16 = rgb565_raw(0x21, 0x44, 0x57);
 const MENU_MUTED_RAW: u16 = rgb565_raw(0x6E, 0x84, 0x91);
 const MENU_ACCENT_RAW: u16 = rgb565_raw(0x4B, 0x63, 0xC7);
 const MENU_ACCENT_SOFT_RAW: u16 = rgb565_raw(0xE7, 0xEA, 0xFB);
+const IDENTIFY_SIGNAL_RAW: u16 = rgb565_raw(0xB9, 0x49, 0x5A);
+const IDENTIFY_BORDER_THICKNESS: i32 = 12;
 
 pub(super) fn render_settings_menu(surface: &mut FrameSurface<'_>, selected_index: usize) {
     surface.fill(MENU_BG_RAW);
@@ -114,10 +116,87 @@ pub(super) fn render_message_card(
     }
 }
 
+pub(super) fn render_identify(
+    surface: &mut FrameSurface<'_>,
+    device_id: &str,
+    ipv4: &str,
+    hostname: &str,
+    border_phase_on: bool,
+) {
+    let border = if border_phase_on {
+        IDENTIFY_SIGNAL_RAW
+    } else {
+        MENU_BG_RAW
+    };
+
+    surface.fill(MENU_BG_RAW);
+    // Use a strong, full-perimeter pulse: the inactive phase deliberately
+    // clears into the display background so it remains visible at a glance.
+    surface.fill_rect(0, 0, 320, IDENTIFY_BORDER_THICKNESS, border);
+    surface.fill_rect(
+        0,
+        172 - IDENTIFY_BORDER_THICKNESS,
+        320,
+        IDENTIFY_BORDER_THICKNESS,
+        border,
+    );
+    surface.fill_rect(0, 0, IDENTIFY_BORDER_THICKNESS, 172, border);
+    surface.fill_rect(
+        320 - IDENTIFY_BORDER_THICKNESS,
+        0,
+        IDENTIFY_BORDER_THICKNESS,
+        172,
+        border,
+    );
+    surface.fill_round_rect(18, 18, 284, 136, 12, MENU_BORDER_RAW);
+    surface.fill_round_rect(20, 20, 280, 132, 10, MENU_PANEL_RAW);
+    surface.draw_chip(
+        32,
+        30,
+        &dashboard_font::SMALL,
+        0,
+        8,
+        4,
+        "IDENTIFY",
+        blend565(MENU_PANEL_RAW, MENU_ACCENT_RAW, 34),
+        MENU_ACCENT_RAW,
+        blend565(MENU_PANEL_RAW, MENU_ACCENT_RAW, 92),
+    );
+    surface.draw_text_aa(32, 66, &dashboard_font::MEDIUM, 0, device_id, MENU_INK_RAW);
+    surface.draw_text_aa(32, 96, &dashboard_font::SMALL, 0, ipv4, MENU_MUTED_RAW);
+    surface.draw_text_aa(32, 122, &dashboard_font::SMALL, 0, hostname, MENU_MUTED_RAW);
+}
+
 pub(super) fn trim_ascii_line<const N: usize>(line: &[u8; N]) -> &str {
     let mut end = N;
     while end > 0 && line[end - 1] == b' ' {
         end -= 1;
     }
     core::str::from_utf8(&line[..end]).unwrap_or("")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identify_uses_a_high_contrast_pulse_border() {
+        let mut active = vec![0_u16; 320 * 172];
+        {
+            let mut surface = FrameSurface::new(&mut active);
+            render_identify(&mut surface, "ID", "IP", "HOST", true);
+        }
+        let mut inactive = vec![0_u16; 320 * 172];
+        {
+            let mut surface = FrameSurface::new(&mut inactive);
+            render_identify(&mut surface, "ID", "IP", "HOST", false);
+        }
+
+        assert_eq!(active[0], IDENTIFY_SIGNAL_RAW);
+        assert_eq!(inactive[0], MENU_BG_RAW);
+        assert_eq!(
+            active[IDENTIFY_BORDER_THICKNESS as usize * 320],
+            MENU_BG_RAW
+        );
+    }
 }

@@ -46,8 +46,8 @@ import { useDemoMode } from "./demo-mode";
 import { createDeviceRuntimeActions } from "./device-runtime-actions";
 import { createSharedMutationController } from "./device-runtime-command-state";
 import { DeviceRuntimeContext } from "./device-runtime-context";
+import { useDeviceRuntimePowerLock } from "./device-runtime-power-lock";
 import {
-  canResumePowerLock,
   clearPowerLockResume,
   createEmptyChannels,
   type DeviceRuntime,
@@ -83,7 +83,6 @@ export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
-
 export function DeviceRuntimeProvider({
   children,
 }: {
@@ -229,6 +228,7 @@ export function DeviceRuntimeProvider({
             lastOkAt: null,
             lastError: null,
             transport: null,
+            identityVerified: false,
             channels: createEmptyChannels(),
             hub: null,
             ports: null,
@@ -669,9 +669,9 @@ export function DeviceRuntimeProvider({
       try {
         let res: Result<PortsResponse> | null = null;
         let transport: DeviceTransport | null = null;
+        let identityVerified = false;
         for (const candidate of orderedTransports(deviceId)) {
-          const candidateRes = await requestTransport<PortsResponse>(
-            deviceId,
+          const candidateBaseUrl =
             candidate === "http"
               ? httpBaseUrlForDevice(
                   devices.find((device) => device.id === deviceId) ?? {
@@ -680,7 +680,10 @@ export function DeviceRuntimeProvider({
                     baseUrl,
                   },
                 )
-              : baseUrl,
+              : baseUrl;
+          const candidateRes = await requestTransport<PortsResponse>(
+            deviceId,
+            candidateBaseUrl,
             candidate,
             "ports.get",
           );
@@ -689,6 +692,17 @@ export function DeviceRuntimeProvider({
             res = candidateRes;
             transport = candidate;
             preferredTransportByDevice.current[deviceId] = candidate;
+            const infoRes = await requestTransport<DeviceInfoResponse>(
+              deviceId,
+              candidateBaseUrl,
+              candidate,
+              "info",
+            );
+            identityVerified =
+              infoRes.ok &&
+              isDeviceInfoResponse(infoRes.value) &&
+              infoRes.value.device.device_id?.trim().toLowerCase() ===
+                deviceId.trim().toLowerCase();
             break;
           }
           res = candidateRes;
@@ -702,7 +716,13 @@ export function DeviceRuntimeProvider({
             return prev;
           }
           if (res.ok) {
-            const hub = res.value.hub ?? null;
+            const hub = res.value.hub
+              ? {
+                  ...res.value.hub,
+                  capabilities:
+                    res.value.hub.capabilities ?? res.value.capabilities,
+                }
+              : null;
             const portA = res.value.ports.find((p) => p.portId === "port_a");
             const portC = res.value.ports.find((p) => p.portId === "port_c");
             if (!portA || !portC) {
@@ -725,6 +745,7 @@ export function DeviceRuntimeProvider({
                 lastOkAt: Date.now(),
                 lastError: null,
                 transport,
+                identityVerified,
                 hub,
                 ports: { port_a: portA, port_c: portC },
               },
@@ -936,6 +957,19 @@ export function DeviceRuntimeProvider({
           : res;
       markChannelResult(deviceId, activeTransport, checked);
       if (checked.ok) {
+        const identityVerified =
+          checked.value.device.device_id?.trim().toLowerCase() ===
+          deviceId.trim().toLowerCase();
+        setRuntimeById((prev) => {
+          const current = prev[deviceId];
+          if (!current || current.identityVerified === identityVerified) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [deviceId]: { ...current, identityVerified },
+          };
+        });
         preferredTransportByDevice.current[deviceId] = activeTransport;
         if (activeTransport === "http") {
           const rebound = verifiedWifiHttpBaseUrl(checked.value, deviceId);
@@ -996,6 +1030,28 @@ export function DeviceRuntimeProvider({
           params,
         );
         markChannelResult(deviceId, transport, candidate);
+        if (method === "identify") {
+          res = candidate;
+          const definitePreDispatchOffline =
+            !candidate.ok &&
+            candidate.error.kind === "offline" &&
+            /web serial not connected|local usb service unavailable|local usb device not found|device has no active transport/i.test(
+              candidate.error.message,
+            );
+          if (
+            candidate.ok ||
+            !definitePreDispatchOffline ||
+            candidate.error.kind === "api_error" ||
+            candidate.error.kind === "busy"
+          ) {
+            // Identify is side-effecting. Once a request may have reached the
+            // device, never dispatch it through a fallback transport.
+            break;
+          }
+          // Definite reachability/browser failures happened before dispatch;
+          // continue to another usable transport.
+          continue;
+        }
         if (candidate.ok) {
           preferredTransportByDevice.current[deviceId] = transport;
           res = candidate;
@@ -1024,77 +1080,20 @@ export function DeviceRuntimeProvider({
     [devices, markChannelResult, orderedTransports, requestTransport],
   );
 
-  const refreshCanonicalPowerConfig = useCallback(
-    async (
-      deviceId: string,
-      owner?: number,
-      fallback?: PowerConfigResponse,
-    ): Promise<Result<PowerConfigResponse>> => {
-      const snapshot = await runDeviceCommand<PowerConfigResponse>(
-        deviceId,
-        "power.config_get",
-      );
-      if (snapshot.ok) {
-        syncObservedPowerLock(deviceId, snapshot.value.lock, owner);
-        syncPowerConfigSnapshot(deviceId, snapshot.value);
-        return snapshot;
-      }
-      if (!fallback) {
-        return snapshot;
-      }
-      syncObservedPowerLock(deviceId, fallback.lock, owner);
-      syncPowerConfigSnapshot(deviceId, fallback);
-      return { ok: true, value: fallback };
-    },
-    [runDeviceCommand, syncObservedPowerLock, syncPowerConfigSnapshot],
-  );
-
-  useEffect(() => {
-    if (!isLeader) {
-      return () => {};
-    }
-    let cancelled = false;
-    const renewLocks = async () => {
-      for (const device of devices) {
-        const runtime = runtimeByIdRef.current[device.id];
-        const lock = runtime?.powerConfig?.lock;
-        const owner = getStablePowerLockOwner(device.id);
-        if (!lock || lock.owner !== owner || !canResumePowerLock(device.id)) {
-          continue;
-        }
-        const renewal = await runDeviceCommand<PowerConfigResponse>(
-          device.id,
-          "power.lock",
-          {
-            owner,
-            acquire: true,
-          },
-        );
-        if (cancelled) {
-          return;
-        }
-        if (renewal.ok) {
-          markPowerLockHeld(device.id);
-          await refreshCanonicalPowerConfig(device.id, owner, renewal.value);
-          continue;
-        }
-        const snapshot = await refreshCanonicalPowerConfig(device.id, owner);
-        if (!cancelled && snapshot.ok && snapshot.value.lock?.owner === owner) {
-          markPowerLockHeld(device.id);
-        }
-      }
-    };
-    const intervalId = window.setInterval(() => void renewLocks(), 8_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [devices, isLeader, refreshCanonicalPowerConfig, runDeviceCommand]);
+  const refreshCanonicalPowerConfig = useDeviceRuntimePowerLock({
+    devices,
+    isLeader,
+    runtimeByIdRef,
+    runDeviceCommand,
+    syncObservedPowerLock,
+    syncPowerConfigSnapshot,
+  });
 
   const {
     clearIdleBias,
     clearWifi,
     handleRuntimeRpcRequest,
+    identify,
     idleBias,
     pdDiagnostics,
     powerConfig,
@@ -1144,6 +1143,7 @@ export function DeviceRuntimeProvider({
       requestControlTakeover,
       refreshDevice,
       deviceInfo,
+      identify,
       wifiConfig,
       saveWifiConfig,
       clearWifiConfig: clearWifi,
@@ -1167,6 +1167,7 @@ export function DeviceRuntimeProvider({
     clearWifi,
     coordination,
     deviceInfo,
+    identify,
     idleBias,
     now,
     pdDiagnostics,

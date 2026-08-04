@@ -1,6 +1,7 @@
 #![no_std]
 
 pub mod display_ui;
+pub mod identify;
 pub mod idle_bias;
 pub mod pd_i2c;
 pub mod power_config;

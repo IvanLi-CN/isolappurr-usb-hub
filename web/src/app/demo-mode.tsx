@@ -107,6 +107,7 @@ type DemoApiResponse =
       persisted?: boolean;
       usb_c_downstream_route?: "mcu" | "usb_c";
       reboot_required?: boolean;
+      duration_ms?: 5000;
       scope?: "wifi" | "other";
       wifi_preserved?: boolean;
     }
@@ -439,6 +440,11 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
       response: record.ports,
     } as unknown as DemoApiResponse);
   }
+  if (suffix === "identify" && method === "POST") {
+    return jsonResponse({
+      response: { accepted: true, duration_ms: 5000 },
+    } as unknown as DemoApiResponse);
+  }
   if (suffix === "wifi" && method === "GET") {
     return jsonResponse({
       response: record.wifi,
@@ -748,6 +754,9 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
   }
   if (url.pathname === "/api/v1/ports" && method === "GET") {
     return jsonResponse(record.ports);
+  }
+  if (url.pathname === "/api/v1/identify" && method === "POST") {
+    return jsonResponse({ accepted: true, duration_ms: 5000 });
   }
   if (url.pathname === "/api/v1/wifi" && method === "GET") {
     return jsonResponse(record.wifi);

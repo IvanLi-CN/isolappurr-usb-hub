@@ -862,6 +862,18 @@ mod tests {
     }
 
     #[test]
+    fn requires_explicit_identify_capability() {
+        let supported = json!({"result": {"capabilities": {"identify": true}}});
+        validate_identify_capability(&supported).expect("identify capability should pass");
+
+        let missing = json!({"result": {"capabilities": {}}});
+        assert!(validate_identify_capability(&missing).is_err());
+
+        let disabled = json!({"capabilities": {"identify": false}});
+        assert!(validate_identify_capability(&disabled).is_err());
+    }
+
+    #[test]
     fn rejects_non_project_or_incompatible_firmware() {
         let wrong_name = json!({
             "result": {

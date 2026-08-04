@@ -32,6 +32,7 @@ export type ProbeState = {
   variant?: string;
   wifiIpv4?: string;
   customHardwareName?: string;
+  capabilities?: { identify?: boolean };
   hardware?: HardwareBoardInfo;
 };
 
@@ -127,6 +128,17 @@ export function classifyProbe(
     };
   }
   const record = device as Record<string, unknown>;
+  const capabilities =
+    root &&
+    typeof root === "object" &&
+    (root as { capabilities?: unknown }).capabilities &&
+    typeof (root as { capabilities?: unknown }).capabilities === "object"
+      ? (root as { capabilities: { identify?: unknown } }).capabilities
+      : undefined;
+  const identifyCapability =
+    typeof capabilities?.identify === "boolean"
+      ? { identify: capabilities.identify }
+      : undefined;
   const firmware =
     record.firmware && typeof record.firmware === "object"
       ? (record.firmware as Record<string, unknown>)
@@ -182,6 +194,7 @@ export function classifyProbe(
       variant,
       wifiIpv4,
       customHardwareName,
+      capabilities: identifyCapability,
       hardware,
     };
   }
@@ -199,6 +212,7 @@ export function classifyProbe(
       variant,
       wifiIpv4,
       customHardwareName,
+      capabilities: identifyCapability,
       hardware,
     };
   }
@@ -215,6 +229,7 @@ export function classifyProbe(
     variant,
     wifiIpv4,
     customHardwareName,
+    capabilities: identifyCapability,
     hardware,
   };
 }

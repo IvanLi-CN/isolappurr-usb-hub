@@ -145,6 +145,10 @@
 
 ## Remaining hardening
 
+- The released CLI/devd boundary includes fixed-duration device identify through
+  `isolapurr identify`, `device.identify`, and the authenticated local HTTP
+  bridge endpoint.
+
 - Complete removal of the legacy Tauri-owned hardware-control server once the desktop packaging flow can bundle or locate `isolapurr-devd` at runtime.
 - Expand mock and hardware-in-loop coverage as physical devices are available.
 

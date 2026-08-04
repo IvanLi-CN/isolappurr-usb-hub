@@ -56,6 +56,7 @@ import {
   type WebSerialProbeOptions,
   type WebSerialSelectionState,
 } from "./firmwareFlashShared";
+import { identifySelectedTarget } from "./identifySelectedTarget";
 import { useBundledFirmwareManifest } from "./useBundledFirmwareManifest";
 import { useFirmwareFlashProbeDeadline } from "./useFirmwareFlashProbeDeadline";
 
@@ -400,6 +401,7 @@ export function useFirmwareFlashConnection({
         hostname: "isolapurr-usb-hub-aabbcc001122",
         fqdn: "isolapurr-usb-hub-aabbcc001122.local",
         customHardwareName: "Bench Hub",
+        capabilities: { identify: true },
         hardware: {
           source: "espflash",
           chipType: "ESP32-S3 (QFN56)",
@@ -483,6 +485,7 @@ export function useFirmwareFlashConnection({
         hostname: "isolapurr-usb-hub-aabbcc001122",
         fqdn: "isolapurr-usb-hub-aabbcc001122.local",
         customHardwareName: "Bench Hub",
+        capabilities: { identify: true },
         hardware: {
           source: "esptool-js",
           chipType: "ESP32-S3 (QFN56)",
@@ -1080,6 +1083,13 @@ export function useFirmwareFlashConnection({
     flashError,
     flashLogSerialRef,
     flashLogs,
+    identifySelectedTarget: () =>
+      identifySelectedTarget({
+        demoEnabled,
+        transportMode,
+        selectedLocalUsbPort,
+        selectedWebSerialPortRef,
+      }),
     flashMode,
     flashOperationStartedAtRef,
     localFile,

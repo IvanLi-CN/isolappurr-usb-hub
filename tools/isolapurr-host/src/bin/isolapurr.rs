@@ -5,7 +5,7 @@ use dialoguer::{MultiSelect, Select};
 use isolapurr_host::{
     DeviceIdentity, DeviceProfile, DeviceProfileTransports, DeviceRecord, FirmwareCatalog,
     SavedHardwareInput, api_url, default_ipc_endpoint, ipc_call, read_hardware_registry,
-    redact_sensitive, registry_path, save_hardware,
+    redact_sensitive, registry_path, save_hardware, validate_identify_capability,
 };
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use ratatui::{

@@ -48,6 +48,11 @@ mod power_output_tests {
 
     #[test]
     fn maps_http_port_mutation_endpoints() {
+        let (_, path, body) = map_http_endpoint(Method::POST, "/identify", None)
+            .expect("identify endpoint should map");
+        assert_eq!(path, "/api/v1/identify");
+        assert!(body.is_none());
+
         let (_, path, body) =
             map_http_endpoint(Method::POST, "/ports/port_a/power?enabled=false", None)
                 .expect("power endpoint should map");
@@ -122,6 +127,15 @@ mod power_output_tests {
 
     #[test]
     fn maps_devd_device_endpoints_to_ipc_methods() {
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::POST,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/identify",
+            None,
+        )
+        .expect("identify endpoint should map");
+        assert_eq!(method, "device.identify");
+        assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
+
         let (method, params) = map_devd_ipc_endpoint(
             Method::POST,
             "/api/v1/devices/usb--dev-cu-usbmodem21221401/ports/port_a/power?enabled=false",
@@ -254,6 +268,41 @@ mod power_output_tests {
         let err = Cli::try_parse_from(["isolapurr", "status", "--device", "abc"])
             .expect_err("legacy status --device must fail");
         assert!(err.to_string().contains("unexpected argument"));
+    }
+
+    #[test]
+    fn identify_cli_parses_current_api_selectors() {
+        let by_id = Cli::try_parse_from(["isolapurr", "identify", "--device-id", "aabbccddeeff"])
+            .expect("identify by device-id should parse");
+        assert!(matches!(
+            by_id.command,
+            Command::Identify(ApiSelectorArgs {
+                device_id: Some(_),
+                url: None
+            })
+        ));
+
+        let by_url =
+            Cli::try_parse_from(["isolapurr", "identify", "--url", "http://192.168.31.224"])
+                .expect("identify by url should parse");
+        assert!(matches!(
+            by_url.command,
+            Command::Identify(ApiSelectorArgs {
+                device_id: None,
+                url: Some(_)
+            })
+        ));
+
+        let err = Cli::try_parse_from([
+            "isolapurr",
+            "identify",
+            "--device-id",
+            "aabbccddeeff",
+            "--url",
+            "http://192.168.31.224",
+        ])
+        .expect_err("conflicting selectors must fail");
+        assert!(err.to_string().contains("cannot be used with"));
     }
 
     #[test]

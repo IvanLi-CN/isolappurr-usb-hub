@@ -1,6 +1,8 @@
+import { useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useDemoMode } from "../app/demo-mode";
 import { useDemoNavigate } from "../app/demo-navigation";
+import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
 import { isWebSerialSupported } from "../domain/hardwareConsole";
 import { getLocalUsbDeviceLink } from "../domain/localUsbLinks";
@@ -10,6 +12,7 @@ import { FirmwareFlashLogPanel } from "../ui/panels/FirmwareFlashLogPanel";
 import { FirmwareFlashSelectionSummary } from "../ui/panels/FirmwareFlashSelectionSummary";
 import { FirmwareFlashTargetState } from "../ui/panels/FirmwareFlashTargetState";
 import { FirmwareReleaseList } from "../ui/panels/FirmwareReleaseList";
+import { useToast } from "../ui/toast/ToastProvider";
 import {
   ReconnectIcon,
   RemoveIcon,
@@ -32,6 +35,13 @@ export function FirmwareFlashPage() {
   const navigate = useDemoNavigate();
   const { enabled: demoEnabled } = useDemoMode();
   const { getDevice } = useDevices();
+  const { connectionState, hub, identify, runtimeById } = useDeviceRuntime();
+  const { pushToast } = useToast();
+  const [identifyBusy, setIdentifyBusy] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [identifying, setIdentifying] = useState<Set<string>>(() => new Set());
+  const identifyTimeout = useRef(new Map<string, number>());
   const [searchParams] = useSearchParams();
   const requestedDeviceId = searchParams.get("deviceId") ?? undefined;
   const demoProbeReading =
@@ -86,6 +96,7 @@ export function FirmwareFlashPage() {
     recoveryFlow,
     releaseAuthorizedWebUsb,
     releaseChoices,
+    identifySelectedTarget,
     selectedAsset,
     selectedLocalUsbPort,
     selectedLocalUsbPortInfo,
@@ -111,6 +122,69 @@ export function FirmwareFlashPage() {
     webSerialReadyForManualRead,
     webUsbPickerOpen,
   } = connection;
+  const identifyDeviceId =
+    transportMode !== null
+      ? probe.deviceId
+      : (currentDevice?.id ?? probe.deviceId);
+  const runtimeCanIdentify = Boolean(
+    currentDevice &&
+      connectionState(currentDevice.id) === "online" &&
+      runtimeById[currentDevice.id]?.identityVerified === true &&
+      hub(currentDevice.id)?.capabilities?.identify === true,
+  );
+  const directUsbCanIdentify = Boolean(
+    transportMode !== null && probe.capabilities?.identify === true,
+  );
+  const canIdentify = Boolean(
+    identifyDeviceId &&
+      (runtimeCanIdentify ||
+        (probe.kind === "recognized" && directUsbCanIdentify)),
+  );
+  const requestIdentify = async () => {
+    if (!identifyDeviceId) {
+      return;
+    }
+    const deviceId = identifyDeviceId;
+    setIdentifyBusy((previous) => new Set(previous).add(deviceId));
+    try {
+      const result =
+        transportMode !== null
+          ? await identifySelectedTarget()
+          : await identify(deviceId);
+      if (!result.ok) {
+        pushToast({ message: result.error.message, variant: "error" });
+        return;
+      }
+      const previousTimeout = identifyTimeout.current.get(deviceId);
+      if (previousTimeout !== undefined) {
+        window.clearTimeout(previousTimeout);
+      }
+      setIdentifying((previous) => new Set(previous).add(deviceId));
+      identifyTimeout.current.set(
+        deviceId,
+        window.setTimeout(() => {
+          setIdentifying((previous) => {
+            const next = new Set(previous);
+            next.delete(deviceId);
+            return next;
+          });
+          identifyTimeout.current.delete(deviceId);
+        }, result.value.duration_ms),
+      );
+    } catch (error) {
+      pushToast({
+        message:
+          error instanceof Error ? error.message : "Locate request failed",
+        variant: "error",
+      });
+    } finally {
+      setIdentifyBusy((previous) => {
+        const next = new Set(previous);
+        next.delete(deviceId);
+        return next;
+      });
+    }
+  };
 
   const transportSummary =
     transportMode === null ? "Not connected" : transportLabel(transportMode);
@@ -324,7 +398,8 @@ export function FirmwareFlashPage() {
       value: probe.kind === "recognized" ? probe.customHardwareName : undefined,
     },
   ].filter((row) => Boolean(row.value));
-  const showTargetRows = probeActivity === null && targetRows.length > 0;
+  const showTargetRows =
+    probeActivity === null && (targetRows.length > 0 || runtimeCanIdentify);
 
   return (
     <div className="flex flex-col gap-4" data-testid="firmware-flash-page">
@@ -447,27 +522,71 @@ export function FirmwareFlashPage() {
                   shows identity plus confirmation here.
                 </div>
               </div>
-              <div
-                className={[
-                  "inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em]",
-                  probeToneClass(probeActivity ? "probing" : probe.kind),
-                ].join(" ")}
-              >
-                {targetBadgeLabel}
+              <div className="flex shrink-0 items-center gap-2">
+                <div
+                  className={[
+                    "inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em]",
+                    probeToneClass(probeActivity ? "probing" : probe.kind),
+                  ].join(" ")}
+                >
+                  {targetBadgeLabel}
+                </div>
               </div>
             </div>
 
             {showTargetRows ? (
-              <dl className="mt-3 grid gap-x-5 gap-y-3 border-t border-[var(--border)] pt-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {targetRows.map((row) => (
-                  <TargetInfoCell
-                    key={row.label}
-                    label={row.label}
-                    value={String(row.value)}
-                    mono={row.mono}
-                  />
-                ))}
-              </dl>
+              <>
+                <dl className="mt-3 grid gap-x-5 gap-y-3 border-t border-[var(--border)] pt-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  {targetRows.map((row) => (
+                    <TargetInfoCell
+                      key={row.label}
+                      label={row.label}
+                      value={String(row.value)}
+                      mono={row.mono}
+                    />
+                  ))}
+                </dl>
+                <div className="mt-3 flex justify-end border-t border-[var(--border)] pt-3">
+                  <ActionButton
+                    loading={
+                      identifyDeviceId !== undefined &&
+                      identifyBusy.has(identifyDeviceId)
+                    }
+                    disabled={operationLocked || !canIdentify}
+                    size="sm"
+                    tone={
+                      identifyDeviceId !== undefined &&
+                      identifying.has(identifyDeviceId)
+                        ? "secondary"
+                        : "quiet"
+                    }
+                    onClick={() => void requestIdentify()}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      className="mr-1 inline-block h-4 w-4 align-text-bottom"
+                      viewBox="0 0 16 16"
+                    >
+                      <circle
+                        cx="8"
+                        cy="8"
+                        r="3"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                      />
+                      <path
+                        d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeWidth="1.4"
+                      />
+                    </svg>
+                    Locate device
+                  </ActionButton>
+                </div>
+              </>
             ) : (
               <FirmwareFlashTargetState
                 title={probeActivity?.title ?? idleProbeSummary}

@@ -2,6 +2,7 @@ import { type DesktopAgent, isDemoDesktopAgent } from "../domain/desktopAgent";
 import type {
   DeviceApiError,
   DeviceInfoResponse,
+  IdentifyResponse,
   IdleBiasResponse,
   PdDiagnosticsResponse,
   PowerConfigInput,
@@ -63,6 +64,7 @@ export type DeviceRuntime = {
   lastOkAt: number | null;
   lastError: DeviceApiError | null;
   transport: DeviceTransport | null;
+  identityVerified: boolean;
   channels: Record<DeviceTransport, ChannelRuntime>;
   hub: HubState | null;
   ports: Record<PortId, Port> | null;
@@ -126,6 +128,7 @@ export type DeviceRuntimeContextValue = {
   requestControlTakeover: () => void;
   refreshDevice: (deviceId: string) => Promise<void>;
   deviceInfo: (deviceId: string) => Promise<Result<DeviceInfoResponse>>;
+  identify: (deviceId: string) => Promise<Result<IdentifyResponse>>;
   wifiConfig: (deviceId: string) => Promise<Result<WifiConfigResponse>>;
   saveWifiConfig: (
     deviceId: string,

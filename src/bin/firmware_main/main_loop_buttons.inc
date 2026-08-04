@@ -16,6 +16,26 @@
         let right_edge = btn_right_state.update(buttons_now, raw_right_pressed, btn_debounce);
 
         #[cfg(feature = "net_http")]
+        let identify_button_cancelled =
+            (identify_state.is_active(uptime_ms_from_instant(buttons_now))
+                || identify_pending_render)
+                && (left_edge.is_some() || right_edge.is_some());
+        #[cfg(feature = "net_http")]
+        if identify_button_cancelled {
+            identify_state.cancel();
+            identify_pending_render = false;
+            api_state.lock().await.identify_cancelled_sequence = identify_sequence_seen;
+            identify_was_active = false;
+            identify_restore_requested = true;
+            prompt_tone.notify(SoundEvent::IdentifyStop);
+            ui.clear_toast();
+        }
+        #[cfg(feature = "net_http")]
+        if identify_button_cancelled {
+            continue;
+        }
+
+        #[cfg(feature = "net_http")]
         let left_pressed = btn_left_state.is_pressed();
         #[cfg(feature = "net_http")]
         let right_pressed = btn_right_state.is_pressed();

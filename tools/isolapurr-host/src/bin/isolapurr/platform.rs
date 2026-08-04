@@ -194,6 +194,7 @@ fn map_devd_ipc_endpoint(
 
     let ipc_method = match (method.as_str(), suffix) {
         ("GET", "status") => "device.status",
+        ("POST", "identify") => "device.identify",
         ("GET", "wifi") => "device.wifi.get",
         ("POST", "wifi") => {
             merge_body(params_map, body);
@@ -376,6 +377,17 @@ async fn request_selected(
         ResolvedTarget::Usb(usb) => {
             let usb_devd = devd.with_endpoint(usb.devd.clone());
             let usb = materialize_live_usb_device(client, &usb_devd, usb).await?;
+            if method == Method::POST && suffix == "/identify" {
+                let info = devd_request(
+                    client,
+                    &usb_devd,
+                    Method::GET,
+                    &format!("/api/v1/devices/{}/status", usb.device),
+                    None,
+                )
+                .await?;
+                validate_identify_capability(&info)?;
+            }
             devd_request(
                 client,
                 &usb_devd,
@@ -386,7 +398,18 @@ async fn request_selected(
             .await
         }
         ResolvedTarget::Http(url) => {
+            let is_identify = method == Method::POST && suffix == "/identify";
             let (http_method, path, http_body) = map_http_endpoint(method, suffix, body)?;
+            if is_identify {
+                let info = client
+                    .get(api_url(&url, "/api/v1/info")?)
+                    .send()
+                    .await?
+                    .error_for_status()?
+                    .json::<Value>()
+                    .await?;
+                validate_identify_capability(&info)?;
+            }
             let mut request = client.request(http_method, api_url(&url, &path)?);
             if let Some(body) = http_body {
                 request = request.json(&body);
@@ -407,6 +430,7 @@ fn map_http_endpoint(
     body: Option<Value>,
 ) -> anyhow::Result<(Method, String, Option<Value>)> {
     let mapped = match (method.as_str(), suffix) {
+        ("POST", "/identify") => (Method::POST, "/api/v1/identify".to_string(), None),
         ("GET", "/status") => (method, "/api/v1/info".to_string(), body),
         ("GET", "/wifi") => (method, "/api/v1/wifi".to_string(), body),
         ("POST", "/wifi") => (Method::POST, "/api/v1/wifi/set".to_string(), body),

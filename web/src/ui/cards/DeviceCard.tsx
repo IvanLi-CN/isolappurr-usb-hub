@@ -48,6 +48,10 @@ export type DeviceCardProps = {
   transportBadges: DeviceTransportBadge[];
   unselectedFill: "panel" | "panel-2";
   onSelect: (deviceId: string) => void;
+  identifyAvailable?: boolean;
+  identifyBusy?: boolean;
+  identifying?: boolean;
+  onIdentify?: (deviceId: string) => void;
 };
 
 function transportLabel(transport: DeviceTransport): string {
@@ -217,6 +221,10 @@ export function DeviceCard({
   transportBadges,
   unselectedFill,
   onSelect,
+  identifyAvailable = false,
+  identifyBusy = false,
+  identifying = false,
+  onIdentify,
 }: DeviceCardProps) {
   const restingFill =
     unselectedFill === "panel" ? "bg-[var(--panel)]" : "bg-[var(--panel-2)]";
@@ -250,23 +258,27 @@ export function DeviceCard({
   }, []);
 
   return (
-    <button
-      data-testid={`device-card-${device.id}`}
+    <div
       aria-current={selected ? "page" : undefined}
       className={[
-        "device-card w-full rounded-[14px] border text-[var(--text)]",
+        "device-card relative w-full rounded-[14px] border text-[var(--text)]",
         "px-5 py-4 text-left",
         "transition-colors duration-150 ease-out",
-        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]",
         selected
           ? "border-[var(--device-selected-border)] bg-[var(--device-selected-bg)] ring-2 ring-[var(--device-selected-ring)] active:bg-[var(--device-selected-bg)]"
           : `border-[var(--border)] ${restingFill} hover:border-[var(--primary)] hover:bg-[var(--panel-3)] active:bg-[var(--panel-3)]`,
       ].join(" ")}
-      type="button"
-      onClick={() => onSelect(device.id)}
+      data-testid={`device-card-${device.id}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <button
+        aria-current={selected ? "page" : undefined}
+        aria-label={`Select ${device.name}`}
+        className="absolute inset-0 z-0 rounded-[14px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        type="button"
+        onClick={() => onSelect(device.id)}
+      />
+      <div className="relative z-10 flex pointer-events-none items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 text-left">
           <div className="flex min-w-0 items-center gap-1.5">
             <div className="min-w-0 truncate text-[14px] font-medium">
               {device.name}
@@ -351,19 +363,63 @@ export function DeviceCard({
             </div>
           </div>
         </div>
-        <div
-          className={[
-            "flex h-[22px] items-center justify-center rounded-full border",
-            badge.width,
-            badge.bg,
-            badge.border,
-            badge.text,
-            "text-[12px] font-semibold",
-          ].join(" ")}
-        >
-          {status}
+        <div className="pointer-events-none relative z-20 flex shrink-0 self-stretch flex-col items-end justify-between gap-2">
+          <div
+            className={[
+              "flex h-[22px] items-center justify-center rounded-full border",
+              badge.width,
+              badge.bg,
+              badge.border,
+              badge.text,
+              "text-[12px] font-semibold",
+            ].join(" ")}
+          >
+            {status}
+          </div>
+          {onIdentify ? (
+            <button
+              aria-label="Locate device"
+              className={[
+                "pointer-events-auto flex h-8 w-8 items-center justify-center rounded-[6px] border transition-colors",
+                identifyAvailable
+                  ? identifying
+                    ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-text)]"
+                    : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--primary)] hover:text-[var(--text)]"
+                  : "cursor-not-allowed border-[var(--border)] text-[var(--muted)] opacity-45",
+              ].join(" ")}
+              disabled={!identifyAvailable || identifyBusy}
+              title="Locate device"
+              type="button"
+              onClick={() => onIdentify(device.id)}
+            >
+              {identifyBusy ? (
+                <span
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+                />
+              ) : (
+                <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 16 16">
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="3"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                  <path
+                    d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeWidth="1.4"
+                  />
+                </svg>
+              )}
+            </button>
+          ) : null}
         </div>
       </div>
-    </button>
+    </div>
   );
 }

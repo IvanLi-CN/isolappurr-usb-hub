@@ -126,6 +126,7 @@ impl FrameCache {
 enum ActiveView {
     TelemetryFrame,
     NormalUi,
+    Identify,
     Toast,
 }
 
@@ -404,6 +405,23 @@ where
         self.toast_until = None;
         self.present_back(strategy).await?;
         self.active_view = ActiveView::NormalUi;
+        Ok(())
+    }
+
+    pub async fn render_identify(
+        &mut self,
+        device_id: &str,
+        ipv4: &str,
+        hostname: &str,
+        border_phase_on: bool,
+    ) -> Result<(), GcError<E>> {
+        {
+            let mut surface = FrameSurface::new(self.back.as_mut_slice());
+            menu::render_identify(&mut surface, device_id, ipv4, hostname, border_phase_on);
+        }
+        self.toast_until = None;
+        self.present_back(FlushStrategy::Full).await?;
+        self.active_view = ActiveView::Identify;
         Ok(())
     }
 

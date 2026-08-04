@@ -48,6 +48,8 @@ pub enum SoundId {
 
     /// Continuous alarm for safety-critical conditions.
     SafetyAlarm,
+    /// Intermittent tone while a remote identify request is active.
+    IdentifyLoop,
 
     /// Optional "recovered" acknowledgement (reserved for future wiring).
     RecoverOnce,
@@ -92,6 +94,11 @@ pub enum SoundEvent {
     EnterSafety(SafetyKind),
     /// Exited a safety-critical state (must stop the alarm immediately).
     ExitSafety(SafetyKind),
+
+    /// Begin or restart the local identify tone cycle.
+    IdentifyStart,
+    /// Stop the local identify tone cycle immediately.
+    IdentifyStop,
 
     /// A user action completed successfully.
     ActionOk,

@@ -249,6 +249,24 @@ async fn require_compatible_project_firmware(
     Ok(info)
 }
 
+pub fn validate_identify_capability(info: &Value) -> anyhow::Result<()> {
+    let supported = info
+        .get("capabilities")
+        .or_else(|| {
+            info.get("result")
+                .and_then(|result| result.get("capabilities"))
+        })
+        .and_then(|capabilities| capabilities.get("identify"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !supported {
+        return Err(anyhow!(
+            "device does not advertise capabilities.identify=true; refusing identify"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_project_firmware(info: &Value) -> anyhow::Result<()> {
     let firmware = project_firmware_metadata(info)?;
     validate_project_firmware_name(firmware)?;
@@ -752,6 +770,7 @@ fn error_from_anyhow(err: anyhow::Error) -> Response {
         || message.contains("firmware version")
         || message.contains("expected `isolapurr-usb-hub`")
         || message.contains("did not respond to IsolaPurr")
+        || message.contains("does not advertise capabilities.identify=true")
     {
         bad_request(&message)
     } else {

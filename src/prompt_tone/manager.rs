@@ -135,6 +135,7 @@ where
     safety_active: bool,
     safety_suspended: bool,
     safety_resume_pending: bool,
+    identify_active: bool,
 
     playing: Option<ActivePlayback>,
     last_now: Duration,
@@ -153,6 +154,7 @@ where
             safety_active: false,
             safety_suspended: false,
             safety_resume_pending: false,
+            identify_active: false,
             playing: None,
             last_now: Duration::ZERO,
         }
@@ -183,6 +185,7 @@ where
             }
 
             SoundEvent::EnterSafety(_) => {
+                self.stop_identify();
                 self.safety_active = true;
                 self.safety_suspended = false;
                 self.safety_resume_pending = false;
@@ -206,10 +209,23 @@ where
             }
 
             SoundEvent::EnterError(kind) => {
+                self.stop_identify();
                 let id = map_error_to_sound(kind);
                 self.request_one_shot(id);
             }
             SoundEvent::ExitError(_) => {}
+
+            SoundEvent::IdentifyStart => {
+                if !self.safety_active {
+                    self.identify_active = true;
+                    self.queue.remove(SoundId::IdentifyLoop);
+                    if self.playing.is_some_and(|p| p.id == SoundId::IdentifyLoop) {
+                        let _ = self.buzzer.stop();
+                        self.playing = None;
+                    }
+                }
+            }
+            SoundEvent::IdentifyStop => self.stop_identify(),
 
             SoundEvent::ActionOk => {
                 if self.safety_active {
@@ -271,6 +287,8 @@ where
             if !self.safety_suspended {
                 self.start_with_now(SoundId::SafetyAlarm, now);
             }
+        } else if self.identify_active {
+            self.start_with_now(SoundId::IdentifyLoop, now);
         }
     }
 
@@ -328,6 +346,15 @@ where
         self.queue.remove(SoundId::SafetyAlarm);
 
         if self.playing.is_some_and(|p| p.id == SoundId::SafetyAlarm) {
+            let _ = self.buzzer.stop();
+            self.playing = None;
+        }
+    }
+
+    fn stop_identify(&mut self) {
+        self.identify_active = false;
+        self.queue.remove(SoundId::IdentifyLoop);
+        if self.playing.is_some_and(|p| p.id == SoundId::IdentifyLoop) {
             let _ = self.buzzer.stop();
             self.playing = None;
         }
@@ -458,6 +485,7 @@ fn step_duration(step: SoundStep) -> Duration {
 fn sound_priority(id: SoundId) -> u8 {
     match id {
         SoundId::SafetyAlarm => 100,
+        SoundId::IdentifyLoop => 20,
 
         SoundId::BootFail => 90,
         SoundId::BootWarn => 80,
@@ -494,6 +522,17 @@ const ACTION_FREQ_HZ: u32 = 2700;
 const ACTION_DUTY_PCT: u8 = 12;
 const ACTION_CLICK_MS: u64 = 30;
 const ACTION_DOUBLE_GAP_MS: u64 = 40;
+
+const IDENTIFY_LOOP_STEPS: &[SoundStep] = &[
+    SoundStep::Tone {
+        freq_hz: 2700,
+        duty_pct: ACTION_DUTY_PCT,
+        duration: Duration::from_millis(150),
+    },
+    SoundStep::Silence {
+        duration: Duration::from_millis(350),
+    },
+];
 
 const BOOT_OK_STEPS: &[SoundStep] = &[
     SoundStep::Tone {
@@ -743,6 +782,7 @@ pub const PATTERN_ACTION_FAIL_ONCE: SoundPattern = SoundPattern::once(ACTION_FAI
 pub const PATTERN_MENU_NAVIGATE_ONCE: SoundPattern = SoundPattern::once(MENU_NAVIGATE_ONCE_STEPS);
 pub const PATTERN_MENU_CONFIRM_ONCE: SoundPattern = SoundPattern::once(MENU_CONFIRM_ONCE_STEPS);
 pub const PATTERN_SAFETY_ALARM: SoundPattern = SoundPattern::looped(SAFETY_ALARM_STEPS);
+pub const PATTERN_IDENTIFY_LOOP: SoundPattern = SoundPattern::looped(IDENTIFY_LOOP_STEPS);
 
 fn pattern_for(id: SoundId) -> Option<&'static SoundPattern> {
     match id {
@@ -756,6 +796,7 @@ fn pattern_for(id: SoundId) -> Option<&'static SoundPattern> {
         SoundId::MenuNavigateOnce => Some(&PATTERN_MENU_NAVIGATE_ONCE),
         SoundId::MenuConfirmOnce => Some(&PATTERN_MENU_CONFIRM_ONCE),
         SoundId::SafetyAlarm => Some(&PATTERN_SAFETY_ALARM),
+        SoundId::IdentifyLoop => Some(&PATTERN_IDENTIFY_LOOP),
         _ => None,
     }
 }

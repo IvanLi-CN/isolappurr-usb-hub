@@ -23,6 +23,8 @@ enum Command {
     },
     Devices,
     Status(ApiSelectorArgs),
+    #[command(about = "Make an online device identify itself for five seconds")]
+    Identify(ApiSelectorArgs),
     Hardware {
         #[command(subcommand)]
         command: HardwareCommand,
@@ -61,9 +63,9 @@ enum Command {
 
 #[derive(Debug, clap::Args, Clone)]
 struct ApiSelectorArgs {
-    #[arg(long = "device-id")]
+    #[arg(long = "device-id", conflicts_with = "url")]
     device_id: Option<String>,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "device_id")]
     url: Option<String>,
 }
 

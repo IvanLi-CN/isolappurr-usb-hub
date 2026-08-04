@@ -239,6 +239,43 @@ async fn handle_api_request(
             write_json_response(socket, "200 OK", allow_origin, "{\"ok\":true}").await?;
             return Ok(());
         }
+        ("POST", "/api/v1/identify") => {
+            match try_request_identify(api_state).await {
+                Ok(sequence) => {
+                    if wait_for_identify_render(api_state, sequence).await {
+                        write_json_response(
+                            socket,
+                            "200 OK",
+                            allow_origin,
+                            "{\"accepted\":true,\"duration_ms\":5000}",
+                        )
+                        .await?;
+                    } else {
+                        write_api_error(
+                            socket,
+                            "503 Service Unavailable",
+                            allow_origin,
+                            "display_unavailable",
+                            "display did not acknowledge the identify frame",
+                            true,
+                        )
+                        .await?;
+                    }
+                }
+                Err(ApiActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "device is in a safety or reset state",
+                        true,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
         ("GET", "/api/v1/info") => {
             let wifi = { *wifi_state.lock().await };
             let mut body = String::new();
@@ -269,7 +306,8 @@ async fn handle_api_request(
                 }
             }
 
-            let _ = core::write!(body, ",\"is_static\":{}}}}}}}", wifi.is_static);
+            let _ = core::write!(body, ",\"is_static\":{}", wifi.is_static);
+            let _ = body.push_str("}},\"capabilities\":{\"identify\":true}}");
 
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
@@ -309,7 +347,7 @@ async fn handle_api_request(
             } else {
                 "false"
             });
-            let _ = body.push_str("},\"ports\":[");
+            let _ = body.push_str("},\"capabilities\":{\"identify\":true},\"ports\":[");
             write_port_json(&mut body, ApiPortId::PortA, "USB-A", &state.ports.port_a);
             let _ = body.push(',');
             write_port_json(&mut body, ApiPortId::PortC, "USB-C", &state.ports.port_c);

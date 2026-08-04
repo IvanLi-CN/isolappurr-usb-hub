@@ -195,6 +195,14 @@ async fn dispatch_ipc_request(
                 &require_compatible_project_firmware(state, &req.device_id).await?,
             ))
         }
+        "device.identify" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            let info = require_compatible_project_firmware(state, &req.device_id).await?;
+            validate_identify_capability(&info)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(state, &req.device_id, "identify", None).await?,
+            ))
+        }
         "device.session" => {
             let req: DeviceSessionRequest = serde_json::from_value(params)?;
             ipc_device_session(state, &req.device_id, req.tail, req.lease_id).await
