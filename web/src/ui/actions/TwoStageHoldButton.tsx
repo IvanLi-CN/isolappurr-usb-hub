@@ -16,7 +16,7 @@ export function toHoldActionResult(result: Result<unknown>): HoldActionResult {
     : { ok: false, message: result.error.message };
 }
 
-type HoldPhase =
+export type TwoStageHoldPhase =
   | "idle"
   | "holding"
   | "waiting"
@@ -24,6 +24,20 @@ type HoldPhase =
   | "error"
   | "hint"
   | "external";
+
+export type TwoStageHoldTone = "neutral" | "warning" | "success" | "error";
+
+/**
+ * Stable visual checkpoint for Storybook and visual-regression coverage.
+ * Product code omits this and is always driven by the live hold state machine.
+ */
+export type TwoStageHoldPreview = {
+  phase: TwoStageHoldPhase;
+  progress: number;
+  tone: TwoStageHoldTone;
+  message?: string;
+  tooltipOpen?: boolean;
+};
 
 type TwoStageHoldButtonProps = {
   label: string;
@@ -33,6 +47,7 @@ type TwoStageHoldButtonProps = {
   compact?: boolean;
   className?: string;
   testId?: string;
+  preview?: TwoStageHoldPreview;
   onSetValue: (next: boolean) => Promise<HoldActionResult>;
 };
 
@@ -52,10 +67,11 @@ export function TwoStageHoldButton({
   compact = false,
   className,
   testId,
+  preview,
   onSetValue,
 }: TwoStageHoldButtonProps) {
   const tooltipId = useId();
-  const [phase, setPhase] = useState<HoldPhase>("idle");
+  const [phase, setPhase] = useState<TwoStageHoldPhase>("idle");
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
   const [tooltipOpen, setTooltipOpen] = useState(false);
@@ -93,7 +109,7 @@ export function TwoStageHoldButton({
   }, []);
 
   const showResult = useCallback(
-    (nextPhase: HoldPhase, nextMessage: string) => {
+    (nextPhase: TwoStageHoldPhase, nextMessage: string) => {
       if (resultTimerRef.current !== null) {
         window.clearTimeout(resultTimerRef.current);
       }
@@ -176,7 +192,7 @@ export function TwoStageHoldButton({
   };
 
   const beginHold = (pointerId?: number, target?: HTMLButtonElement) => {
-    if (disabled || busyRef.current || holdingRef.current) {
+    if (preview || disabled || busyRef.current || holdingRef.current) {
       return;
     }
     if (resultTimerRef.current !== null) {
@@ -307,8 +323,13 @@ export function TwoStageHoldButton({
     };
   }, []);
 
+  const visualPhase = preview?.phase ?? phase;
+  const visualProgress = preview?.progress ?? progress;
+  const visualMessage = preview?.message ?? message;
+  const visualTooltipOpen = preview?.tooltipOpen ?? tooltipOpen;
   const tone =
-    phase === "error" || phase === "external"
+    preview?.tone ??
+    (phase === "error" || phase === "external"
       ? "error"
       : phase === "confirmed"
         ? "success"
@@ -316,7 +337,7 @@ export function TwoStageHoldButton({
           ? secondStartedRef.current
             ? "success"
             : "warning"
-          : "neutral";
+          : "neutral");
   const usage = unavailableReason
     ? unavailableReason
     : `${label} is ${value ? "enabled" : "disabled"}. Hold 0.6s to ${actionLabel(label, !value).toLowerCase()}, or continue to 1.25s to restore the current state.`;
@@ -324,9 +345,9 @@ export function TwoStageHoldButton({
   return (
     <div
       className={`two-stage-hold${compact ? " two-stage-hold--compact" : ""}${className ? ` ${className}` : ""}`}
-      data-phase={phase}
+      data-phase={visualPhase}
       data-tone={tone}
-      style={{ "--hold-progress": progress } as CSSProperties}
+      style={{ "--hold-progress": visualProgress } as CSSProperties}
     >
       {disabled ? (
         <button
@@ -419,15 +440,15 @@ export function TwoStageHoldButton({
         </button>
       )}
       <span className="sr-only" aria-live="polite">
-        {message}
+        {visualMessage}
       </span>
       <span
         className="two-stage-hold__tooltip"
-        data-visible={tooltipOpen}
+        data-visible={visualTooltipOpen}
         id={tooltipId}
         role="tooltip"
       >
-        {message || usage}
+        {visualMessage || usage}
       </span>
     </div>
   );
