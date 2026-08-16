@@ -27,6 +27,7 @@ class ReleasePagesContractTest(unittest.TestCase):
         )
         self.assertIn("name: Pages / PR build\n", workflow)
         self.assertIn('gh release download "$RELEASE_TAG"', workflow)
+        self.assertIn('--repo "$GITHUB_REPOSITORY"', workflow)
         self.assertNotIn("bun run retain-pages-assets", workflow)
 
     def test_release_workflow_prepares_draft_then_deploys_pages_before_publish(self) -> None:
