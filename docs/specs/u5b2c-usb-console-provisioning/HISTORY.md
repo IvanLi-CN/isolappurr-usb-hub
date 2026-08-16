@@ -1,5 +1,7 @@
 # History
 
+- Added the explicit runtime `port.data_set` contract so Web controls can keep a data link disabled or enabled without redefining the legacy 250ms `port.replug` pulse.
+
 ## Creation
 
 This spec consolidates the long-lived product capability for USB communication, firmware update, Wi-Fi provisioning, Local USB, and Web App control into `docs/specs/**`.

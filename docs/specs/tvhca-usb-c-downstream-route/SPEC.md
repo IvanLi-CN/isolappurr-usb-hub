@@ -18,7 +18,7 @@ USB-C 对应的 Hub 下行通道需要在 MCU USB 数据路径与外部 USB-C �
 
 ### Non-goals
 
-- 不改变 USB-A replug/power 行为。
+- 不改变 USB-A replug/power 的兼容语义；`replug` 保持固定时长的数据脉冲，而不是数据链路开关。
 - 不改变 Wi-Fi EEPROM record 的字段布局。
 - 不实现 USB 枚举成功检测、自动恢复或主机侧拓扑验证。
 - 不自动 flash 实机，不自动选择或修改 `.esp32-port`。
@@ -53,7 +53,9 @@ USB-C 对应的 Hub 下行通道需要在 MCU USB 数据路径与外部 USB-C �
 - USB-C 端口 busy、已有 route 切换 pending 时，新的 route 请求必须返回 busy 且不改变 route。
 - route API 成功响应必须表示 EEPROM 写入已成功；写入失败必须返回 `eeprom_failed`。
 - `ports.get` / `GET /api/v1/ports` 必须包含 `hub.usb_c_downstream_route` 与 `hub.usb_c_downstream_persisted`。
-- Web UI 每张端口卡片必须保留完整端口状态信息：端口健康状态、电源开关状态、数据连接或 replugging 状态、Voltage、Current、Power、Power 操作和 Replug 操作。
+- Web UI 每张端口卡片必须保留完整端口状态信息：端口健康状态、电源开关状态、数据连接或 replugging 状态、Voltage、Current、Power、`Power` 操作和 `Data link` 操作。
+- `Data link` 操作 MUST 使用固件 `data_set` capability，并在旧 firmware 缺少该 capability 时显示升级提示，不得回退调用 `replug`。它是运行时状态：断电强制断开，上电恢复连接，不写入 EEPROM。
+- `Power` 与 `Data link` MUST 使用同一套二阶段短时按住交互：按下快照实际状态，约 600ms 切到反向目标，约 1250ms 在第一阶段确认后恢复初始目标；短按仅显示如何触发的帮助，结果必须以设备快照确认而非仅以动画确认。
 - Web UI route 控件必须作为设备设置呈现，不得放入 USB-A 或 USB-C 端口状态卡片，也不得放入 dashboard 概览卡。
 - Web UI 必须用用户语义展示 `Normal` / `Upgrade` 模式：`Normal` 对应 `USB-C` route，`Upgrade` 对应 `MCU` route。
 - Web UI 成功保存模式后必须使用 toast 反馈；设置卡片内不得常驻显示成功状态，未持久化异常状态必须单行显示。
