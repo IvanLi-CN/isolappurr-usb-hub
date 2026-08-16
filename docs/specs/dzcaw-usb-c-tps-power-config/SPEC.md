@@ -79,6 +79,10 @@ for diagnostics.
 - The Power surface MUST expose a runtime-only `Power` action for the USB-C /
   banana output stage that maps directly to TPS55288 `OE` and does not persist
   to EEPROM.
+- A Local USB serial timeout after an idempotent runtime output or discharge
+  request MUST be treated as success only when a fresh device readback proves
+  that the requested runtime state applied. A timeout MUST NOT cause a blind
+  replay of the mutating request, and it MUST NOT rewrite saved power config.
 - The Power surface MAY expose TPS55288 `DISCHG` only as an advanced runtime
   control for the TPS output-off state, and MUST NOT present it as a fix for
   SW2303 high-voltage heating.

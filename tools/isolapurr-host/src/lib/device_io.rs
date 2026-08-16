@@ -10,14 +10,7 @@ async fn validate_catalog(
     Json(json!({"ok": errors.is_empty(), "errors": errors})).into_response()
 }
 
-async fn usb_jsonl_request(
-    state: &AppState,
-    device_id: &str,
-    method: &str,
-    params: Option<Value>,
-) -> anyhow::Result<Value> {
-    usb_jsonl_request_with_exclusive(state, device_id, method, params, None).await
-}
+include!("device_io_retry.rs");
 
 async fn ensure_serial_port_lock(state: &AppState, port_path: &str) -> Arc<Mutex<()>> {
     let mut inner = state.inner.lock().await;
@@ -456,18 +449,6 @@ async fn device_usb_port_path(state: &AppState, device_id: &str) -> anyhow::Resu
         .clone())
 }
 
-fn serial_timeout_ms_for_method(method: &str) -> u64 {
-    match method {
-        "power.config_set"
-        | "power.config_defaults"
-        | "power.idle_bias_set"
-        | "power.idle_bias_clear" => SERIAL_POWER_CONFIG_EARLY_VERIFY_TIMEOUT_MS,
-        "power.idle_bias_run" => 178_000,
-        "settings.reset" => SERIAL_SETTINGS_RESET_TIMEOUT_MS,
-        _ => SERIAL_TIMEOUT_MS,
-    }
-}
-
 #[cfg(test)]
 mod device_io_tests {
     use super::*;
@@ -487,6 +468,33 @@ mod device_io_tests {
             SERIAL_POWER_CONFIG_EARLY_VERIFY_TIMEOUT_MS
         );
         assert_eq!(serial_timeout_ms_for_method("power.idle_bias_run"), 178_000);
+        assert_eq!(
+            serial_timeout_ms_for_method("power.config_get"),
+            SERIAL_READ_TIMEOUT_MS
+        );
+    }
+
+    #[test]
+    fn retries_only_transient_read_errors_for_read_only_methods() {
+        let timeout = anyhow!("serial response timed out");
+        let read_error = anyhow!("serial read: device disconnected");
+
+        assert!(should_retry_read_only_serial_request(
+            "power.config_get",
+            &timeout
+        ));
+        assert!(should_retry_read_only_serial_request(
+            "pd.diagnostics",
+            &read_error
+        ));
+        assert!(!should_retry_read_only_serial_request(
+            "power.runtime_set",
+            &timeout
+        ));
+        assert!(!should_retry_read_only_serial_request(
+            "ports.get",
+            &anyhow!("device busy")
+        ));
     }
 
     #[test]

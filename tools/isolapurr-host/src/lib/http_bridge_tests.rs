@@ -207,6 +207,24 @@ fn power_config_verify_rejects_mismatched_requested_payload() {
 }
 
 #[test]
+fn power_runtime_verify_requires_the_requested_state() {
+    let observed = json!({
+        "ok": true,
+        "result": {
+            "runtime": {
+                "output_enabled": false,
+                "discharge_enabled": true
+            }
+        }
+    });
+
+    assert!(power_runtime_matches_expected(&observed, "output", false));
+    assert!(power_runtime_matches_expected(&observed, "discharge", true));
+    assert!(!power_runtime_matches_expected(&observed, "output", true));
+    assert!(!power_runtime_matches_expected(&observed, "unknown", false));
+}
+
+#[test]
 fn power_config_defaults_match_full_profile() {
     let observed = json!({
         "ok": true,
