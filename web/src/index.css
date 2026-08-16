@@ -890,15 +890,21 @@ textarea.textarea:disabled {
 }
 
 .two-stage-hold[data-tone="warning"] .two-stage-hold__button {
-  border-color: color-mix(in srgb, var(--warning) 52%, var(--border));
+  border-color: var(--surface-warning-ring);
+  background: var(--surface-warning-bg);
 }
 
 .two-stage-hold[data-tone="warning"] .two-stage-hold__rail {
-  background: var(--warning);
+  background: color-mix(in srgb, var(--warning) 42%, var(--primary));
+}
+
+.two-stage-hold[data-tone="success"] .two-stage-hold__button {
+  border-color: var(--surface-success-ring);
+  background: var(--surface-success-bg);
 }
 
 .two-stage-hold[data-tone="success"] .two-stage-hold__rail {
-  background: var(--success);
+  background: color-mix(in srgb, var(--success) 48%, var(--primary));
 }
 
 .two-stage-hold[data-tone="error"] .two-stage-hold__button {
