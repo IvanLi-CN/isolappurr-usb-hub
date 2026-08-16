@@ -11,6 +11,7 @@ import type {
   Result,
 } from "../../domain/deviceApi";
 import type { PortState, PortTelemetry } from "../../domain/ports";
+import type { HoldActionResult } from "../actions/TwoStageHoldButton";
 import { useToast } from "../toast/ToastProvider";
 import {
   badgeTone,
@@ -75,7 +76,8 @@ export type DevicePowerPanelProps = {
   usbCTelemetry: PortTelemetry | null;
   usbCState: PortState | null;
   usbCPending: boolean;
-  replugUsbC: () => Promise<void>;
+  usbCDataLinkAvailable: boolean;
+  setUsbCData: (connected: boolean) => Promise<HoldActionResult>;
 };
 
 const AUTO_APPLY_DELAY_MS = 400;
@@ -770,6 +772,7 @@ export function useDevicePowerPanelState({
           durationMs: 3200,
         });
       }
+      return res;
     },
     [pushToast, savePowerConfig],
   );
@@ -976,6 +979,7 @@ export function useDevicePowerPanelState({
           durationMs: 3200,
         });
       }
+      return res;
     },
     [pushToast],
   );

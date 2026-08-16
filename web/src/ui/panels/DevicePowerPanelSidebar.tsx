@@ -1,5 +1,10 @@
+import type { PowerConfigResponse, Result } from "../../domain/deviceApi";
 import type { PortState, PortTelemetry } from "../../domain/ports";
-import { ActionButton } from "../actions/ActionButton";
+import {
+  type HoldActionResult,
+  TwoStageHoldButton,
+  toHoldActionResult,
+} from "../actions/TwoStageHoldButton";
 import { formatTelemetryValue } from "../format/telemetry";
 import {
   CableLoopCompensationCalculator,
@@ -13,16 +18,17 @@ type DevicePowerPanelSidebarProps = {
   onSetSw2303LineCompensation: (
     value: FormState["sw2303_line_compensation"],
   ) => void;
-  onReplugUsbC: () => Promise<void>;
+  onSetUsbCData: (connected: boolean) => Promise<HoldActionResult>;
   onSetLightLoadMode: (mode: FormState["light_load_mode"]) => void;
   onToggleRuntime: (
     action: "output" | "discharge",
     enabled: boolean,
-  ) => Promise<void>;
+  ) => Promise<Result<PowerConfigResponse>>;
   powerControlsDisabled: boolean;
   runtimeOutputEnabled: boolean;
   sw2303LineCompensation: FormState["sw2303_line_compensation"];
   usbCPending: boolean;
+  usbCDataLinkAvailable: boolean;
   usbCState: PortState | null;
   usbCTelemetry: PortTelemetry | null;
 };
@@ -91,13 +97,14 @@ function TelemetryReading({
 export function DevicePowerPanelSidebar({
   lightLoadMode,
   onSetSw2303LineCompensation,
-  onReplugUsbC,
+  onSetUsbCData,
   onSetLightLoadMode,
   onToggleRuntime,
   powerControlsDisabled,
   runtimeOutputEnabled,
   sw2303LineCompensation,
   usbCPending,
+  usbCDataLinkAvailable,
   usbCState,
   usbCTelemetry,
 }: DevicePowerPanelSidebarProps) {
@@ -108,7 +115,7 @@ export function DevicePowerPanelSidebar({
   const usbCPowerAvailable = typeof usbCTelemetry?.power_mw === "number";
   const usbCDataLinked =
     usbCState?.replugging === true
-      ? "Replugging"
+      ? "Data switching"
       : usbCState?.data_connected
         ? "Data linked"
         : "Data off";
@@ -169,25 +176,28 @@ export function DevicePowerPanelSidebar({
           />
         </div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <ActionButton
+          <TwoStageHoldButton
             className="sm:w-[132px]"
-            data-testid="runtime-output-toggle"
-            tone="primary"
+            testId="runtime-output-toggle"
             disabled={usbCPowerActionDisabled}
-            onClick={() =>
-              void onToggleRuntime("output", !runtimeOutputEnabled)
+            label="Power"
+            onSetValue={(enabled) =>
+              onToggleRuntime("output", enabled).then(toHoldActionResult)
             }
-          >
-            Power
-          </ActionButton>
-          <ActionButton
+            value={runtimeOutputEnabled}
+          />
+          <TwoStageHoldButton
             className="sm:w-[140px]"
-            tone="secondary"
-            disabled={usbCPowerActionDisabled}
-            onClick={() => void onReplugUsbC()}
-          >
-            Replug
-          </ActionButton>
+            disabled={usbCPowerActionDisabled || !usbCDataLinkAvailable}
+            label="Data link"
+            onSetValue={onSetUsbCData}
+            unavailableReason={
+              usbCDataLinkAvailable
+                ? undefined
+                : "This firmware does not support the Data link control. Update the device firmware to use it."
+            }
+            value={usbCState?.data_connected ?? false}
+          />
         </div>
       </section>
 

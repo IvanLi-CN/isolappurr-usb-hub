@@ -339,6 +339,15 @@ fn map_devd_ipc_endpoint(
             params_map.insert("port".to_string(), json!(port));
             "device.port.replug"
         }
+        ("POST", _) if suffix.starts_with("ports/") && suffix.contains("/data") => {
+            let port = suffix
+                .trim_start_matches("ports/")
+                .trim_end_matches("/data");
+            let connected = parse_connected_query(query)?;
+            params_map.insert("port".to_string(), json!(port));
+            params_map.insert("connected".to_string(), json!(connected));
+            "device.port.data_set"
+        }
         ("POST", _) if suffix.starts_with("ports/") && suffix.contains("/power") => {
             let port = suffix
                 .trim_start_matches("ports/")
@@ -502,6 +511,21 @@ fn map_http_endpoint(
                 None,
             )
         }
+        ("POST", _) if suffix.starts_with("/ports/") && suffix.contains("/data?connected=") => {
+            let rest = suffix.trim_start_matches("/ports/");
+            let (port, query) = rest
+                .split_once("/data?")
+                .ok_or_else(|| anyhow!("invalid port data path"))?;
+            let connected = parse_connected_query(query)?;
+            (
+                Method::POST,
+                format!(
+                    "/api/v1/ports/{port}/data?connected={}",
+                    if connected { 1 } else { 0 }
+                ),
+                None,
+            )
+        }
         ("POST", _) if suffix.starts_with("/ports/") && suffix.contains("/power?enabled=") => {
             let rest = suffix.trim_start_matches("/ports/");
             let (port, query) = rest
@@ -516,6 +540,18 @@ fn map_http_endpoint(
         _ => (method, suffix.to_string(), body),
     };
     Ok(mapped)
+}
+
+fn parse_connected_query(query: &str) -> anyhow::Result<bool> {
+    match query
+        .split('&')
+        .find_map(|part| part.strip_prefix("connected="))
+    {
+        Some("true" | "1") => Ok(true),
+        Some("false" | "0") => Ok(false),
+        Some(_) => Err(anyhow!("connected must be true, false, 1, or 0")),
+        None => Err(anyhow!("connected query is required")),
+    }
 }
 
 async fn handle_ports(
@@ -533,6 +569,17 @@ async fn handle_ports(
                 selector,
                 Method::POST,
                 &format!("/ports/{port}/power?enabled={enabled}"),
+                None,
+            )
+            .await
+        }
+        Some(PortsCommand::Data { port, connected }) => {
+            request_selected(
+                client,
+                devd,
+                selector,
+                Method::POST,
+                &format!("/ports/{port}/data?connected={connected}"),
                 None,
             )
             .await

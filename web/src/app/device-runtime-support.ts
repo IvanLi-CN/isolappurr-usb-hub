@@ -180,7 +180,12 @@ export type DeviceRuntimeContextValue = {
     deviceId: string,
     portId: PortId,
     enabled: boolean,
-  ) => Promise<void>;
+  ) => Promise<Result<{ accepted: true }>>;
+  setData: (
+    deviceId: string,
+    portId: PortId,
+    connected: boolean,
+  ) => Promise<Result<{ accepted: true }>>;
   replug: (deviceId: string, portId: PortId) => Promise<void>;
   setUsbCDownstreamRoute: (
     deviceId: string,

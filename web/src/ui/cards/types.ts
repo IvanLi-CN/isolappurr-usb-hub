@@ -1,4 +1,5 @@
 import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
+import type { HoldActionResult } from "../actions/TwoStageHoldButton";
 
 export type PortCardHeaderBadge = {
   label: string;
@@ -14,6 +15,7 @@ export type PortCardProps = {
   headerBadges?: PortCardHeaderBadge[];
   showStatusBadge?: boolean;
   disabled?: boolean;
-  onTogglePower: () => void;
-  onReplug: () => void;
+  dataLinkAvailable?: boolean;
+  onSetPower: (enabled: boolean) => Promise<HoldActionResult>;
+  onSetData: (connected: boolean) => Promise<HoldActionResult>;
 };

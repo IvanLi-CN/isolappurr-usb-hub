@@ -221,6 +221,14 @@ Evidence sources:
 - Storybook canvas for reusable component and composite-surface captures
 - Production SPA routes where the caption explicitly names `?demo=true`
 
+Two-stage port hold controls (PR: none):
+
+![Desktop two-stage port hold in Demo mode](assets/two-stage-hold-desktop.png)
+
+![Mobile two-stage port hold in Demo mode](assets/two-stage-hold-mobile.png)
+
+![Two-stage hold first-stage progress in Storybook canvas](assets/two-stage-hold-component.png)
+
 Add device discovery canonical device IDs:
 
 ![Add device discovery canonical device IDs](assets/add-device-discovery-canonical-device-ids.png)

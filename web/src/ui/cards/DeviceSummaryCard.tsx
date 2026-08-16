@@ -2,6 +2,7 @@ import type { ConnectionState } from "../../app/device-runtime";
 import type { StoredDevice } from "../../domain/devices";
 import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
 import { ActionButton } from "../actions/ActionButton";
+import type { HoldActionResult } from "../actions/TwoStageHoldButton";
 import { formatTimeHms } from "../format/time";
 import { PortMiniCard } from "./PortMiniCard";
 
@@ -14,11 +15,24 @@ export type DeviceSummaryCardProps = {
   hostConnected: boolean | null;
   ports: Record<
     PortId,
-    { label: string; telemetry: PortTelemetry; state: PortState }
+    {
+      label: string;
+      telemetry: PortTelemetry;
+      state: PortState;
+      dataLinkAvailable: boolean;
+    }
   >;
   onOpenDetails: (deviceId: string) => void;
-  onSetPower: (deviceId: string, portId: PortId, enabled: boolean) => void;
-  onDataReplug: (deviceId: string, portId: PortId) => void;
+  onSetPower: (
+    deviceId: string,
+    portId: PortId,
+    enabled: boolean,
+  ) => Promise<HoldActionResult>;
+  onSetData: (
+    deviceId: string,
+    portId: PortId,
+    connected: boolean,
+  ) => Promise<HoldActionResult>;
   actionsDisabled?: boolean;
 };
 
@@ -59,7 +73,7 @@ export function DeviceSummaryCard({
   ports,
   onOpenDetails,
   onSetPower,
-  onDataReplug,
+  onSetData,
   actionsDisabled = false,
 }: DeviceSummaryCardProps) {
   const shortId = device.id.length > 8 ? device.id.slice(0, 8) : device.id;
@@ -107,8 +121,9 @@ export function DeviceSummaryCard({
             telemetry={ports.port_a.telemetry}
             state={ports.port_a.state}
             disabled={writeDisabled}
+            dataLinkAvailable={ports.port_a.dataLinkAvailable}
             onSetPower={(enabled) => onSetPower(device.id, "port_a", enabled)}
-            onReplug={() => onDataReplug(device.id, "port_a")}
+            onSetData={(connected) => onSetData(device.id, "port_a", connected)}
           />
           <PortMiniCard
             portId="port_c"
@@ -116,8 +131,9 @@ export function DeviceSummaryCard({
             telemetry={ports.port_c.telemetry}
             state={ports.port_c.state}
             disabled={writeDisabled}
+            dataLinkAvailable={ports.port_c.dataLinkAvailable}
             onSetPower={(enabled) => onSetPower(device.id, "port_c", enabled)}
-            onReplug={() => onDataReplug(device.id, "port_c")}
+            onSetData={(connected) => onSetData(device.id, "port_c", connected)}
           />
         </div>
 

@@ -699,6 +699,14 @@ function localUsbMethodEndpoint(
         path: `/api/v1/devices/${deviceId}/ports/${port}/power?enabled=${enabled}`,
       };
     }
+    case "port.data_set": {
+      const port = String(params.port ?? "");
+      const connected = params.connected ? "1" : "0";
+      return {
+        method: "POST",
+        path: `/api/v1/devices/${deviceId}/ports/${port}/data?connected=${connected}`,
+      };
+    }
     case "port.replug": {
       const port = String(params.port ?? "");
       return {

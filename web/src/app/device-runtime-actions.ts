@@ -16,7 +16,11 @@ import type {
   WifiMutationResponse,
 } from "../domain/deviceApi";
 import type { StoredDevice } from "../domain/devices";
-import type { PortId, UsbCDownstreamRoute } from "../domain/ports";
+import type {
+  PortId,
+  PortsResponse,
+  UsbCDownstreamRoute,
+} from "../domain/ports";
 import type {
   CrossTabRuntimeCoordinator,
   RuntimeChannelMessage,
@@ -596,11 +600,43 @@ export function createDeviceRuntimeActions({
     }
   };
 
+  const waitForPortState = async (
+    deviceId: string,
+    portId: PortId,
+    field: "power_enabled" | "data_connected",
+    expected: boolean,
+  ): Promise<Result<{ accepted: true }>> => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const snapshot = await runDeviceCommand<PortsResponse>(
+        deviceId,
+        "ports.get",
+      );
+      if (!snapshot.ok) {
+        return snapshot;
+      }
+      const port = snapshot.value.ports.find((item) => item.portId === portId);
+      if (port?.state[field] === expected) {
+        await refreshDevice(deviceId);
+        return { ok: true, value: { accepted: true } };
+      }
+      if (attempt < 19) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+      }
+    }
+    return {
+      ok: false,
+      error: {
+        kind: "invalid_response",
+        message: `Port state did not confirm ${field}=${expected}`,
+      },
+    };
+  };
+
   const setPower = async (
     deviceId: string,
     portId: PortId,
     enabled: boolean,
-  ) => {
+  ): Promise<Result<{ accepted: true }>> => {
     const result = await setPowerResult(deviceId, portId, enabled);
     const label = portId === "port_a" ? "USB-A" : "USB-C";
     const deviceName =
@@ -610,9 +646,10 @@ export function createDeviceRuntimeActions({
         message: `${deviceName}: ${label} power set`,
         variant: "success",
       });
-      return;
+      return result;
     }
     handleApiErrorToast(deviceName, label, result.error);
+    return result;
   };
 
   const setPowerResult = async (
@@ -636,7 +673,59 @@ export function createDeviceRuntimeActions({
             enabled,
           },
         });
-        return direct ?? invalidDeviceResult(deviceId);
+        if (!direct?.ok) {
+          return direct ?? invalidDeviceResult(deviceId);
+        }
+        return waitForPortState(deviceId, portId, "power_enabled", enabled);
+      },
+    });
+  };
+
+  const setData = async (
+    deviceId: string,
+    portId: PortId,
+    connected: boolean,
+  ): Promise<Result<{ accepted: true }>> => {
+    const result = await setDataResult(deviceId, portId, connected);
+    const label = portId === "port_a" ? "USB-A" : "USB-C";
+    const deviceName =
+      devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+    if (result.ok) {
+      pushToast({
+        message: `${deviceName}: ${label} data link ${connected ? "enabled" : "disabled"}`,
+        variant: "success",
+      });
+      return result;
+    }
+    handleApiErrorToast(deviceName, label, result.error);
+    return result;
+  };
+
+  const setDataResult = async (
+    deviceId: string,
+    portId: PortId,
+    connected: boolean,
+  ): Promise<Result<{ accepted: true }>> => {
+    if (!isLeader && coordinationRole !== "unsupported") {
+      return requestLeaderRpc("setData", [deviceId, portId, connected]);
+    }
+    return runSharedMutation({
+      deviceId,
+      method: "setData",
+      invoke: async () => {
+        const direct = await runPendingMutation<{ accepted: true }>({
+          deviceId,
+          pendingPortId: portId,
+          method: "port.data_set",
+          params: {
+            port: portId,
+            connected,
+          },
+        });
+        if (!direct?.ok) {
+          return direct ?? invalidDeviceResult(deviceId);
+        }
+        return waitForPortState(deviceId, portId, "data_connected", connected);
       },
     });
   };
@@ -923,6 +1012,13 @@ export function createDeviceRuntimeActions({
             Boolean(message.args[2]),
           );
           break;
+        case "setData":
+          result = await setDataResult(
+            deviceId,
+            message.args[1] as PortId,
+            Boolean(message.args[2]),
+          );
+          break;
         case "replug":
           result = await replugResult(deviceId, message.args[1] as PortId);
           break;
@@ -979,6 +1075,7 @@ export function createDeviceRuntimeActions({
     runIdleBias,
     savePowerConfig,
     saveWifiConfig,
+    setData,
     setIdleBias,
     setLock,
     setPower,

@@ -801,6 +801,57 @@ async fn handle_api_request(
             return Ok(());
         }
 
+        if method == "POST" && tail == "data" {
+            let Some(connected) = parse_connected_query(query) else {
+                write_api_error(
+                    socket,
+                    "400 Bad Request",
+                    allow_origin,
+                    "bad_request",
+                    "missing or invalid connected",
+                    false,
+                )
+                .await?;
+                return Ok(());
+            };
+
+            match try_set_data_action(api_state, port_id, connected).await {
+                Ok(()) => {
+                    let mut body = String::new();
+                    let _ = core::write!(
+                        body,
+                        "{{\"accepted\":true,\"data_connected\":{}}}",
+                        if connected { "true" } else { "false" }
+                    );
+                    write_json_response(socket, "202 Accepted", allow_origin, body.as_str())
+                        .await?;
+                }
+                Err(ApiPortDataActionError::Busy) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "busy",
+                        "port is busy",
+                        true,
+                    )
+                    .await?;
+                }
+                Err(ApiPortDataActionError::PowerOff) => {
+                    write_api_error(
+                        socket,
+                        "409 Conflict",
+                        allow_origin,
+                        "port_power_off",
+                        "enable port power before connecting the data link",
+                        false,
+                    )
+                    .await?;
+                }
+            }
+            return Ok(());
+        }
+
         if method == "POST" && tail == "power" {
             let Some(enabled) = parse_enabled_query(query) else {
                 write_api_error(
@@ -1021,6 +1072,20 @@ fn parse_enabled_query(query: &str) -> Option<bool> {
     for part in query.split('&') {
         let (k, v) = part.split_once('=')?;
         if k == "enabled" {
+            return match v {
+                "0" => Some(false),
+                "1" => Some(true),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+fn parse_connected_query(query: &str) -> Option<bool> {
+    for part in query.split('&') {
+        let (k, v) = part.split_once('=')?;
+        if k == "connected" {
             return match v {
                 "0" => Some(false),
                 "1" => Some(true),

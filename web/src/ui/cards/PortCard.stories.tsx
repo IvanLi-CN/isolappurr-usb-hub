@@ -22,8 +22,8 @@ const meta: Meta<typeof PortCard> = {
       replugging: false,
       busy: false,
     },
-    onTogglePower: () => {},
-    onReplug: () => {},
+    onSetPower: async () => ({ ok: true }),
+    onSetData: async () => ({ ok: true }),
   },
 };
 
@@ -74,7 +74,7 @@ export const PowerOff: Story = {
   },
 };
 
-export const Replugging: Story = {
+export const DataSwitching: Story = {
   args: {
     state: {
       power_enabled: true,

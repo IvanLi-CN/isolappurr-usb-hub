@@ -126,6 +126,7 @@ describe("CrossTabRuntimeCoordinator", () => {
   test("classifies runtime RPC methods into query and mutation kinds", () => {
     expect(runtimeRpcMethodKind("deviceInfo")).toBe("query");
     expect(runtimeRpcMethodKind("savePowerConfig")).toBe("mutation");
+    expect(runtimeRpcMethodKind("setData")).toBe("mutation");
   });
 
   test("broadcasts shared runtime snapshots through storage fallback", () => {

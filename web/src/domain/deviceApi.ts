@@ -670,6 +670,19 @@ export async function setPortPower(
   );
 }
 
+export async function setPortData(
+  baseUrl: string,
+  portId: PortId,
+  connected: boolean,
+): Promise<Result<{ accepted: true; data_connected: boolean }>> {
+  const query = connected ? "connected=1" : "connected=0";
+  return fetchJson<{ accepted: true; data_connected: boolean }>(
+    baseUrl,
+    `/api/v1/ports/${portId}/data?${query}`,
+    { method: "POST" },
+  );
+}
+
 export async function setUsbCDownstreamRoute(
   baseUrl: string,
   route: UsbCDownstreamRoute,

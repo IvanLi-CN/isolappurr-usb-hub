@@ -3,6 +3,7 @@ import { useDeviceRuntime } from "../../app/device-runtime";
 import type { PdDiagnosticsResponse } from "../../domain/deviceApi";
 import type { StoredDevice } from "../../domain/devices";
 import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
+import { toHoldActionResult } from "../actions/TwoStageHoldButton";
 import { PortCard } from "../cards/PortCard";
 import { formatTimeHms } from "../format/time";
 
@@ -352,11 +353,13 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
         label: "USB-A",
         telemetry: telemetry("port_a"),
         state: state("port_a"),
+        dataLinkAvailable: port("port_a")?.capabilities.data_set === true,
       },
       port_c: {
         label: "USB-C",
         telemetry: telemetry("port_c"),
         state: state("port_c"),
+        dataLinkAvailable: port("port_c")?.capabilities.data_set === true,
       },
     };
   }, [connectionState, device.id, runtime]);
@@ -503,14 +506,17 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
           telemetry={items.port_a.telemetry}
           state={items.port_a.state}
           disabled={writeDisabled}
-          onTogglePower={() =>
-            void runtime.setPower(
-              device.id,
-              "port_a",
-              !items.port_a.state.power_enabled,
-            )
+          dataLinkAvailable={items.port_a.dataLinkAvailable}
+          onSetPower={(enabled) =>
+            runtime
+              .setPower(device.id, "port_a", enabled)
+              .then(toHoldActionResult)
           }
-          onReplug={() => void runtime.replug(device.id, "port_a")}
+          onSetData={(connected) =>
+            runtime
+              .setData(device.id, "port_a", connected)
+              .then(toHoldActionResult)
+          }
         />
         <PortCard
           portId="port_c"
@@ -523,14 +529,17 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
             (hasResolvedUsbCPort && items.port_c.telemetry.status !== "ok")
           }
           disabled={writeDisabled}
-          onTogglePower={() =>
-            void runtime.setPower(
-              device.id,
-              "port_c",
-              !items.port_c.state.power_enabled,
-            )
+          dataLinkAvailable={items.port_c.dataLinkAvailable}
+          onSetPower={(enabled) =>
+            runtime
+              .setPower(device.id, "port_c", enabled)
+              .then(toHoldActionResult)
           }
-          onReplug={() => void runtime.replug(device.id, "port_c")}
+          onSetData={(connected) =>
+            runtime
+              .setData(device.id, "port_c", connected)
+              .then(toHoldActionResult)
+          }
         />
       </div>
     </div>

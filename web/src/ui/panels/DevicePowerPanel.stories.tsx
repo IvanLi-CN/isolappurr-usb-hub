@@ -378,7 +378,8 @@ const defaultArgs: Story["args"] = {
   usbCTelemetry,
   usbCState,
   usbCPending: false,
-  replugUsbC: async () => undefined,
+  usbCDataLinkAvailable: true,
+  setUsbCData: async () => ({ ok: true }),
 };
 
 function thermalStoryArgs(

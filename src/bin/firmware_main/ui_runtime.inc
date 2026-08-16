@@ -57,6 +57,7 @@ impl PortState {
 }
 
 const DATA_DISCONNECT_MS: u64 = 250;
+const DATA_SWITCH_GUARD_MS: u64 = 100;
 const TOAST_MS: u64 = 1500;
 const POWER_SWITCH_GUARD_MS: u64 = 350;
 #[cfg(feature = "net_http")]
@@ -105,6 +106,10 @@ const TOAST_USB_A_DATA_OFF: [[u8; 13]; 3] =
     [*b"USB-A DATAOFF", *b"250MS        ", *b"             "];
 const TOAST_USB_A_DATA_ON: [[u8; 13]; 3] =
     [*b"USB-A DATAON ", *b"DONE         ", *b"             "];
+const TOAST_USB_A_DATA_DISABLED: [[u8; 13]; 3] =
+    [*b"USB-A DATAOFF", *b"RUNTIME      ", *b"             "];
+const TOAST_USB_A_DATA_ENABLED: [[u8; 13]; 3] =
+    [*b"USB-A DATAON ", *b"RUNTIME      ", *b"             "];
 const TOAST_USB_A_PWR_OFF: [[u8; 13]; 3] =
     [*b"USB-A PWROFF ", *b"DONE         ", *b"             "];
 const TOAST_USB_A_PWR_ON: [[u8; 13]; 3] = [*b"USB-A PWRON  ", *b"DONE         ", *b"             "];
@@ -118,6 +123,10 @@ const TOAST_USB_C_DATA_OFF: [[u8; 13]; 3] =
     [*b"USB-C DATAOFF", *b"250MS        ", *b"             "];
 const TOAST_USB_C_DATA_ON: [[u8; 13]; 3] =
     [*b"USB-C DATAON ", *b"DONE         ", *b"             "];
+const TOAST_USB_C_DATA_DISABLED: [[u8; 13]; 3] =
+    [*b"USB-C DATAOFF", *b"RUNTIME      ", *b"             "];
+const TOAST_USB_C_DATA_ENABLED: [[u8; 13]; 3] =
+    [*b"USB-C DATAON ", *b"RUNTIME      ", *b"             "];
 const TOAST_USB_C_PWR_OFF: [[u8; 13]; 3] =
     [*b"USB-C PWROFF ", *b"DONE         ", *b"             "];
 
@@ -324,6 +333,8 @@ fn toggled_power_mode_config(config: PowerConfig) -> PowerConfig {
 enum ToastId {
     DataOff,
     DataOn,
+    DataDisabled,
+    DataEnabled,
     PwrOff,
     PwrOn,
     PwrFail,
@@ -334,7 +345,8 @@ enum ToastId {
 fn toast_spec(button: ButtonId, toast: ToastId) -> (&'static [[u8; 13]; 3], u16) {
     let fg_raw = match toast {
         ToastId::DataOff => TOAST_INFO_RAW,
-        ToastId::DataOn => TOAST_OK_RAW,
+        ToastId::DataOn | ToastId::DataEnabled => TOAST_OK_RAW,
+        ToastId::DataDisabled => TOAST_WARN_RAW,
         ToastId::PwrOff => TOAST_WARN_RAW,
         ToastId::PwrOn => TOAST_OK_RAW,
         ToastId::PwrFail | ToastId::Busy | ToastId::BadTime => TOAST_ERR_RAW,
@@ -343,6 +355,8 @@ fn toast_spec(button: ButtonId, toast: ToastId) -> (&'static [[u8; 13]; 3], u16)
     let lines = match (button, toast) {
         (ButtonId::Left, ToastId::DataOff) => &TOAST_USB_A_DATA_OFF,
         (ButtonId::Left, ToastId::DataOn) => &TOAST_USB_A_DATA_ON,
+        (ButtonId::Left, ToastId::DataDisabled) => &TOAST_USB_A_DATA_DISABLED,
+        (ButtonId::Left, ToastId::DataEnabled) => &TOAST_USB_A_DATA_ENABLED,
         (ButtonId::Left, ToastId::PwrOff) => &TOAST_USB_A_PWR_OFF,
         (ButtonId::Left, ToastId::PwrOn) => &TOAST_USB_A_PWR_ON,
         (ButtonId::Left, ToastId::PwrFail) => &TOAST_USB_A_PWR_FAIL,
@@ -350,6 +364,8 @@ fn toast_spec(button: ButtonId, toast: ToastId) -> (&'static [[u8; 13]; 3], u16)
         (ButtonId::Left, ToastId::BadTime) => &TOAST_USB_A_BADTIME,
         (ButtonId::Right, ToastId::DataOff) => &TOAST_USB_C_DATA_OFF,
         (ButtonId::Right, ToastId::DataOn) => &TOAST_USB_C_DATA_ON,
+        (ButtonId::Right, ToastId::DataDisabled) => &TOAST_USB_C_DATA_DISABLED,
+        (ButtonId::Right, ToastId::DataEnabled) => &TOAST_USB_C_DATA_ENABLED,
         (ButtonId::Right, ToastId::PwrOff) => &TOAST_USB_C_PWR_OFF,
         (ButtonId::Right, ToastId::PwrOn) => &TOAST_USB_C_PWR_ON,
         (ButtonId::Right, ToastId::PwrFail) => &TOAST_USB_C_PWR_FAIL,

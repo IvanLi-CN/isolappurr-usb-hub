@@ -23,8 +23,8 @@ const meta: Meta<typeof PortMiniCard> = {
       busy: false,
     },
     disabled: false,
-    onSetPower: () => {},
-    onReplug: () => {},
+    onSetPower: async () => ({ ok: true }),
+    onSetData: async () => ({ ok: true }),
   },
 };
 

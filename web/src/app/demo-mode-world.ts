@@ -135,6 +135,7 @@ function buildDemoDevice({
     },
     capabilities: {
       data_replug: true,
+      data_set: true,
       power_set: true,
     },
   });

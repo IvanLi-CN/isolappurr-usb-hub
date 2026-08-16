@@ -49,6 +49,7 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             "/api/v1/devices/{id}/ports/{port_id}/power",
             post(port_power),
         )
+        .route("/api/v1/devices/{id}/ports/{port_id}/data", post(port_data))
         .route(
             "/api/v1/devices/{id}/ports/{port_id}/replug",
             post(port_replug),
@@ -557,6 +558,41 @@ async fn port_replug(
         return error_from_anyhow(err);
     }
     match usb_jsonl_request(&state, &id, "port.replug", Some(json!({"port": port_id}))).await {
+        Ok(value) => Json(redact_sensitive(&value)).into_response(),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn port_data(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((id, port_id)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    if let Err(err) = require_compatible_project_firmware(&state, &id).await {
+        return error_from_anyhow(err);
+    }
+    let Some(connected) = query
+        .get("connected")
+        .and_then(|value| match value.as_str() {
+            "1" | "true" => Some(true),
+            "0" | "false" => Some(false),
+            _ => None,
+        })
+    else {
+        return bad_request("connected must be true or false");
+    };
+    match usb_jsonl_request(
+        &state,
+        &id,
+        "port.data_set",
+        Some(json!({"port": port_id, "connected": connected})),
+    )
+    .await
+    {
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }

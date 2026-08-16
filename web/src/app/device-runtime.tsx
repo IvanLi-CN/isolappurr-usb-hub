@@ -272,6 +272,7 @@ export function DeviceRuntimeProvider({
         method === "resetSettings" ||
         method === "rebootDevice" ||
         method === "setPower" ||
+        method === "setData" ||
         method === "replug" ||
         method === "setUsbCDownstreamRoute"
       ) {
@@ -1106,6 +1107,7 @@ export function DeviceRuntimeProvider({
     saveWifiConfig,
     setIdleBias,
     setLock,
+    setData,
     setPower,
     setPowerRuntime,
     setRoute,
@@ -1160,6 +1162,7 @@ export function DeviceRuntimeProvider({
       runIdleBiasCalibration: runIdleBias,
       clearIdleBiasCalibration: clearIdleBias,
       setPower,
+      setData,
       replug,
       setUsbCDownstreamRoute: setRoute,
     });
@@ -1185,6 +1188,7 @@ export function DeviceRuntimeProvider({
     setLock,
     setIdleBias,
     setRoute,
+    setData,
     setPower,
     runIdleBias,
     requestControlTakeover,

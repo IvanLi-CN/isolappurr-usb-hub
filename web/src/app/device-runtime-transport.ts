@@ -17,6 +17,7 @@ import {
   runIdleBiasCalibration,
   type SettingsResetScope,
   setIdleBiasCorrection,
+  setPortData,
   setPortPower,
   setPowerConfig,
   setPowerLock,
@@ -123,6 +124,13 @@ export async function requestHttpTransport<T>(
       baseUrl,
       params?.port as PortId,
       Boolean(params?.enabled),
+    ) as Promise<Result<T>>;
+  }
+  if (method === "port.data_set") {
+    return setPortData(
+      baseUrl,
+      params?.port as PortId,
+      Boolean(params?.connected),
     ) as Promise<Result<T>>;
   }
   if (method === "port.replug") {

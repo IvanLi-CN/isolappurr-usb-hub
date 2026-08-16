@@ -449,6 +449,7 @@ impl ApiPowerSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiPortAction {
     Replug,
+    Data { connected: bool },
     Power { enabled: bool },
 }
 

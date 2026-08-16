@@ -31,6 +31,7 @@ export type PortState = {
 
 export type PortCapabilities = {
   data_replug: boolean;
+  data_set?: boolean;
   power_set: boolean;
 };
 

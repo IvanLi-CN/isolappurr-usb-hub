@@ -104,6 +104,7 @@ type DemoApiResponse =
   | {
       accepted: true;
       power_enabled?: boolean;
+      data_connected?: boolean;
       persisted?: boolean;
       usb_c_downstream_route?: "mcu" | "usb_c";
       reboot_required?: boolean;
@@ -548,11 +549,42 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
       const port = target?.ports.ports.find((item) => item.portId === portId);
       if (port) {
         port.state.power_enabled = enabled;
+        port.state.data_connected = enabled;
       }
       return mutated;
     });
     return jsonResponse({
       response: { accepted: true, power_enabled: enabled },
+    } as unknown as DemoApiResponse);
+  }
+  if (
+    suffix.startsWith("ports/") &&
+    suffix.endsWith("/data") &&
+    method === "POST"
+  ) {
+    const portId = suffix.includes("port_a") ? "port_a" : "port_c";
+    const connected = url.searchParams.get("connected") === "1";
+    const currentPort = record.ports.ports.find(
+      (item) => item.portId === portId,
+    );
+    if (connected && !currentPort?.state.power_enabled) {
+      return apiError(
+        409,
+        "port_power_off",
+        "Enable port power before connecting the data link",
+      );
+    }
+    updateWorld((current) => {
+      const mutated = cloneWorld(current);
+      const target = findByDeviceId(mutated, deviceId);
+      const port = target?.ports.ports.find((item) => item.portId === portId);
+      if (port) {
+        port.state.data_connected = connected;
+      }
+      return mutated;
+    });
+    return jsonResponse({
+      response: { accepted: true, data_connected: connected },
     } as unknown as DemoApiResponse);
   }
   if (
@@ -870,10 +902,39 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
       const port = target?.ports.ports.find((item) => item.portId === portId);
       if (port) {
         port.state.power_enabled = enabled;
+        port.state.data_connected = enabled;
       }
       return mutated;
     });
     return jsonResponse({ accepted: true, power_enabled: enabled });
+  }
+  if (
+    url.pathname.startsWith("/api/v1/ports/") &&
+    url.pathname.endsWith("/data") &&
+    method === "POST"
+  ) {
+    const portId = url.pathname.includes("/port_a/") ? "port_a" : "port_c";
+    const connected = url.searchParams.get("connected") === "1";
+    const currentPort = record.ports.ports.find(
+      (item) => item.portId === portId,
+    );
+    if (connected && !currentPort?.state.power_enabled) {
+      return apiError(
+        409,
+        "port_power_off",
+        "Enable port power before connecting the data link",
+      );
+    }
+    updateWorld((current) => {
+      const mutated = cloneWorld(current);
+      const target = findByDeviceId(mutated, record.stored.id);
+      const port = target?.ports.ports.find((item) => item.portId === portId);
+      if (port) {
+        port.state.data_connected = connected;
+      }
+      return mutated;
+    });
+    return jsonResponse({ accepted: true, data_connected: connected });
   }
   if (
     url.pathname.startsWith("/api/v1/ports/") &&

@@ -1,0 +1,434 @@
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import type { Result } from "../../domain/deviceApi";
+
+export type HoldActionResult = { ok: true } | { ok: false; message: string };
+
+export function toHoldActionResult(result: Result<unknown>): HoldActionResult {
+  return result.ok
+    ? { ok: true }
+    : { ok: false, message: result.error.message };
+}
+
+type HoldPhase =
+  | "idle"
+  | "holding"
+  | "waiting"
+  | "confirmed"
+  | "error"
+  | "hint"
+  | "external";
+
+type TwoStageHoldButtonProps = {
+  label: string;
+  value: boolean;
+  disabled?: boolean;
+  unavailableReason?: string;
+  compact?: boolean;
+  className?: string;
+  testId?: string;
+  onSetValue: (next: boolean) => Promise<HoldActionResult>;
+};
+
+const FIRST_STAGE_MS = 600;
+const SECOND_STAGE_MS = 1250;
+const RESULT_VISIBLE_MS = 2800;
+
+function actionLabel(label: string, next: boolean): string {
+  return `${next ? "Enable" : "Disable"} ${label.toLowerCase()}`;
+}
+
+export function TwoStageHoldButton({
+  label,
+  value,
+  disabled = false,
+  unavailableReason,
+  compact = false,
+  className,
+  testId,
+  onSetValue,
+}: TwoStageHoldButtonProps) {
+  const tooltipId = useId();
+  const [phase, setPhase] = useState<HoldPhase>("idle");
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState("");
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const firstTimerRef = useRef<number | null>(null);
+  const secondTimerRef = useRef<number | null>(null);
+  const resultTimerRef = useRef<number | null>(null);
+  const hoverTimerRef = useRef<number | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const holdingRef = useRef(false);
+  const busyRef = useRef(false);
+  const firstStartedRef = useRef(false);
+  const firstConfirmedRef = useRef(false);
+  const secondDueRef = useRef(false);
+  const secondStartedRef = useRef(false);
+  const initialValueRef = useRef(value);
+  const expectedValueRef = useRef(value);
+  const priorValueRef = useRef(value);
+  const sessionRef = useRef(0);
+
+  const releaseHoldRef = useRef<(cancelled?: boolean) => void>(() => {});
+
+  const clearTimers = useCallback(() => {
+    if (firstTimerRef.current !== null) {
+      window.clearTimeout(firstTimerRef.current);
+      firstTimerRef.current = null;
+    }
+    if (secondTimerRef.current !== null) {
+      window.clearTimeout(secondTimerRef.current);
+      secondTimerRef.current = null;
+    }
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+  }, []);
+
+  const showResult = useCallback(
+    (nextPhase: HoldPhase, nextMessage: string) => {
+      if (resultTimerRef.current !== null) {
+        window.clearTimeout(resultTimerRef.current);
+      }
+      setPhase(nextPhase);
+      setMessage(nextMessage);
+      setTooltipOpen(true);
+      resultTimerRef.current = window.setTimeout(() => {
+        setPhase("idle");
+        setMessage("");
+        setTooltipOpen(false);
+        resultTimerRef.current = null;
+      }, RESULT_VISIBLE_MS);
+    },
+    [],
+  );
+
+  const runSecondStage = async (session: number) => {
+    if (
+      !holdingRef.current ||
+      !firstConfirmedRef.current ||
+      secondStartedRef.current ||
+      session !== sessionRef.current
+    ) {
+      return;
+    }
+    secondStartedRef.current = true;
+    busyRef.current = true;
+    const target = initialValueRef.current;
+    expectedValueRef.current = target;
+    setPhase("waiting");
+    setMessage(`Confirming ${actionLabel(label, target)}...`);
+    const result = await onSetValue(target);
+    busyRef.current = false;
+    if (session !== sessionRef.current) {
+      return;
+    }
+    if (!result.ok) {
+      holdingRef.current = false;
+      clearTimers();
+      showResult("error", result.message);
+      return;
+    }
+    showResult("confirmed", `${label} restored`);
+  };
+
+  const runFirstStage = async (session: number) => {
+    if (firstStartedRef.current || session !== sessionRef.current) {
+      return;
+    }
+    firstStartedRef.current = true;
+    busyRef.current = true;
+    const target = !initialValueRef.current;
+    expectedValueRef.current = target;
+    setPhase("waiting");
+    setMessage(`Confirming ${actionLabel(label, target)}...`);
+    const result = await onSetValue(target);
+    busyRef.current = false;
+    if (session !== sessionRef.current) {
+      return;
+    }
+    if (!result.ok) {
+      holdingRef.current = false;
+      clearTimers();
+      showResult("error", result.message);
+      return;
+    }
+    firstConfirmedRef.current = true;
+    if (holdingRef.current && secondDueRef.current) {
+      void runSecondStage(session);
+      return;
+    }
+    if (holdingRef.current) {
+      setPhase("holding");
+      setMessage(
+        `${label} ${target ? "enabled" : "disabled"}. Keep holding to restore it.`,
+      );
+      return;
+    }
+    showResult("confirmed", `${label} ${target ? "enabled" : "disabled"}`);
+  };
+
+  const beginHold = (pointerId?: number, target?: HTMLButtonElement) => {
+    if (disabled || busyRef.current || holdingRef.current) {
+      return;
+    }
+    if (resultTimerRef.current !== null) {
+      window.clearTimeout(resultTimerRef.current);
+      resultTimerRef.current = null;
+    }
+    const session = sessionRef.current + 1;
+    sessionRef.current = session;
+    holdingRef.current = true;
+    firstStartedRef.current = false;
+    firstConfirmedRef.current = false;
+    secondDueRef.current = false;
+    secondStartedRef.current = false;
+    initialValueRef.current = value;
+    expectedValueRef.current = value;
+    setPhase("holding");
+    setMessage(
+      `Hold for ${FIRST_STAGE_MS / 1000}s to ${actionLabel(label, !value).toLowerCase()}`,
+    );
+    setTooltipOpen(true);
+    const startedAt = performance.now();
+    const drawProgress = (now: number) => {
+      if (!holdingRef.current || session !== sessionRef.current) {
+        return;
+      }
+      setProgress(Math.min(1, (now - startedAt) / SECOND_STAGE_MS));
+      frameRef.current = window.requestAnimationFrame(drawProgress);
+    };
+    frameRef.current = window.requestAnimationFrame(drawProgress);
+    firstTimerRef.current = window.setTimeout(() => {
+      void runFirstStage(session);
+    }, FIRST_STAGE_MS);
+    secondTimerRef.current = window.setTimeout(() => {
+      secondDueRef.current = true;
+      if (firstConfirmedRef.current) {
+        void runSecondStage(session);
+      } else if (holdingRef.current) {
+        setPhase("waiting");
+        setMessage("Waiting for the first change to confirm...");
+      }
+    }, SECOND_STAGE_MS);
+    if (pointerId !== undefined && target) {
+      try {
+        target.setPointerCapture(pointerId);
+      } catch {
+        // Synthetic pointer events do not always create an active pointer.
+      }
+    }
+  };
+
+  const releaseHold = useCallback(
+    (cancelled = false) => {
+      if (!holdingRef.current) {
+        return;
+      }
+      holdingRef.current = false;
+      clearTimers();
+      const triggerStarted = firstStartedRef.current;
+      const firstConfirmed = firstConfirmedRef.current;
+      setProgress(triggerStarted ? progress : 0);
+      if (!triggerStarted) {
+        showResult(
+          cancelled ? "hint" : "hint",
+          `Continue holding about ${FIRST_STAGE_MS / 1000}s to ${actionLabel(label, !initialValueRef.current).toLowerCase()}.`,
+        );
+        return;
+      }
+      if (!firstConfirmed) {
+        setPhase("waiting");
+        setMessage("Waiting for the device to confirm the first change...");
+        setTooltipOpen(true);
+        return;
+      }
+      if (!secondStartedRef.current) {
+        showResult(
+          "confirmed",
+          `${label} ${expectedValueRef.current ? "enabled" : "disabled"}`,
+        );
+      }
+    },
+    [clearTimers, label, progress, showResult],
+  );
+
+  releaseHoldRef.current = releaseHold;
+
+  useEffect(() => {
+    const prior = priorValueRef.current;
+    priorValueRef.current = value;
+    if (
+      holdingRef.current &&
+      value !== prior &&
+      value !== expectedValueRef.current
+    ) {
+      holdingRef.current = false;
+      sessionRef.current += 1;
+      clearTimers();
+      showResult("external", `${label} changed elsewhere. Hold again to act.`);
+    }
+  }, [clearTimers, label, showResult, value]);
+
+  useEffect(() => {
+    const cancelForLossOfFocus = () => releaseHoldRef.current(true);
+    const cancelForVisibility = () => {
+      if (document.visibilityState !== "visible") {
+        releaseHoldRef.current(true);
+      }
+    };
+    window.addEventListener("blur", cancelForLossOfFocus);
+    document.addEventListener("visibilitychange", cancelForVisibility);
+    return () => {
+      window.removeEventListener("blur", cancelForLossOfFocus);
+      document.removeEventListener("visibilitychange", cancelForVisibility);
+      if (firstTimerRef.current !== null) {
+        window.clearTimeout(firstTimerRef.current);
+      }
+      if (secondTimerRef.current !== null) {
+        window.clearTimeout(secondTimerRef.current);
+      }
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+      }
+      if (resultTimerRef.current !== null) {
+        window.clearTimeout(resultTimerRef.current);
+      }
+      if (hoverTimerRef.current !== null) {
+        window.clearTimeout(hoverTimerRef.current);
+      }
+    };
+  }, []);
+
+  const tone =
+    phase === "error" || phase === "external"
+      ? "error"
+      : phase === "confirmed"
+        ? "success"
+        : phase === "holding" || phase === "waiting"
+          ? secondStartedRef.current
+            ? "success"
+            : "warning"
+          : "neutral";
+  const usage = unavailableReason
+    ? unavailableReason
+    : `${label} is ${value ? "enabled" : "disabled"}. Hold 0.6s to ${actionLabel(label, !value).toLowerCase()}, or continue to 1.25s to restore the current state.`;
+
+  return (
+    <div
+      className={`two-stage-hold${compact ? " two-stage-hold--compact" : ""}${className ? ` ${className}` : ""}`}
+      data-phase={phase}
+      data-tone={tone}
+      style={{ "--hold-progress": progress } as CSSProperties}
+    >
+      {disabled ? (
+        <button
+          aria-describedby={tooltipId}
+          aria-disabled="true"
+          aria-pressed={value}
+          className="two-stage-hold__button"
+          data-testid={testId}
+          onBlur={() => setTooltipOpen(false)}
+          onClick={() => setTooltipOpen(true)}
+          onFocus={() => setTooltipOpen(true)}
+          onKeyDown={(event) => {
+            if (event.key === " " || event.key === "Enter") {
+              event.preventDefault();
+              setTooltipOpen(true);
+            }
+          }}
+          onMouseEnter={() => {
+            hoverTimerRef.current = window.setTimeout(
+              () => setTooltipOpen(true),
+              500,
+            );
+          }}
+          onMouseLeave={() => {
+            if (hoverTimerRef.current !== null) {
+              window.clearTimeout(hoverTimerRef.current);
+              hoverTimerRef.current = null;
+            }
+            if (phase === "idle") {
+              setTooltipOpen(false);
+            }
+          }}
+          tabIndex={0}
+          type="button"
+        >
+          <span className="two-stage-hold__label">{label}</span>
+          <span className="two-stage-hold__state">{value ? "On" : "Off"}</span>
+          <span className="two-stage-hold__rail" aria-hidden />
+        </button>
+      ) : (
+        <button
+          aria-describedby={tooltipId}
+          aria-pressed={value}
+          className="two-stage-hold__button"
+          data-testid={testId}
+          onBlur={() => releaseHold(true)}
+          onClick={() => setTooltipOpen(true)}
+          onFocus={() => setTooltipOpen(true)}
+          onKeyDown={(event) => {
+            if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+              event.preventDefault();
+              beginHold();
+            }
+          }}
+          onKeyUp={(event) => {
+            if (event.key === " " || event.key === "Enter") {
+              event.preventDefault();
+              releaseHold();
+            }
+          }}
+          onMouseEnter={() => {
+            hoverTimerRef.current = window.setTimeout(
+              () => setTooltipOpen(true),
+              500,
+            );
+          }}
+          onMouseLeave={() => {
+            if (hoverTimerRef.current !== null) {
+              window.clearTimeout(hoverTimerRef.current);
+              hoverTimerRef.current = null;
+            }
+            if (phase === "idle") {
+              setTooltipOpen(false);
+            }
+          }}
+          onPointerCancel={() => releaseHold(true)}
+          onPointerDown={(event) => {
+            if (event.button !== 0) {
+              return;
+            }
+            event.preventDefault();
+            beginHold(event.pointerId, event.currentTarget);
+          }}
+          onPointerUp={() => releaseHold()}
+          type="button"
+        >
+          <span className="two-stage-hold__label">{label}</span>
+          <span className="two-stage-hold__state">{value ? "On" : "Off"}</span>
+          <span className="two-stage-hold__rail" aria-hidden />
+        </button>
+      )}
+      <span className="sr-only" aria-live="polite">
+        {message}
+      </span>
+      <span
+        className="two-stage-hold__tooltip"
+        data-visible={tooltipOpen}
+        id={tooltipId}
+        role="tooltip"
+      >
+        {message || usage}
+      </span>
+    </div>
+  );
+}
