@@ -17,8 +17,17 @@ class ReleasePagesContractTest(unittest.TestCase):
         self.assertIn("workflow_dispatch:\n", workflow)
         self.assertIn("release_tag:\n", workflow)
         self.assertNotIn("\n  push:\n", workflow)
+        self.assertIn(
+            "group: pages-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.run_id }}",
+            workflow,
+        )
+        self.assertIn(
+            "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+            workflow,
+        )
         self.assertIn("name: Pages / PR build\n", workflow)
         self.assertIn('gh release download "$RELEASE_TAG"', workflow)
+        self.assertIn('--repo "$GITHUB_REPOSITORY"', workflow)
         self.assertNotIn("bun run retain-pages-assets", workflow)
 
     def test_release_workflow_prepares_draft_then_deploys_pages_before_publish(self) -> None:

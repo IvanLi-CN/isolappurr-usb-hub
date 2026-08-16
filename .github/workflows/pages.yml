@@ -16,8 +16,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   pr-build:
@@ -100,7 +100,8 @@ jobs:
           mkdir -p dist/release web/dist
           gh release download "$RELEASE_TAG" \
             --pattern "isolapurr-web-dist-*.tar.gz" \
-            --dir dist/release
+            --dir dist/release \
+            --repo "$GITHUB_REPOSITORY"
           tar -xzf dist/release/isolapurr-web-dist-*.tar.gz -C web/dist
 
       - name: Upload Pages artifact
