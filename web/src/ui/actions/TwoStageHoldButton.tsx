@@ -160,6 +160,7 @@ export function TwoStageHoldButton({
   const initialValueRef = useRef(value);
   const expectedValueRef = useRef(value);
   const priorValueRef = useRef(value);
+  const confirmedStageRef = useRef<"first" | "second" | null>(null);
   const sessionRef = useRef(0);
   const pointerHoldRef = useRef(false);
   const suppressNextClickRef = useRef(false);
@@ -228,6 +229,7 @@ export function TwoStageHoldButton({
       showResult("error", result.message);
       return;
     }
+    confirmedStageRef.current = "second";
     showResult("confirmed", `${label} restored`);
   };
 
@@ -268,6 +270,7 @@ export function TwoStageHoldButton({
       return;
     }
     setRestoreProgress(0);
+    confirmedStageRef.current = "first";
     showResult("confirmed", `${label} ${target ? "enabled" : "disabled"}`);
   };
 
@@ -286,6 +289,7 @@ export function TwoStageHoldButton({
     firstConfirmedRef.current = false;
     secondDueRef.current = false;
     secondStartedRef.current = false;
+    confirmedStageRef.current = null;
     pointerHoldRef.current = pointerId !== undefined;
     suppressNextClickRef.current = false;
     setFirstProgress(0);
@@ -362,6 +366,7 @@ export function TwoStageHoldButton({
       }
       if (!secondStartedRef.current) {
         setRestoreProgress(0);
+        confirmedStageRef.current = "first";
         showResult(
           "confirmed",
           `${label} ${expectedValueRef.current ? "enabled" : "disabled"}`,
@@ -451,6 +456,12 @@ export function TwoStageHoldButton({
     visualMessage,
   );
   const visualFeedbackMark = feedbackMark(visualPhase, visualStage);
+  const visualSuccessStage =
+    preview?.phase === "confirmed"
+      ? /restored/i.test(preview.message ?? "")
+        ? "second"
+        : "first"
+      : confirmedStageRef.current;
   const tone =
     preview?.tone ??
     (phase === "error" || phase === "external"
@@ -478,6 +489,7 @@ export function TwoStageHoldButton({
       className={`two-stage-hold${compact ? " two-stage-hold--compact" : ""}${className ? ` ${className}` : ""}`}
       data-phase={visualPhase}
       data-stage={visualStage}
+      data-success-stage={visualSuccessStage ?? undefined}
       data-tone={tone}
       data-progress-direction={visualProgressDirection}
       style={

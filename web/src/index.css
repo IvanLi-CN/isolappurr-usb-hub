@@ -938,7 +938,13 @@ textarea.textarea:disabled {
   animation: two-stage-hold-stage-one-success 480ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.two-stage-hold[data-phase="confirmed"] .two-stage-hold__button {
+.two-stage-hold[data-phase="confirmed"][data-success-stage="first"]
+  .two-stage-hold__button {
+  animation: two-stage-hold-stage-one-success 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.two-stage-hold[data-phase="confirmed"][data-success-stage="second"]
+  .two-stage-hold__button {
   animation: two-stage-hold-stage-two-success 520ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 

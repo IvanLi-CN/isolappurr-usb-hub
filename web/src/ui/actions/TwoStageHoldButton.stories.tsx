@@ -345,6 +345,13 @@ export const KeyboardStageOne: Story = {
     await sleep(720);
     fireEvent.keyUp(button, { key: " " });
     await expect(canvas.getByTestId("hold-events")).toHaveTextContent("false");
+    await expect(button.parentElement).toHaveAttribute(
+      "data-success-stage",
+      "first",
+    );
+    await expect(window.getComputedStyle(button).animationName).toContain(
+      "two-stage-hold-stage-one-success",
+    );
   },
 };
 
