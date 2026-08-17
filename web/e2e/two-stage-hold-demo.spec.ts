@@ -54,6 +54,11 @@ async function expectVisibleControlText(control: Locator) {
 
 async function openDemoDashboard(page: Page) {
   await page.goto("/?demo=true");
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  await page.reload();
   await expect(page.getByTestId("dashboard")).toBeVisible();
 }
 
@@ -132,7 +137,7 @@ test("demo dashboard commits the first stage and restores after the second", asy
     .getAttribute("aria-pressed");
   const firstTarget = firstSnapshot === "true" ? "false" : "true";
 
-  await holdFor(page, power, 720);
+  await holdFor(page, power, 920);
   await expect(power.locator(".two-stage-hold__button")).toHaveAttribute(
     "aria-pressed",
     firstTarget,
