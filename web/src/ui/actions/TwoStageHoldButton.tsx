@@ -360,12 +360,20 @@ export function TwoStageHoldButton({
   useEffect(() => {
     const cancelForLossOfFocus = () => releaseHoldRef.current(true);
     const releaseForPointerEnd = (event: PointerEvent) => {
-      if (event.pointerId === activePointerIdRef.current) {
+      if (
+        activePointerIdRef.current !== null &&
+        (event.pointerId === activePointerIdRef.current ||
+          event.pointerId === 0)
+      ) {
         releaseHoldRef.current();
       }
     };
     const cancelForPointerEnd = (event: PointerEvent) => {
-      if (event.pointerId === activePointerIdRef.current) {
+      if (
+        activePointerIdRef.current !== null &&
+        (event.pointerId === activePointerIdRef.current ||
+          event.pointerId === 0)
+      ) {
         releaseHoldRef.current(true);
       }
     };
