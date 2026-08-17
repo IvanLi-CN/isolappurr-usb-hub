@@ -438,8 +438,8 @@ export const EarlyReleaseGuidance: Story = {
     const button = canvas.getByTestId("two-stage-hold");
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
     await sleep(180);
-    fireEvent.pointerUp(window, { button: 0, pointerId: 1 });
-    await sleep(20);
+    fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
+    await sleep(50);
     await expect(button.parentElement).toHaveAttribute("data-phase", "hint");
     await expect(window.getComputedStyle(button).animationName).toContain(
       "two-stage-hold-hint-reject",
