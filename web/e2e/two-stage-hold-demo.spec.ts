@@ -62,6 +62,13 @@ async function openDemoDashboard(page: Page) {
   await session.detach();
   await page.goto("/?demo=true");
   await expect(page.getByTestId("dashboard")).toBeVisible();
+  await expect(
+    page
+      .getByTestId("device-summary-aabbcc001122")
+      .locator(".two-stage-hold")
+      .first()
+      .locator(".two-stage-hold__button"),
+  ).not.toHaveAttribute("aria-disabled", "true");
 }
 
 test("demo dashboard keeps compact hold controls legible through every action", async ({
