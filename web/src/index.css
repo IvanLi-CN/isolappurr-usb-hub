@@ -953,6 +953,12 @@ textarea.textarea:disabled {
   animation: two-stage-hold-failure-button 440ms ease-in-out;
 }
 
+.two-stage-hold[data-phase="hint"] .two-stage-hold__button {
+  animation: two-stage-hold-hint-reject 260ms cubic-bezier(0.36, 0, 0.2, 1);
+  border-color: color-mix(in srgb, var(--warning) 54%, var(--border));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--warning) 14%, transparent);
+}
+
 .two-stage-hold[data-tone="warning"] .two-stage-hold__button {
   border-color: var(--surface-warning-ring);
   background: var(--surface-warning-bg);
@@ -1119,6 +1125,29 @@ textarea.textarea:disabled {
 
   84% {
     transform: translateX(3px);
+  }
+}
+
+@keyframes two-stage-hold-hint-reject {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  18% {
+    transform: translateX(-4px);
+  }
+
+  38% {
+    transform: translateX(4px);
+  }
+
+  58% {
+    transform: translateX(-3px);
+  }
+
+  78% {
+    transform: translateX(2px);
   }
 }
 

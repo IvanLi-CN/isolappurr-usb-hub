@@ -289,11 +289,18 @@ export const EarlyReleaseGuidance: Story = {
     await sleep(180);
     fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
     await expect(await canvas.findByText("No change")).toBeInTheDocument();
+    await expect(button.parentElement).toHaveAttribute("data-phase", "hint");
+    await expect(window.getComputedStyle(button).animationName).toContain(
+      "two-stage-hold-hint-reject",
+    );
     await expect(canvas.getByRole("tooltip", { hidden: true })).toHaveAttribute(
       "data-visible",
       "false",
     );
     await expect(canvas.getByTestId("hold-events")).toHaveTextContent("none");
+    fireEvent.click(button);
+    const tooltip = await canvas.findByRole("tooltip");
+    await expect(tooltip).toHaveAttribute("data-visible", "true");
   },
 };
 
