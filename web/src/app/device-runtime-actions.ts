@@ -140,6 +140,30 @@ function setPending(
   });
 }
 
+export function applyConfirmedPortsSnapshot(
+  current: DeviceRuntime,
+  snapshot: PortsResponse,
+): DeviceRuntime {
+  const portA = snapshot.ports.find((port) => port.portId === "port_a");
+  const portC = snapshot.ports.find((port) => port.portId === "port_c");
+  if (!portA || !portC) {
+    return current;
+  }
+
+  return {
+    ...current,
+    lastOkAt: Date.now(),
+    lastError: null,
+    hub: snapshot.hub
+      ? {
+          ...snapshot.hub,
+          capabilities: snapshot.hub.capabilities ?? snapshot.capabilities,
+        }
+      : current.hub,
+    ports: { port_a: portA, port_c: portC },
+  };
+}
+
 export function createDeviceRuntimeActions({
   coordinator,
   coordinationRole,
@@ -616,7 +640,16 @@ export function createDeviceRuntimeActions({
       }
       const port = snapshot.value.ports.find((item) => item.portId === portId);
       if (port?.state[field] === expected) {
-        await refreshDevice(deviceId);
+        setRuntimeById((previous) => {
+          const current = previous[deviceId];
+          if (!current) {
+            return previous;
+          }
+          const next = applyConfirmedPortsSnapshot(current, snapshot.value);
+          return next === current
+            ? previous
+            : { ...previous, [deviceId]: next };
+        });
         return { ok: true, value: { accepted: true } };
       }
       if (attempt < 19) {
