@@ -811,7 +811,8 @@ textarea.textarea:disabled {
 }
 
 .two-stage-hold {
-  --hold-progress: 0;
+  --hold-first-progress: 0;
+  --hold-second-progress: 0;
   position: relative;
   display: inline-flex;
   min-width: min(100%, 8.75rem);
@@ -868,25 +869,58 @@ textarea.textarea:disabled {
   white-space: nowrap;
 }
 
-.two-stage-hold__state {
+.two-stage-hold__feedback {
   position: relative;
   z-index: 1;
+  display: inline-flex;
+  min-width: 3.875rem;
+  min-height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--muted);
   font-size: 0.625rem;
   font-weight: 700;
   line-height: 1;
-  color: var(--muted);
+  padding: 0 0.375rem;
+  text-align: center;
+  white-space: nowrap;
+  transition:
+    background-color 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.two-stage-hold__rail {
+.two-stage-hold__rails {
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
   height: 3px;
-  transform: scaleX(var(--hold-progress));
-  transform-origin: left center;
+  overflow: hidden;
+}
+
+.two-stage-hold__rail {
+  position: relative;
+  min-width: 0;
+  height: 100%;
   background: var(--primary);
+  transform-origin: left center;
   transition: transform 35ms linear;
+}
+
+.two-stage-hold__rail--first {
+  transform: scaleX(var(--hold-first-progress));
+}
+
+.two-stage-hold__rail--second {
+  transform: scaleX(var(--hold-second-progress));
 }
 
 .two-stage-hold[data-tone="warning"] .two-stage-hold__button {
@@ -898,6 +932,12 @@ textarea.textarea:disabled {
   background: color-mix(in srgb, var(--warning) 42%, var(--primary));
 }
 
+.two-stage-hold[data-tone="warning"] .two-stage-hold__feedback {
+  border-color: var(--surface-warning-ring);
+  background: color-mix(in srgb, var(--warning) 18%, var(--panel));
+  color: var(--warning);
+}
+
 .two-stage-hold[data-tone="success"] .two-stage-hold__button {
   border-color: var(--surface-success-ring);
   background: var(--surface-success-bg);
@@ -905,6 +945,12 @@ textarea.textarea:disabled {
 
 .two-stage-hold[data-tone="success"] .two-stage-hold__rail {
   background: color-mix(in srgb, var(--success) 48%, var(--primary));
+}
+
+.two-stage-hold[data-tone="success"] .two-stage-hold__feedback {
+  border-color: var(--surface-success-ring);
+  background: color-mix(in srgb, var(--success) 18%, var(--panel));
+  color: var(--success);
 }
 
 .two-stage-hold[data-tone="error"] .two-stage-hold__button {
@@ -916,9 +962,24 @@ textarea.textarea:disabled {
   background: var(--error);
 }
 
+.two-stage-hold[data-tone="error"] .two-stage-hold__feedback {
+  border-color: color-mix(in srgb, var(--error) 70%, var(--border));
+  background: color-mix(in srgb, var(--error) 16%, var(--panel));
+  color: var(--error);
+}
+
 .two-stage-hold[data-phase="holding"] .two-stage-hold__button,
 .two-stage-hold[data-phase="waiting"] .two-stage-hold__button {
   transform: translateY(1px);
+}
+
+.two-stage-hold[data-phase="stage-one"] .two-stage-hold__button {
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
+.two-stage-hold[data-phase="stage-one"] .two-stage-hold__feedback,
+.two-stage-hold[data-phase="confirmed"] .two-stage-hold__feedback {
+  animation: two-stage-hold-confirm 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .two-stage-hold[data-phase="waiting"] .two-stage-hold__button {
@@ -928,6 +989,40 @@ textarea.textarea:disabled {
 .two-stage-hold[data-phase="confirmed"] .two-stage-hold__button {
   border-color: color-mix(in srgb, var(--success) 72%, var(--border));
   background: var(--surface-success-bg);
+}
+
+.two-stage-hold[data-phase="error"] .two-stage-hold__feedback,
+.two-stage-hold[data-phase="external"] .two-stage-hold__feedback {
+  animation: two-stage-hold-failure 280ms ease-in-out;
+}
+
+@keyframes two-stage-hold-confirm {
+  0% {
+    transform: scale(0.88);
+  }
+
+  62% {
+    transform: scale(1.08);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes two-stage-hold-failure {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  30% {
+    transform: translateX(-3px);
+  }
+
+  62% {
+    transform: translateX(3px);
+  }
 }
 
 .two-stage-hold__tooltip {
@@ -974,6 +1069,23 @@ textarea.textarea:disabled {
   font-size: 0.75rem;
 }
 
+@media (max-width: 639px) {
+  .two-stage-hold__button {
+    gap: 0.25rem;
+    padding: 0 0.375rem;
+  }
+
+  .two-stage-hold__label {
+    font-size: 0.75rem;
+  }
+
+  .two-stage-hold__feedback {
+    min-width: 3.25rem;
+    font-size: 0.5625rem;
+    padding: 0 0.25rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .device-card {
     transition-duration: 0ms;
@@ -989,9 +1101,15 @@ textarea.textarea:disabled {
   }
 
   .two-stage-hold__button,
+  .two-stage-hold__rails,
   .two-stage-hold__rail,
+  .two-stage-hold__feedback,
   .two-stage-hold__tooltip {
     transition: none;
+  }
+
+  .two-stage-hold__feedback {
+    animation: none;
   }
 
   .two-stage-hold[data-phase="holding"] .two-stage-hold__button,

@@ -19,6 +19,7 @@ export function toHoldActionResult(result: Result<unknown>): HoldActionResult {
 export type TwoStageHoldPhase =
   | "idle"
   | "holding"
+  | "stage-one"
   | "waiting"
   | "confirmed"
   | "error"
@@ -27,6 +28,12 @@ export type TwoStageHoldPhase =
 
 export type TwoStageHoldTone = "neutral" | "warning" | "success" | "error";
 
+export type TwoStageHoldStage =
+  | "first"
+  | "first-complete"
+  | "second"
+  | "result";
+
 /**
  * Stable visual checkpoint for Storybook and visual-regression coverage.
  * Product code omits this and is always driven by the live hold state machine.
@@ -34,6 +41,7 @@ export type TwoStageHoldTone = "neutral" | "warning" | "success" | "error";
 export type TwoStageHoldPreview = {
   phase: TwoStageHoldPhase;
   progress: number;
+  stage: TwoStageHoldStage;
   tone: TwoStageHoldTone;
   message?: string;
   tooltipOpen?: boolean;
@@ -53,10 +61,49 @@ type TwoStageHoldButtonProps = {
 
 const FIRST_STAGE_MS = 600;
 const SECOND_STAGE_MS = 1250;
+const STAGE_ONE_FEEDBACK_MS = 160;
 const RESULT_VISIBLE_MS = 2800;
 
 function actionLabel(label: string, next: boolean): string {
   return `${next ? "Enable" : "Disable"} ${label.toLowerCase()}`;
+}
+
+function feedbackLabel(
+  phase: TwoStageHoldPhase,
+  stage: TwoStageHoldStage,
+  value: boolean,
+  message: string,
+): string {
+  if (phase === "error") {
+    return "Failed";
+  }
+  if (phase === "external") {
+    return "Changed";
+  }
+  if (phase === "hint") {
+    return "Not changed";
+  }
+  if (phase === "holding") {
+    return "Hold";
+  }
+  if (phase === "waiting") {
+    return stage === "second" ? "Restoring" : "Applying";
+  }
+  if (phase === "stage-one") {
+    return value ? "Enabled" : "Disabled";
+  }
+  if (phase === "confirmed") {
+    if (/restored/i.test(message)) {
+      return "Restored";
+    }
+    if (/enabled/i.test(message)) {
+      return "Enabled";
+    }
+    if (/disabled/i.test(message)) {
+      return "Disabled";
+    }
+  }
+  return value ? "On" : "Off";
 }
 
 export function TwoStageHoldButton({
@@ -72,13 +119,14 @@ export function TwoStageHoldButton({
 }: TwoStageHoldButtonProps) {
   const tooltipId = useId();
   const [phase, setPhase] = useState<TwoStageHoldPhase>("idle");
-  const [progress, setProgress] = useState(0);
+  const [firstProgress, setFirstProgress] = useState(0);
+  const [secondProgress, setSecondProgress] = useState(0);
   const [message, setMessage] = useState("");
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const firstTimerRef = useRef<number | null>(null);
   const secondTimerRef = useRef<number | null>(null);
+  const stageOneFeedbackTimerRef = useRef<number | null>(null);
   const resultTimerRef = useRef<number | null>(null);
-  const hoverTimerRef = useRef<number | null>(null);
   const frameRef = useRef<number | null>(null);
   const holdingRef = useRef(false);
   const busyRef = useRef(false);
@@ -90,6 +138,8 @@ export function TwoStageHoldButton({
   const expectedValueRef = useRef(value);
   const priorValueRef = useRef(value);
   const sessionRef = useRef(0);
+  const pointerHoldRef = useRef(false);
+  const suppressNextClickRef = useRef(false);
 
   const releaseHoldRef = useRef<(cancelled?: boolean) => void>(() => {});
 
@@ -101,6 +151,10 @@ export function TwoStageHoldButton({
     if (secondTimerRef.current !== null) {
       window.clearTimeout(secondTimerRef.current);
       secondTimerRef.current = null;
+    }
+    if (stageOneFeedbackTimerRef.current !== null) {
+      window.clearTimeout(stageOneFeedbackTimerRef.current);
+      stageOneFeedbackTimerRef.current = null;
     }
     if (frameRef.current !== null) {
       window.cancelAnimationFrame(frameRef.current);
@@ -115,11 +169,9 @@ export function TwoStageHoldButton({
       }
       setPhase(nextPhase);
       setMessage(nextMessage);
-      setTooltipOpen(true);
       resultTimerRef.current = window.setTimeout(() => {
         setPhase("idle");
         setMessage("");
-        setTooltipOpen(false);
         resultTimerRef.current = null;
       }, RESULT_VISIBLE_MS);
     },
@@ -139,6 +191,7 @@ export function TwoStageHoldButton({
     busyRef.current = true;
     const target = initialValueRef.current;
     expectedValueRef.current = target;
+    setSecondProgress(1);
     setPhase("waiting");
     setMessage(`Confirming ${actionLabel(label, target)}...`);
     const result = await onSetValue(target);
@@ -177,17 +230,21 @@ export function TwoStageHoldButton({
       return;
     }
     firstConfirmedRef.current = true;
-    if (holdingRef.current && secondDueRef.current) {
-      void runSecondStage(session);
-      return;
-    }
+    setFirstProgress(1);
     if (holdingRef.current) {
-      setPhase("holding");
+      setPhase("stage-one");
       setMessage(
         `${label} ${target ? "enabled" : "disabled"}. Keep holding to restore it.`,
       );
+      if (secondDueRef.current) {
+        stageOneFeedbackTimerRef.current = window.setTimeout(() => {
+          stageOneFeedbackTimerRef.current = null;
+          void runSecondStage(session);
+        }, STAGE_ONE_FEEDBACK_MS);
+      }
       return;
     }
+    setSecondProgress(0);
     showResult("confirmed", `${label} ${target ? "enabled" : "disabled"}`);
   };
 
@@ -206,19 +263,33 @@ export function TwoStageHoldButton({
     firstConfirmedRef.current = false;
     secondDueRef.current = false;
     secondStartedRef.current = false;
+    pointerHoldRef.current = pointerId !== undefined;
+    suppressNextClickRef.current = false;
+    setFirstProgress(0);
+    setSecondProgress(0);
     initialValueRef.current = value;
     expectedValueRef.current = value;
     setPhase("holding");
     setMessage(
       `Hold for ${FIRST_STAGE_MS / 1000}s to ${actionLabel(label, !value).toLowerCase()}`,
     );
-    setTooltipOpen(true);
+    setTooltipOpen(false);
     const startedAt = performance.now();
     const drawProgress = (now: number) => {
       if (!holdingRef.current || session !== sessionRef.current) {
         return;
       }
-      setProgress(Math.min(1, (now - startedAt) / SECOND_STAGE_MS));
+      const elapsed = now - startedAt;
+      setFirstProgress(Math.min(1, elapsed / FIRST_STAGE_MS));
+      setSecondProgress(
+        Math.max(
+          0,
+          Math.min(
+            1,
+            (elapsed - FIRST_STAGE_MS) / (SECOND_STAGE_MS - FIRST_STAGE_MS),
+          ),
+        ),
+      );
       frameRef.current = window.requestAnimationFrame(drawProgress);
     };
     frameRef.current = window.requestAnimationFrame(drawProgress);
@@ -252,7 +323,8 @@ export function TwoStageHoldButton({
       clearTimers();
       const triggerStarted = firstStartedRef.current;
       const firstConfirmed = firstConfirmedRef.current;
-      setProgress(triggerStarted ? progress : 0);
+      suppressNextClickRef.current =
+        !cancelled && pointerHoldRef.current && triggerStarted;
       if (!triggerStarted) {
         showResult(
           cancelled ? "hint" : "hint",
@@ -263,17 +335,17 @@ export function TwoStageHoldButton({
       if (!firstConfirmed) {
         setPhase("waiting");
         setMessage("Waiting for the device to confirm the first change...");
-        setTooltipOpen(true);
         return;
       }
       if (!secondStartedRef.current) {
+        setSecondProgress(0);
         showResult(
           "confirmed",
           `${label} ${expectedValueRef.current ? "enabled" : "disabled"}`,
         );
       }
     },
-    [clearTimers, label, progress, showResult],
+    [clearTimers, label, showResult],
   );
 
   releaseHoldRef.current = releaseHold;
@@ -311,29 +383,58 @@ export function TwoStageHoldButton({
       if (secondTimerRef.current !== null) {
         window.clearTimeout(secondTimerRef.current);
       }
+      if (stageOneFeedbackTimerRef.current !== null) {
+        window.clearTimeout(stageOneFeedbackTimerRef.current);
+      }
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
       }
       if (resultTimerRef.current !== null) {
         window.clearTimeout(resultTimerRef.current);
       }
-      if (hoverTimerRef.current !== null) {
-        window.clearTimeout(hoverTimerRef.current);
-      }
     };
   }, []);
 
   const visualPhase = preview?.phase ?? phase;
-  const visualProgress = preview?.progress ?? progress;
+  const visualStage =
+    preview?.stage ??
+    (phase === "stage-one"
+      ? "first-complete"
+      : secondStartedRef.current
+        ? "second"
+        : phase === "confirmed" ||
+            phase === "error" ||
+            phase === "hint" ||
+            phase === "external"
+          ? "result"
+          : "first");
+  const visualFirstProgress = preview
+    ? preview.stage === "first-complete" ||
+      preview.stage === "second" ||
+      preview.stage === "result"
+      ? 1
+      : preview.progress
+    : firstProgress;
+  const visualSecondProgress = preview
+    ? preview.stage === "second" || preview.stage === "result"
+      ? preview.progress
+      : 0
+    : secondProgress;
   const visualMessage = preview?.message ?? message;
   const visualTooltipOpen = preview?.tooltipOpen ?? tooltipOpen;
+  const visualFeedback = feedbackLabel(
+    visualPhase,
+    visualStage,
+    value,
+    visualMessage,
+  );
   const tone =
     preview?.tone ??
     (phase === "error" || phase === "external"
       ? "error"
       : phase === "confirmed"
         ? "success"
-        : phase === "holding" || phase === "waiting"
+        : phase === "holding" || phase === "stage-one" || phase === "waiting"
           ? secondStartedRef.current
             ? "success"
             : "warning"
@@ -341,13 +442,26 @@ export function TwoStageHoldButton({
   const usage = unavailableReason
     ? unavailableReason
     : `${label} is ${value ? "enabled" : "disabled"}. Hold 0.6s to ${actionLabel(label, !value).toLowerCase()}, or continue to 1.25s to restore the current state.`;
+  const toggleTooltip = () => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
+    setTooltipOpen((open) => !open);
+  };
 
   return (
     <div
       className={`two-stage-hold${compact ? " two-stage-hold--compact" : ""}${className ? ` ${className}` : ""}`}
       data-phase={visualPhase}
+      data-stage={visualStage}
       data-tone={tone}
-      style={{ "--hold-progress": visualProgress } as CSSProperties}
+      style={
+        {
+          "--hold-first-progress": visualFirstProgress,
+          "--hold-second-progress": visualSecondProgress,
+        } as CSSProperties
+      }
     >
       {disabled ? (
         <button
@@ -356,36 +470,16 @@ export function TwoStageHoldButton({
           aria-pressed={value}
           className="two-stage-hold__button"
           data-testid={testId}
-          onBlur={() => setTooltipOpen(false)}
-          onClick={() => setTooltipOpen(true)}
-          onFocus={() => setTooltipOpen(true)}
-          onKeyDown={(event) => {
-            if (event.key === " " || event.key === "Enter") {
-              event.preventDefault();
-              setTooltipOpen(true);
-            }
-          }}
-          onMouseEnter={() => {
-            hoverTimerRef.current = window.setTimeout(
-              () => setTooltipOpen(true),
-              500,
-            );
-          }}
-          onMouseLeave={() => {
-            if (hoverTimerRef.current !== null) {
-              window.clearTimeout(hoverTimerRef.current);
-              hoverTimerRef.current = null;
-            }
-            if (phase === "idle") {
-              setTooltipOpen(false);
-            }
-          }}
+          onClick={toggleTooltip}
           tabIndex={0}
           type="button"
         >
           <span className="two-stage-hold__label">{label}</span>
-          <span className="two-stage-hold__state">{value ? "On" : "Off"}</span>
-          <span className="two-stage-hold__rail" aria-hidden />
+          <span className="two-stage-hold__feedback">{visualFeedback}</span>
+          <span className="two-stage-hold__rails" aria-hidden>
+            <span className="two-stage-hold__rail two-stage-hold__rail--first" />
+            <span className="two-stage-hold__rail two-stage-hold__rail--second" />
+          </span>
         </button>
       ) : (
         <button
@@ -394,8 +488,7 @@ export function TwoStageHoldButton({
           className="two-stage-hold__button"
           data-testid={testId}
           onBlur={() => releaseHold(true)}
-          onClick={() => setTooltipOpen(true)}
-          onFocus={() => setTooltipOpen(true)}
+          onClick={toggleTooltip}
           onKeyDown={(event) => {
             if ((event.key === " " || event.key === "Enter") && !event.repeat) {
               event.preventDefault();
@@ -406,21 +499,6 @@ export function TwoStageHoldButton({
             if (event.key === " " || event.key === "Enter") {
               event.preventDefault();
               releaseHold();
-            }
-          }}
-          onMouseEnter={() => {
-            hoverTimerRef.current = window.setTimeout(
-              () => setTooltipOpen(true),
-              500,
-            );
-          }}
-          onMouseLeave={() => {
-            if (hoverTimerRef.current !== null) {
-              window.clearTimeout(hoverTimerRef.current);
-              hoverTimerRef.current = null;
-            }
-            if (phase === "idle") {
-              setTooltipOpen(false);
             }
           }}
           onPointerCancel={() => releaseHold(true)}
@@ -435,8 +513,11 @@ export function TwoStageHoldButton({
           type="button"
         >
           <span className="two-stage-hold__label">{label}</span>
-          <span className="two-stage-hold__state">{value ? "On" : "Off"}</span>
-          <span className="two-stage-hold__rail" aria-hidden />
+          <span className="two-stage-hold__feedback">{visualFeedback}</span>
+          <span className="two-stage-hold__rails" aria-hidden>
+            <span className="two-stage-hold__rail two-stage-hold__rail--first" />
+            <span className="two-stage-hold__rail two-stage-hold__rail--second" />
+          </span>
         </button>
       )}
       <span className="sr-only" aria-live="polite">

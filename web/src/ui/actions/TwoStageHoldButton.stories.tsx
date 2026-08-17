@@ -59,13 +59,13 @@ const stateCards: StateCard[] = [
     title: "Connected",
     status: "Data link is active",
     value: true,
-    preview: { phase: "idle", progress: 0, tone: "neutral" },
+    preview: { phase: "idle", progress: 0, stage: "result", tone: "neutral" },
   },
   {
     title: "Disconnected",
     status: "Data link is stopped",
     value: false,
-    preview: { phase: "idle", progress: 0, tone: "neutral" },
+    preview: { phase: "idle", progress: 0, stage: "result", tone: "neutral" },
   },
   {
     title: "Holding",
@@ -74,6 +74,7 @@ const stateCards: StateCard[] = [
     preview: {
       phase: "holding",
       progress: 0.32,
+      stage: "first",
       tone: "warning",
       message: "Hold for 0.6s to disable data link",
     },
@@ -85,6 +86,7 @@ const stateCards: StateCard[] = [
     preview: {
       phase: "waiting",
       progress: 0.48,
+      stage: "first",
       tone: "warning",
       message: "Confirming Disable data link...",
     },
@@ -94,8 +96,9 @@ const stateCards: StateCard[] = [
     status: "Disabled; keep holding to restore",
     value: false,
     preview: {
-      phase: "holding",
-      progress: 0.58,
+      phase: "stage-one",
+      progress: 0,
+      stage: "first-complete",
       tone: "warning",
       message: "Data link disabled. Keep holding to restore it.",
     },
@@ -107,6 +110,7 @@ const stateCards: StateCard[] = [
     preview: {
       phase: "waiting",
       progress: 1,
+      stage: "second",
       tone: "success",
       message: "Confirming Enable data link...",
     },
@@ -118,6 +122,7 @@ const stateCards: StateCard[] = [
     preview: {
       phase: "confirmed",
       progress: 1,
+      stage: "result",
       tone: "success",
       message: "Data link restored",
     },
@@ -129,6 +134,7 @@ const stateCards: StateCard[] = [
     preview: {
       phase: "hint",
       progress: 0,
+      stage: "result",
       tone: "neutral",
       message: "Continue holding about 0.6s to disable data link.",
     },
@@ -140,6 +146,7 @@ const stateCards: StateCard[] = [
     preview: {
       phase: "error",
       progress: 0.5,
+      stage: "first",
       tone: "error",
       message: "Data link did not change. Try again.",
     },
@@ -151,6 +158,7 @@ const stateCards: StateCard[] = [
     preview: {
       phase: "external",
       progress: 0,
+      stage: "result",
       tone: "error",
       message: "Data link changed elsewhere. Hold again to act.",
     },
@@ -162,7 +170,7 @@ const stateCards: StateCard[] = [
     disabled: true,
     unavailableReason:
       "This firmware does not support the Data link control. Update the device firmware to use it.",
-    preview: { phase: "idle", progress: 0, tone: "neutral" },
+    preview: { phase: "idle", progress: 0, stage: "result", tone: "neutral" },
   },
 ];
 
@@ -255,8 +263,10 @@ export const EarlyReleaseGuidance: Story = {
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
     await sleep(180);
     fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
-    await expect(await canvas.findByRole("tooltip")).toHaveTextContent(
-      /continue holding about 0.6s/i,
+    await expect(await canvas.findByText("Not changed")).toBeInTheDocument();
+    await expect(canvas.getByRole("tooltip", { hidden: true })).toHaveAttribute(
+      "data-visible",
+      "false",
     );
     await expect(canvas.getByTestId("hold-events")).toHaveTextContent("none");
   },
@@ -268,11 +278,26 @@ export const StageOneThenRestore: Story = {
     const canvas = within(canvasElement);
     const button = canvas.getByTestId("two-stage-hold");
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
-    await sleep(1320);
+    await sleep(720);
+    await expect(button.parentElement).toHaveAttribute(
+      "data-stage",
+      "first-complete",
+    );
+    await expect(button.parentElement).toHaveAttribute(
+      "data-phase",
+      "stage-one",
+    );
+    await expect(await canvas.findByText("Disabled")).toBeInTheDocument();
+    await expect(canvas.getByRole("tooltip", { hidden: true })).toHaveAttribute(
+      "data-visible",
+      "false",
+    );
+    await sleep(600);
     fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
     await expect(canvas.getByTestId("hold-events")).toHaveTextContent(
       "false,true",
     );
+    await expect(await canvas.findByText("Restored")).toBeInTheDocument();
   },
 };
 
@@ -314,8 +339,7 @@ export const UsageTooltip: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const button = canvas.getByTestId("two-stage-hold");
-    fireEvent.mouseOver(button);
-    await sleep(520);
+    fireEvent.click(button);
     const tooltip = await canvas.findByRole("tooltip");
     await expect(tooltip).toHaveAttribute("data-visible", "true");
     await expect(tooltip).toHaveTextContent(/hold 0.6s to disable data link/i);

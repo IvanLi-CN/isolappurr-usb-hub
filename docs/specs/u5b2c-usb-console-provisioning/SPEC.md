@@ -225,12 +225,16 @@ Two-stage port hold controls (PR: none):
 
 The shared Storybook state matrix covers connected, disconnected, both hold thresholds,
 device confirmation, restoration, early release, failure, external change, and an
-unavailable capability. Interaction stories separately cover pointer, keyboard, touch,
-tooltip, and early-release behavior.
+unavailable capability. The button body itself carries the stage/result text and
+success or failure treatment; the usage tooltip is shown only after an explicit click.
+Interaction stories separately cover pointer, keyboard, touch, click-only tooltip, and
+early-release behavior.
 
-![Desktop two-stage hold state matrix in Storybook canvas](assets/two-stage-hold-state-matrix-desktop.png)
+PR: none
 
-![Mobile two-stage hold state matrix in Storybook canvas](assets/two-stage-hold-state-matrix-mobile.png)
+![Desktop two-stage hold state matrix in Storybook canvas](assets/two-stage-hold-feedback-state-matrix-desktop.png)
+
+![Mobile two-stage hold state matrix in Storybook canvas](assets/two-stage-hold-feedback-state-matrix-mobile.png)
 
 ![Desktop two-stage port hold in Demo mode](assets/two-stage-hold-desktop.png)
 
