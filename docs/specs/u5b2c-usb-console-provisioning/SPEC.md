@@ -302,164 +302,151 @@ PR: include
 
 Add device discovery canonical device IDs:
 
-![Add device discovery canonical device IDs](assets/add-device-discovery-canonical-device-ids.png)
+![Add device discovery canonical device IDs](./assets/add-device-discovery-canonical-device-ids.png)
 
 Device info canonical device ID:
 
-![Device info canonical device ID](assets/device-info-canonical-device-id.png)
+![Device info canonical device ID](./assets/device-info-canonical-device-id.png)
 
 Add device Web Serial desktop:
 
-PR: include
 
-![Add device Web Serial desktop](assets/add-device-web-serial-desktop.png)
+![Add device Web Serial desktop](./assets/add-device-web-serial-desktop.png)
 
 Add device Web Serial connection log:
 
-![Add device Web Serial connection log](assets/add-device-web-serial-connection-log.png)
+![Add device Web Serial connection log](./assets/add-device-web-serial-connection-log.png)
 
 Add device Local USB mobile:
 
-![Add device Local USB mobile](assets/add-device-local-usb-mobile.png)
+![Add device Local USB mobile](./assets/add-device-local-usb-mobile.png)
 
 Device Hardware firmware update:
 
-PR: include
 
-![Device Hardware Web Serial firmware update](assets/device-hardware-web-serial-flashing.png)
+![Device Hardware Web Serial firmware update](./assets/device-hardware-web-serial-flashing.png)
 
 Device Hardware delete confirmation:
 
-![Device Hardware delete confirmation](assets/device-delete-confirmation.png)
+![Device Hardware delete confirmation](./assets/device-delete-confirmation.png)
 
 Device list connection badges:
 
-PR: include
 
-![Device connection badges](assets/device-card-connection-badges.png)
+![Device connection badges](./assets/device-card-connection-badges.png)
 
 Device list Serial history-only badge:
 
-![Device list Serial history-only badge](assets/device-card-serial-history-only.png)
+![Device list Serial history-only badge](./assets/device-card-serial-history-only.png)
 
 Device list selected state, light theme:
 
-![Device list selected state, light theme](assets/device-card-selected-light.png)
+![Device list selected state, light theme](./assets/device-card-selected-light.png)
 
 Device list selected state, dark theme:
 
-![Device list selected state, dark theme](assets/device-card-selected-dark.png)
+![Device list selected state, dark theme](./assets/device-card-selected-dark.png)
 
 Device Hardware Wi-Fi configuration:
 
-PR: include
 
-![Device Hardware Wi-Fi configuration](assets/wifi-config-hardware-default.png)
+![Device Hardware Wi-Fi configuration](./assets/wifi-config-hardware-default.png)
 
 Device Hardware Wi-Fi immediate apply:
 
-PR: include
 
-![Device Hardware Wi-Fi immediate apply](assets/wifi-config-immediate-apply.png)
+![Device Hardware Wi-Fi immediate apply](./assets/wifi-config-immediate-apply.png)
 
 Device Hardware Wi-Fi configuration mobile:
 
-PR: include
 
-![Device Hardware Wi-Fi configuration mobile](assets/wifi-config-narrow.png)
+![Device Hardware Wi-Fi configuration mobile](./assets/wifi-config-narrow.png)
 
 Device Hardware long identity values desktop:
 
-![Device Hardware long identity values desktop](assets/device-info-long-identity-desktop.png)
+![Device Hardware long identity values desktop](./assets/device-info-long-identity-desktop.png)
 
 Device Hardware long identity values narrow:
 
-![Device Hardware long identity values narrow](assets/device-info-long-identity-narrow.png)
+![Device Hardware long identity values narrow](./assets/device-info-long-identity-narrow.png)
 
 Discovery verified IPv4 URL with mDNS URL reference:
 
-PR: include
 
-![Discovery verified IPv4 URL with mDNS URL reference](assets/device-discovery-verified-ipv4-mdns.png)
+![Discovery verified IPv4 URL with mDNS URL reference](./assets/device-discovery-verified-ipv4-mdns.png)
 
 Discovery browser-blocked LAN guidance:
 
-![Discovery browser-blocked LAN guidance](assets/device-discovery-browser-blocked-hint.png)
+![Discovery browser-blocked LAN guidance](./assets/device-discovery-browser-blocked-hint.png)
 
 Device Hardware reset settings over Wi-Fi/LAN:
 
-PR: include
 
-![Device Hardware reset settings Wi-Fi/LAN](assets/settings-reset-http-only.png)
+![Device Hardware reset settings Wi-Fi/LAN](./assets/settings-reset-http-only.png)
 
 Device Hardware reset settings over Local USB:
 
-PR: include
 
-![Device Hardware reset settings Local USB](assets/settings-reset-usb-flow.png)
+![Device Hardware reset settings Local USB](./assets/settings-reset-usb-flow.png)
 
 Action system evidence source: production SPA route `/devices/aabbcc001122/info?demo=true` with deterministic demo data. The `system` selection removes `data-theme` and follows the host dark preference used for this capture.
 
 Action system, light desktop:
 
-PR: include
 
-![Action system light desktop](assets/action-system-settings-desktop.png)
+![Action system light desktop](./assets/action-system-settings-desktop.png)
 
 Action system, dark desktop:
 
-PR: include
 
-![Action system dark desktop](assets/action-system-settings-dark.png)
+![Action system dark desktop](./assets/action-system-settings-dark.png)
 
 Action system, narrow layout:
 
-![Action system narrow layout](assets/action-system-settings-mobile.png)
+![Action system narrow layout](./assets/action-system-settings-mobile.png)
 
 Action system, destructive confirmation:
 
-PR: include
 
-![Action system destructive confirmation](assets/action-system-delete-confirmation.png)
+![Action system destructive confirmation](./assets/action-system-delete-confirmation.png)
 
 Saved-device Power shell header on desktop: production SPA route `/devices/aabbcc001122/power?demo=true`, showing the selected device identity promoted into the shared app shell instead of repeating the title above tabs.
 
-PR: include
 
-![Saved-device Power shell header desktop](assets/saved-device-power-shell-header-desktop.png)
+![Saved-device Power shell header desktop](./assets/saved-device-power-shell-header-desktop.png)
 
 Dashboard desktop shell, light theme: production SPA route `/?demo=true`,
 showing the restored shared brand slot with the IsolaPurr mark plus single-line
 product label, using the same controlled app-shell state source as the PWA
 manifest screenshot refresh.
 
-- PR: include
+
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
 - sensitive_exclusion: `No real device, desktop, or unrelated application data`
 - submission_gate: `approved`
 
-![Dashboard shell brand slot light](assets/dashboard-shell-brand-light.png)
+![Dashboard shell brand slot light](./assets/dashboard-shell-brand-light.png)
 
 Dashboard desktop shell, dark theme: production SPA route `/?demo=true`,
 showing the same restored shared brand slot under `isolapurr-dark` so the
 owner-facing shell evidence matches the installed/header brand fix across both
 supported themes.
 
-- PR: include
+
 - source_type: `ui_demo`
 - target_program: `mock-only`
 - capture_scope: `browser-viewport`
 - sensitive_exclusion: `No real device, desktop, or unrelated application data`
 - submission_gate: `approved`
 
-![Dashboard shell brand slot dark](assets/dashboard-shell-brand-dark.png)
+![Dashboard shell brand slot dark](./assets/dashboard-shell-brand-dark.png)
 
 Dashboard mobile device drawer: production SPA route `/?demo=true`, showing the header-triggered right-side drawer with saved-device cards, `+ Add`, and `About`.
 
-![Dashboard mobile device drawer](assets/dashboard-mobile-device-drawer.png)
+![Dashboard mobile device drawer](./assets/dashboard-mobile-device-drawer.png)
 
 Saved-device detail mobile drawer: production SPA route `/devices/aabbcc001122?demo=true`, showing the same right-side drawer contract from a saved-device detail route.
 
-![Saved-device detail mobile drawer](assets/device-detail-mobile-header-drawer.png)
+![Saved-device detail mobile drawer](./assets/device-detail-mobile-header-drawer.png)
