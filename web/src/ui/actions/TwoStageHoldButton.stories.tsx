@@ -72,6 +72,32 @@ function RejectingHoldDemo() {
   );
 }
 
+function DelayedDisabledHoldDemo() {
+  const [value, setValue] = useState(true);
+  const [disabled, setDisabled] = useState(false);
+  const [events, setEvents] = useState<string[]>([]);
+
+  return (
+    <div className="min-h-32 bg-[var(--bg)] p-6 text-[var(--text)]">
+      <TwoStageHoldButton
+        disabled={disabled}
+        label="Data link"
+        testId="delayed-disabled-two-stage-hold"
+        value={value}
+        onSetValue={async (next) => {
+          setDisabled(true);
+          setEvents((current) => [...current, String(next)]);
+          await sleep(800);
+          setValue(next);
+          setDisabled(false);
+          return { ok: true };
+        }}
+      />
+      <div data-testid="delayed-disabled-events">{events.join(",")}</div>
+    </div>
+  );
+}
+
 type StateCard = {
   title: string;
   status: string;
@@ -555,6 +581,21 @@ export const RejectedActionRecovers: Story = {
     await sleep(720);
     fireEvent.pointerUp(button, { button: 0, pointerId: 2 });
     await expect(canvas.getByTestId("hold-attempts")).toHaveTextContent("2");
+  },
+};
+
+export const ReleaseDuringPendingConfirmation: Story = {
+  render: () => <DelayedDisabledHoldDemo />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const button = canvas.getByTestId("delayed-disabled-two-stage-hold");
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+    await sleep(720);
+    fireEvent.pointerUp(window, { button: 0, pointerId: 1 });
+    await sleep(1_100);
+    await expect(
+      canvas.getByTestId("delayed-disabled-events"),
+    ).toHaveTextContent("false");
   },
 };
 

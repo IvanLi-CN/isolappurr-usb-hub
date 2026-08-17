@@ -109,6 +109,7 @@ export function TwoStageHoldButton({
   const priorValueRef = useRef(value);
   const confirmedStageRef = useRef<"first" | "second" | null>(null);
   const sessionRef = useRef(0);
+  const activePointerIdRef = useRef<number | null>(null);
   const pointerHoldRef = useRef(false);
   const suppressNextClickRef = useRef(false);
 
@@ -250,6 +251,7 @@ export function TwoStageHoldButton({
     secondStartedRef.current = false;
     confirmedStageRef.current = null;
     pointerHoldRef.current = pointerId !== undefined;
+    activePointerIdRef.current = pointerId ?? null;
     suppressNextClickRef.current = false;
     setFirstProgress(0);
     setRestoreProgress(0);
@@ -306,6 +308,7 @@ export function TwoStageHoldButton({
         return;
       }
       holdingRef.current = false;
+      activePointerIdRef.current = null;
       clearTimers();
       const triggerStarted = firstStartedRef.current;
       const firstConfirmed = firstConfirmedRef.current;
@@ -354,15 +357,29 @@ export function TwoStageHoldButton({
 
   useEffect(() => {
     const cancelForLossOfFocus = () => releaseHoldRef.current(true);
+    const releaseForPointerEnd = (event: PointerEvent) => {
+      if (event.pointerId === activePointerIdRef.current) {
+        releaseHoldRef.current();
+      }
+    };
+    const cancelForPointerEnd = (event: PointerEvent) => {
+      if (event.pointerId === activePointerIdRef.current) {
+        releaseHoldRef.current(true);
+      }
+    };
     const cancelForVisibility = () => {
       if (document.visibilityState !== "visible") {
         releaseHoldRef.current(true);
       }
     };
     window.addEventListener("blur", cancelForLossOfFocus);
+    window.addEventListener("pointerup", releaseForPointerEnd);
+    window.addEventListener("pointercancel", cancelForPointerEnd);
     document.addEventListener("visibilitychange", cancelForVisibility);
     return () => {
       window.removeEventListener("blur", cancelForLossOfFocus);
+      window.removeEventListener("pointerup", releaseForPointerEnd);
+      window.removeEventListener("pointercancel", cancelForPointerEnd);
       document.removeEventListener("visibilitychange", cancelForVisibility);
       if (firstTimerRef.current !== null) {
         window.clearTimeout(firstTimerRef.current);
