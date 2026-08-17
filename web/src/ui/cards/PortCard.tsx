@@ -1,5 +1,10 @@
 import { TwoStageHoldButton } from "../actions/TwoStageHoldButton";
 import { formatTelemetryValue } from "../format/telemetry";
+import {
+  PortStateIcon,
+  portStateIconKind,
+  portStateLabel,
+} from "../status/PortStateIcon";
 import type { PortCardProps } from "./types";
 
 function statusBadgeStyles(status: string): { bg: string; text: string } {
@@ -32,32 +37,37 @@ function PortStateSummary({
 }) {
   const items = [
     {
-      label: powerEnabled ? "Power on" : "Power off",
+      channel: "power",
+      icon: portStateIconKind("power", powerEnabled),
+      label: portStateLabel("power", powerEnabled),
       active: powerEnabled,
     },
     {
+      channel: "data",
+      icon: portStateIconKind("data", dataConnected),
       label: replugging
         ? "Data switching"
-        : dataConnected
-          ? "Data linked"
-          : "Data off",
+        : portStateLabel("data", dataConnected),
       active: dataConnected && !replugging,
     },
   ];
 
   return (
-    <div className="grid h-7 grid-cols-2 gap-2">
+    <div className="flex h-7 items-center gap-1.5">
       {items.map((item) => (
         <div
           className={[
-            "flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]",
             item.active
-              ? "border border-[var(--surface-success-ring)] bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]"
+              ? "bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]"
               : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]",
           ].join(" ")}
+          aria-label={item.label}
+          data-testid={`port-state-${item.channel}`}
           key={item.label}
+          role="img"
         >
-          <span className="truncate">{item.label}</span>
+          <PortStateIcon kind={item.icon} />
         </div>
       ))}
     </div>
@@ -161,14 +171,14 @@ export function PortCard({
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <TwoStageHoldButton
-          className="w-full sm:w-[132px]"
+          className="w-full sm:w-[180px]"
           disabled={actionDisabled}
           label="Power"
           onSetValue={onSetPower}
           value={state.power_enabled}
         />
         <TwoStageHoldButton
-          className="w-full sm:w-[140px]"
+          className="w-full sm:w-[190px]"
           disabled={actionDisabled || !dataLinkAvailable}
           label="Data link"
           onSetValue={onSetData}

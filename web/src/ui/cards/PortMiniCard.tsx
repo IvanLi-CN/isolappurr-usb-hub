@@ -18,7 +18,6 @@ export type PortMiniCardProps = {
 };
 
 export function PortMiniCard({
-  portId,
   label,
   telemetry,
   state,
@@ -31,9 +30,6 @@ export function PortMiniCard({
   const busy = state.busy;
   const actionDisabled = disabled || busy;
 
-  const powerWidth = "w-[100px]";
-  const dataWidth = portId === "port_a" ? "w-[112px]" : "w-[104px]";
-
   const valueClass = [
     "text-[16px] font-bold",
     "font-mono",
@@ -43,7 +39,7 @@ export function PortMiniCard({
   return (
     <div
       className={[
-        "iso-card relative h-[132px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4",
+        "iso-card relative h-[144px] border border-[var(--border)] bg-[var(--panel)] px-5 py-4",
         className ?? "",
       ].join(" ")}
     >
@@ -63,9 +59,9 @@ export function PortMiniCard({
           {formatTelemetryValue(telemetry.power_mw, "W")}
         </div>
       </div>
-      <div className="mt-[18px] flex items-center gap-2">
+      <div className="mt-[14px] grid grid-cols-2 gap-2">
         <TwoStageHoldButton
-          className={powerWidth}
+          className="w-full min-w-0"
           compact
           disabled={actionDisabled}
           label="Power"
@@ -73,7 +69,7 @@ export function PortMiniCard({
           value={state.power_enabled}
         />
         <TwoStageHoldButton
-          className={dataWidth}
+          className="w-full min-w-0"
           compact
           disabled={actionDisabled || !dataLinkAvailable}
           label="Data link"

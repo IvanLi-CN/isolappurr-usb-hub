@@ -15,10 +15,12 @@ function HoldDemo({
   initial = true,
   disabled = false,
   unavailableReason,
+  compact = false,
 }: {
   initial?: boolean;
   disabled?: boolean;
   unavailableReason?: string;
+  compact?: boolean;
 }) {
   const [value, setValue] = useState(initial);
   const [events, setEvents] = useState<string[]>([]);
@@ -26,7 +28,8 @@ function HoldDemo({
   return (
     <div className="min-h-32 bg-[var(--bg)] p-6 text-[var(--text)]">
       <TwoStageHoldButton
-        className="w-[148px]"
+        className={compact ? "w-[102px]" : "w-[148px]"}
+        compact={compact}
         disabled={disabled}
         label="Data link"
         testId="two-stage-hold"
@@ -170,7 +173,7 @@ const stateCards: StateCard[] = [
   },
 ];
 
-function StateMatrix() {
+function StateMatrix({ compact = false }: { compact?: boolean }) {
   return (
     <div className="min-h-[calc(100vh-2rem)] bg-[var(--bg)] text-[var(--text)]">
       <div
@@ -201,7 +204,8 @@ function StateMatrix() {
               <h3 className="text-xs font-semibold leading-4">{card.title}</h3>
               <div className="mt-0.5 sm:mt-1">
                 <TwoStageHoldButton
-                  className="w-full"
+                  className={compact ? "w-[102px]" : "w-full"}
+                  compact={compact}
                   disabled={card.disabled}
                   label="Data link"
                   preview={card.preview}
@@ -232,6 +236,16 @@ type Story = StoryObj<typeof TwoStageHoldButton>;
 
 export const Default: Story = {
   render: () => <HoldDemo />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const state = await canvas.findByRole("img", {
+      name: "Data link connected",
+    });
+    await expect(state).toBeVisible();
+    await expect(
+      state.querySelector('[data-status-icon="data-linked"]'),
+    ).not.toBeNull();
+  },
 };
 
 export const AllStates: Story = {
@@ -270,6 +284,37 @@ export const AllStates: Story = {
     await expect(window.getComputedStyle(failedButton).animationName).toContain(
       "two-stage-hold-failure-button",
     );
+    const unavailableControl = canvasElement.querySelector(
+      'section[aria-label^="Update required"] .two-stage-hold',
+    );
+    await expect(unavailableControl).toHaveAttribute("data-tone", "neutral");
+    await expect(unavailableControl?.querySelector("button")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+
+    const controls = canvasElement.querySelectorAll(".two-stage-hold");
+    await expect(controls).toHaveLength(stateCards.length);
+    for (const control of controls) {
+      const label = control.querySelector<HTMLElement>(
+        ".two-stage-hold__label",
+      );
+      const feedback = control.querySelector<HTMLElement>(
+        ".two-stage-hold__feedback",
+      );
+      if (!label || !feedback) {
+        throw new Error(
+          "Expected every hold control to render a label and state icon.",
+        );
+      }
+      await expect(label).toHaveTextContent("Data link");
+      await expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+      await expect(window.getComputedStyle(label).textOverflow).toBe("clip");
+      await expect(feedback.textContent?.trim()).toBe("");
+      await expect(
+        feedback.querySelectorAll(".two-stage-hold__status-icon"),
+      ).toHaveLength(1);
+    }
   },
 };
 
@@ -277,6 +322,62 @@ export const AllStatesMobile: Story = {
   render: () => <StateMatrix />,
   parameters: {
     viewport: { defaultViewport: "mobile393" },
+  },
+};
+
+export const CompactAllStates: Story = {
+  render: () => <StateMatrix compact />,
+  play: async ({ canvasElement }) => {
+    const feedbacks = canvasElement.querySelectorAll(
+      ".two-stage-hold__feedback",
+    );
+    await expect(feedbacks).toHaveLength(stateCards.length);
+    for (const feedback of feedbacks) {
+      await expect(feedback.scrollWidth).toBeLessThanOrEqual(
+        feedback.clientWidth,
+      );
+    }
+    const icons = canvasElement.querySelectorAll(
+      ".two-stage-hold__status-icon",
+    );
+    await expect(icons).toHaveLength(stateCards.length);
+    const buttons = canvasElement.querySelectorAll<HTMLButtonElement>(
+      ".two-stage-hold--compact .two-stage-hold__button",
+    );
+    for (const button of buttons) {
+      const label = button.querySelector<HTMLElement>(".two-stage-hold__label");
+      const icon = button.querySelector<HTMLElement>(
+        ".two-stage-hold__status-icon",
+      );
+      if (!label || !icon) {
+        throw new Error("Expected compact control label and status icon.");
+      }
+      await expect(label).toHaveTextContent("Data link");
+      await expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+      await expect(window.getComputedStyle(label).textOverflow).toBe("clip");
+      await expect(
+        button.querySelector(".two-stage-hold__feedback")?.textContent?.trim(),
+      ).toBe("");
+      const labelBox = label.getBoundingClientRect();
+      const iconBox = icon.getBoundingClientRect();
+      await expect(
+        Math.abs(
+          labelBox.y + labelBox.height / 2 - (iconBox.y + iconBox.height / 2),
+        ),
+      ).toBeLessThanOrEqual(2);
+    }
+    const unavailableButton = canvasElement.querySelector<HTMLButtonElement>(
+      'section[aria-label^="Update required"] .two-stage-hold__button',
+    );
+    const unavailableFeedback = unavailableButton?.querySelector<HTMLElement>(
+      ".two-stage-hold__feedback",
+    );
+    if (!unavailableButton || !unavailableFeedback) {
+      throw new Error("Expected the unavailable compact control to render.");
+    }
+    await expect(window.getComputedStyle(unavailableFeedback).color).toBe(
+      window.getComputedStyle(unavailableButton).color,
+    );
   },
 };
 
@@ -288,11 +389,23 @@ export const EarlyReleaseGuidance: Story = {
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
     await sleep(180);
     fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
-    await expect(await canvas.findByText("No change")).toBeInTheDocument();
     await expect(button.parentElement).toHaveAttribute("data-phase", "hint");
     await expect(window.getComputedStyle(button).animationName).toContain(
       "two-stage-hold-hint-reject",
     );
+    await expect(
+      button.parentElement
+        ?.querySelector(".two-stage-hold__feedback")
+        ?.textContent?.trim(),
+    ).toBe("");
+    await expect(
+      button.parentElement?.querySelector(
+        ".two-stage-hold__feedback .two-stage-hold__status-icon",
+      ),
+    ).not.toBeNull();
+    await expect(
+      button.parentElement?.querySelector("[aria-live]"),
+    ).toHaveTextContent(/continue holding about 0\.6s/i);
     await expect(canvas.getByRole("tooltip", { hidden: true })).toHaveAttribute(
       "data-visible",
       "false",
@@ -301,6 +414,30 @@ export const EarlyReleaseGuidance: Story = {
     fireEvent.click(button);
     const tooltip = await canvas.findByRole("tooltip");
     await expect(tooltip).toHaveAttribute("data-visible", "true");
+  },
+};
+
+export const CompactEarlyReleaseGuidance: Story = {
+  render: () => <HoldDemo compact />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const button = canvas.getByTestId("two-stage-hold");
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+    await sleep(180);
+    fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
+    await expect(
+      await canvas.findByRole("img", { name: "Data link connected" }),
+    ).toBeInTheDocument();
+    const feedback = canvasElement.querySelector(".two-stage-hold__feedback");
+    if (!feedback) {
+      throw new Error("Expected compact hold feedback to render.");
+    }
+    await expect(feedback.scrollWidth).toBeLessThanOrEqual(
+      feedback.clientWidth,
+    );
+    await expect(
+      feedback.querySelector('[data-status-icon="data-linked"]'),
+    ).not.toBeNull();
   },
 };
 
@@ -323,7 +460,14 @@ export const StageOneThenRestore: Story = {
       "data-progress-direction",
       "reverse",
     );
-    await expect(await canvas.findByText("Disabled")).toBeInTheDocument();
+    await expect(
+      button.parentElement?.querySelector('[data-status-icon="data-unlinked"]'),
+    ).not.toBeNull();
+    await expect(
+      button.parentElement
+        ?.querySelector(".two-stage-hold__feedback")
+        ?.textContent?.trim(),
+    ).toBe("");
     await expect(
       button.parentElement?.querySelector(".two-stage-hold__rail"),
     ).toBeNull();
@@ -339,7 +483,16 @@ export const StageOneThenRestore: Story = {
     await expect(canvas.getByTestId("hold-events")).toHaveTextContent(
       "false,true",
     );
-    await expect(await canvas.findByText("Restored")).toBeInTheDocument();
+    await expect(button.parentElement).toHaveAttribute(
+      "data-success-stage",
+      "second",
+    );
+    await expect(
+      button.parentElement?.querySelector('[data-status-icon="data-linked"]'),
+    ).not.toBeNull();
+    await expect(
+      button.parentElement?.querySelector("[aria-live]"),
+    ).toHaveTextContent(/data link restored/i);
   },
 };
 
@@ -388,6 +541,12 @@ export const UsageTooltip: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const button = canvas.getByTestId("two-stage-hold");
+    fireEvent.mouseEnter(button);
+    fireEvent.focus(button);
+    await expect(canvas.getByRole("tooltip", { hidden: true })).toHaveAttribute(
+      "data-visible",
+      "false",
+    );
     fireEvent.click(button);
     const tooltip = await canvas.findByRole("tooltip");
     await expect(tooltip).toHaveAttribute("data-visible", "true");

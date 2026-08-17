@@ -221,31 +221,84 @@ Evidence sources:
 - Storybook canvas for reusable component and composite-surface captures
 - Production SPA routes where the caption explicitly names `?demo=true`
 
-Two-stage port hold controls (PR: none):
+Two-stage port hold controls:
 
 The shared Storybook state matrix covers connected, disconnected, both hold thresholds,
 device confirmation, restoration, early release, failure, external change, and an
-unavailable capability. The button body itself carries the stage/result text and
-success or failure treatment; the usage tooltip is shown only after an explicit click.
-The button surface uses one bidirectional background indicator: the first hold moves
-left-to-right until the device-confirmed changed state fills the control, and continued
-holding moves the same fill right-to-left toward restoration. Each confirmed stage has
-its own button-level success treatment; failures use button-level error feedback. No
-state may use split or adjacent progress segments.
+unavailable capability. Button labels remain complete in every state, and the visible
+feedback slot contains exactly one actual-state icon rather than stage/result text.
+Stage explanations remain available through a polite live region and an explicit-click
+tooltip only. The button surface uses one bidirectional background indicator: the first
+hold moves left-to-right until the device-confirmed changed state fills the control, and
+continued holding moves the same fill right-to-left toward restoration. Each confirmed
+stage has its own button-level success treatment; failures use button-level error
+feedback. No state may use split or adjacent progress segments, an ellipsis label, or
+visible `On` / `Off` / `Enabled` / `Disabled`-style feedback text.
 Interaction stories separately cover pointer, keyboard, touch, click-only tooltip, and
-early-release behavior.
+early-release behavior, while component, detail-card, compact-card, sidebar and Demo
+tests assert full labels, icon-only feedback, stable layout and reduced-motion behavior.
 
-PR: none
+- source_type: storybook_canvas
+  target_program: mock-only
+  capture_scope: element
+  requested_viewport: 1440x900
+  viewport_strategy: storybook-viewport
+  margin_policy: require_margin
+  evidence_surface: component
+  sensitive_exclusion: N/A
+  submission_gate: approved
+  story_id_or_title: `actions-twostageholdbutton--all-states`
+  scenario: complete two-stage hold state matrix
+  evidence_note: verifies every state preserves a full action label and one actual-state icon without visible status text.
 
-![Desktop two-stage hold state matrix in Storybook canvas](assets/two-stage-hold-feedback-state-matrix-desktop.png)
+PR: include
+![Desktop two-stage hold state matrix in Storybook canvas](./assets/two-stage-hold-feedback-state-matrix-desktop.png)
 
-![Mobile two-stage hold state matrix in Storybook canvas](assets/two-stage-hold-feedback-state-matrix-mobile.png)
+- source_type: storybook_canvas
+  target_program: mock-only
+  capture_scope: element
+  requested_viewport: 393x852
+  viewport_strategy: storybook-viewport
+  margin_policy: require_margin
+  evidence_surface: component
+  sensitive_exclusion: N/A
+  submission_gate: approved
+  story_id_or_title: `actions-twostageholdbutton--all-states-mobile`
+  scenario: complete two-stage hold state matrix at mobile width
+  evidence_note: verifies all state labels, actual-state icons, and button feedback remain legible at the approved mobile viewport.
 
-![Desktop two-stage port hold in Demo mode](assets/two-stage-hold-desktop.png)
+PR: include
+![Mobile two-stage hold state matrix in Storybook canvas](./assets/two-stage-hold-feedback-state-matrix-mobile.png)
 
-![Mobile two-stage port hold in Demo mode](assets/two-stage-hold-mobile.png)
+- source_type: ui_demo
+  target_program: mock-only
+  capture_scope: browser-viewport
+  requested_viewport: 1440x900
+  viewport_strategy: fixed Playwright viewport after Chrome extension fallback
+  margin_policy: trim_only
+  evidence_surface: page
+  sensitive_exclusion: N/A
+  submission_gate: approved
+  state: `?demo=true` Dashboard
+  evidence_note: verifies four compact Dashboard actions keep complete names, single icons, and stable horizontal geometry.
 
-![Two-stage hold first-stage progress in Storybook canvas](assets/two-stage-hold-component.png)
+PR: include
+![Desktop two-stage port hold in Demo mode](./assets/two-stage-hold-desktop.png)
+
+- source_type: ui_demo
+  target_program: mock-only
+  capture_scope: browser-viewport
+  requested_viewport: 393x852
+  viewport_strategy: fixed Playwright viewport after Chrome extension fallback
+  margin_policy: trim_only
+  evidence_surface: page
+  sensitive_exclusion: N/A
+  submission_gate: approved
+  state: `?demo=true` Dashboard mobile
+  evidence_note: verifies the same compact actions have no overlap or truncation at the approved mobile viewport.
+
+PR: include
+![Mobile two-stage port hold in Demo mode](./assets/two-stage-hold-mobile.png)
 
 Add device discovery canonical device IDs:
 

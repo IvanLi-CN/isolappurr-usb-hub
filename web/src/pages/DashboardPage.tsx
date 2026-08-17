@@ -131,7 +131,7 @@ export function DashboardPage() {
 
         <button
           className={[
-            "iso-card flex h-[272px] w-full flex-col items-center justify-center",
+            "iso-card flex h-[280px] w-full flex-col items-center justify-center",
             "rounded-[18px] border border-dashed border-[var(--border)]",
             "bg-[var(--add-placeholder-bg)] text-center",
             addDeviceCardSpan,
@@ -151,7 +151,7 @@ export function DashboardPage() {
 
         <button
           className={[
-            "iso-card flex h-[272px] w-full flex-col items-center justify-center",
+            "iso-card flex h-[280px] w-full flex-col items-center justify-center",
             "rounded-[18px] border border-solid border-[var(--border)]",
             "bg-[var(--panel-3)] text-center",
             addDeviceCardSpan,

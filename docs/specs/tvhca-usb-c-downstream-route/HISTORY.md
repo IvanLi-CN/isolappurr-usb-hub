@@ -4,6 +4,8 @@
 
 - 将端口卡片的主要数据动作从含义不清的 `Replug` 改为 capability-gated `Data link`，并用两阶段按住反馈表达真实运行时数据状态；旧 replug 保留为兼容底层动作。
 
+- 将共享二阶段端口控件收敛为完整动作名称加单一状态图标；阶段、成功、失败、拒绝和禁用反馈由背景、色调、边框与动效表达，避免文字状态挤压名称或改变既有端口卡布局。
+
 - 2026-05-18：创建 canonical spec，锁定 `USB-C` 默认 route、独立 EEPROM device settings record、HTTP/USB JSONL route API、Web 设置页模式控件与硬件横向菜单入口。
 - 2026-05-22：修正硬件菜单交互，`MODE` 先显示当前值，再由第二次确认实际切换，避免进入设置页即生效。
 

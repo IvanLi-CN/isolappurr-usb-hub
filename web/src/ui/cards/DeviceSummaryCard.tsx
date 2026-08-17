@@ -87,10 +87,10 @@ export function DeviceSummaryCard({
 
   return (
     <div
-      className="iso-card h-[272px] w-full rounded-[18px] bg-[var(--panel)] shadow-[inset_0_0_0_1px_var(--border)]"
+      className="iso-card h-auto w-full rounded-[18px] bg-[var(--panel)] shadow-[inset_0_0_0_1px_var(--border)] sm:h-[288px]"
       data-testid={`device-summary-${device.id}`}
     >
-      <div className="flex h-full flex-col pb-[18px] pl-6 pr-6 pt-[14px]">
+      <div className="flex h-auto flex-col pb-[18px] pl-6 pr-6 pt-[14px] sm:h-full">
         <div className="h-[62px]">
           <div className="flex items-start justify-between gap-4">
             <div className="text-[16px] font-bold leading-5">{device.name}</div>

@@ -7,6 +7,11 @@ import {
 } from "../actions/TwoStageHoldButton";
 import { formatTelemetryValue } from "../format/telemetry";
 import {
+  PortStateIcon,
+  portStateIconKind,
+  portStateLabel,
+} from "../status/PortStateIcon";
+import {
   CableLoopCompensationCalculator,
   DiscreteSliderField,
   type FormState,
@@ -113,12 +118,10 @@ export function DevicePowerPanelSidebar({
   const usbCVoltageAvailable = typeof usbCTelemetry?.voltage_mv === "number";
   const usbCCurrentAvailable = typeof usbCTelemetry?.current_ma === "number";
   const usbCPowerAvailable = typeof usbCTelemetry?.power_mw === "number";
-  const usbCDataLinked =
+  const usbCDataLabel =
     usbCState?.replugging === true
       ? "Data switching"
-      : usbCState?.data_connected
-        ? "Data linked"
-        : "Data off";
+      : portStateLabel("data", usbCState?.data_connected ?? false);
 
   return (
     <aside className="grid gap-5">
@@ -126,26 +129,37 @@ export function DevicePowerPanelSidebar({
         <div className="border-b border-[var(--border)] pb-3">
           <div className="text-[14px] font-semibold">USB-C</div>
         </div>
-        <div className="mt-3 grid h-7 grid-cols-2 gap-2">
+        <div className="mt-3 flex h-7 items-center gap-1.5">
           <div
-            className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] ${
               usbCPowerEnabled
-                ? "border border-[var(--protocol-enabled-ring)] bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
+                ? "bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
                 : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
             }`}
+            aria-label={portStateLabel("power", usbCPowerEnabled)}
+            data-testid="usb-c-power-state"
+            role="img"
           >
-            <span className="truncate">
-              {usbCPowerEnabled ? "Power on" : "Power off"}
-            </span>
+            <PortStateIcon
+              kind={portStateIconKind("power", usbCPowerEnabled)}
+            />
           </div>
           <div
-            className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] ${
               usbCState?.data_connected && usbCState?.replugging !== true
-                ? "border border-[var(--protocol-enabled-ring)] bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
+                ? "bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
                 : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
             }`}
+            aria-label={usbCDataLabel}
+            data-testid="usb-c-data-state"
+            role="img"
           >
-            <span className="truncate">{usbCDataLinked}</span>
+            <PortStateIcon
+              kind={portStateIconKind(
+                "data",
+                usbCState?.data_connected ?? false,
+              )}
+            />
           </div>
         </div>
         <div className="mt-4 grid gap-2">

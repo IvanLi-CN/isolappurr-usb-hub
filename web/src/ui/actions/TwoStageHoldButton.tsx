@@ -7,6 +7,11 @@ import {
   useState,
 } from "react";
 import type { Result } from "../../domain/deviceApi";
+import {
+  PortStateIcon,
+  portStateIconKind,
+  portStateLabel,
+} from "../status/PortStateIcon";
 
 export type HoldActionResult = { ok: true } | { ok: false; message: string };
 
@@ -34,6 +39,8 @@ export type TwoStageHoldStage =
   | "second"
   | "result";
 
+export type PortHoldControlLabel = "Power" | "Data link";
+
 /**
  * Stable visual checkpoint for Storybook and visual-regression coverage.
  * Product code omits this and is always driven by the live hold state machine.
@@ -49,7 +56,7 @@ export type TwoStageHoldPreview = {
 };
 
 type TwoStageHoldButtonProps = {
-  label: string;
+  label: PortHoldControlLabel;
   value: boolean;
   disabled?: boolean;
   unavailableReason?: string;
@@ -67,66 +74,6 @@ const RESULT_VISIBLE_MS = 2800;
 
 function actionLabel(label: string, next: boolean): string {
   return `${next ? "Enable" : "Disable"} ${label.toLowerCase()}`;
-}
-
-function feedbackLabel(
-  phase: TwoStageHoldPhase,
-  stage: TwoStageHoldStage,
-  value: boolean,
-  message: string,
-): string {
-  if (phase === "error") {
-    return "Failed";
-  }
-  if (phase === "external") {
-    return "Changed";
-  }
-  if (phase === "hint") {
-    return "No change";
-  }
-  if (phase === "holding") {
-    return "Hold";
-  }
-  if (phase === "waiting") {
-    return stage === "second" ? "Restoring" : "Applying";
-  }
-  if (phase === "stage-one") {
-    return value ? "Enabled" : "Disabled";
-  }
-  if (phase === "confirmed") {
-    if (/restored/i.test(message)) {
-      return "Restored";
-    }
-    if (/enabled/i.test(message)) {
-      return "Enabled";
-    }
-    if (/disabled/i.test(message)) {
-      return "Disabled";
-    }
-  }
-  return value ? "On" : "Off";
-}
-
-function feedbackMark(
-  phase: TwoStageHoldPhase,
-  stage: TwoStageHoldStage,
-): string {
-  if (phase === "error" || phase === "external") {
-    return "!";
-  }
-  if (phase === "hint") {
-    return "i";
-  }
-  if (phase === "holding") {
-    return "...";
-  }
-  if (phase === "waiting") {
-    return stage === "second" ? ">>" : "...";
-  }
-  if (phase === "stage-one" || phase === "confirmed") {
-    return "OK";
-  }
-  return "";
 }
 
 export function TwoStageHoldButton({
@@ -449,13 +396,9 @@ export function TwoStageHoldButton({
   const visualProgressDirection = secondProgressActive ? "reverse" : "forward";
   const visualMessage = preview?.message ?? message;
   const visualTooltipOpen = preview?.tooltipOpen ?? tooltipOpen;
-  const visualFeedback = feedbackLabel(
-    visualPhase,
-    visualStage,
-    value,
-    visualMessage,
-  );
-  const visualFeedbackMark = feedbackMark(visualPhase, visualStage);
+  const visualStateChannel = label === "Data link" ? "data" : "power";
+  const visualStateIcon = portStateIconKind(visualStateChannel, value);
+  const visualStateLabel = portStateLabel(visualStateChannel, value);
   const visualSuccessStage =
     preview?.phase === "confirmed"
       ? /restored/i.test(preview.message ?? "")
@@ -483,6 +426,18 @@ export function TwoStageHoldButton({
     }
     setTooltipOpen((open) => !open);
   };
+  const feedbackContent = (
+    <span
+      aria-label={visualStateLabel}
+      className="two-stage-hold__feedback"
+      role="img"
+    >
+      <PortStateIcon
+        className="two-stage-hold__status-icon"
+        kind={visualStateIcon}
+      />
+    </span>
+  );
 
   return (
     <div
@@ -492,6 +447,8 @@ export function TwoStageHoldButton({
       data-success-stage={visualSuccessStage ?? undefined}
       data-tone={tone}
       data-progress-direction={visualProgressDirection}
+      data-tooltip-open={visualTooltipOpen || undefined}
+      data-tooltip-placement={compact ? "top" : "bottom"}
       style={
         {
           "--hold-progress": visualProgress,
@@ -510,14 +467,7 @@ export function TwoStageHoldButton({
           type="button"
         >
           <span className="two-stage-hold__label">{label}</span>
-          <span className="two-stage-hold__feedback">
-            {visualFeedbackMark ? (
-              <span className="two-stage-hold__feedback-mark" aria-hidden>
-                {visualFeedbackMark}
-              </span>
-            ) : null}
-            <span>{visualFeedback}</span>
-          </span>
+          {feedbackContent}
         </button>
       ) : (
         <button
@@ -551,14 +501,7 @@ export function TwoStageHoldButton({
           type="button"
         >
           <span className="two-stage-hold__label">{label}</span>
-          <span className="two-stage-hold__feedback">
-            {visualFeedbackMark ? (
-              <span className="two-stage-hold__feedback-mark" aria-hidden>
-                {visualFeedbackMark}
-              </span>
-            ) : null}
-            <span>{visualFeedback}</span>
-          </span>
+          {feedbackContent}
         </button>
       )}
       <span className="sr-only" aria-live="polite">

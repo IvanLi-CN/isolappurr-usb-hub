@@ -326,7 +326,7 @@ function withThermal(
 const meta: Meta<typeof DevicePowerPanel> = {
   title: "Panels/DevicePowerPanel",
   component: DevicePowerPanel,
-  tags: ["autodocs"],
+  tags: ["autodocs", "two-stage-hold"],
   parameters: {
     layout: "fullscreen",
   },
@@ -689,7 +689,9 @@ export const OutputOffManualHighVoltage: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByText("Power off")).toBeVisible();
+    await expect(
+      await canvas.findByTestId("usb-c-power-state"),
+    ).toHaveAccessibleName("Power off");
     await expect(
       await canvas.findByTestId("runtime-output-toggle"),
     ).toHaveTextContent("Power");
@@ -1075,6 +1077,23 @@ export const Narrow: Story = {
     await expect(
       await canvas.findByRole("button", { name: /4 PDO/i }),
     ).toBeVisible();
+
+    const actionLabels = canvasElement.querySelectorAll(
+      ".two-stage-hold__label",
+    );
+    await expect(actionLabels).toHaveLength(2);
+    await expect(actionLabels[0]).toHaveTextContent("Power");
+    await expect(actionLabels[1]).toHaveTextContent("Data link");
+    for (const label of actionLabels) {
+      await expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+      const feedback = label
+        .closest("button")
+        ?.querySelector<HTMLElement>(".two-stage-hold__feedback");
+      await expect(feedback?.textContent?.trim()).toBe("");
+      await expect(
+        feedback?.querySelectorAll(".two-stage-hold__status-icon"),
+      ).toHaveLength(1);
+    }
   },
 };
 

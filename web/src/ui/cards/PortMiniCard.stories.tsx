@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { expect } from "@storybook/test";
 
 import { PortMiniCard } from "./PortMiniCard";
 
 const meta: Meta<typeof PortMiniCard> = {
   title: "Cards/PortMiniCard",
   component: PortMiniCard,
-  tags: ["autodocs"],
+  tags: ["autodocs", "two-stage-hold"],
   args: {
     portId: "port_c",
     label: "USB-C",
@@ -32,6 +33,29 @@ export default meta;
 type Story = StoryObj<typeof PortMiniCard>;
 
 export const Precision: Story = {};
+
+export const ActionLabelsVisible: Story = {
+  play: async ({ canvasElement }) => {
+    const labels = canvasElement.querySelectorAll(".two-stage-hold__label");
+    await expect(labels).toHaveLength(2);
+    const expectedLabels = ["Power", "Data link"];
+    for (const [index, label] of [...labels].entries()) {
+      await expect(label).toHaveTextContent(expectedLabels[index]);
+      await expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+      await expect(label.getBoundingClientRect().width).toBeGreaterThan(8);
+      await expect(
+        label.closest("button")?.getBoundingClientRect().height,
+      ).toBeGreaterThanOrEqual(44);
+      const feedback = label
+        .closest("button")
+        ?.querySelector<HTMLElement>(".two-stage-hold__feedback");
+      await expect(feedback?.textContent?.trim()).toBe("");
+      await expect(
+        feedback?.querySelectorAll(".two-stage-hold__status-icon"),
+      ).toHaveLength(1);
+    }
+  },
+};
 
 export const Unavailable: Story = {
   args: {
