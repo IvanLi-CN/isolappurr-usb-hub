@@ -53,12 +53,14 @@ async function expectVisibleControlText(control: Locator) {
 }
 
 async function openDemoDashboard(page: Page) {
-  await page.goto("/?demo=true");
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
+  const origin = `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? "45175"}`;
+  const session = await page.context().newCDPSession(page);
+  await session.send("Storage.clearDataForOrigin", {
+    origin,
+    storageTypes: "all",
   });
-  await page.reload();
+  await session.detach();
+  await page.goto("/?demo=true");
   await expect(page.getByTestId("dashboard")).toBeVisible();
 }
 
