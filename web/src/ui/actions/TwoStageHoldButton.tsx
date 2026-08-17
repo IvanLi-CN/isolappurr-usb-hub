@@ -165,8 +165,14 @@ export function TwoStageHoldButton({
     setRestoreProgress(1);
     setPhase("waiting");
     setMessage(`Confirming ${actionLabel(label, target)}...`);
-    const result = await onSetValue(target);
-    busyRef.current = false;
+    let result: HoldActionResult;
+    try {
+      result = await onSetValue(target);
+    } catch {
+      result = { ok: false, message: `${label} request failed. Try again.` };
+    } finally {
+      busyRef.current = false;
+    }
     if (session !== sessionRef.current) {
       return;
     }
@@ -190,8 +196,14 @@ export function TwoStageHoldButton({
     expectedValueRef.current = target;
     setPhase("waiting");
     setMessage(`Confirming ${actionLabel(label, target)}...`);
-    const result = await onSetValue(target);
-    busyRef.current = false;
+    let result: HoldActionResult;
+    try {
+      result = await onSetValue(target);
+    } catch {
+      result = { ok: false, message: `${label} request failed. Try again.` };
+    } finally {
+      busyRef.current = false;
+    }
     if (session !== sessionRef.current) {
       return;
     }

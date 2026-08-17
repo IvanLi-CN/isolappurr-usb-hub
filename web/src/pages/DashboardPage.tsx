@@ -72,7 +72,8 @@ export function DashboardPage() {
                 state === "online"
                   ? mergedPortState(port("port_a")?.state, pending("port_a"))
                   : fallbackState,
-              dataLinkAvailable: port("port_a")?.capabilities.data_set === true,
+              dataLinkAvailable:
+                port("port_a")?.capabilities?.data_set === true,
             },
             port_c: {
               label: "USB-C",
@@ -84,7 +85,8 @@ export function DashboardPage() {
                 state === "online"
                   ? mergedPortState(port("port_c")?.state, pending("port_c"))
                   : fallbackState,
-              dataLinkAvailable: port("port_c")?.capabilities.data_set === true,
+              dataLinkAvailable:
+                port("port_c")?.capabilities?.data_set === true,
             },
           },
         };

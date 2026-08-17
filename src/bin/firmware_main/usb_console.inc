@@ -1060,7 +1060,7 @@ fn write_usb_port_json(
     }
     let _ = write!(
         body,
-        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}}}}",
+        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"data_set\":true,\"power_set\":true}}}}",
         port.state.power_enabled,
         port.state.data_connected,
         port.state.replugging,

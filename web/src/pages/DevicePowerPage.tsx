@@ -74,7 +74,7 @@ export function DevicePowerPage() {
         }
         transportLabel={runtime.transport(deviceId) ?? "unknown"}
         usbCPending={runtime.pending(deviceId, "port_c")}
-        usbCDataLinkAvailable={usbCPort?.capabilities.data_set === true}
+        usbCDataLinkAvailable={usbCPort?.capabilities?.data_set === true}
         usbCState={usbCPort?.state ?? null}
         usbCTelemetry={usbCPort?.telemetry ?? null}
       />

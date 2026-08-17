@@ -353,13 +353,13 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
         label: "USB-A",
         telemetry: telemetry("port_a"),
         state: state("port_a"),
-        dataLinkAvailable: port("port_a")?.capabilities.data_set === true,
+        dataLinkAvailable: port("port_a")?.capabilities?.data_set === true,
       },
       port_c: {
         label: "USB-C",
         telemetry: telemetry("port_c"),
         state: state("port_c"),
-        dataLinkAvailable: port("port_c")?.capabilities.data_set === true,
+        dataLinkAvailable: port("port_c")?.capabilities?.data_set === true,
       },
     };
   }, [connectionState, device.id, runtime]);

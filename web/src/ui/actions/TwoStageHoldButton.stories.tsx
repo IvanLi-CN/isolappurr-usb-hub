@@ -48,6 +48,30 @@ function HoldDemo({
   );
 }
 
+function RejectingHoldDemo() {
+  const [value, setValue] = useState(true);
+  const [attempts, setAttempts] = useState(0);
+
+  return (
+    <div className="min-h-32 bg-[var(--bg)] p-6 text-[var(--text)]">
+      <TwoStageHoldButton
+        label="Data link"
+        testId="rejecting-two-stage-hold"
+        value={value}
+        onSetValue={async (next) => {
+          setAttempts((current) => current + 1);
+          if (attempts === 0) {
+            throw new Error("leader request timed out");
+          }
+          setValue(next);
+          return { ok: true };
+        }}
+      />
+      <div data-testid="hold-attempts">{attempts}</div>
+    </div>
+  );
+}
+
 type StateCard = {
   title: string;
   status: string;
@@ -513,6 +537,24 @@ export const KeyboardStageOne: Story = {
     await expect(window.getComputedStyle(button).animationName).toContain(
       "two-stage-hold-stage-one-success",
     );
+  },
+};
+
+export const RejectedActionRecovers: Story = {
+  render: () => <RejectingHoldDemo />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const button = canvas.getByTestId("rejecting-two-stage-hold");
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+    await sleep(720);
+    fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
+    await expect(canvas.getByTestId("hold-attempts")).toHaveTextContent("1");
+    await expect(button.parentElement).toHaveAttribute("data-phase", "error");
+
+    fireEvent.pointerDown(button, { button: 0, pointerId: 2 });
+    await sleep(720);
+    fireEvent.pointerUp(button, { button: 0, pointerId: 2 });
+    await expect(canvas.getByTestId("hold-attempts")).toHaveTextContent("2");
   },
 };
 
