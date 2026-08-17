@@ -282,7 +282,6 @@ export function DeviceRuntimeProvider({
     },
     [],
   );
-
   const requestLeaderRpc = useCallback(
     async <TMethod extends RuntimeRpcMethod>(
       method: TMethod,
@@ -316,7 +315,6 @@ export function DeviceRuntimeProvider({
       runtimeRpcTimeoutMs,
     ],
   );
-
   const requestControlTakeover = useCallback(() => {
     coordinator.requestTakeover();
   }, [coordinator]);
@@ -1132,7 +1130,6 @@ export function DeviceRuntimeProvider({
     syncPdDiagnosticsSnapshot,
     syncPowerConfigSnapshot,
   });
-
   rpcRequestHandlerRef.current = handleRuntimeRpcRequest;
 
   const value = useMemo<DeviceRuntimeContextValue>(() => {

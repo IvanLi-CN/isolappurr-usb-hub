@@ -164,6 +164,7 @@ static WIFI_CREDENTIALS_CACHE: Mutex<RefCell<Option<provisioning::WifiCredential
 static REBOOT_PENDING: AtomicBool = AtomicBool::new(false);
 
 include!("firmware_main/usb_console.inc");
+include!("firmware_main/usb_console_port_action.inc");
 
 include!("firmware_main/ui_runtime.inc");
 
