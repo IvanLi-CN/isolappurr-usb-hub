@@ -138,6 +138,7 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr ports`
 - `isolapurr ports power --port <port_id> --enabled <true|false>`
 - `isolapurr ports data --port <port_id> --connected <true|false>`
+- The maintained README, released user-operation workflow, and maintainer command inventory MUST expose `ports data` as the runtime data-link command and distinguish it from the one-shot legacy replug pulse.
 - `isolapurr ports replug --port <port_id>`
 - `isolapurr ports route --route <mcu|usb_c>`
 - `isolapurr power show`

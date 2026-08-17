@@ -74,6 +74,7 @@ Default selection is only defined after more than one path is immediately usable
 - Firmware MUST accept at least these commands: `info`, `ports.get`, `port.power_set`, `port.data_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `settings.reset`, `reboot`.
 - `port.data_set` MUST set the selected port's runtime data-path state with `{"port":"port_a|port_c","connected":true|false}`. The state is not persisted: power-off forces data disconnected, power-on restores data connected, and a request to connect data while power is off MUST return `port_power_off` without enabling power.
 - HTTP MUST expose the equivalent `POST /api/v1/ports/{port_id}/data?connected=0|1` action and report `data_set: true` in the port capabilities when the firmware supports it. `port.replug` remains the separate fixed-duration compatibility pulse.
+- Web runtime mutations for port power and data links MUST commit the exact confirming `ports.get` snapshot before completing, so an overlapping periodic poll cannot defer the visible confirmed state.
 - Firmware MUST load Wi-Fi credentials from EEPROM at boot. If no credentials exist, networking remains unconfigured while USB provisioning remains available.
 - Firmware MUST remove `USB_HUB_WIFI_SSID` and `USB_HUB_WIFI_PSK` as build-time required inputs.
 - EEPROM storage MUST include a magic/version marker and checksum or equivalent corruption guard.

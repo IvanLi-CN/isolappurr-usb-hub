@@ -134,6 +134,8 @@ USB-C 对应的 Hub 下行通道需要在 MCU USB 数据路径与外部 USB-C �
 - `web/e2e/two-stage-hold-demo.spec.ts` 必须在 `?demo=true` 的桌面和 393px
   移动 Dashboard 验证四个缩略动作无重叠、无截断、图标反馈、tooltip 层级、
   两阶段设备状态恢复和 reduced-motion 语义。
+- Demo 数据链路测试必须覆盖 `connected=0|1` 的实际状态变更、断电连接的
+  `port_power_off` 拒绝，以及 Local USB 响应包装。
 
 ### SHOULD
 

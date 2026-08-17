@@ -137,6 +137,18 @@ class SkillContractTest(unittest.TestCase):
         for fragment in required_fragments:
             self.assertIn(fragment, skill)
 
+    def test_port_data_action_is_discoverable_in_owner_facing_docs(self) -> None:
+        workflow = read(WORKFLOW_DOC)
+        skill = read(USER_SKILL)
+        readme = read("README.md")
+
+        self.assertIn("ports data", workflow)
+        self.assertIn(
+            "isolapurr ports --device-id <device-id> data --port <port-id> --connected <true|false>",
+            skill,
+        )
+        self.assertIn("Data link", readme)
+
     def test_web_demo_surface_policy_links_are_present(self) -> None:
         readme = read("README.md")
         web_readme = read("web/README.md")
