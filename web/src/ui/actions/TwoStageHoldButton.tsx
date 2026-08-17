@@ -110,6 +110,7 @@ export function TwoStageHoldButton({
   const confirmedStageRef = useRef<"first" | "second" | null>(null);
   const sessionRef = useRef(0);
   const activePointerIdRef = useRef<number | null>(null);
+  const activeKeyboardKeyRef = useRef<" " | "Enter" | null>(null);
   const pointerHoldRef = useRef(false);
   const suppressNextClickRef = useRef(false);
 
@@ -309,6 +310,7 @@ export function TwoStageHoldButton({
       }
       holdingRef.current = false;
       activePointerIdRef.current = null;
+      activeKeyboardKeyRef.current = null;
       clearTimers();
       const triggerStarted = firstStartedRef.current;
       const firstConfirmed = firstConfirmedRef.current;
@@ -367,6 +369,11 @@ export function TwoStageHoldButton({
         releaseHoldRef.current(true);
       }
     };
+    const releaseForKeyboardEnd = (event: KeyboardEvent) => {
+      if (event.key === activeKeyboardKeyRef.current) {
+        releaseHoldRef.current();
+      }
+    };
     const cancelForVisibility = () => {
       if (document.visibilityState !== "visible") {
         releaseHoldRef.current(true);
@@ -375,11 +382,13 @@ export function TwoStageHoldButton({
     window.addEventListener("blur", cancelForLossOfFocus);
     window.addEventListener("pointerup", releaseForPointerEnd);
     window.addEventListener("pointercancel", cancelForPointerEnd);
+    window.addEventListener("keyup", releaseForKeyboardEnd);
     document.addEventListener("visibilitychange", cancelForVisibility);
     return () => {
       window.removeEventListener("blur", cancelForLossOfFocus);
       window.removeEventListener("pointerup", releaseForPointerEnd);
       window.removeEventListener("pointercancel", cancelForPointerEnd);
+      window.removeEventListener("keyup", releaseForKeyboardEnd);
       document.removeEventListener("visibilitychange", cancelForVisibility);
       if (firstTimerRef.current !== null) {
         window.clearTimeout(firstTimerRef.current);
@@ -509,6 +518,7 @@ export function TwoStageHoldButton({
           onKeyDown={(event) => {
             if ((event.key === " " || event.key === "Enter") && !event.repeat) {
               event.preventDefault();
+              activeKeyboardKeyRef.current = event.key;
               beginHold();
             }
           }}

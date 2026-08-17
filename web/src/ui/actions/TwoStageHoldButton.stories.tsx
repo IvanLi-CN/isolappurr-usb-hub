@@ -599,6 +599,22 @@ export const ReleaseDuringPendingConfirmation: Story = {
   },
 };
 
+export const KeyboardReleaseDuringPendingConfirmation: Story = {
+  render: () => <DelayedDisabledHoldDemo />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const button = canvas.getByTestId("delayed-disabled-two-stage-hold");
+    button.focus();
+    fireEvent.keyDown(button, { key: " " });
+    await sleep(720);
+    fireEvent.keyUp(window, { key: " " });
+    await sleep(1_100);
+    await expect(
+      canvas.getByTestId("delayed-disabled-events"),
+    ).toHaveTextContent("false");
+  },
+};
+
 export const TouchStageOne: Story = {
   render: () => <HoldDemo />,
   play: async ({ canvasElement }) => {
