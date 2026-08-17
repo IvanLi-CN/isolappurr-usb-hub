@@ -467,11 +467,11 @@ export function TwoStageHoldButton({
     (phase === "error" || phase === "external"
       ? "error"
       : phase === "confirmed"
-        ? "success"
+        ? confirmedStageRef.current === "second"
+          ? "success"
+          : "warning"
         : phase === "holding" || phase === "stage-one" || phase === "waiting"
-          ? secondStartedRef.current
-            ? "success"
-            : "warning"
+          ? "warning"
           : "neutral");
   const usage = unavailableReason
     ? unavailableReason

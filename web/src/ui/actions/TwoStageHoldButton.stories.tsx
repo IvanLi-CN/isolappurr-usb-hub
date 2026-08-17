@@ -111,7 +111,7 @@ const stateCards: StateCard[] = [
       phase: "waiting",
       restoreProgress: 0.58,
       stage: "second",
-      tone: "success",
+      tone: "warning",
       message: "Confirming Enable data link...",
     },
   },
@@ -248,6 +248,7 @@ export const AllStates: Story = {
       "data-progress-direction",
       "reverse",
     );
+    await expect(restoreControl).toHaveAttribute("data-tone", "warning");
     const stageOneButton = canvasElement.querySelector<HTMLButtonElement>(
       'section[aria-label^="Change applied"] .two-stage-hold__button',
     );

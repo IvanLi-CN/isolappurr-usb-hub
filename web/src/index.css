@@ -924,7 +924,7 @@ textarea.textarea:disabled {
 }
 
 .two-stage-hold[data-progress-direction="reverse"] .two-stage-hold__button::before {
-  background: color-mix(in srgb, var(--success) 48%, transparent);
+  background: color-mix(in srgb, var(--warning) 48%, transparent);
   transform-origin: right center;
 }
 
@@ -1009,8 +1009,8 @@ textarea.textarea:disabled {
 .two-stage-hold[data-phase="waiting"][data-stage="second"]
   .two-stage-hold__button {
   box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--success) 24%, transparent),
-    0 7px 16px color-mix(in srgb, var(--success) 18%, transparent);
+    0 0 0 2px color-mix(in srgb, var(--warning) 28%, transparent),
+    0 7px 16px color-mix(in srgb, var(--warning) 20%, transparent);
 }
 
 .two-stage-hold[data-phase="confirmed"] .two-stage-hold__button {
