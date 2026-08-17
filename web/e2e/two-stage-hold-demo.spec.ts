@@ -139,7 +139,7 @@ test("demo dashboard commits the first stage and restores after the second", asy
     .getAttribute("aria-pressed");
   const firstTarget = firstSnapshot === "true" ? "false" : "true";
 
-  await holdFor(page, power, 920);
+  await holdFor(page, power, 1_050);
   await expect(power.locator(".two-stage-hold__button")).toHaveAttribute(
     "aria-pressed",
     firstTarget,
