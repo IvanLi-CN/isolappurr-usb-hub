@@ -185,6 +185,8 @@ USB-C 对应的 Hub 下行通道需要在 MCU USB 数据路径与外部 USB-C �
 
 ## Visual Evidence
 
+PR: none
+
 source_type: storybook_canvas  
 target_program: mock-only  
 capture_scope: browser-viewport  
