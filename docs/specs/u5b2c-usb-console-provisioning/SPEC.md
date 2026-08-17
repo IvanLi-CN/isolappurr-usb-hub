@@ -227,9 +227,11 @@ The shared Storybook state matrix covers connected, disconnected, both hold thre
 device confirmation, restoration, early release, failure, external change, and an
 unavailable capability. The button body itself carries the stage/result text and
 success or failure treatment; the usage tooltip is shown only after an explicit click.
-The first threshold uses the button surface itself as one continuous hold indicator;
-after the device confirms the changed state, a separate top-edge restore sweep is the
-only remaining progress cue. No state may use split or adjacent progress segments.
+The button surface uses one bidirectional background indicator: the first hold moves
+left-to-right until the device-confirmed changed state fills the control, and continued
+holding moves the same fill right-to-left toward restoration. Each confirmed stage has
+its own button-level success treatment; failures use button-level error feedback. No
+state may use split or adjacent progress segments.
 Interaction stories separately cover pointer, keyboard, touch, click-only tooltip, and
 early-release behavior.
 

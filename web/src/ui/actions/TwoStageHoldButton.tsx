@@ -433,8 +433,15 @@ export function TwoStageHoldButton({
           : "first");
   const visualHoldProgress = preview?.holdProgress ?? firstProgress;
   const visualRestoreProgress = preview?.restoreProgress ?? restoreProgress;
-  const restoreProgressVisible =
-    visualStage === "first-complete" || visualStage === "second";
+  const secondProgressActive =
+    visualStage === "second" ||
+    (!preview && visualPhase === "stage-one" && holdingRef.current);
+  const visualProgress = secondProgressActive
+    ? 1 - visualRestoreProgress
+    : visualStage === "first-complete"
+      ? 1
+      : visualHoldProgress;
+  const visualProgressDirection = secondProgressActive ? "reverse" : "forward";
   const visualMessage = preview?.message ?? message;
   const visualTooltipOpen = preview?.tooltipOpen ?? tooltipOpen;
   const visualFeedback = feedbackLabel(
@@ -472,10 +479,10 @@ export function TwoStageHoldButton({
       data-phase={visualPhase}
       data-stage={visualStage}
       data-tone={tone}
+      data-progress-direction={visualProgressDirection}
       style={
         {
-          "--hold-press-progress": visualHoldProgress,
-          "--hold-restore-progress": visualRestoreProgress,
+          "--hold-progress": visualProgress,
         } as CSSProperties
       }
     >
@@ -542,15 +549,6 @@ export function TwoStageHoldButton({
           </span>
         </button>
       )}
-      <span
-        aria-hidden
-        className="two-stage-hold__restore-progress"
-        data-visible={restoreProgressVisible}
-      >
-        <span className="two-stage-hold__restore-track">
-          <span className="two-stage-hold__restore-value" />
-        </span>
-      </span>
       <span className="sr-only" aria-live="polite">
         {visualMessage}
       </span>

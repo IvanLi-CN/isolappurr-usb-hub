@@ -97,7 +97,7 @@ const stateCards: StateCard[] = [
     value: false,
     preview: {
       phase: "stage-one",
-      restoreProgress: 0.28,
+      restoreProgress: 0,
       stage: "first-complete",
       tone: "warning",
       message: "Data link disabled. Keep holding to restore it.",
@@ -109,7 +109,7 @@ const stateCards: StateCard[] = [
     value: false,
     preview: {
       phase: "waiting",
-      restoreProgress: 1,
+      restoreProgress: 0.58,
       stage: "second",
       tone: "success",
       message: "Confirming Enable data link...",
@@ -241,6 +241,34 @@ export const AllStates: Story = {
     await expect(canvas.getAllByRole("button")).toHaveLength(stateCards.length);
     await expect(canvas.getByText("Restore pending")).toBeInTheDocument();
     await expect(canvas.getByText("Changed elsewhere")).toBeInTheDocument();
+    const restoreControl = canvasElement.querySelector(
+      'section[aria-label^="Restore pending"] .two-stage-hold',
+    );
+    await expect(restoreControl).toHaveAttribute(
+      "data-progress-direction",
+      "reverse",
+    );
+    const stageOneButton = canvasElement.querySelector<HTMLButtonElement>(
+      'section[aria-label^="Change applied"] .two-stage-hold__button',
+    );
+    const restoredButton = canvasElement.querySelector<HTMLButtonElement>(
+      'section[aria-label^="Restored"] .two-stage-hold__button',
+    );
+    const failedButton = canvasElement.querySelector<HTMLButtonElement>(
+      'section[aria-label^="Request failed"] .two-stage-hold__button',
+    );
+    if (!stageOneButton || !restoredButton || !failedButton) {
+      throw new Error("Expected the hold feedback state buttons to render.");
+    }
+    await expect(
+      window.getComputedStyle(stageOneButton).animationName,
+    ).toContain("two-stage-hold-stage-one-success");
+    await expect(
+      window.getComputedStyle(restoredButton).animationName,
+    ).toContain("two-stage-hold-stage-two-success");
+    await expect(window.getComputedStyle(failedButton).animationName).toContain(
+      "two-stage-hold-failure-button",
+    );
   },
 };
 
@@ -283,13 +311,17 @@ export const StageOneThenRestore: Story = {
       "data-phase",
       "stage-one",
     );
+    await expect(button.parentElement).toHaveAttribute(
+      "data-progress-direction",
+      "reverse",
+    );
     await expect(await canvas.findByText("Disabled")).toBeInTheDocument();
     await expect(
       button.parentElement?.querySelector(".two-stage-hold__rail"),
     ).toBeNull();
     await expect(
       button.parentElement?.querySelector(".two-stage-hold__restore-progress"),
-    ).toBeInTheDocument();
+    ).toBeNull();
     await expect(canvas.getByRole("tooltip", { hidden: true })).toHaveAttribute(
       "data-visible",
       "false",
