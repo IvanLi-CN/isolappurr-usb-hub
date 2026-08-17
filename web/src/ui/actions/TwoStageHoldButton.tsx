@@ -40,9 +40,10 @@ export type TwoStageHoldStage =
  */
 export type TwoStageHoldPreview = {
   phase: TwoStageHoldPhase;
-  progress: number;
   stage: TwoStageHoldStage;
   tone: TwoStageHoldTone;
+  holdProgress?: number;
+  restoreProgress?: number;
   message?: string;
   tooltipOpen?: boolean;
 };
@@ -81,7 +82,7 @@ function feedbackLabel(
     return "Changed";
   }
   if (phase === "hint") {
-    return "Not changed";
+    return "No change";
   }
   if (phase === "holding") {
     return "Hold";
@@ -106,6 +107,28 @@ function feedbackLabel(
   return value ? "On" : "Off";
 }
 
+function feedbackMark(
+  phase: TwoStageHoldPhase,
+  stage: TwoStageHoldStage,
+): string {
+  if (phase === "error" || phase === "external") {
+    return "!";
+  }
+  if (phase === "hint") {
+    return "i";
+  }
+  if (phase === "holding") {
+    return "...";
+  }
+  if (phase === "waiting") {
+    return stage === "second" ? ">>" : "...";
+  }
+  if (phase === "stage-one" || phase === "confirmed") {
+    return "OK";
+  }
+  return "";
+}
+
 export function TwoStageHoldButton({
   label,
   value,
@@ -120,7 +143,7 @@ export function TwoStageHoldButton({
   const tooltipId = useId();
   const [phase, setPhase] = useState<TwoStageHoldPhase>("idle");
   const [firstProgress, setFirstProgress] = useState(0);
-  const [secondProgress, setSecondProgress] = useState(0);
+  const [restoreProgress, setRestoreProgress] = useState(0);
   const [message, setMessage] = useState("");
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const firstTimerRef = useRef<number | null>(null);
@@ -191,7 +214,7 @@ export function TwoStageHoldButton({
     busyRef.current = true;
     const target = initialValueRef.current;
     expectedValueRef.current = target;
-    setSecondProgress(1);
+    setRestoreProgress(1);
     setPhase("waiting");
     setMessage(`Confirming ${actionLabel(label, target)}...`);
     const result = await onSetValue(target);
@@ -244,7 +267,7 @@ export function TwoStageHoldButton({
       }
       return;
     }
-    setSecondProgress(0);
+    setRestoreProgress(0);
     showResult("confirmed", `${label} ${target ? "enabled" : "disabled"}`);
   };
 
@@ -266,7 +289,7 @@ export function TwoStageHoldButton({
     pointerHoldRef.current = pointerId !== undefined;
     suppressNextClickRef.current = false;
     setFirstProgress(0);
-    setSecondProgress(0);
+    setRestoreProgress(0);
     initialValueRef.current = value;
     expectedValueRef.current = value;
     setPhase("holding");
@@ -281,7 +304,7 @@ export function TwoStageHoldButton({
       }
       const elapsed = now - startedAt;
       setFirstProgress(Math.min(1, elapsed / FIRST_STAGE_MS));
-      setSecondProgress(
+      setRestoreProgress(
         Math.max(
           0,
           Math.min(
@@ -338,7 +361,7 @@ export function TwoStageHoldButton({
         return;
       }
       if (!secondStartedRef.current) {
-        setSecondProgress(0);
+        setRestoreProgress(0);
         showResult(
           "confirmed",
           `${label} ${expectedValueRef.current ? "enabled" : "disabled"}`,
@@ -408,18 +431,10 @@ export function TwoStageHoldButton({
             phase === "external"
           ? "result"
           : "first");
-  const visualFirstProgress = preview
-    ? preview.stage === "first-complete" ||
-      preview.stage === "second" ||
-      preview.stage === "result"
-      ? 1
-      : preview.progress
-    : firstProgress;
-  const visualSecondProgress = preview
-    ? preview.stage === "second" || preview.stage === "result"
-      ? preview.progress
-      : 0
-    : secondProgress;
+  const visualHoldProgress = preview?.holdProgress ?? firstProgress;
+  const visualRestoreProgress = preview?.restoreProgress ?? restoreProgress;
+  const restoreProgressVisible =
+    visualStage === "first-complete" || visualStage === "second";
   const visualMessage = preview?.message ?? message;
   const visualTooltipOpen = preview?.tooltipOpen ?? tooltipOpen;
   const visualFeedback = feedbackLabel(
@@ -428,6 +443,7 @@ export function TwoStageHoldButton({
     value,
     visualMessage,
   );
+  const visualFeedbackMark = feedbackMark(visualPhase, visualStage);
   const tone =
     preview?.tone ??
     (phase === "error" || phase === "external"
@@ -458,8 +474,8 @@ export function TwoStageHoldButton({
       data-tone={tone}
       style={
         {
-          "--hold-first-progress": visualFirstProgress,
-          "--hold-second-progress": visualSecondProgress,
+          "--hold-press-progress": visualHoldProgress,
+          "--hold-restore-progress": visualRestoreProgress,
         } as CSSProperties
       }
     >
@@ -475,10 +491,13 @@ export function TwoStageHoldButton({
           type="button"
         >
           <span className="two-stage-hold__label">{label}</span>
-          <span className="two-stage-hold__feedback">{visualFeedback}</span>
-          <span className="two-stage-hold__rails" aria-hidden>
-            <span className="two-stage-hold__rail two-stage-hold__rail--first" />
-            <span className="two-stage-hold__rail two-stage-hold__rail--second" />
+          <span className="two-stage-hold__feedback">
+            {visualFeedbackMark ? (
+              <span className="two-stage-hold__feedback-mark" aria-hidden>
+                {visualFeedbackMark}
+              </span>
+            ) : null}
+            <span>{visualFeedback}</span>
           </span>
         </button>
       ) : (
@@ -513,13 +532,25 @@ export function TwoStageHoldButton({
           type="button"
         >
           <span className="two-stage-hold__label">{label}</span>
-          <span className="two-stage-hold__feedback">{visualFeedback}</span>
-          <span className="two-stage-hold__rails" aria-hidden>
-            <span className="two-stage-hold__rail two-stage-hold__rail--first" />
-            <span className="two-stage-hold__rail two-stage-hold__rail--second" />
+          <span className="two-stage-hold__feedback">
+            {visualFeedbackMark ? (
+              <span className="two-stage-hold__feedback-mark" aria-hidden>
+                {visualFeedbackMark}
+              </span>
+            ) : null}
+            <span>{visualFeedback}</span>
           </span>
         </button>
       )}
+      <span
+        aria-hidden
+        className="two-stage-hold__restore-progress"
+        data-visible={restoreProgressVisible}
+      >
+        <span className="two-stage-hold__restore-track">
+          <span className="two-stage-hold__restore-value" />
+        </span>
+      </span>
       <span className="sr-only" aria-live="polite">
         {visualMessage}
       </span>

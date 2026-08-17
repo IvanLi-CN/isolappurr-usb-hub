@@ -59,13 +59,13 @@ const stateCards: StateCard[] = [
     title: "Connected",
     status: "Data link is active",
     value: true,
-    preview: { phase: "idle", progress: 0, stage: "result", tone: "neutral" },
+    preview: { phase: "idle", stage: "result", tone: "neutral" },
   },
   {
     title: "Disconnected",
     status: "Data link is stopped",
     value: false,
-    preview: { phase: "idle", progress: 0, stage: "result", tone: "neutral" },
+    preview: { phase: "idle", stage: "result", tone: "neutral" },
   },
   {
     title: "Holding",
@@ -73,7 +73,7 @@ const stateCards: StateCard[] = [
     value: true,
     preview: {
       phase: "holding",
-      progress: 0.32,
+      holdProgress: 0.52,
       stage: "first",
       tone: "warning",
       message: "Hold for 0.6s to disable data link",
@@ -85,7 +85,7 @@ const stateCards: StateCard[] = [
     value: true,
     preview: {
       phase: "waiting",
-      progress: 0.48,
+      holdProgress: 1,
       stage: "first",
       tone: "warning",
       message: "Confirming Disable data link...",
@@ -97,7 +97,7 @@ const stateCards: StateCard[] = [
     value: false,
     preview: {
       phase: "stage-one",
-      progress: 0,
+      restoreProgress: 0.28,
       stage: "first-complete",
       tone: "warning",
       message: "Data link disabled. Keep holding to restore it.",
@@ -109,7 +109,7 @@ const stateCards: StateCard[] = [
     value: false,
     preview: {
       phase: "waiting",
-      progress: 1,
+      restoreProgress: 1,
       stage: "second",
       tone: "success",
       message: "Confirming Enable data link...",
@@ -121,7 +121,6 @@ const stateCards: StateCard[] = [
     value: true,
     preview: {
       phase: "confirmed",
-      progress: 1,
       stage: "result",
       tone: "success",
       message: "Data link restored",
@@ -133,7 +132,6 @@ const stateCards: StateCard[] = [
     value: true,
     preview: {
       phase: "hint",
-      progress: 0,
       stage: "result",
       tone: "neutral",
       message: "Continue holding about 0.6s to disable data link.",
@@ -145,7 +143,6 @@ const stateCards: StateCard[] = [
     value: true,
     preview: {
       phase: "error",
-      progress: 0.5,
       stage: "first",
       tone: "error",
       message: "Data link did not change. Try again.",
@@ -157,7 +154,6 @@ const stateCards: StateCard[] = [
     value: false,
     preview: {
       phase: "external",
-      progress: 0,
       stage: "result",
       tone: "error",
       message: "Data link changed elsewhere. Hold again to act.",
@@ -170,7 +166,7 @@ const stateCards: StateCard[] = [
     disabled: true,
     unavailableReason:
       "This firmware does not support the Data link control. Update the device firmware to use it.",
-    preview: { phase: "idle", progress: 0, stage: "result", tone: "neutral" },
+    preview: { phase: "idle", stage: "result", tone: "neutral" },
   },
 ];
 
@@ -263,7 +259,7 @@ export const EarlyReleaseGuidance: Story = {
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
     await sleep(180);
     fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
-    await expect(await canvas.findByText("Not changed")).toBeInTheDocument();
+    await expect(await canvas.findByText("No change")).toBeInTheDocument();
     await expect(canvas.getByRole("tooltip", { hidden: true })).toHaveAttribute(
       "data-visible",
       "false",
@@ -288,6 +284,12 @@ export const StageOneThenRestore: Story = {
       "stage-one",
     );
     await expect(await canvas.findByText("Disabled")).toBeInTheDocument();
+    await expect(
+      button.parentElement?.querySelector(".two-stage-hold__rail"),
+    ).toBeNull();
+    await expect(
+      button.parentElement?.querySelector(".two-stage-hold__restore-progress"),
+    ).toBeInTheDocument();
     await expect(canvas.getByRole("tooltip", { hidden: true })).toHaveAttribute(
       "data-visible",
       "false",
