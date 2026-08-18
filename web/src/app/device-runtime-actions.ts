@@ -74,10 +74,12 @@ type PushToast = (toast: {
 type CreateDeviceRuntimeActionsParams = {
   coordinator: CrossTabRuntimeCoordinator;
   coordinationRole: "leader" | "follower" | "unsupported";
+  coordinationRoleRef: MutableRefObject<"leader" | "follower" | "unsupported">;
   currentTabId: string;
   deviceInfo: (deviceId: string) => Promise<Result<DeviceInfoResponse>>;
   devices: StoredDevice[];
   isLeader: boolean;
+  isLeaderRef: MutableRefObject<boolean>;
   pushToast: PushToast;
   requestLeaderRpc: RequestLeaderRpc;
   refreshCanonicalPowerConfig: (
@@ -164,13 +166,22 @@ export function applyConfirmedPortsSnapshot(
   };
 }
 
+export function shouldRequestLeaderRpc(
+  isLeader: boolean,
+  coordinationRole: "leader" | "follower" | "unsupported",
+): boolean {
+  return !isLeader && coordinationRole !== "unsupported";
+}
+
 export function createDeviceRuntimeActions({
   coordinator,
   coordinationRole,
+  coordinationRoleRef,
   currentTabId,
   deviceInfo,
   devices,
   isLeader,
+  isLeaderRef,
   pushToast,
   requestLeaderRpc,
   refreshCanonicalPowerConfig,
@@ -184,6 +195,9 @@ export function createDeviceRuntimeActions({
   syncPdDiagnosticsSnapshot,
   syncPowerConfigSnapshot,
 }: CreateDeviceRuntimeActionsParams) {
+  const shouldRequestLeader = () =>
+    shouldRequestLeaderRpc(isLeaderRef.current, coordinationRoleRef.current);
+
   const wifiConfig = async (
     deviceId: string,
   ): Promise<Result<WifiConfigResponse>> => {
@@ -690,7 +704,7 @@ export function createDeviceRuntimeActions({
     portId: PortId,
     enabled: boolean,
   ): Promise<Result<{ accepted: true }>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("setPower", [deviceId, portId, enabled]);
     }
     return runSharedMutation({
@@ -739,7 +753,7 @@ export function createDeviceRuntimeActions({
     portId: PortId,
     connected: boolean,
   ): Promise<Result<{ accepted: true }>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("setData", [deviceId, portId, connected]);
     }
     return runSharedMutation({
@@ -811,34 +825,33 @@ export function createDeviceRuntimeActions({
     const label = action === "output" ? "Power" : "TPS discharge";
     const deviceName =
       devices.find((device) => device.id === deviceId)?.name ?? deviceId;
-    const result: Result<PowerConfigResponse> =
-      !isLeader && coordinationRole !== "unsupported"
-        ? await requestLeaderRpc("setPowerRuntime", [
-            deviceId,
-            owner,
-            action,
-            enabled,
-          ])
-        : await runSharedMutation({
-            deviceId,
-            method: "setPowerRuntime",
-            invoke: async () => {
-              const direct = await runPendingMutation<PowerConfigResponse>({
-                deviceId,
-                pendingPortId: "port_c",
-                method: "power.runtime_set",
-                params: {
-                  action,
-                  enabled,
-                  owner,
-                },
-              });
-              if (!direct?.ok) {
-                return direct ?? invalidDeviceResult(deviceId);
-              }
-              return refreshCanonicalPowerConfig(deviceId, owner, direct.value);
-            },
-          });
+    const result: Result<PowerConfigResponse> = shouldRequestLeader()
+      ? await requestLeaderRpc("setPowerRuntime", [
+          deviceId,
+          owner,
+          action,
+          enabled,
+        ])
+      : await runSharedMutation({
+          deviceId,
+          method: "setPowerRuntime",
+          invoke: async () => {
+            const direct = await runPendingMutation<PowerConfigResponse>({
+              deviceId,
+              pendingPortId: "port_c",
+              method: "power.runtime_set",
+              params: {
+                action,
+                enabled,
+                owner,
+              },
+            });
+            if (!direct?.ok) {
+              return direct ?? invalidDeviceResult(deviceId);
+            }
+            return refreshCanonicalPowerConfig(deviceId, owner, direct.value);
+          },
+        });
     if (result.ok) {
       syncObservedPowerLock(deviceId, result.value.lock, owner);
       syncPowerConfigSnapshot(deviceId, result.value);

@@ -188,7 +188,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `GET|POST|DELETE /api/v1/devices/{id}/wifi`
 - `GET /api/v1/devices/{id}/ports`
 - `POST /api/v1/devices/{id}/ports/{port_id}/power`
-- `POST /api/v1/devices/{id}/ports/{port_id}/data`
+- `POST /api/v1/devices/{id}/ports/{port_id}/data?connected=<true|false>`
 - `POST /api/v1/devices/{id}/ports/{port_id}/replug`
 - `POST /api/v1/devices/{id}/hub/route`
 - `POST /api/v1/devices/{id}/settings/reset`

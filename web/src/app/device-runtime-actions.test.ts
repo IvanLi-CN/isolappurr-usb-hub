@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyConfirmedPortsSnapshot } from "./device-runtime-actions";
+import {
+  applyConfirmedPortsSnapshot,
+  shouldRequestLeaderRpc,
+} from "./device-runtime-actions";
 import type { DeviceRuntime } from "./device-runtime-support";
 
 function runtime(): DeviceRuntime {
@@ -70,5 +73,13 @@ describe("applyConfirmedPortsSnapshot", () => {
     expect(next.ports?.port_a.state.power_enabled).toBeFalse();
     expect(next.ports?.port_a.state.data_connected).toBeFalse();
     expect(next.hub?.upstream_connected).toBeTrue();
+  });
+});
+
+describe("shouldRequestLeaderRpc", () => {
+  test("routes a stale hold callback through the current leader after lease loss", () => {
+    expect(shouldRequestLeaderRpc(false, "follower")).toBeTrue();
+    expect(shouldRequestLeaderRpc(false, "unsupported")).toBeFalse();
+    expect(shouldRequestLeaderRpc(true, "leader")).toBeFalse();
   });
 });

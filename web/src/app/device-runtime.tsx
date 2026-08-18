@@ -137,6 +137,10 @@ export function DeviceRuntimeProvider({
   >(null);
   const wasLeaderRef = useRef(coordination.role !== "follower");
   const isLeader = coordination.role !== "follower";
+  const isLeaderRef = useRef(isLeader);
+  const coordinationRoleRef = useRef(coordination.role);
+  isLeaderRef.current = isLeader;
+  coordinationRoleRef.current = coordination.role;
 
   useEffect(() => {
     runtimeByIdRef.current = runtimeById;
@@ -1113,10 +1117,12 @@ export function DeviceRuntimeProvider({
   } = createDeviceRuntimeActions({
     coordinator,
     coordinationRole: coordination.role,
+    coordinationRoleRef,
     currentTabId: coordination.currentTabId,
     deviceInfo,
     devices,
     isLeader,
+    isLeaderRef,
     pushToast,
     requestLeaderRpc,
     refreshCanonicalPowerConfig,

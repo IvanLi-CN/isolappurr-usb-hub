@@ -329,6 +329,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
 
   const writeDisabled =
     connectionState !== "online" ||
+    runtime.coordination.role === "follower" ||
     runtime.runtimeById[device.id]?.command?.state === "queued" ||
     runtime.runtimeById[device.id]?.command?.state === "running";
 

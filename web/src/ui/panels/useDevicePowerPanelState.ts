@@ -478,7 +478,11 @@ export function useDevicePowerPanelState({
     blockingSharedCommandBusy ||
     (optimisticSaveActive && slowSavePhase === "lock");
   const powerControlsDisabled =
-    advancedDisabled || busy || idleBiasBusy || lockBusy;
+    advancedDisabled ||
+    busy ||
+    idleBiasBusy ||
+    lockBusy ||
+    coordination.role === "follower";
   const outputModeSaveDisabled =
     powerControlsDisabled ||
     saveInFlight ||
