@@ -180,6 +180,12 @@ enum PortsCommand {
         #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
         enabled: bool,
     },
+    Data {
+        #[arg(long)]
+        port: String,
+        #[arg(long, value_parser = clap::value_parser!(bool), action = ArgAction::Set)]
+        connected: bool,
+    },
     Replug {
         #[arg(long)]
         port: String,

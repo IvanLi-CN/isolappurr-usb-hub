@@ -12,7 +12,8 @@
 
 ## Coverage
 
-- Firmware USB JSONL: implemented for `info`, `ports.get`, `port.power_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `settings.reset`, and `reboot`.
+- Firmware USB JSONL: implemented for `info`, `ports.get`, `port.power_set`, `port.data_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `settings.reset`, and `reboot`.
+- Runtime data-link control: `port.data_set` and the aligned HTTP route hold `data_connected` until the next power cycle or reboot; power-off rejects connect requests with `port_power_off` and never implicitly re-enables the port.
 - Firmware USB JSONL rejects malformed port actions instead of defaulting to a port or power state.
 - Local USB ESP32 port filtering accepts ESP32-S3 USB Serial/JTAG by VID/PID across macOS, Windows, and Linux path naming, while still excluding Bluetooth/debug-console noise.
 - Firmware Wi-Fi HTTP channel: implemented for `info`, `ports.get`, port power/replug actions, and `wifi.get`. HTTP rejects `wifi.set`, `wifi.clear`, and Wi-Fi apply `reboot` with `unsafe_transport` because Wi-Fi configuration changes require Web Serial or Local USB.
@@ -21,6 +22,7 @@
 - Development CLI: implemented `serial ports`, `serial identify`, `serial request`, `firmware make-bin`, `firmware flash`, `firmware reset`, and `firmware monitor`. `just desktop-agent-build` builds the CLI once; `just ports` and related selector commands then execute the existing binary without implicit rebuilds. `just identify` writes `.esp32-port` with the owner-confirmed port plus `device_id`/`mac`; `just select-port` can also cache an `identity=unconfirmed` owner-confirmed port when `info` times out; `just flash` uses `espflash flash` on the release ELF for unconfirmed bootstrap flashing, then confirms identity; `just flash-monitor` validates identity, flashes only the app `.bin`, resets, and monitors without `mcu-agentd`.
 - Web transports and Add device UI: implemented with Add device flows for Wi-Fi / LAN, Web Serial, and Local USB; Web Serial JSONL; Local USB JSONL; and Wi-Fi HTTP channel.
 - Device runtime: implemented concurrent Wi-Fi / LAN, Web Serial, and Local USB channel tracking. The active channel remains primary while healthy; when it fails, polling and controls promote the next available channel for the same saved device.
+- Confirmed port mutations: the runtime commits the exact `ports.get` snapshot that confirms a power or data-link target before completing the command, so an in-flight periodic poll cannot defer the owner-visible final state.
 - Browser single-writer runtime: implemented a same-origin coordinator so one leader tab owns discovery, transport bootstrap, polling, and hardware writes while every same-origin tab submits reads and writes through the shared runtime command channel.
 - Cross-tab state propagation: implemented BroadcastChannel-first snapshot and
   message sync with a localStorage fallback, including shared queued/running

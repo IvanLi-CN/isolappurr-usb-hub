@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { expect, within } from "@storybook/test";
 
 import { PortCard } from "./PortCard";
 
 const meta: Meta<typeof PortCard> = {
   title: "Cards/PortCard",
   component: PortCard,
-  tags: ["autodocs"],
+  tags: ["autodocs", "two-stage-hold"],
   args: {
     label: "USB-A",
     portId: "port_a",
@@ -22,8 +23,8 @@ const meta: Meta<typeof PortCard> = {
       replugging: false,
       busy: false,
     },
-    onTogglePower: () => {},
-    onReplug: () => {},
+    onSetPower: async () => ({ ok: true }),
+    onSetData: async () => ({ ok: true }),
   },
 };
 
@@ -31,6 +32,36 @@ export default meta;
 type Story = StoryObj<typeof PortCard>;
 
 export const PowerOn: Story = {};
+
+export const ActionLabelsVisible: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const labels = canvasElement.querySelectorAll(".two-stage-hold__label");
+    await expect(labels).toHaveLength(2);
+    const expectedLabels = ["Power", "Data link"];
+    for (const [index, label] of [...labels].entries()) {
+      await expect(label).toHaveTextContent(expectedLabels[index]);
+      await expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+      await expect(label.getBoundingClientRect().width).toBeGreaterThan(8);
+      await expect(
+        label.closest("button")?.getBoundingClientRect().height,
+      ).toBeGreaterThanOrEqual(44);
+      const feedback = label
+        .closest("button")
+        ?.querySelector<HTMLElement>(".two-stage-hold__feedback");
+      await expect(feedback?.textContent?.trim()).toBe("");
+      await expect(
+        feedback?.querySelectorAll(".two-stage-hold__status-icon"),
+      ).toHaveLength(1);
+    }
+    await expect(canvas.getByTestId("port-state-power")).toHaveAccessibleName(
+      "Power on",
+    );
+    await expect(canvas.getByTestId("port-state-data")).toHaveAccessibleName(
+      "Data link connected",
+    );
+  },
+};
 
 export const Precision: Story = {
   args: {
@@ -72,9 +103,22 @@ export const PowerOff: Story = {
       sample_uptime_ms: 123_999,
     },
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const powerState = canvas.getByTestId("port-state-power");
+    const dataState = canvas.getByTestId("port-state-data");
+    await expect(powerState).toHaveAccessibleName("Power off");
+    await expect(dataState).toHaveAccessibleName("Data link disconnected");
+    await expect(
+      powerState.querySelector('[data-status-icon="power-off"]'),
+    ).not.toBeNull();
+    await expect(
+      dataState.querySelector('[data-status-icon="data-unlinked"]'),
+    ).not.toBeNull();
+  },
 };
 
-export const Replugging: Story = {
+export const DataSwitching: Story = {
   args: {
     state: {
       power_enabled: true,
@@ -82,6 +126,12 @@ export const Replugging: Story = {
       replugging: true,
       busy: true,
     },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("port-state-data")).toHaveAccessibleName(
+      "Data switching",
+    );
   },
 };
 

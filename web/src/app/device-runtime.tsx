@@ -137,6 +137,10 @@ export function DeviceRuntimeProvider({
   >(null);
   const wasLeaderRef = useRef(coordination.role !== "follower");
   const isLeader = coordination.role !== "follower";
+  const isLeaderRef = useRef(isLeader);
+  const coordinationRoleRef = useRef(coordination.role);
+  isLeaderRef.current = isLeader;
+  coordinationRoleRef.current = coordination.role;
 
   useEffect(() => {
     runtimeByIdRef.current = runtimeById;
@@ -244,7 +248,6 @@ export function DeviceRuntimeProvider({
       return next;
     });
   }, [devices]);
-
   const createRpcRequestId = useCallback(() => {
     if (
       typeof crypto !== "undefined" &&
@@ -272,6 +275,7 @@ export function DeviceRuntimeProvider({
         method === "resetSettings" ||
         method === "rebootDevice" ||
         method === "setPower" ||
+        method === "setData" ||
         method === "replug" ||
         method === "setUsbCDownstreamRoute"
       ) {
@@ -281,7 +285,6 @@ export function DeviceRuntimeProvider({
     },
     [],
   );
-
   const requestLeaderRpc = useCallback(
     async <TMethod extends RuntimeRpcMethod>(
       method: TMethod,
@@ -315,7 +318,6 @@ export function DeviceRuntimeProvider({
       runtimeRpcTimeoutMs,
     ],
   );
-
   const requestControlTakeover = useCallback(() => {
     coordinator.requestTakeover();
   }, [coordinator]);
@@ -325,7 +327,6 @@ export function DeviceRuntimeProvider({
     deviceMutationQueues,
     setRuntimeById,
   });
-
   const syncObservedPowerLock = useCallback(
     (
       deviceId: string,
@@ -343,7 +344,6 @@ export function DeviceRuntimeProvider({
     },
     [],
   );
-
   const getLocalUsbAgent =
     useCallback(async (): Promise<DesktopAgent | null> => {
       if (
@@ -358,7 +358,6 @@ export function DeviceRuntimeProvider({
       localUsbAgent.current = agent;
       return agent;
     }, [demoEnabled]);
-
   useEffect(() => {
     if (lastDemoEnabled.current === demoEnabled) {
       return;
@@ -375,7 +374,6 @@ export function DeviceRuntimeProvider({
     }
     setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
   }, [demoEnabled]);
-
   const requestLocalUsb = useCallback(
     async <T,>(
       deviceId: string,
@@ -478,7 +476,6 @@ export function DeviceRuntimeProvider({
     },
     [devices, getLocalUsbAgent],
   );
-
   const requestWebSerial = useCallback(
     async <T,>(
       deviceId: string,
@@ -1106,6 +1103,7 @@ export function DeviceRuntimeProvider({
     saveWifiConfig,
     setIdleBias,
     setLock,
+    setData,
     setPower,
     setPowerRuntime,
     setRoute,
@@ -1113,10 +1111,12 @@ export function DeviceRuntimeProvider({
   } = createDeviceRuntimeActions({
     coordinator,
     coordinationRole: coordination.role,
+    coordinationRoleRef,
     currentTabId: coordination.currentTabId,
     deviceInfo,
     devices,
     isLeader,
+    isLeaderRef,
     pushToast,
     requestLeaderRpc,
     refreshCanonicalPowerConfig,
@@ -1130,7 +1130,6 @@ export function DeviceRuntimeProvider({
     syncPdDiagnosticsSnapshot,
     syncPowerConfigSnapshot,
   });
-
   rpcRequestHandlerRef.current = handleRuntimeRpcRequest;
 
   const value = useMemo<DeviceRuntimeContextValue>(() => {
@@ -1160,6 +1159,7 @@ export function DeviceRuntimeProvider({
       runIdleBiasCalibration: runIdleBias,
       clearIdleBiasCalibration: clearIdleBias,
       setPower,
+      setData,
       replug,
       setUsbCDownstreamRoute: setRoute,
     });
@@ -1185,6 +1185,7 @@ export function DeviceRuntimeProvider({
     setLock,
     setIdleBias,
     setRoute,
+    setData,
     setPower,
     runIdleBias,
     requestControlTakeover,

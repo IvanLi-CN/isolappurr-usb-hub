@@ -112,9 +112,14 @@ isolapurr wifi clear --device-id <device-id>
 ```bash
 isolapurr ports --device-id <device-id>
 isolapurr ports --device-id <device-id> power --port <port-id> --enabled <true|false>
+isolapurr ports --device-id <device-id> data --port <port-id> --connected <true|false>
 isolapurr ports --device-id <device-id> replug --port <port-id>
 isolapurr ports --device-id <device-id> route --route <mcu|usb_c>
 ```
+
+`ports data` changes the runtime data link only. It does not enable power; a
+connect request while power is off is rejected. `ports replug` remains the
+legacy one-shot data pulse.
 
 - Power workflows use the same released CLI surface and saved config path:
 

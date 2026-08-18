@@ -441,7 +441,7 @@ const mockDeviceApi = async (
             replugging: false,
             busy: false,
           },
-          capabilities: { data_replug: true, power_set: true },
+          capabilities: { data_replug: true, data_set: true, power_set: true },
         },
         {
           portId: "port_c",
@@ -453,7 +453,7 @@ const mockDeviceApi = async (
             replugging: false,
             busy: false,
           },
-          capabilities: { data_replug: true, power_set: true },
+          capabilities: { data_replug: true, data_set: true, power_set: true },
         },
       ],
     });
@@ -480,6 +480,11 @@ const mockDeviceApi = async (
 
   if (url.pathname.endsWith("/actions/replug")) {
     return jsonResponse({ accepted: true });
+  }
+
+  if (url.pathname.endsWith("/data")) {
+    const connected = url.searchParams.get("connected") === "1";
+    return jsonResponse({ accepted: true, data_connected: connected });
   }
 
   if (url.pathname.includes("/power")) {

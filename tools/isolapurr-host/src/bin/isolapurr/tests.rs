@@ -59,6 +59,12 @@ mod power_output_tests {
         assert_eq!(path, "/api/v1/ports/port_a/power?enabled=false");
         assert!(body.is_none());
 
+        let (_, path, body) =
+            map_http_endpoint(Method::POST, "/ports/port_c/data?connected=false", None)
+                .expect("data endpoint should map");
+        assert_eq!(path, "/api/v1/ports/port_c/data?connected=0");
+        assert!(body.is_none());
+
         let (_, path, _) = map_http_endpoint(Method::POST, "/ports/port_c/replug", None)
             .expect("replug endpoint should map");
         assert_eq!(path, "/api/v1/ports/port_c/actions/replug");
@@ -146,6 +152,17 @@ mod power_output_tests {
         assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
         assert_eq!(params["port"], "port_a");
         assert_eq!(params["enabled"], false);
+
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::POST,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/ports/port_c/data?connected=1",
+            None,
+        )
+        .expect("data endpoint should map");
+        assert_eq!(method, "device.port.data_set");
+        assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
+        assert_eq!(params["port"], "port_c");
+        assert_eq!(params["connected"], true);
 
         let (method, params) = map_devd_ipc_endpoint(
             Method::POST,
@@ -589,6 +606,31 @@ mod power_output_tests {
             panic!("expected ports power command");
         };
         assert!(!enabled);
+    }
+
+    #[test]
+    fn ports_data_accepts_explicit_boolean_value() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "ports",
+            "--device-id",
+            "aabbcc001122",
+            "data",
+            "--port",
+            "port_c",
+            "--connected",
+            "true",
+        ])
+        .expect("explicit data boolean value should parse");
+
+        let Command::Ports {
+            command: Some(PortsCommand::Data { connected, .. }),
+            ..
+        } = cli.command
+        else {
+            panic!("expected ports data command");
+        };
+        assert!(connected);
     }
 
     #[test]

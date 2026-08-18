@@ -1,5 +1,7 @@
 # History
 
+- Added the aligned runtime data-link command across CLI, IPC, bridge HTTP, USB JSONL, and Web transport while retaining the existing replug command.
+
 - Reworked the non-project recovery confirmation into a reusable Storybook
   fragment with an explicitly labeled confirmation-code input, initial input
   focus, exact `FLASH` matching, keyboard-safe explicit confirmation, and

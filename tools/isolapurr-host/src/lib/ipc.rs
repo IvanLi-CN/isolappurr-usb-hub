@@ -270,6 +270,19 @@ async fn dispatch_ipc_request(
                 .await?,
             ))
         }
+        "device.port.data_set" => {
+            let req: DevicePortDataRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "port.data_set",
+                    Some(json!({"port": req.port, "connected": req.connected})),
+                )
+                .await?,
+            ))
+        }
         "device.port.replug" => {
             let req: DevicePortRequest = serde_json::from_value(params)?;
             require_compatible_project_firmware(state, &req.device_id).await?;
@@ -488,6 +501,13 @@ struct DevicePortPowerRequest {
     device_id: String,
     port: String,
     enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevicePortDataRequest {
+    device_id: String,
+    port: String,
+    connected: bool,
 }
 
 #[derive(Debug, Deserialize)]

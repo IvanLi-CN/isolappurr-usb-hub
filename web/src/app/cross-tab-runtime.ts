@@ -57,6 +57,7 @@ export type RuntimeRpcMethod =
   | "clearIdleBiasCalibration"
   | "pdDiagnostics"
   | "setPower"
+  | "setData"
   | "replug"
   | "setUsbCDownstreamRoute";
 
@@ -82,6 +83,7 @@ export type RuntimeRpcResultMap = {
   runIdleBiasCalibration: Result<IdleBiasResponse>;
   clearIdleBiasCalibration: Result<IdleBiasResponse>;
   setPower: Result<{ accepted: true }>;
+  setData: Result<{ accepted: true }>;
   replug: Result<{ accepted: true }>;
   setUsbCDownstreamRoute: Result<{
     accepted: true;
@@ -141,6 +143,7 @@ const MUTATION_METHODS = new Set<RuntimeRpcMethod>([
   "runIdleBiasCalibration",
   "clearIdleBiasCalibration",
   "setPower",
+  "setData",
   "replug",
   "setUsbCDownstreamRoute",
   "identify",

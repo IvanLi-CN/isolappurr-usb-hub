@@ -449,6 +449,7 @@ impl ApiPowerSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiPortAction {
     Replug,
+    Data { connected: bool },
     Power { enabled: bool },
 }
 
@@ -935,6 +936,7 @@ async fn wifi_task(
 }
 
 include!("net/http.rs");
+include!("net/http_port_data.inc");
 
 include!("net/names_config.rs");
 

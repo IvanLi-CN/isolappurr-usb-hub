@@ -16,7 +16,11 @@ import type {
   WifiMutationResponse,
 } from "../domain/deviceApi";
 import type { StoredDevice } from "../domain/devices";
-import type { PortId, UsbCDownstreamRoute } from "../domain/ports";
+import type {
+  PortId,
+  PortsResponse,
+  UsbCDownstreamRoute,
+} from "../domain/ports";
 import type {
   CrossTabRuntimeCoordinator,
   RuntimeChannelMessage,
@@ -70,10 +74,12 @@ type PushToast = (toast: {
 type CreateDeviceRuntimeActionsParams = {
   coordinator: CrossTabRuntimeCoordinator;
   coordinationRole: "leader" | "follower" | "unsupported";
+  coordinationRoleRef: MutableRefObject<"leader" | "follower" | "unsupported">;
   currentTabId: string;
   deviceInfo: (deviceId: string) => Promise<Result<DeviceInfoResponse>>;
   devices: StoredDevice[];
   isLeader: boolean;
+  isLeaderRef: MutableRefObject<boolean>;
   pushToast: PushToast;
   requestLeaderRpc: RequestLeaderRpc;
   refreshCanonicalPowerConfig: (
@@ -136,13 +142,46 @@ function setPending(
   });
 }
 
+export function applyConfirmedPortsSnapshot(
+  current: DeviceRuntime,
+  snapshot: PortsResponse,
+): DeviceRuntime {
+  const portA = snapshot.ports.find((port) => port.portId === "port_a");
+  const portC = snapshot.ports.find((port) => port.portId === "port_c");
+  if (!portA || !portC) {
+    return current;
+  }
+
+  return {
+    ...current,
+    lastOkAt: Date.now(),
+    lastError: null,
+    hub: snapshot.hub
+      ? {
+          ...snapshot.hub,
+          capabilities: snapshot.hub.capabilities ?? snapshot.capabilities,
+        }
+      : current.hub,
+    ports: { port_a: portA, port_c: portC },
+  };
+}
+
+export function shouldRequestLeaderRpc(
+  isLeader: boolean,
+  coordinationRole: "leader" | "follower" | "unsupported",
+): boolean {
+  return !isLeader && coordinationRole !== "unsupported";
+}
+
 export function createDeviceRuntimeActions({
   coordinator,
   coordinationRole,
+  coordinationRoleRef,
   currentTabId,
   deviceInfo,
   devices,
   isLeader,
+  isLeaderRef,
   pushToast,
   requestLeaderRpc,
   refreshCanonicalPowerConfig,
@@ -156,6 +195,9 @@ export function createDeviceRuntimeActions({
   syncPdDiagnosticsSnapshot,
   syncPowerConfigSnapshot,
 }: CreateDeviceRuntimeActionsParams) {
+  const shouldRequestLeader = () =>
+    shouldRequestLeaderRpc(isLeaderRef.current, coordinationRoleRef.current);
+
   const wifiConfig = async (
     deviceId: string,
   ): Promise<Result<WifiConfigResponse>> => {
@@ -596,11 +638,52 @@ export function createDeviceRuntimeActions({
     }
   };
 
+  const waitForPortState = async (
+    deviceId: string,
+    portId: PortId,
+    field: "power_enabled" | "data_connected",
+    expected: boolean,
+  ): Promise<Result<{ accepted: true }>> => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const snapshot = await runDeviceCommand<PortsResponse>(
+        deviceId,
+        "ports.get",
+      );
+      if (!snapshot.ok) {
+        return snapshot;
+      }
+      const port = snapshot.value.ports.find((item) => item.portId === portId);
+      if (port?.state[field] === expected) {
+        setRuntimeById((previous) => {
+          const current = previous[deviceId];
+          if (!current) {
+            return previous;
+          }
+          const next = applyConfirmedPortsSnapshot(current, snapshot.value);
+          return next === current
+            ? previous
+            : { ...previous, [deviceId]: next };
+        });
+        return { ok: true, value: { accepted: true } };
+      }
+      if (attempt < 19) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+      }
+    }
+    return {
+      ok: false,
+      error: {
+        kind: "invalid_response",
+        message: `Port state did not confirm ${field}=${expected}`,
+      },
+    };
+  };
+
   const setPower = async (
     deviceId: string,
     portId: PortId,
     enabled: boolean,
-  ) => {
+  ): Promise<Result<{ accepted: true }>> => {
     const result = await setPowerResult(deviceId, portId, enabled);
     const label = portId === "port_a" ? "USB-A" : "USB-C";
     const deviceName =
@@ -610,9 +693,10 @@ export function createDeviceRuntimeActions({
         message: `${deviceName}: ${label} power set`,
         variant: "success",
       });
-      return;
+      return result;
     }
     handleApiErrorToast(deviceName, label, result.error);
+    return result;
   };
 
   const setPowerResult = async (
@@ -620,7 +704,7 @@ export function createDeviceRuntimeActions({
     portId: PortId,
     enabled: boolean,
   ): Promise<Result<{ accepted: true }>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("setPower", [deviceId, portId, enabled]);
     }
     return runSharedMutation({
@@ -636,7 +720,59 @@ export function createDeviceRuntimeActions({
             enabled,
           },
         });
-        return direct ?? invalidDeviceResult(deviceId);
+        if (!direct?.ok) {
+          return direct ?? invalidDeviceResult(deviceId);
+        }
+        return waitForPortState(deviceId, portId, "power_enabled", enabled);
+      },
+    });
+  };
+
+  const setData = async (
+    deviceId: string,
+    portId: PortId,
+    connected: boolean,
+  ): Promise<Result<{ accepted: true }>> => {
+    const result = await setDataResult(deviceId, portId, connected);
+    const label = portId === "port_a" ? "USB-A" : "USB-C";
+    const deviceName =
+      devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+    if (result.ok) {
+      pushToast({
+        message: `${deviceName}: ${label} data link ${connected ? "enabled" : "disabled"}`,
+        variant: "success",
+      });
+      return result;
+    }
+    handleApiErrorToast(deviceName, label, result.error);
+    return result;
+  };
+
+  const setDataResult = async (
+    deviceId: string,
+    portId: PortId,
+    connected: boolean,
+  ): Promise<Result<{ accepted: true }>> => {
+    if (shouldRequestLeader()) {
+      return requestLeaderRpc("setData", [deviceId, portId, connected]);
+    }
+    return runSharedMutation({
+      deviceId,
+      method: "setData",
+      invoke: async () => {
+        const direct = await runPendingMutation<{ accepted: true }>({
+          deviceId,
+          pendingPortId: portId,
+          method: "port.data_set",
+          params: {
+            port: portId,
+            connected,
+          },
+        });
+        if (!direct?.ok) {
+          return direct ?? invalidDeviceResult(deviceId);
+        }
+        return waitForPortState(deviceId, portId, "data_connected", connected);
       },
     });
   };
@@ -689,34 +825,33 @@ export function createDeviceRuntimeActions({
     const label = action === "output" ? "Power" : "TPS discharge";
     const deviceName =
       devices.find((device) => device.id === deviceId)?.name ?? deviceId;
-    const result: Result<PowerConfigResponse> =
-      !isLeader && coordinationRole !== "unsupported"
-        ? await requestLeaderRpc("setPowerRuntime", [
-            deviceId,
-            owner,
-            action,
-            enabled,
-          ])
-        : await runSharedMutation({
-            deviceId,
-            method: "setPowerRuntime",
-            invoke: async () => {
-              const direct = await runPendingMutation<PowerConfigResponse>({
-                deviceId,
-                pendingPortId: "port_c",
-                method: "power.runtime_set",
-                params: {
-                  action,
-                  enabled,
-                  owner,
-                },
-              });
-              if (!direct?.ok) {
-                return direct ?? invalidDeviceResult(deviceId);
-              }
-              return refreshCanonicalPowerConfig(deviceId, owner, direct.value);
-            },
-          });
+    const result: Result<PowerConfigResponse> = shouldRequestLeader()
+      ? await requestLeaderRpc("setPowerRuntime", [
+          deviceId,
+          owner,
+          action,
+          enabled,
+        ])
+      : await runSharedMutation({
+          deviceId,
+          method: "setPowerRuntime",
+          invoke: async () => {
+            const direct = await runPendingMutation<PowerConfigResponse>({
+              deviceId,
+              pendingPortId: "port_c",
+              method: "power.runtime_set",
+              params: {
+                action,
+                enabled,
+                owner,
+              },
+            });
+            if (!direct?.ok) {
+              return direct ?? invalidDeviceResult(deviceId);
+            }
+            return refreshCanonicalPowerConfig(deviceId, owner, direct.value);
+          },
+        });
     if (result.ok) {
       syncObservedPowerLock(deviceId, result.value.lock, owner);
       syncPowerConfigSnapshot(deviceId, result.value);
@@ -923,6 +1058,13 @@ export function createDeviceRuntimeActions({
             Boolean(message.args[2]),
           );
           break;
+        case "setData":
+          result = await setDataResult(
+            deviceId,
+            message.args[1] as PortId,
+            Boolean(message.args[2]),
+          );
+          break;
         case "replug":
           result = await replugResult(deviceId, message.args[1] as PortId);
           break;
@@ -979,6 +1121,7 @@ export function createDeviceRuntimeActions({
     runIdleBias,
     savePowerConfig,
     saveWifiConfig,
+    setData,
     setIdleBias,
     setLock,
     setPower,

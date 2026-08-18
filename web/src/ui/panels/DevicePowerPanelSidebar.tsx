@@ -1,6 +1,16 @@
+import type { PowerConfigResponse, Result } from "../../domain/deviceApi";
 import type { PortState, PortTelemetry } from "../../domain/ports";
-import { ActionButton } from "../actions/ActionButton";
+import {
+  type HoldActionResult,
+  TwoStageHoldButton,
+  toHoldActionResult,
+} from "../actions/TwoStageHoldButton";
 import { formatTelemetryValue } from "../format/telemetry";
+import {
+  PortStateIcon,
+  portStateIconKind,
+  portStateLabel,
+} from "../status/PortStateIcon";
 import {
   CableLoopCompensationCalculator,
   DiscreteSliderField,
@@ -13,16 +23,17 @@ type DevicePowerPanelSidebarProps = {
   onSetSw2303LineCompensation: (
     value: FormState["sw2303_line_compensation"],
   ) => void;
-  onReplugUsbC: () => Promise<void>;
+  onSetUsbCData: (connected: boolean) => Promise<HoldActionResult>;
   onSetLightLoadMode: (mode: FormState["light_load_mode"]) => void;
   onToggleRuntime: (
     action: "output" | "discharge",
     enabled: boolean,
-  ) => Promise<void>;
+  ) => Promise<Result<PowerConfigResponse>>;
   powerControlsDisabled: boolean;
   runtimeOutputEnabled: boolean;
   sw2303LineCompensation: FormState["sw2303_line_compensation"];
   usbCPending: boolean;
+  usbCDataLinkAvailable: boolean;
   usbCState: PortState | null;
   usbCTelemetry: PortTelemetry | null;
 };
@@ -91,13 +102,14 @@ function TelemetryReading({
 export function DevicePowerPanelSidebar({
   lightLoadMode,
   onSetSw2303LineCompensation,
-  onReplugUsbC,
+  onSetUsbCData,
   onSetLightLoadMode,
   onToggleRuntime,
   powerControlsDisabled,
   runtimeOutputEnabled,
   sw2303LineCompensation,
   usbCPending,
+  usbCDataLinkAvailable,
   usbCState,
   usbCTelemetry,
 }: DevicePowerPanelSidebarProps) {
@@ -106,12 +118,10 @@ export function DevicePowerPanelSidebar({
   const usbCVoltageAvailable = typeof usbCTelemetry?.voltage_mv === "number";
   const usbCCurrentAvailable = typeof usbCTelemetry?.current_ma === "number";
   const usbCPowerAvailable = typeof usbCTelemetry?.power_mw === "number";
-  const usbCDataLinked =
+  const usbCDataLabel =
     usbCState?.replugging === true
-      ? "Replugging"
-      : usbCState?.data_connected
-        ? "Data linked"
-        : "Data off";
+      ? "Data switching"
+      : portStateLabel("data", usbCState?.data_connected ?? false);
 
   return (
     <aside className="grid gap-5">
@@ -119,26 +129,37 @@ export function DevicePowerPanelSidebar({
         <div className="border-b border-[var(--border)] pb-3">
           <div className="text-[14px] font-semibold">USB-C</div>
         </div>
-        <div className="mt-3 grid h-7 grid-cols-2 gap-2">
+        <div className="mt-3 flex h-7 items-center gap-1.5">
           <div
-            className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] ${
               usbCPowerEnabled
-                ? "border border-[var(--protocol-enabled-ring)] bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
+                ? "bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
                 : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
             }`}
+            aria-label={portStateLabel("power", usbCPowerEnabled)}
+            data-testid="usb-c-power-state"
+            role="img"
           >
-            <span className="truncate">
-              {usbCPowerEnabled ? "Power on" : "Power off"}
-            </span>
+            <PortStateIcon
+              kind={portStateIconKind("power", usbCPowerEnabled)}
+            />
           </div>
           <div
-            className={`flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold ${
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] ${
               usbCState?.data_connected && usbCState?.replugging !== true
-                ? "border border-[var(--protocol-enabled-ring)] bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
+                ? "bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
                 : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
             }`}
+            aria-label={usbCDataLabel}
+            data-testid="usb-c-data-state"
+            role="img"
           >
-            <span className="truncate">{usbCDataLinked}</span>
+            <PortStateIcon
+              kind={portStateIconKind(
+                "data",
+                usbCState?.data_connected ?? false,
+              )}
+            />
           </div>
         </div>
         <div className="mt-4 grid gap-2">
@@ -169,25 +190,28 @@ export function DevicePowerPanelSidebar({
           />
         </div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <ActionButton
+          <TwoStageHoldButton
             className="sm:w-[132px]"
-            data-testid="runtime-output-toggle"
-            tone="primary"
+            testId="runtime-output-toggle"
             disabled={usbCPowerActionDisabled}
-            onClick={() =>
-              void onToggleRuntime("output", !runtimeOutputEnabled)
+            label="Power"
+            onSetValue={(enabled) =>
+              onToggleRuntime("output", enabled).then(toHoldActionResult)
             }
-          >
-            Power
-          </ActionButton>
-          <ActionButton
+            value={runtimeOutputEnabled}
+          />
+          <TwoStageHoldButton
             className="sm:w-[140px]"
-            tone="secondary"
-            disabled={usbCPowerActionDisabled}
-            onClick={() => void onReplugUsbC()}
-          >
-            Replug
-          </ActionButton>
+            disabled={usbCPowerActionDisabled || !usbCDataLinkAvailable}
+            label="Data link"
+            onSetValue={onSetUsbCData}
+            unavailableReason={
+              usbCDataLinkAvailable
+                ? undefined
+                : "This firmware does not support the Data link control. Update the device firmware to use it."
+            }
+            value={usbCState?.data_connected ?? false}
+          />
         </div>
       </section>
 

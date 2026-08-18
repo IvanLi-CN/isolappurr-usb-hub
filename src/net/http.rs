@@ -801,6 +801,11 @@ async fn handle_api_request(
             return Ok(());
         }
 
+        if method == "POST" && tail == "data" {
+            handle_port_data_request(socket, query, api_state, port_id, allow_origin).await?;
+            return Ok(());
+        }
+
         if method == "POST" && tail == "power" {
             let Some(enabled) = parse_enabled_query(query) else {
                 write_api_error(
@@ -1026,16 +1031,6 @@ fn parse_enabled_query(query: &str) -> Option<bool> {
                 "1" => Some(true),
                 _ => None,
             };
-        }
-    }
-    None
-}
-
-fn parse_owner_query(query: &str) -> Option<u32> {
-    for part in query.split('&') {
-        let (k, v) = part.split_once('=')?;
-        if k == "owner" {
-            return v.parse::<u32>().ok().filter(|v| *v != 0);
         }
     }
     None

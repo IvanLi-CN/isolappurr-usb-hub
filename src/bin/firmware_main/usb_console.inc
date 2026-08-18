@@ -606,57 +606,8 @@ async fn handle_usb_jsonl_request(
         return body;
     }
 
-    if request.contains("\"method\":\"port.replug\"")
-        || request.contains("\"method\": \"port.replug\"")
-        || request.contains("\"method\":\"port.power_set\"")
-        || request.contains("\"method\": \"port.power_set\"")
-    {
-        let Some(port_id) =
-            extract_json_string(request, "port").and_then(|port| match port.as_str() {
-                "port_a" => Some(net::ApiPortId::PortA),
-                "port_c" => Some(net::ApiPortId::PortC),
-                _ => None,
-            })
-        else {
-            write_jsonl_error(
-                &mut body,
-                id.as_str(),
-                "bad_request",
-                "missing or invalid port",
-                false,
-            );
-            return body;
-        };
-
-        let action = if request.contains("power_set") {
-            let Some(enabled) = extract_json_bool(request, "enabled") else {
-                write_jsonl_error(
-                    &mut body,
-                    id.as_str(),
-                    "bad_request",
-                    "missing enabled",
-                    false,
-                );
-                return body;
-            };
-            net::ApiPortAction::Power { enabled }
-        } else {
-            net::ApiPortAction::Replug
-        };
-
-        match net::try_set_action(api_state, port_id, action).await {
-            Ok(()) => {
-                let _ = write!(
-                    body,
-                    "{{\"id\":{},\"ok\":true,\"result\":{{\"accepted\":true}}}}",
-                    id.as_str()
-                );
-            }
-            Err(net::ApiActionError::Busy) => {
-                write_jsonl_error(&mut body, id.as_str(), "busy", "port is busy", true)
-            }
-        }
-        return body;
+    if let Some(port_response) = handle_usb_port_action(request, api_state, id.as_str()).await {
+        return port_response;
     }
 
     if request.contains("\"method\":\"wifi.get\"") || request.contains("\"method\": \"wifi.get\"") {
@@ -1009,7 +960,7 @@ fn write_usb_port_json(
     }
     let _ = write!(
         body,
-        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}}}}",
+        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"data_set\":true,\"power_set\":true}}}}",
         port.state.power_enabled,
         port.state.data_connected,
         port.state.replugging,

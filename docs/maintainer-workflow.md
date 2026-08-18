@@ -61,7 +61,7 @@ The current user-facing truth source is the released CLI surface, not stale docs
 - `status` and `identify` by the released `device-id` or `url` selectors
 - `hardware save` by the released `device-id` selector plus a name and one transport binding
 - `isolapurr wifi show|set|clear`
-- `isolapurr ports`, `ports power`, `ports replug`, `ports route`
+- `isolapurr ports`, `ports power`, `ports data`, `ports replug`, `ports route`
 - `isolapurr power show|config show|config set|output manual|output auto|source-capability set|defaults`
 - `isolapurr diagnostics export`
 - `isolapurr settings reset wifi|other`

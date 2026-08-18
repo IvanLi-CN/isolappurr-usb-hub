@@ -1,6 +1,7 @@
 @config "../tailwind.config.js";
 @plugin "daisyui";
 @import "tailwindcss";
+@import "./styles/two-stage-hold.css";
 
 html,
 body,
@@ -810,6 +811,7 @@ textarea.textarea:disabled {
   filter: drop-shadow(0 6px 8px var(--shadow));
 }
 
+
 @media (prefers-reduced-motion: reduce) {
   .device-card {
     transition-duration: 0ms;
@@ -822,6 +824,24 @@ textarea.textarea:disabled {
 
   .iso-action__spinner {
     animation: none;
+  }
+
+  .two-stage-hold__button,
+  .two-stage-hold__button::before,
+  .two-stage-hold__feedback,
+  .two-stage-hold__tooltip {
+    transition: none;
+  }
+
+  .two-stage-hold__button,
+  .two-stage-hold__feedback {
+    animation: none;
+  }
+
+  .two-stage-hold[data-phase="holding"] .two-stage-hold__button,
+  .two-stage-hold[data-phase="waiting"] .two-stage-hold__button,
+  .two-stage-hold__tooltip[data-visible="true"] {
+    transform: none;
   }
 }
 

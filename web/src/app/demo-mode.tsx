@@ -18,6 +18,7 @@ import type {
 import type { AddDeviceInput, StoredDevice } from "../domain/devices";
 import type { DiscoverySnapshot } from "../domain/discovery";
 import type { PortsResponse } from "../domain/ports";
+import { handleDemoPortAction } from "./demo-mode-port-actions";
 import {
   buildDefaultDemoPowerConfig,
   clearDemoWorld,
@@ -104,6 +105,7 @@ type DemoApiResponse =
   | {
       accepted: true;
       power_enabled?: boolean;
+      data_connected?: boolean;
       persisted?: boolean;
       usb_c_downstream_route?: "mcu" | "usb_c";
       reboot_required?: boolean;
@@ -535,25 +537,17 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
       response: { accepted: true },
     } as unknown as DemoApiResponse);
   }
-  if (
-    suffix.startsWith("ports/") &&
-    suffix.endsWith("/power") &&
-    method === "POST"
-  ) {
-    const portId = suffix.includes("port_a") ? "port_a" : "port_c";
-    const enabled = url.searchParams.get("enabled") === "1";
-    updateWorld((current) => {
-      const mutated = cloneWorld(current);
-      const target = findByDeviceId(mutated, deviceId);
-      const port = target?.ports.ports.find((item) => item.portId === portId);
-      if (port) {
-        port.state.power_enabled = enabled;
-      }
-      return mutated;
-    });
-    return jsonResponse({
-      response: { accepted: true, power_enabled: enabled },
-    } as unknown as DemoApiResponse);
+  const portAction = handleDemoPortAction({
+    deviceId,
+    localUsb: true,
+    method,
+    path: suffix,
+    record,
+    updateWorld,
+    url,
+  });
+  if (portAction) {
+    return portAction;
   }
   if (
     suffix.startsWith("ports/") &&
@@ -857,23 +851,17 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
   if (url.pathname === "/api/v1/reboot" && method === "POST") {
     return jsonResponse({ accepted: true });
   }
-  if (
-    url.pathname.startsWith("/api/v1/ports/") &&
-    url.pathname.endsWith("/power") &&
-    method === "POST"
-  ) {
-    const portId = url.pathname.includes("/port_a/") ? "port_a" : "port_c";
-    const enabled = url.searchParams.get("enabled") === "1";
-    updateWorld((current) => {
-      const mutated = cloneWorld(current);
-      const target = findByDeviceId(mutated, record.stored.id);
-      const port = target?.ports.ports.find((item) => item.portId === portId);
-      if (port) {
-        port.state.power_enabled = enabled;
-      }
-      return mutated;
-    });
-    return jsonResponse({ accepted: true, power_enabled: enabled });
+  const portAction = handleDemoPortAction({
+    deviceId: record.stored.id,
+    localUsb: false,
+    method,
+    path: url.pathname,
+    record,
+    updateWorld,
+    url,
+  });
+  if (portAction) {
+    return portAction;
   }
   if (
     url.pathname.startsWith("/api/v1/ports/") &&

@@ -3,6 +3,7 @@ mod http_bridge_storage;
 #[cfg(test)]
 #[path = "http_bridge_tests.rs"]
 mod http_bridge_tests;
+mod port_data_bridge;
 #[path = "settings_reset_bridge.rs"]
 mod settings_reset_bridge;
 
@@ -48,6 +49,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
         .route(
             "/api/v1/devices/{id}/ports/{port_id}/power",
             post(port_power),
+        )
+        .route(
+            "/api/v1/devices/{id}/ports/{port_id}/data",
+            post(port_data_bridge::port_data),
         )
         .route(
             "/api/v1/devices/{id}/ports/{port_id}/replug",

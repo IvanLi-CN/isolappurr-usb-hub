@@ -2,6 +2,7 @@ import type { ConnectionState } from "../../app/device-runtime";
 import type { StoredDevice } from "../../domain/devices";
 import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
 import { ActionButton } from "../actions/ActionButton";
+import type { HoldActionResult } from "../actions/TwoStageHoldButton";
 import { formatTimeHms } from "../format/time";
 import { PortMiniCard } from "./PortMiniCard";
 
@@ -14,11 +15,24 @@ export type DeviceSummaryCardProps = {
   hostConnected: boolean | null;
   ports: Record<
     PortId,
-    { label: string; telemetry: PortTelemetry; state: PortState }
+    {
+      label: string;
+      telemetry: PortTelemetry;
+      state: PortState;
+      dataLinkAvailable: boolean;
+    }
   >;
   onOpenDetails: (deviceId: string) => void;
-  onSetPower: (deviceId: string, portId: PortId, enabled: boolean) => void;
-  onDataReplug: (deviceId: string, portId: PortId) => void;
+  onSetPower: (
+    deviceId: string,
+    portId: PortId,
+    enabled: boolean,
+  ) => Promise<HoldActionResult>;
+  onSetData: (
+    deviceId: string,
+    portId: PortId,
+    connected: boolean,
+  ) => Promise<HoldActionResult>;
   actionsDisabled?: boolean;
 };
 
@@ -59,7 +73,7 @@ export function DeviceSummaryCard({
   ports,
   onOpenDetails,
   onSetPower,
-  onDataReplug,
+  onSetData,
   actionsDisabled = false,
 }: DeviceSummaryCardProps) {
   const shortId = device.id.length > 8 ? device.id.slice(0, 8) : device.id;
@@ -73,10 +87,10 @@ export function DeviceSummaryCard({
 
   return (
     <div
-      className="iso-card h-[272px] w-full rounded-[18px] bg-[var(--panel)] shadow-[inset_0_0_0_1px_var(--border)]"
+      className="iso-card h-auto w-full rounded-[18px] bg-[var(--panel)] shadow-[inset_0_0_0_1px_var(--border)] sm:h-[288px]"
       data-testid={`device-summary-${device.id}`}
     >
-      <div className="flex h-full flex-col pb-[18px] pl-6 pr-6 pt-[14px]">
+      <div className="flex h-auto flex-col pb-[18px] pl-6 pr-6 pt-[14px] sm:h-full">
         <div className="h-[62px]">
           <div className="flex items-start justify-between gap-4">
             <div className="text-[16px] font-bold leading-5">{device.name}</div>
@@ -107,8 +121,9 @@ export function DeviceSummaryCard({
             telemetry={ports.port_a.telemetry}
             state={ports.port_a.state}
             disabled={writeDisabled}
+            dataLinkAvailable={ports.port_a.dataLinkAvailable}
             onSetPower={(enabled) => onSetPower(device.id, "port_a", enabled)}
-            onReplug={() => onDataReplug(device.id, "port_a")}
+            onSetData={(connected) => onSetData(device.id, "port_a", connected)}
           />
           <PortMiniCard
             portId="port_c"
@@ -116,8 +131,9 @@ export function DeviceSummaryCard({
             telemetry={ports.port_c.telemetry}
             state={ports.port_c.state}
             disabled={writeDisabled}
+            dataLinkAvailable={ports.port_c.dataLinkAvailable}
             onSetPower={(enabled) => onSetPower(device.id, "port_c", enabled)}
-            onReplug={() => onDataReplug(device.id, "port_c")}
+            onSetData={(connected) => onSetData(device.id, "port_c", connected)}
           />
         </div>
 

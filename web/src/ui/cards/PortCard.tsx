@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { ActionButton } from "../actions/ActionButton";
+import { TwoStageHoldButton } from "../actions/TwoStageHoldButton";
 import { formatTelemetryValue } from "../format/telemetry";
+import {
+  PortStateIcon,
+  portStateIconKind,
+  portStateLabel,
+} from "../status/PortStateIcon";
 import type { PortCardProps } from "./types";
 
 function statusBadgeStyles(status: string): { bg: string; text: string } {
@@ -33,103 +37,39 @@ function PortStateSummary({
 }) {
   const items = [
     {
-      label: powerEnabled ? "Power on" : "Power off",
+      channel: "power",
+      icon: portStateIconKind("power", powerEnabled),
+      label: portStateLabel("power", powerEnabled),
       active: powerEnabled,
     },
     {
+      channel: "data",
+      icon: portStateIconKind("data", dataConnected),
       label: replugging
-        ? "Replugging"
-        : dataConnected
-          ? "Data linked"
-          : "Data off",
+        ? "Data switching"
+        : portStateLabel("data", dataConnected),
       active: dataConnected && !replugging,
     },
   ];
 
   return (
-    <div className="grid h-7 grid-cols-2 gap-2">
+    <div className="flex h-7 items-center gap-1.5">
       {items.map((item) => (
         <div
           className={[
-            "flex min-w-0 items-center justify-center rounded-[8px] px-2 text-[11px] font-bold",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]",
             item.active
-              ? "border border-[var(--surface-success-ring)] bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]"
+              ? "bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]"
               : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]",
           ].join(" ")}
+          aria-label={item.label}
+          data-testid={`port-state-${item.channel}`}
           key={item.label}
+          role="img"
         >
-          <span className="truncate">{item.label}</span>
+          <PortStateIcon kind={item.icon} />
         </div>
       ))}
-    </div>
-  );
-}
-
-function ConfirmPopover({
-  open,
-  onClose,
-  onConfirm,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current) {
-        return;
-      }
-      if (ref.current.contains(e.target as Node)) {
-        return;
-      }
-      onClose();
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [onClose, open]);
-
-  if (!open) {
-    return null;
-  }
-
-  return (
-    <div className="iso-popover absolute left-0 top-full z-50 mt-2" ref={ref}>
-      <div className="relative">
-        <div
-          className="absolute left-[56px] top-[-6px] h-3 w-3 rotate-45 border border-[var(--border)] bg-[var(--panel)]"
-          aria-hidden
-        />
-        <div className="flex h-[44px] w-[252px] items-center gap-2 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4">
-          <div className="text-[12px] font-semibold text-[var(--muted)]">
-            Power off?
-          </div>
-          <div className="flex-1" />
-          <ActionButton
-            size="xs"
-            tone="secondary"
-            className="w-11"
-            onClick={onClose}
-          >
-            No
-          </ActionButton>
-          <ActionButton
-            size="xs"
-            tone="warning"
-            className="w-11"
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
-          >
-            Yes
-          </ActionButton>
-        </div>
-      </div>
     </div>
   );
 }
@@ -142,10 +82,10 @@ export function PortCard({
   headerBadges = [],
   showStatusBadge = true,
   disabled,
-  onTogglePower,
-  onReplug,
+  dataLinkAvailable = true,
+  onSetPower,
+  onSetData,
 }: PortCardProps) {
-  const [confirmOffOpen, setConfirmOffOpen] = useState(false);
   const busy = state.busy;
   const actionDisabled = !!disabled || busy;
   const badge = statusBadgeStyles(telemetry.status);
@@ -230,38 +170,25 @@ export function PortCard({
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        <div className="relative w-full sm:w-auto">
-          <ActionButton
-            className="w-full sm:w-[132px]"
-            tone="primary"
-            disabled={actionDisabled}
-            onClick={() => {
-              if (actionDisabled) {
-                return;
-              }
-              if (state.power_enabled) {
-                setConfirmOffOpen(true);
-                return;
-              }
-              onTogglePower();
-            }}
-          >
-            Power
-          </ActionButton>
-          <ConfirmPopover
-            open={confirmOffOpen}
-            onClose={() => setConfirmOffOpen(false)}
-            onConfirm={onTogglePower}
-          />
-        </div>
-        <ActionButton
-          className="w-full sm:w-[140px]"
-          tone="secondary"
+        <TwoStageHoldButton
+          className="w-full sm:w-[180px]"
           disabled={actionDisabled}
-          onClick={onReplug}
-        >
-          Replug
-        </ActionButton>
+          label="Power"
+          onSetValue={onSetPower}
+          value={state.power_enabled}
+        />
+        <TwoStageHoldButton
+          className="w-full sm:w-[190px]"
+          disabled={actionDisabled || !dataLinkAvailable}
+          label="Data link"
+          onSetValue={onSetData}
+          unavailableReason={
+            dataLinkAvailable
+              ? undefined
+              : "This firmware does not support the Data link control. Update the device firmware to use it."
+          }
+          value={state.data_connected}
+        />
       </div>
     </div>
   );

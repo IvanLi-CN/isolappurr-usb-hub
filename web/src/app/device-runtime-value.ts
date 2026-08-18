@@ -35,6 +35,7 @@ type DeviceRuntimeValueParams = {
   | "runIdleBiasCalibration"
   | "clearIdleBiasCalibration"
   | "setPower"
+  | "setData"
   | "replug"
   | "setUsbCDownstreamRoute"
 >;
@@ -67,6 +68,7 @@ export function buildDeviceRuntimeContextValue({
   runIdleBiasCalibration,
   clearIdleBiasCalibration,
   setPower,
+  setData,
   replug,
   setUsbCDownstreamRoute,
 }: DeviceRuntimeValueParams): DeviceRuntimeContextValue {
@@ -167,6 +169,7 @@ export function buildDeviceRuntimeContextValue({
     runIdleBiasCalibration,
     clearIdleBiasCalibration,
     setPower,
+    setData,
     replug,
     setUsbCDownstreamRoute,
   };

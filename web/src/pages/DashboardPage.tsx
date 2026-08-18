@@ -5,6 +5,7 @@ import { useDemoNavigate } from "../app/demo-navigation";
 import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
 import type { PortId, PortState, PortTelemetry } from "../domain/ports";
+import { toHoldActionResult } from "../ui/actions/TwoStageHoldButton";
 import { DeviceSummaryCard } from "../ui/cards/DeviceSummaryCard";
 
 const fallbackTelemetry: PortTelemetry = {
@@ -71,6 +72,8 @@ export function DashboardPage() {
                 state === "online"
                   ? mergedPortState(port("port_a")?.state, pending("port_a"))
                   : fallbackState,
+              dataLinkAvailable:
+                port("port_a")?.capabilities?.data_set === true,
             },
             port_c: {
               label: "USB-C",
@@ -82,6 +85,8 @@ export function DashboardPage() {
                 state === "online"
                   ? mergedPortState(port("port_c")?.state, pending("port_c"))
                   : fallbackState,
+              dataLinkAvailable:
+                port("port_c")?.capabilities?.data_set === true,
             },
           },
         };
@@ -108,10 +113,14 @@ export function DashboardPage() {
             ports={item.ports}
             onOpenDetails={(id) => navigate(`/devices/${id}`)}
             onSetPower={(deviceId, portId, enabled) =>
-              void runtime.setPower(deviceId, portId, enabled)
+              runtime
+                .setPower(deviceId, portId, enabled)
+                .then(toHoldActionResult)
             }
-            onDataReplug={(deviceId, portId) =>
-              void runtime.replug(deviceId, portId)
+            onSetData={(deviceId, portId, connected) =>
+              runtime
+                .setData(deviceId, portId, connected)
+                .then(toHoldActionResult)
             }
             actionsDisabled={
               item.connection.state !== "online" ||
@@ -124,7 +133,7 @@ export function DashboardPage() {
 
         <button
           className={[
-            "iso-card flex h-[272px] w-full flex-col items-center justify-center",
+            "iso-card flex h-[280px] w-full flex-col items-center justify-center",
             "rounded-[18px] border border-dashed border-[var(--border)]",
             "bg-[var(--add-placeholder-bg)] text-center",
             addDeviceCardSpan,
@@ -144,7 +153,7 @@ export function DashboardPage() {
 
         <button
           className={[
-            "iso-card flex h-[272px] w-full flex-col items-center justify-center",
+            "iso-card flex h-[280px] w-full flex-col items-center justify-center",
             "rounded-[18px] border border-solid border-[var(--border)]",
             "bg-[var(--panel-3)] text-center",
             addDeviceCardSpan,

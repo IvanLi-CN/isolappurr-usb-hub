@@ -90,11 +90,12 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
     clearIdleBiasCalibration,
     deviceName,
     loadIdleBias,
-    replugUsbC,
     runIdleBiasCalibration,
+    setUsbCData,
     setIdleBiasCorrection,
     transportLabel,
     usbCPending,
+    usbCDataLinkAvailable,
     usbCState,
     usbCTelemetry,
   } = props;
@@ -771,13 +772,14 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
           <DevicePowerPanelSidebar
             lightLoadMode={form.light_load_mode}
             onSetSw2303LineCompensation={setSw2303LineCompensation}
-            onReplugUsbC={replugUsbC}
+            onSetUsbCData={setUsbCData}
             onSetLightLoadMode={setLightLoadMode}
             onToggleRuntime={toggleRuntime}
             powerControlsDisabled={powerControlsDisabled}
             runtimeOutputEnabled={runtimeOutputEnabled}
             sw2303LineCompensation={form.sw2303_line_compensation}
             usbCPending={usbCPending}
+            usbCDataLinkAvailable={usbCDataLinkAvailable}
             usbCState={usbCState}
             usbCTelemetry={usbCTelemetry}
           />

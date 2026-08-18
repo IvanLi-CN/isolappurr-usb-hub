@@ -319,6 +319,30 @@
                             .await;
                         prompt_tone.notify(SoundEvent::ActionOk);
                     }
+                    net::ApiPortAction::Data { connected } => {
+                        port_usb_a.data = if connected {
+                            DataState::Connected
+                        } else {
+                            DataState::Disconnected
+                        };
+                        port_usb_a.busy_until =
+                            Some(ports_now + Duration::from_millis(DATA_SWITCH_GUARD_MS));
+                        if connected {
+                            let _ = p1_ced.set_low();
+                        } else {
+                            let _ = p1_ced.set_high();
+                        }
+                        let toast = if connected {
+                            ToastId::DataEnabled
+                        } else {
+                            ToastId::DataDisabled
+                        };
+                        let (lines, fg_raw) = toast_spec(ButtonId::Left, toast);
+                        let _ = ui
+                            .show_toast(ports_now, lines, fg_raw, Duration::from_millis(TOAST_MS))
+                            .await;
+                        prompt_tone.notify(SoundEvent::ActionOk);
+                    }
                     net::ApiPortAction::Power { enabled } => match (enabled, port_usb_a.power) {
                         (true, PowerState::On) | (false, PowerState::Off) => {}
                         (true, PowerState::Off) => {
@@ -397,6 +421,30 @@
                             .await;
                         prompt_tone.notify(SoundEvent::ActionOk);
                     }
+                    net::ApiPortAction::Data { connected } => {
+                        port_usb_c.data = if connected {
+                            DataState::Connected
+                        } else {
+                            DataState::Disconnected
+                        };
+                        port_usb_c.busy_until =
+                            Some(ports_now + Duration::from_millis(DATA_SWITCH_GUARD_MS));
+                        if connected {
+                            let _ = p2_ced.set_low();
+                        } else {
+                            let _ = p2_ced.set_high();
+                        }
+                        let toast = if connected {
+                            ToastId::DataEnabled
+                        } else {
+                            ToastId::DataDisabled
+                        };
+                        let (lines, fg_raw) = toast_spec(ButtonId::Right, toast);
+                        let _ = ui
+                            .show_toast(ports_now, lines, fg_raw, Duration::from_millis(TOAST_MS))
+                            .await;
+                        prompt_tone.notify(SoundEvent::ActionOk);
+                    }
                     net::ApiPortAction::Power { enabled } => match (enabled, port_usb_c.power) {
                         (true, PowerState::On) | (false, PowerState::Off) => {}
                         (true, PowerState::Off) => {
@@ -445,6 +493,7 @@
                             {
                                 Ok(()) => {
                                     port_usb_c.power = PowerState::Off;
+                                    port_usb_c.data = DataState::Disconnected;
                                     tps_error_latched = false;
                                     tps_consecutive_errors = 0;
                                     tps_5v_setpoint_since = None;

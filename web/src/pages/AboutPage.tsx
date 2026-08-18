@@ -202,7 +202,9 @@ export function AboutPage() {
             <div className="text-[12px] font-semibold">
               Report: 1s • Offline: 10s
             </div>
-            <div className="text-[12px] font-semibold">Replug: one-shot</div>
+            <div className="text-[12px] font-semibold">
+              Data link: two-stage hold
+            </div>
           </div>
         </div>
 

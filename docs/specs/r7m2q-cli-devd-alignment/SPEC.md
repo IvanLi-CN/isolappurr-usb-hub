@@ -137,6 +137,8 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr wifi show|set|clear`
 - `isolapurr ports`
 - `isolapurr ports power --port <port_id> --enabled <true|false>`
+- `isolapurr ports data --port <port_id> --connected <true|false>`
+- The maintained README, released user-operation workflow, and maintainer command inventory MUST expose `ports data` as the runtime data-link command and distinguish it from the one-shot legacy replug pulse.
 - `isolapurr ports replug --port <port_id>`
 - `isolapurr ports route --route <mcu|usb_c>`
 - `isolapurr power show`
@@ -165,7 +167,7 @@ The IPC daemon protocol is newline-delimited JSON request/response. Requests inc
 
 - `devices.list`, `devices.scan`
 - `device.status`, `device.identify`, `device.session`, `device.wifi.get|set|clear`
-- `device.ports.get`, `device.port.power`, `device.port.replug`, `device.hub.route_set`
+- `device.ports.get`, `device.port.power`, `device.port.data_set`, `device.port.replug`, `device.hub.route_set`
 - `device.power.config.get|set|defaults|lock|release`
 - `device.settings.reset`
 - `serial.lease.create`, `serial.lease.release`
@@ -186,6 +188,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `GET|POST|DELETE /api/v1/devices/{id}/wifi`
 - `GET /api/v1/devices/{id}/ports`
 - `POST /api/v1/devices/{id}/ports/{port_id}/power`
+- `POST /api/v1/devices/{id}/ports/{port_id}/data?connected=<true|false>`
 - `POST /api/v1/devices/{id}/ports/{port_id}/replug`
 - `POST /api/v1/devices/{id}/hub/route`
 - `POST /api/v1/devices/{id}/settings/reset`

@@ -33,7 +33,7 @@ fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &Ap
     }
     let _ = core::write!(
         body,
-        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"power_set\":true}}}}",
+        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"data_set\":true,\"power_set\":true}}}}",
         if port.state.power_enabled {
             "true"
         } else {
@@ -528,6 +528,12 @@ pub enum ApiActionError {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiPortDataActionError {
+    Busy,
+    PowerOff,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiIdleBiasActionError {
     Busy,
     DatasetMissing,
@@ -742,6 +748,30 @@ pub async fn try_set_action(
     }
     *slot = Some(action);
     Ok(())
+}
+
+pub async fn try_set_data_action(
+    api_state: &'static ApiSharedMutex,
+    port_id: ApiPortId,
+    connected: bool,
+) -> Result<(), ApiPortDataActionError> {
+    let guard = api_state.lock().await;
+    let port = match port_id {
+        ApiPortId::PortA => guard.ports.port_a,
+        ApiPortId::PortC => guard.ports.port_c,
+    };
+    if !can_set_data(port, connected) {
+        return Err(ApiPortDataActionError::PowerOff);
+    }
+    drop(guard);
+
+    try_set_action(api_state, port_id, ApiPortAction::Data { connected })
+        .await
+        .map_err(|_| ApiPortDataActionError::Busy)
+}
+
+fn can_set_data(port: ApiPortSnapshot, connected: bool) -> bool {
+    !connected || port.state.power_enabled
 }
 
 pub async fn try_set_usb_c_downstream_route(
@@ -964,12 +994,50 @@ async fn socket_write_all(
 
 #[cfg(test)]
 mod tests {
-    use super::identify_sequence_matches;
+    use super::{
+        ApiPortAction, ApiPortId, ApiPortSnapshot, can_set_data, identify_sequence_matches,
+        parse_connected_query, write_port_json,
+    };
+    use alloc::string::String;
 
     #[test]
     fn identify_ack_requires_the_exact_generation() {
         assert!(identify_sequence_matches(7, 7));
         assert!(!identify_sequence_matches(8, 7));
         assert!(!identify_sequence_matches(7, 8));
+    }
+
+    #[test]
+    fn data_query_requires_a_zero_or_one_connected_value() {
+        assert_eq!(parse_connected_query("connected=1"), Some(true));
+        assert_eq!(parse_connected_query("owner=7&connected=0"), Some(false));
+        assert_eq!(parse_connected_query("connected=true"), None);
+        assert_eq!(parse_connected_query("enabled=1"), None);
+    }
+
+    #[test]
+    fn data_connect_rejects_a_powered_off_port_without_affecting_disconnects() {
+        let port = ApiPortSnapshot::unknown();
+
+        assert!(!can_set_data(port, true));
+        assert!(can_set_data(port, false));
+    }
+
+    #[test]
+    fn port_json_advertises_data_set_and_keeps_replug_separate() {
+        let mut body = String::new();
+        let mut port = ApiPortSnapshot::unknown();
+        port.state.power_enabled = true;
+        port.state.data_connected = true;
+
+        write_port_json(&mut body, ApiPortId::PortA, "USB-A", &port);
+
+        assert!(body.contains("\"data_replug\":true"));
+        assert!(body.contains("\"data_set\":true"));
+        assert!(body.contains("\"data_connected\":true"));
+        assert_ne!(
+            ApiPortAction::Replug,
+            ApiPortAction::Data { connected: false }
+        );
     }
 }

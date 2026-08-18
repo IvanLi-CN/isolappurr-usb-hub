@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { getDeviceInfo, setPowerConfig, setPowerRuntime } from "./deviceApi";
+import {
+  getDeviceInfo,
+  setPortData,
+  setPowerConfig,
+  setPowerRuntime,
+} from "./deviceApi";
 
 const originalFetch = globalThis.fetch;
 const originalWindow = globalThis.window;
@@ -299,5 +304,30 @@ describe("setPowerRuntime", () => {
     expect(method).toBe("POST");
     expect(url).toContain("/api/v1/power/runtime?owner=7");
     expect(bodyText).toBe(JSON.stringify({ action: "output", enabled: false }));
+  });
+});
+
+describe("setPortData", () => {
+  test("uses the runtime data endpoint and connection query", async () => {
+    let method = "";
+    let url = "";
+    installWindow("http://127.0.0.1:5173");
+    globalThis.fetch = async (input, init) => {
+      method = String(init?.method ?? "");
+      url = String(input);
+      return new Response(
+        JSON.stringify({ accepted: true, data_connected: false }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    const result = await setPortData("http://127.0.0.1:51233", "port_c", false);
+
+    expect(result).toEqual({
+      ok: true,
+      value: { accepted: true, data_connected: false },
+    });
+    expect(method).toBe("POST");
+    expect(url).toContain("/api/v1/ports/port_c/data?connected=0");
   });
 });
