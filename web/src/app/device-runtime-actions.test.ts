@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
-
+import type { Result } from "../domain/deviceApi";
+import type {
+  CrossTabRuntimeCoordinator,
+  RuntimeRpcMethod,
+  RuntimeRpcResultMap,
+} from "./cross-tab-runtime";
 import {
   applyConfirmedPortsSnapshot,
+  createDeviceRuntimeActions,
   shouldRequestLeaderRpc,
 } from "./device-runtime-actions";
 import type { DeviceRuntime } from "./device-runtime-support";
@@ -81,5 +87,72 @@ describe("shouldRequestLeaderRpc", () => {
     expect(shouldRequestLeaderRpc(false, "follower")).toBeTrue();
     expect(shouldRequestLeaderRpc(false, "unsupported")).toBeFalse();
     expect(shouldRequestLeaderRpc(true, "leader")).toBeFalse();
+  });
+});
+
+describe("runtime action lease handoff", () => {
+  test("routes a hold completion through RPC after leadership changes", async () => {
+    const calls: Array<[RuntimeRpcMethod, unknown[]]> = [];
+    const isLeaderRef = { current: true };
+    const coordinationRoleRef = {
+      current: "leader" as const,
+    };
+    const requestLeaderRpc = async <TMethod extends RuntimeRpcMethod>(
+      method: TMethod,
+      args: unknown[],
+    ): Promise<RuntimeRpcResultMap[TMethod]> => {
+      calls.push([method, args]);
+      return {
+        ok: true,
+        value: { accepted: true },
+      } as RuntimeRpcResultMap[TMethod];
+    };
+    const unreachable = async <T>(): Promise<Result<T>> => {
+      throw new Error("direct device mutation should not run");
+    };
+    const actions = createDeviceRuntimeActions({
+      coordinator: new (class {
+        postMessage() {}
+      })() as CrossTabRuntimeCoordinator,
+      coordinationRole: "leader",
+      coordinationRoleRef,
+      currentTabId: "tab-leader",
+      deviceInfo: unreachable,
+      devices: [{ id: "aabbccddeeff", name: "Demo", baseUrl: "http://demo" }],
+      isLeader: true,
+      isLeaderRef,
+      pushToast: () => {},
+      requestLeaderRpc,
+      refreshCanonicalPowerConfig: unreachable,
+      refreshDevice: async () => {},
+      runDeviceCommand: unreachable,
+      runSharedMutation: unreachable,
+      runtimeByIdRef: { current: {} },
+      setRuntimeById: () => {},
+      syncIdleBiasSnapshot: () => {},
+      syncObservedPowerLock: () => {},
+      syncPdDiagnosticsSnapshot: () => {},
+      syncPowerConfigSnapshot: () => {},
+    });
+
+    isLeaderRef.current = false;
+    coordinationRoleRef.current = "follower";
+
+    await expect(
+      actions.setPower("aabbccddeeff", "port_a", false),
+    ).resolves.toEqual({
+      ok: true,
+      value: { accepted: true },
+    });
+    await expect(
+      actions.setData("aabbccddeeff", "port_a", false),
+    ).resolves.toEqual({
+      ok: true,
+      value: { accepted: true },
+    });
+    expect(calls).toEqual([
+      ["setPower", ["aabbccddeeff", "port_a", false]],
+      ["setData", ["aabbccddeeff", "port_a", false]],
+    ]);
   });
 });
