@@ -248,7 +248,6 @@ export function DeviceRuntimeProvider({
       return next;
     });
   }, [devices]);
-
   const createRpcRequestId = useCallback(() => {
     if (
       typeof crypto !== "undefined" &&
@@ -328,7 +327,6 @@ export function DeviceRuntimeProvider({
     deviceMutationQueues,
     setRuntimeById,
   });
-
   const syncObservedPowerLock = useCallback(
     (
       deviceId: string,
@@ -346,7 +344,6 @@ export function DeviceRuntimeProvider({
     },
     [],
   );
-
   const getLocalUsbAgent =
     useCallback(async (): Promise<DesktopAgent | null> => {
       if (
@@ -361,7 +358,6 @@ export function DeviceRuntimeProvider({
       localUsbAgent.current = agent;
       return agent;
     }, [demoEnabled]);
-
   useEffect(() => {
     if (lastDemoEnabled.current === demoEnabled) {
       return;
@@ -378,7 +374,6 @@ export function DeviceRuntimeProvider({
     }
     setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
   }, [demoEnabled]);
-
   const requestLocalUsb = useCallback(
     async <T,>(
       deviceId: string,
@@ -481,7 +476,6 @@ export function DeviceRuntimeProvider({
     },
     [devices, getLocalUsbAgent],
   );
-
   const requestWebSerial = useCallback(
     async <T,>(
       deviceId: string,

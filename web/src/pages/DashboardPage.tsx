@@ -124,7 +124,6 @@ export function DashboardPage() {
             }
             actionsDisabled={
               item.connection.state !== "online" ||
-              runtime.coordination.role === "follower" ||
               runtime.runtimeById[item.device.id]?.command?.state ===
                 "queued" ||
               runtime.runtimeById[item.device.id]?.command?.state === "running"
