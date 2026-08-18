@@ -343,12 +343,6 @@ export function TwoStageHoldButton({
   releaseHoldRef.current = releaseHold;
 
   useEffect(() => {
-    if (disabled) {
-      releaseHoldRef.current(true);
-    }
-  }, [disabled]);
-
-  useEffect(() => {
     const prior = priorValueRef.current;
     priorValueRef.current = value;
     if (
