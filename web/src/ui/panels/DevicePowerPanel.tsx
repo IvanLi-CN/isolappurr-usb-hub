@@ -27,6 +27,10 @@ import {
   UnitSliderField,
 } from "./DevicePowerPanelControls";
 import { DevicePowerPanelIdleBiasSection } from "./DevicePowerPanelIdleBiasSection";
+import {
+  DevicePowerPanelProtocolOptionsPrototype,
+  type ProtocolOptionsPrototypeVariant,
+} from "./DevicePowerPanelProtocolOptionsPrototype";
 import { DevicePowerPanelSidebar } from "./DevicePowerPanelSidebar";
 import {
   formatThermalTemperature,
@@ -42,7 +46,12 @@ import {
   useDevicePowerPanelState,
 } from "./useDevicePowerPanelState";
 
-export function DevicePowerPanel(props: DevicePowerPanelProps) {
+export function DevicePowerPanel({
+  protocolOptionsPrototypeVariant = null,
+  ...props
+}: DevicePowerPanelProps & {
+  protocolOptionsPrototypeVariant?: ProtocolOptionsPrototypeVariant | null;
+}) {
   const {
     acquireControl,
     activeProtocol,
@@ -208,7 +217,17 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
             step={1}
             value={form.capability.power_watts}
           />
-          <div className="protocol-grid grid items-start gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          {protocolOptionsPrototypeVariant ? (
+            <DevicePowerPanelProtocolOptionsPrototype
+              activeProtocol={activeProtocol}
+              form={form}
+              variant={protocolOptionsPrototypeVariant}
+            />
+          ) : null}
+          <div
+            className="protocol-grid grid items-start gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+            hidden={protocolOptionsPrototypeVariant !== null}
+          >
             {[
               {
                 key: "pd",
