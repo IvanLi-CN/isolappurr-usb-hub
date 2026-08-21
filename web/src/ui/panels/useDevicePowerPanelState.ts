@@ -17,7 +17,6 @@ import {
   badgeTone,
   cloneConfig,
   type FormState,
-  formatFixedVoltageSummary,
 } from "./DevicePowerPanelControls";
 import {
   applyOutputModeDraft,
@@ -694,10 +693,6 @@ export function useDevicePowerPanelState({
   );
 
   const activeProtocol = pdDiagnostics?.active_protocol ?? null;
-  const fixedVoltageSummary = formatFixedVoltageSummary(
-    form?.capability.pd.fixed_voltages_mv ?? [],
-  );
-
   const submit = useCallback(
     async (nextForm: FormState, source: "auto" | "output_mode") => {
       const submittedSnapshot = serializeAutoApplyForm(nextForm);
@@ -1004,7 +999,6 @@ export function useDevicePowerPanelState({
     config,
     controlledInThisTab,
     error,
-    fixedVoltageSummary,
     form,
     idleBiasRunning,
     idleBiasSnapshot,

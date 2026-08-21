@@ -429,7 +429,7 @@ export const Default: Story = {
     ).toBeVisible();
     await expect(await canvas.findByText("Missing")).toBeVisible();
     await expect(
-      await canvas.findByRole("button", { name: /4 PDO/i }),
+      await canvas.findByRole("button", { name: "Fixed PDO 9V" }),
     ).toBeDisabled();
     await expect(
       canvas.getByRole("button", { name: "Save and apply" }),
@@ -452,6 +452,106 @@ export const ControlledHere: Story = {
     await expect(
       canvas.queryByRole("button", { name: "Acquire control" }),
     ).not.toBeInTheDocument();
+  },
+};
+
+export const ProtocolInlineControls: Story = {
+  render: (args) => {
+    const [savedConfig, setSavedConfig] = useState(controlledHereConfig);
+    return (
+      <DevicePowerPanel
+        {...args}
+        sharedPowerConfig={savedConfig}
+        loadPowerConfig={() => ok(savedConfig)}
+        savePowerConfig={async (input) => {
+          const nextConfig: PowerConfigResponse = {
+            ...savedConfig,
+            capability: input.capability,
+            light_load_mode: input.light_load_mode,
+            manual: {
+              ...savedConfig.manual,
+              ...input.manual,
+            },
+            sw2303_line_compensation: input.sw2303_line_compensation,
+            tps_mode: input.tps_mode,
+          };
+          setSavedConfig(nextConfig);
+          return ok(nextConfig);
+        }}
+      />
+    );
+  },
+  args: {
+    ...defaultArgs,
+    sharedRevision: 1,
+    sharedPowerConfig: controlledHereConfig,
+    loadPowerConfig: () => ok(controlledHereConfig),
+    loadIdleBias: () => okIdle(idleBiasReadyOff),
+    setPowerLock: () => ok(controlledHereConfig),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Controlled here")).toBeVisible();
+
+    const fixedPdo = await canvas.findByRole("button", {
+      name: "Fixed PDO 9V",
+    });
+    await expect(fixedPdo).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(fixedPdo);
+    await expect(fixedPdo).toHaveAttribute("aria-pressed", "false");
+    await expect(canvas.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    const qc2 = canvasElement.querySelector<HTMLElement>(
+      '[data-protocol="qc20"]',
+    );
+    if (!qc2) {
+      throw new Error("QC2 protocol card not found");
+    }
+    const qc2Card = within(qc2);
+    const qc2Header = qc2Card.getByRole("button", { name: /QC2/ });
+    await userEvent.click(qc2Header);
+    await expect(qc2Header).toHaveAttribute("aria-pressed", "false");
+    const qc2Toggle = qc2Card.getByRole("button", { name: "20V profile" });
+    await expect(qc2Toggle).toBeEnabled();
+    await userEvent.click(qc2Toggle);
+    await expect(qc2Toggle).toHaveAttribute("aria-pressed", "false");
+
+    const fcp = canvasElement.querySelector<HTMLElement>(
+      '[data-protocol="fcp"]',
+    );
+    const afc = canvasElement.querySelector<HTMLElement>(
+      '[data-protocol="afc"]',
+    );
+    const sfcp = canvasElement.querySelector<HTMLElement>(
+      '[data-protocol="sfcp"]',
+    );
+    if (!fcp || !afc || !sfcp) {
+      throw new Error("shared fast-protocol cards not found");
+    }
+
+    const fcpCard = within(fcp);
+    const afcCard = within(afc);
+    const sfcpCard = within(sfcp);
+    await userEvent.click(fcpCard.getByText("2.25A"));
+    await expect(afcCard.getByRole("radio", { name: "2.25A" })).toBeChecked();
+    await expect(sfcpCard.getByRole("radio", { name: "2.25A" })).toBeChecked();
+
+    const fcp12v = fcpCard.getByRole("button", { name: "12V profile" });
+    await userEvent.click(fcp12v);
+    await expect(
+      afcCard.getByRole("button", { name: "12V profile" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      sfcpCard.getByRole("button", { name: "12V profile" }),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    const indicator = canvasElement.querySelector<HTMLElement>(
+      ".protocol-inline-choice-indicator",
+    );
+    if (!indicator) {
+      throw new Error("sliding choice indicator not found");
+    }
+    expect(indicator.style.transform).toContain("translate3d");
   },
 };
 
@@ -1056,7 +1156,16 @@ export const Narrow: Story = {
   },
   decorators: [
     (Story) => (
-      <div className="mx-auto max-w-[390px]">
+      <div className="mx-auto max-w-[390px]" data-protocol-narrow>
+        <style>{`
+          [data-protocol-narrow] .protocol-grid {
+            grid-auto-rows: 7rem !important;
+          }
+
+          [data-protocol-narrow] .protocol-inline-card {
+            --protocol-inline-control-size: 2.25rem;
+          }
+        `}</style>
         <Story />
       </div>
     ),
@@ -1075,7 +1184,7 @@ export const Narrow: Story = {
       canvas.queryByTestId("QC2-negotiation-badge"),
     ).not.toBeVisible();
     await expect(
-      await canvas.findByRole("button", { name: /4 PDO/i }),
+      await canvas.findByRole("button", { name: "Fixed PDO 9V" }),
     ).toBeVisible();
 
     const actionLabels = canvasElement.querySelectorAll(
@@ -1094,6 +1203,33 @@ export const Narrow: Story = {
         feedback?.querySelectorAll(".two-stage-hold__status-icon"),
       ).toHaveLength(1);
     }
+
+    const cards = Array.from(
+      canvasElement.querySelectorAll<HTMLElement>(".protocol-card"),
+    );
+    await expect(
+      new Set(
+        cards.map((card) => Math.round(card.getBoundingClientRect().height)),
+      ).size,
+    ).toBe(1);
+    await expect(
+      Math.round(cards[0]?.getBoundingClientRect().height ?? 0),
+    ).toBe(112);
+    const controls = Array.from(
+      canvasElement.querySelectorAll<HTMLElement>(
+        ".protocol-inline-chip, .protocol-inline-choice-group, .protocol-inline-toggle",
+      ),
+    );
+    await expect(
+      new Set(
+        controls.map((control) =>
+          Math.round(control.getBoundingClientRect().height),
+        ),
+      ).size,
+    ).toBe(1);
+    await expect(
+      Math.round(controls[0]?.getBoundingClientRect().height ?? 0),
+    ).toBe(36);
   },
 };
 
@@ -1155,8 +1291,28 @@ export const CompactDesktopCards: Story = {
 
     await expect(firstRow).toHaveLength(4);
     await expect(
-      Math.max(...cards.map((card) => card.getBoundingClientRect().height)),
-    ).toBeLessThanOrEqual(72);
+      new Set(
+        cards.map((card) => Math.round(card.getBoundingClientRect().height)),
+      ).size,
+    ).toBe(1);
+    await expect(
+      Math.round(cards[0]?.getBoundingClientRect().height ?? 0),
+    ).toBe(104);
+    const controls = Array.from(
+      canvasElement.querySelectorAll<HTMLElement>(
+        ".protocol-inline-chip, .protocol-inline-choice-group, .protocol-inline-toggle",
+      ),
+    );
+    await expect(
+      new Set(
+        controls.map((control) =>
+          Math.round(control.getBoundingClientRect().height),
+        ),
+      ).size,
+    ).toBe(1);
+    await expect(
+      Math.round(controls[0]?.getBoundingClientRect().height ?? 0),
+    ).toBe(28);
   },
 };
 
