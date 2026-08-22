@@ -1157,15 +1157,6 @@ export const Narrow: Story = {
   decorators: [
     (Story) => (
       <div className="mx-auto max-w-[390px]" data-protocol-narrow>
-        <style>{`
-          [data-protocol-narrow] .protocol-grid {
-            grid-auto-rows: 7rem !important;
-          }
-
-          [data-protocol-narrow] .protocol-inline-card {
-            --protocol-inline-control-size: 2.25rem;
-          }
-        `}</style>
         <Story />
       </div>
     ),
