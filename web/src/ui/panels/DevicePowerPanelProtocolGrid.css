@@ -1,0 +1,283 @@
+.protocol-grid-container {
+  container: protocol-grid / inline-size;
+  min-width: 0;
+  width: 100%;
+}
+
+.protocol-grid {
+  min-width: 0;
+  --protocol-inline-control-size: 1.75rem;
+  grid-auto-rows: 6.5rem;
+}
+
+.protocol-card {
+  container: protocol-card / inline-size;
+}
+
+.protocol-inline-card {
+  display: grid;
+  height: 100%;
+  grid-template-rows: 2rem minmax(0, 1fr);
+  --protocol-inline-control-surface: var(--panel-3);
+  --protocol-inline-control-border: var(--border-subtle);
+  --protocol-inline-control-muted-text: var(--muted);
+  --protocol-inline-control-selected-bg: color-mix(
+    in srgb,
+    var(--primary) 30%,
+    var(--panel)
+  );
+  --protocol-inline-control-selected-border: color-mix(
+    in srgb,
+    var(--primary) 48%,
+    var(--border)
+  );
+  --protocol-inline-control-selected-text: var(--text);
+}
+
+.protocol-inline-card[data-state="active"] {
+  --protocol-inline-control-surface: color-mix(
+    in srgb,
+    var(--protocol-active-ring) 10%,
+    var(--protocol-active-bg)
+  );
+  --protocol-inline-control-border: color-mix(
+    in srgb,
+    var(--protocol-active-ring) 42%,
+    var(--border)
+  );
+  --protocol-inline-control-muted-text: color-mix(
+    in srgb,
+    var(--protocol-active-ring) 52%,
+    var(--text)
+  );
+  --protocol-inline-control-selected-bg: color-mix(
+    in srgb,
+    var(--protocol-active-ring) 46%,
+    var(--protocol-active-bg)
+  );
+  --protocol-inline-control-selected-border: var(--protocol-active-ring);
+  --protocol-inline-control-selected-text: var(--text);
+}
+
+.protocol-inline-card .protocol-card-toggle {
+  min-height: 0;
+}
+
+.protocol-inline-options-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.protocol-inline-control {
+  display: grid;
+  width: fit-content;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.protocol-inline-control-label {
+  color: color-mix(in srgb, var(--text) 55%, var(--muted));
+  font-size: 0.625rem;
+  font-weight: 650;
+  line-height: 1rem;
+}
+
+.protocol-inline-choice-group {
+  position: relative;
+  display: inline-grid;
+  width: fit-content;
+  height: var(--protocol-inline-control-size);
+  overflow: hidden;
+  border: 1px solid var(--protocol-inline-control-border);
+  border-radius: 9999px;
+  background: var(--protocol-inline-control-surface);
+  padding: 0;
+}
+
+.protocol-inline-choice-indicator {
+  position: absolute;
+  z-index: 0;
+  border-radius: 9999px;
+  background: var(--protocol-inline-control-selected-bg);
+  box-shadow: 0 1px 2px var(--shadow);
+  pointer-events: none;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.protocol-inline-choice {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  height: calc(var(--protocol-inline-control-size) - 2px);
+  min-height: 0;
+  overflow: hidden;
+  place-items: center;
+  padding: 0 0.5rem;
+  color: var(--protocol-inline-control-muted-text);
+  cursor: pointer;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  line-height: 1;
+  text-overflow: ellipsis;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.protocol-inline-choice-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.protocol-inline-choice.is-selected {
+  color: var(--protocol-inline-control-selected-text);
+  font-weight: 750;
+}
+
+.protocol-inline-choice:hover:not(.is-selected) {
+  color: var(--text);
+}
+
+.protocol-inline-chip:focus-visible,
+.protocol-inline-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.protocol-inline-choice-group:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.protocol-inline-toggle {
+  display: inline-flex;
+  height: var(--protocol-inline-control-size);
+  min-width: 3.25rem;
+  min-height: var(--protocol-inline-control-size);
+  align-items: center;
+  justify-content: center;
+  align-self: start;
+  border: 1px solid var(--protocol-inline-control-border);
+  border-radius: 9999px;
+  background: var(--protocol-inline-control-surface);
+  color: var(--protocol-inline-control-muted-text);
+  cursor: pointer;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  justify-self: start;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.protocol-inline-toggle:hover {
+  color: var(--text);
+}
+
+.protocol-inline-toggle.is-on {
+  border-color: var(--protocol-inline-control-selected-border);
+  background: var(--protocol-inline-control-selected-bg);
+  color: var(--protocol-inline-control-selected-text);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+
+.protocol-inline-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.protocol-inline-chip {
+  height: var(--protocol-inline-control-size);
+  min-height: var(--protocol-inline-control-size);
+  border: 1px solid var(--protocol-inline-control-border);
+  border-radius: 9999px;
+  background: var(--protocol-inline-control-surface);
+  padding: 0 0.625rem;
+  color: var(--protocol-inline-control-muted-text);
+  cursor: pointer;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  line-height: 1;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.protocol-inline-chip:hover {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
+  color: var(--text);
+}
+
+.protocol-inline-chip.is-selected {
+  border-color: var(--protocol-inline-control-selected-border);
+  background: var(--protocol-inline-control-selected-bg);
+  color: var(--protocol-inline-control-selected-text);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+
+.protocol-inline-chip:active,
+.protocol-inline-toggle:active {
+  transform: translateY(1px);
+}
+
+.protocol-inline-choice:has(input:disabled),
+.protocol-inline-chip:disabled,
+.protocol-inline-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+@media (max-width: 767px) {
+  .protocol-grid {
+    grid-auto-rows: 7rem;
+  }
+
+  .protocol-inline-card {
+    --protocol-inline-control-size: 2.25rem;
+  }
+}
+
+@container protocol-grid (max-width: 480px) {
+  .protocol-grid {
+    grid-auto-rows: 7rem;
+  }
+
+  .protocol-inline-card {
+    --protocol-inline-control-size: 2.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .protocol-inline-choice-indicator,
+  .protocol-inline-chip,
+  .protocol-inline-toggle {
+    transition-duration: 0ms;
+  }
+}
+
+.protocol-negotiation-badge {
+  display: none;
+}
+
+@container protocol-card (min-width: 11rem) {
+  .protocol-negotiation-badge {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 639px) {
+  .protocol-negotiation-badge {
+    display: none;
+  }
+}

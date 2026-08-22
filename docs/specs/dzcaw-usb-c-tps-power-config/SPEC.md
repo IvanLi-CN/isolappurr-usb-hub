@@ -228,9 +228,30 @@ for diagnostics.
   `PPS`, `PPS3`, `PD/PPS 5 A`, fixed PD PDOs, `Type-C` current, `SCP` current,
   `FCP/AFC/SFCP` current, `QC2.0 20 V`, `QC3.0 20 V`, `PE2.0 20 V`, and
   non-PD `12 V`.
+- These inline selectors MUST render every option directly in the card without
+  a popover or summary trigger. Single-value groups MUST use content-width
+  radio segments with a sliding selected indicator; boolean profiles MUST use
+  one direct `On`/`Off` toggle; fixed PD PDOs MUST use independently selectable
+  chips with `aria-pressed` state and MUST NOT render checkbox inputs.
+- The protocol grid MUST keep all ten cards at one row height per breakpoint
+  (104 px on desktop and 112 px below 768 px) and keep chip, radio-segment,
+  and toggle controls at one height per breakpoint (28 px on desktop and
+  36 px below 768 px). Single-value groups MUST size to their content instead
+  of stretching to the full card width.
+- `FCP`, `AFC`, and `SFCP` MUST each show the shared current and non-PD 12 V
+  controls; changing either shared value in any card MUST update the other two
+  cards immediately. These child controls remain editable for preconfiguration
+  when their parent protocol is disabled.
+- The selected radio indicator MUST move with a short transform transition and
+  MUST disable that motion when `prefers-reduced-motion: reduce` is active.
+  The indicator MUST be a borderless moving fill so it does not introduce an
+  interior divider line while crossing between options.
 - Web UI protocol cards MUST visually distinguish the currently active
   negotiated protocol from merely enabled protocols by consuming live PD
   diagnostics `active_protocol` instead of inferring it only from saved config.
+- Inline chips, radio segments, and toggles inside the active protocol card MUST
+  consume the same warm-amber active palette as the card, with selected and
+  unselected values remaining visually distinct from one another.
 - The Web Power page MUST poll `/api/v1/pd-diagnostics` every `1 s` for live
   PD plus thermal state instead of creating a separate thermal route or
   temperature-only API.
@@ -508,6 +529,17 @@ for diagnostics.
 - Given the narrow power panel story, when a protocol card becomes too narrow,
   then its negotiation badge is hidden without clipping the protocol card
   content or toggle.
+- Given the protocol inline-controls story, when the owner selects a PDO chip,
+  radio segment, or boolean profile, then the visible selection updates through
+  the existing saved Power form and no checkbox or popover is rendered.
+- Given any one of the `FCP`, `AFC`, or `SFCP` cards changes shared current or
+  non-PD 12 V, then all three cards render the same new selection immediately.
+- Given a parent protocol is switched off, when its inline child control is
+  changed, then the child remains editable and the updated value remains part
+  of the existing auto-applied configuration.
+- Given the desktop and narrow protocol stories, then all ten cards are equal
+  height and their chip, radio-segment, and toggle controls are respectively
+  28 px and 36 px high without overflow.
 - Given multiple protocols stay enabled, when live PD diagnostics report one
   `active_protocol`, then only that protocol card is visually highlighted as
   active while the remaining enabled cards keep the non-active enabled style.
