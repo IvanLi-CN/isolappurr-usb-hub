@@ -1,6 +1,7 @@
 import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 
 import type { ActiveProtocol, FormState } from "./DevicePowerPanelControls";
+import "./DevicePowerPanelProtocolGrid.css";
 import {
   activeProtocolLabel,
   negotiationBadgeLabel,
