@@ -904,6 +904,45 @@ textarea.textarea:disabled {
   display: grid;
   height: 100%;
   grid-template-rows: 2rem minmax(0, 1fr);
+  --protocol-inline-control-surface: var(--panel-3);
+  --protocol-inline-control-border: var(--border-subtle);
+  --protocol-inline-control-muted-text: var(--muted);
+  --protocol-inline-control-selected-bg: color-mix(
+    in srgb,
+    var(--primary) 30%,
+    var(--panel)
+  );
+  --protocol-inline-control-selected-border: color-mix(
+    in srgb,
+    var(--primary) 48%,
+    var(--border)
+  );
+  --protocol-inline-control-selected-text: var(--text);
+}
+
+.protocol-inline-card[data-state="active"] {
+  --protocol-inline-control-surface: color-mix(
+    in srgb,
+    var(--protocol-active-ring) 10%,
+    var(--protocol-active-bg)
+  );
+  --protocol-inline-control-border: color-mix(
+    in srgb,
+    var(--protocol-active-ring) 42%,
+    var(--border)
+  );
+  --protocol-inline-control-muted-text: color-mix(
+    in srgb,
+    var(--protocol-active-ring) 52%,
+    var(--text)
+  );
+  --protocol-inline-control-selected-bg: color-mix(
+    in srgb,
+    var(--protocol-active-ring) 46%,
+    var(--protocol-active-bg)
+  );
+  --protocol-inline-control-selected-border: var(--protocol-active-ring);
+  --protocol-inline-control-selected-text: var(--secondary-text);
 }
 
 .protocol-inline-card .protocol-card-toggle {
@@ -937,18 +976,17 @@ textarea.textarea:disabled {
   width: fit-content;
   height: var(--protocol-inline-control-size);
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--protocol-inline-control-border);
   border-radius: 9999px;
-  background: var(--panel-3);
+  background: var(--protocol-inline-control-surface);
   padding: 0;
 }
 
 .protocol-inline-choice-indicator {
   position: absolute;
   z-index: 0;
-  border: 1px solid color-mix(in srgb, var(--primary) 36%, transparent);
   border-radius: 9999px;
-  background: color-mix(in srgb, var(--primary) 42%, var(--panel));
+  background: var(--protocol-inline-control-selected-bg);
   box-shadow: 0 1px 2px var(--shadow);
   pointer-events: none;
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -965,7 +1003,7 @@ textarea.textarea:disabled {
   overflow: hidden;
   place-items: center;
   padding: 0 0.5rem;
-  color: var(--muted);
+  color: var(--protocol-inline-control-muted-text);
   cursor: pointer;
   font-size: 0.6875rem;
   font-weight: 650;
@@ -983,7 +1021,8 @@ textarea.textarea:disabled {
 }
 
 .protocol-inline-choice.is-selected {
-  color: var(--primary-text);
+  color: var(--protocol-inline-control-selected-text);
+  font-weight: 750;
 }
 
 .protocol-inline-choice:hover:not(.is-selected) {
@@ -1005,10 +1044,10 @@ textarea.textarea:disabled {
   align-items: center;
   justify-content: center;
   align-self: start;
-  border: 1px solid transparent;
+  border: 1px solid var(--protocol-inline-control-border);
   border-radius: 9999px;
-  background: var(--btn-disabled-fill-soft);
-  color: var(--muted);
+  background: var(--protocol-inline-control-surface);
+  color: var(--protocol-inline-control-muted-text);
   cursor: pointer;
   font-size: 0.625rem;
   font-weight: 700;
@@ -1026,9 +1065,10 @@ textarea.textarea:disabled {
 }
 
 .protocol-inline-toggle.is-on {
-  border-color: var(--protocol-on-badge-border);
-  background: var(--protocol-on-badge-bg);
-  color: var(--protocol-on-badge-text);
+  border-color: var(--protocol-inline-control-selected-border);
+  background: var(--protocol-inline-control-selected-bg);
+  color: var(--protocol-inline-control-selected-text);
+  box-shadow: 0 1px 2px var(--shadow);
 }
 
 .protocol-inline-chip-list {
@@ -1040,11 +1080,11 @@ textarea.textarea:disabled {
 .protocol-inline-chip {
   height: var(--protocol-inline-control-size);
   min-height: var(--protocol-inline-control-size);
-  border: 1px solid var(--border);
+  border: 1px solid var(--protocol-inline-control-border);
   border-radius: 9999px;
-  background: var(--panel);
+  background: var(--protocol-inline-control-surface);
   padding: 0 0.625rem;
-  color: var(--muted);
+  color: var(--protocol-inline-control-muted-text);
   cursor: pointer;
   font-size: 0.6875rem;
   font-weight: 650;
@@ -1062,9 +1102,10 @@ textarea.textarea:disabled {
 }
 
 .protocol-inline-chip.is-selected {
-  border-color: var(--protocol-on-badge-border);
-  background: var(--protocol-on-badge-bg);
-  color: var(--protocol-on-badge-text);
+  border-color: var(--protocol-inline-control-selected-border);
+  background: var(--protocol-inline-control-selected-bg);
+  color: var(--protocol-inline-control-selected-text);
+  box-shadow: 0 1px 2px var(--shadow);
 }
 
 .protocol-inline-chip:active,

@@ -244,9 +244,14 @@ for diagnostics.
   when their parent protocol is disabled.
 - The selected radio indicator MUST move with a short transform transition and
   MUST disable that motion when `prefers-reduced-motion: reduce` is active.
+  The indicator MUST be a borderless moving fill so it does not introduce an
+  interior divider line while crossing between options.
 - Web UI protocol cards MUST visually distinguish the currently active
   negotiated protocol from merely enabled protocols by consuming live PD
   diagnostics `active_protocol` instead of inferring it only from saved config.
+- Inline chips, radio segments, and toggles inside the active protocol card MUST
+  consume the same warm-amber active palette as the card, with selected and
+  unselected values remaining visually distinct from one another.
 - The Web Power page MUST poll `/api/v1/pd-diagnostics` every `1 s` for live
   PD plus thermal state instead of creating a separate thermal route or
   temperature-only API.
