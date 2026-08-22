@@ -78,7 +78,7 @@
 }
 
 .protocol-inline-control-label {
-  color: var(--muted);
+  color: color-mix(in srgb, var(--text) 55%, var(--muted));
   font-size: 0.625rem;
   font-weight: 650;
   line-height: 1rem;
