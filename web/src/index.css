@@ -1029,9 +1029,13 @@ textarea.textarea:disabled {
   color: var(--text);
 }
 
-.protocol-inline-choice:focus-within,
 .protocol-inline-chip:focus-visible,
 .protocol-inline-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.protocol-inline-choice-group:has(input:focus-visible) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
