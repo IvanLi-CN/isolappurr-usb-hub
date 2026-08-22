@@ -1130,6 +1130,16 @@ textarea.textarea:disabled {
   opacity: 0.6;
 }
 
+@media (max-width: 767px) {
+  .protocol-grid {
+    grid-auto-rows: 7rem;
+  }
+
+  .protocol-inline-card {
+    --protocol-inline-control-size: 2.25rem;
+  }
+}
+
 @container protocol-grid (max-width: 480px) {
   .protocol-grid {
     grid-auto-rows: 7rem;
