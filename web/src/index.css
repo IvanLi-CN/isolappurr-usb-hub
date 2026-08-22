@@ -890,8 +890,14 @@ textarea.textarea:disabled {
   }
 }
 
-.protocol-grid {
+.protocol-grid-container {
   container: protocol-grid / inline-size;
+  min-width: 0;
+  width: 100%;
+}
+
+.protocol-grid {
+  min-width: 0;
   --protocol-inline-control-size: 1.75rem;
   grid-auto-rows: 6.5rem;
 }
@@ -1124,7 +1130,7 @@ textarea.textarea:disabled {
   opacity: 0.6;
 }
 
-@media (max-width: 767px) {
+@container protocol-grid (max-width: 480px) {
   .protocol-grid {
     grid-auto-rows: 7rem;
   }

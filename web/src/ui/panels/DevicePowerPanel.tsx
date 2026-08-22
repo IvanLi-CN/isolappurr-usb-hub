@@ -177,8 +177,8 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
         </div>
       </header>
 
-      <div className="grid gap-5">
-        <section className="grid gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
+        <section className="grid min-w-0 gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--panel-2)] px-4 py-4">
           <div className="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="text-[14px] font-semibold">Safe profile</div>

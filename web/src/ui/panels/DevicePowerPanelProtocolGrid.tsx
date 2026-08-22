@@ -88,40 +88,42 @@ export function DevicePowerPanelProtocolGrid({
   onToggleFixedVoltage,
 }: ProtocolGridProps) {
   return (
-    <div
-      className="protocol-grid grid items-start gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
-      data-testid="protocol-grid"
-    >
-      {protocols.map((protocol) => {
-        const checked =
-          protocol.key === "pps"
-            ? form.capability.pd.pps
-            : form.capability.protocols[protocol.key];
-        const active = activeProtocol === protocol.key;
-        const toggle = () => {
-          if (protocol.key === "pps") {
-            onPpsChange(!checked);
-            return;
-          }
-          onProtocolChange(protocol.key, !checked);
-        };
+    <div className="protocol-grid-container">
+      <div
+        className="protocol-grid grid items-start gap-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+        data-testid="protocol-grid"
+      >
+        {protocols.map((protocol) => {
+          const checked =
+            protocol.key === "pps"
+              ? form.capability.pd.pps
+              : form.capability.protocols[protocol.key];
+          const active = activeProtocol === protocol.key;
+          const toggle = () => {
+            if (protocol.key === "pps") {
+              onPpsChange(!checked);
+              return;
+            }
+            onProtocolChange(protocol.key, !checked);
+          };
 
-        return (
-          <ProtocolCard
-            active={active}
-            activeProtocol={activeProtocol}
-            checked={checked}
-            disabled={disabled}
-            form={form}
-            key={protocol.key}
-            onCurrentProfileChange={onCurrentProfileChange}
-            onFastChargeChange={onFastChargeChange}
-            onToggleFixedVoltage={onToggleFixedVoltage}
-            protocol={protocol}
-            toggle={toggle}
-          />
-        );
-      })}
+          return (
+            <ProtocolCard
+              active={active}
+              activeProtocol={activeProtocol}
+              checked={checked}
+              disabled={disabled}
+              form={form}
+              key={protocol.key}
+              onCurrentProfileChange={onCurrentProfileChange}
+              onFastChargeChange={onFastChargeChange}
+              onToggleFixedVoltage={onToggleFixedVoltage}
+              protocol={protocol}
+              toggle={toggle}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

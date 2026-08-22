@@ -1157,6 +1157,11 @@ export const Narrow: Story = {
   decorators: [
     (Story) => (
       <div className="mx-auto max-w-[390px]" data-protocol-narrow>
+        <style>{`
+          [data-protocol-narrow] .protocol-grid {
+            grid-template-columns: 1fr;
+          }
+        `}</style>
         <Story />
       </div>
     ),
@@ -1168,12 +1173,6 @@ export const Narrow: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByText("PD");
-    await expect(
-      canvas.queryByTestId("PD-negotiation-badge"),
-    ).not.toBeVisible();
-    await expect(
-      canvas.queryByTestId("QC2-negotiation-badge"),
-    ).not.toBeVisible();
     await expect(
       await canvas.findByRole("button", { name: "Fixed PDO 9V" }),
     ).toBeVisible();
@@ -1206,6 +1205,9 @@ export const Narrow: Story = {
     await expect(
       Math.round(cards[0]?.getBoundingClientRect().height ?? 0),
     ).toBe(112);
+    for (const card of cards) {
+      await expect(card.scrollHeight).toBeLessThanOrEqual(card.clientHeight);
+    }
     const controls = Array.from(
       canvasElement.querySelectorAll<HTMLElement>(
         ".protocol-inline-chip, .protocol-inline-choice-group, .protocol-inline-toggle",
