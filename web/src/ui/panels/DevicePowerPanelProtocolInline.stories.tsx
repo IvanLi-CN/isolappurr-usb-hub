@@ -11,7 +11,7 @@ import {
   idleBiasReadyOff,
   ok,
   okIdle,
-} from "./DevicePowerPanel.stories";
+} from "./DevicePowerPanelStoryFixtures";
 
 const meta = {
   title: "Panels/DevicePowerPanel",
