@@ -1,16 +1,15 @@
 import type { PowerConfigResponse, Result } from "../../domain/deviceApi";
-import type { PortState, PortTelemetry } from "../../domain/ports";
+import type {
+  PortControlAvailability,
+  PortState,
+  PortTelemetry,
+} from "../../domain/ports";
 import {
   type HoldActionResult,
   TwoStageHoldButton,
   toHoldActionResult,
 } from "../actions/TwoStageHoldButton";
 import { formatTelemetryValue } from "../format/telemetry";
-import {
-  PortStateIcon,
-  portStateIconKind,
-  portStateLabel,
-} from "../status/PortStateIcon";
 import {
   CableLoopCompensationCalculator,
   DiscreteSliderField,
@@ -33,7 +32,8 @@ type DevicePowerPanelSidebarProps = {
   runtimeOutputEnabled: boolean;
   sw2303LineCompensation: FormState["sw2303_line_compensation"];
   usbCPending: boolean;
-  usbCDataLinkAvailable: boolean;
+  usbCPowerAvailability: PortControlAvailability;
+  usbCDataLinkAvailability: PortControlAvailability;
   usbCState: PortState | null;
   usbCTelemetry: PortTelemetry | null;
 };
@@ -109,58 +109,31 @@ export function DevicePowerPanelSidebar({
   runtimeOutputEnabled,
   sw2303LineCompensation,
   usbCPending,
-  usbCDataLinkAvailable,
+  usbCPowerAvailability,
+  usbCDataLinkAvailability,
   usbCState,
   usbCTelemetry,
 }: DevicePowerPanelSidebarProps) {
   const usbCPowerActionDisabled = powerControlsDisabled || usbCPending;
-  const usbCPowerEnabled = runtimeOutputEnabled;
+  const powerDisabled =
+    usbCPowerActionDisabled || usbCPowerAvailability.state !== "supported";
   const usbCVoltageAvailable = typeof usbCTelemetry?.voltage_mv === "number";
   const usbCCurrentAvailable = typeof usbCTelemetry?.current_ma === "number";
   const usbCPowerAvailable = typeof usbCTelemetry?.power_mw === "number";
-  const usbCDataLabel =
-    usbCState?.replugging === true
-      ? "Data switching"
-      : portStateLabel("data", usbCState?.data_connected ?? false);
+  const dataSwitching = usbCState?.replugging === true;
+  const dataLinkDisabled =
+    usbCPowerActionDisabled ||
+    dataSwitching ||
+    usbCDataLinkAvailability.state !== "supported";
+  const dataLinkReason = dataSwitching
+    ? "Data path is switching. Wait for it to finish."
+    : usbCDataLinkAvailability.reason;
 
   return (
     <aside className="grid gap-5">
       <section className="rounded-[10px] border border-[var(--border-subtle)] bg-[var(--panel-3)] px-4 py-4">
         <div className="border-b border-[var(--border)] pb-3">
           <div className="text-[14px] font-semibold">USB-C</div>
-        </div>
-        <div className="mt-3 flex h-7 items-center gap-1.5">
-          <div
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] ${
-              usbCPowerEnabled
-                ? "bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
-                : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
-            }`}
-            aria-label={portStateLabel("power", usbCPowerEnabled)}
-            data-testid="usb-c-power-state"
-            role="img"
-          >
-            <PortStateIcon
-              kind={portStateIconKind("power", usbCPowerEnabled)}
-            />
-          </div>
-          <div
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] ${
-              usbCState?.data_connected && usbCState?.replugging !== true
-                ? "bg-[var(--protocol-enabled-bg)] text-[var(--primary-2)]"
-                : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]"
-            }`}
-            aria-label={usbCDataLabel}
-            data-testid="usb-c-data-state"
-            role="img"
-          >
-            <PortStateIcon
-              kind={portStateIconKind(
-                "data",
-                usbCState?.data_connected ?? false,
-              )}
-            />
-          </div>
         </div>
         <div className="mt-4 grid gap-2">
           <TelemetryReading
@@ -193,23 +166,21 @@ export function DevicePowerPanelSidebar({
           <TwoStageHoldButton
             className="sm:w-[132px]"
             testId="runtime-output-toggle"
-            disabled={usbCPowerActionDisabled}
+            disabled={powerDisabled}
             label="Power"
             onSetValue={(enabled) =>
               onToggleRuntime("output", enabled).then(toHoldActionResult)
             }
+            unavailableReason={usbCPowerAvailability.reason}
             value={runtimeOutputEnabled}
           />
           <TwoStageHoldButton
             className="sm:w-[140px]"
-            disabled={usbCPowerActionDisabled || !usbCDataLinkAvailable}
+            disabled={dataLinkDisabled}
             label="Data link"
             onSetValue={onSetUsbCData}
-            unavailableReason={
-              usbCDataLinkAvailable
-                ? undefined
-                : "This firmware does not support the Data link control. Update the device firmware to use it."
-            }
+            unavailableReason={dataLinkReason}
+            unavailableTone={dataSwitching ? "warning" : "neutral"}
             value={usbCState?.data_connected ?? false}
           />
         </div>

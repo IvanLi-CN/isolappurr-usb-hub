@@ -268,7 +268,7 @@ export function DeviceInfoPanel({
 
   const fwName = unknown(info?.device.firmware?.name);
   const fwVersion = unknown(info?.device.firmware?.version);
-  const fwBuild = "unknown";
+  const fwBuild = unknown(info?.device.firmware?.build?.source_sha);
 
   const wifiRuntimeState = wifiConfig?.state ?? info?.device.wifi?.state;
   const wifiRuntimeIpv4 = wifiConfig?.ipv4 ?? info?.device.wifi?.ipv4;
@@ -552,7 +552,7 @@ export function DeviceInfoPanel({
           <div className="mt-[14px] flex flex-col gap-[10px] leading-[14px]">
             <InfoFieldRow label="name" value={fwName} labelWidth="54px" />
             <InfoFieldRow label="version" value={fwVersion} labelWidth="64px" />
-            <InfoFieldRow label="build" value={fwBuild} labelWidth="54px" />
+            <InfoFieldRow label="source" value={fwBuild} labelWidth="54px" />
           </div>
         </div>
 

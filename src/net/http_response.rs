@@ -1,3 +1,7 @@
+use isolapurr_firmware_core::api_contract::{
+    PORT_CAPABILITY_SCHEMA_V1, write_firmware_build_json, write_port_capabilities_json,
+};
+
 fn write_port_telemetry_json(body: &mut String, telemetry: &ApiPortTelemetry) {
     let _ = core::write!(
         body,
@@ -16,10 +20,20 @@ fn write_port_telemetry_json(body: &mut String, telemetry: &ApiPortTelemetry) {
     );
 }
 
-fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &ApiPortSnapshot) {
+fn write_port_json(
+    body: &mut String,
+    port_id: ApiPortId,
+    label: &str,
+    port: &ApiPortSnapshot,
+    capability_schema: Option<u8>,
+) {
+    let _ = body.push('{');
+    if let Some(schema) = capability_schema {
+        let _ = core::write!(body, "\"capability_schema\":{},", schema);
+    }
     let _ = core::write!(
         body,
-        "{{\"portId\":\"{}\",\"label\":\"{}\",\"telemetry\":",
+        "\"portId\":\"{}\",\"label\":\"{}\",\"telemetry\":",
         port_id.as_str(),
         label,
     );
@@ -33,7 +47,7 @@ fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &Ap
     }
     let _ = core::write!(
         body,
-        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"data_set\":true,\"power_set\":true}}}}",
+        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":",
         if port.state.power_enabled {
             "true"
         } else {
@@ -51,6 +65,8 @@ fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &Ap
         },
         if port.state.busy { "true" } else { "false" },
     );
+    let _ = write_port_capabilities_json(body);
+    let _ = body.push('}');
 }
 
 pub fn write_pd_diagnostics_json(
@@ -1030,8 +1046,15 @@ mod tests {
         port.state.power_enabled = true;
         port.state.data_connected = true;
 
-        write_port_json(&mut body, ApiPortId::PortA, "USB-A", &port);
+        write_port_json(
+            &mut body,
+            ApiPortId::PortA,
+            "USB-A",
+            &port,
+            Some(PORT_CAPABILITY_SCHEMA_V1),
+        );
 
+        assert!(body.starts_with("{\"capability_schema\":1,"));
         assert!(body.contains("\"data_replug\":true"));
         assert!(body.contains("\"data_set\":true"));
         assert!(body.contains("\"data_connected\":true"));

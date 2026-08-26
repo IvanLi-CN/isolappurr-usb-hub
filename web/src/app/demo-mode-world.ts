@@ -91,7 +91,14 @@ function buildDemoDevice({
       fqdn,
       mac: `02:de:mo:${id.slice(0, 2)}:${id.slice(2, 4)}:${id.slice(4, 6)}`,
       variant: "isolapurr-usb-hub",
-      firmware: { name: "isolapurr-usb-hub", version: firmwareVersion },
+      firmware: {
+        name: "isolapurr-usb-hub",
+        version: firmwareVersion,
+        build: {
+          source_sha: "0123456789abcdef0123456789abcdef01234567",
+          dirty: false,
+        },
+      },
       uptime_ms: 9_876_543,
       wifi: {
         state: "connected",
@@ -155,6 +162,7 @@ function buildDemoDevice({
     info,
     ports: {
       hub,
+      capability_schema: 1,
       capabilities: { identify: true },
       ports: [
         port("port_a", "USB-A", {

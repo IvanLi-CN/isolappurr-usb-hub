@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDeviceRuntime } from "../../app/device-runtime";
 import type { PdDiagnosticsResponse } from "../../domain/deviceApi";
 import type { StoredDevice } from "../../domain/devices";
-import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
+import {
+  type PortId,
+  type PortState,
+  type PortTelemetry,
+  resolvePortControlAvailability,
+} from "../../domain/ports";
 import { toHoldActionResult } from "../actions/TwoStageHoldButton";
 import { PortCard } from "../cards/PortCard";
 import { formatTimeHms } from "../format/time";
@@ -353,13 +358,31 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
         label: "USB-A",
         telemetry: telemetry("port_a"),
         state: state("port_a"),
-        dataLinkAvailable: port("port_a")?.capabilities?.data_set === true,
+        powerAvailability: resolvePortControlAvailability(
+          port("port_a")?.capability_schema,
+          port("port_a")?.capabilities,
+          "power_set",
+        ),
+        dataLinkAvailability: resolvePortControlAvailability(
+          port("port_a")?.capability_schema,
+          port("port_a")?.capabilities,
+          "data_set",
+        ),
       },
       port_c: {
         label: "USB-C",
         telemetry: telemetry("port_c"),
         state: state("port_c"),
-        dataLinkAvailable: port("port_c")?.capabilities?.data_set === true,
+        powerAvailability: resolvePortControlAvailability(
+          port("port_c")?.capability_schema,
+          port("port_c")?.capabilities,
+          "power_set",
+        ),
+        dataLinkAvailability: resolvePortControlAvailability(
+          port("port_c")?.capability_schema,
+          port("port_c")?.capabilities,
+          "data_set",
+        ),
       },
     };
   }, [connectionState, device.id, runtime]);
@@ -474,7 +497,7 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
           </div>
           <div className="flex min-w-0 items-center">
             <div className="w-12 text-[12px] font-semibold text-[var(--muted)]">
-              Build
+              Console build
             </div>
             <div className="min-w-0 truncate font-mono text-[12px] font-semibold">
               {buildSha}
@@ -506,7 +529,8 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
           telemetry={items.port_a.telemetry}
           state={items.port_a.state}
           disabled={writeDisabled}
-          dataLinkAvailable={items.port_a.dataLinkAvailable}
+          powerAvailability={items.port_a.powerAvailability}
+          dataLinkAvailability={items.port_a.dataLinkAvailability}
           onSetPower={(enabled) =>
             runtime
               .setPower(device.id, "port_a", enabled)
@@ -529,7 +553,8 @@ export function DeviceDashboardPanel({ device }: { device: StoredDevice }) {
             (hasResolvedUsbCPort && items.port_c.telemetry.status !== "ok")
           }
           disabled={writeDisabled}
-          dataLinkAvailable={items.port_c.dataLinkAvailable}
+          powerAvailability={items.port_c.powerAvailability}
+          dataLinkAvailability={items.port_c.dataLinkAvailability}
           onSetPower={(enabled) =>
             runtime
               .setPower(device.id, "port_c", enabled)

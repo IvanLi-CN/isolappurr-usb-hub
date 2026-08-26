@@ -30,23 +30,71 @@ export type PortState = {
 };
 
 export type PortCapabilities = {
-  data_replug: boolean;
+  data_replug?: boolean;
   data_set?: boolean;
-  power_set: boolean;
+  power_set?: boolean;
+};
+
+export type PortControl = keyof PortCapabilities;
+export type PortControlAvailabilityState =
+  | "supported"
+  | "unsupported"
+  | "unknown";
+
+export type PortControlAvailability = {
+  state: PortControlAvailabilityState;
+  reason?: string;
 };
 
 export type Port = {
   portId: PortId;
   label: string;
+  capability_schema?: number;
   telemetry: PortTelemetry;
   telemetry_raw?: PortTelemetry | null;
   state: PortState;
   capabilities: PortCapabilities;
 };
 
+export function portWithCapabilitySchema(
+  port: Port,
+  capabilitySchema: number | undefined,
+): Port {
+  return { ...port, capability_schema: capabilitySchema };
+}
+
 export type PortsResponse = {
   // Backward-compat: older firmware may omit `hub` entirely.
   hub?: HubState;
+  capability_schema?: number;
   capabilities?: { identify?: boolean };
   ports: Port[];
 };
+
+const PORT_CONTROL_LABELS: Record<PortControl, string> = {
+  data_replug: "Data replug",
+  data_set: "Data link",
+  power_set: "Power",
+};
+
+export function resolvePortControlAvailability(
+  capabilitySchema: number | undefined,
+  capabilities: PortCapabilities | null | undefined,
+  control: PortControl,
+): PortControlAvailability {
+  if (capabilitySchema !== 1 || typeof capabilities?.[control] !== "boolean") {
+    return {
+      state: "unknown",
+      reason: `This device has not declared the ${PORT_CONTROL_LABELS[control]} control capability, so it is unavailable.`,
+    };
+  }
+
+  if (capabilities[control]) {
+    return { state: "supported" };
+  }
+
+  return {
+    state: "unsupported",
+    reason: `This device does not support the ${PORT_CONTROL_LABELS[control]} control.`,
+  };
+}

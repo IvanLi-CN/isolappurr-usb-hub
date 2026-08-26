@@ -25,6 +25,7 @@ mod mdns;
 mod net;
 
 const BUILD_GIT_SHA: &str = env!("USB_HUB_BUILD_GIT_SHA");
+const BUILD_GIT_SHA_FULL: &str = env!("USB_HUB_BUILD_GIT_SHA_FULL");
 const BUILD_GIT_REF: &str = env!("USB_HUB_BUILD_GIT_REF");
 const BUILD_GIT_DIRTY: &str = env!("USB_HUB_BUILD_GIT_DIRTY");
 const BUILD_PROFILE: &str = env!("USB_HUB_BUILD_PROFILE");
@@ -56,6 +57,9 @@ use esp_hal::timer::timg::TimerGroup;
 #[cfg(feature = "net_http")]
 use esp_hal::usb_serial_jtag::UsbSerialJtag;
 use esp_hal::{dma_buffers, handler, ram};
+use isolapurr_firmware_core::api_contract::{
+    PORT_CAPABILITY_SCHEMA_V1, write_firmware_build_json, write_port_capabilities_json,
+};
 #[cfg(feature = "net_http")]
 use isolapurr_firmware_core::identify::IdentifyState;
 use isolapurr_firmware_core::sw2303_power_gate::Sw2303PowerGate;

@@ -4,7 +4,12 @@ import { useAddDeviceUi } from "../app/add-device-ui";
 import { useDemoNavigate } from "../app/demo-navigation";
 import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
-import type { PortId, PortState, PortTelemetry } from "../domain/ports";
+import {
+  type PortId,
+  type PortState,
+  type PortTelemetry,
+  resolvePortControlAvailability,
+} from "../domain/ports";
 import { toHoldActionResult } from "../ui/actions/TwoStageHoldButton";
 import { DeviceSummaryCard } from "../ui/cards/DeviceSummaryCard";
 
@@ -56,6 +61,8 @@ export function DashboardPage() {
 
         const port = (portId: PortId) => runtime.port(d.id, portId);
         const pending = (portId: PortId) => runtime.pending(d.id, portId);
+        const portA = port("port_a");
+        const portC = port("port_c");
 
         return {
           device: d,
@@ -72,8 +79,16 @@ export function DashboardPage() {
                 state === "online"
                   ? mergedPortState(port("port_a")?.state, pending("port_a"))
                   : fallbackState,
-              dataLinkAvailable:
-                port("port_a")?.capabilities?.data_set === true,
+              powerAvailability: resolvePortControlAvailability(
+                portA?.capability_schema,
+                portA?.capabilities,
+                "power_set",
+              ),
+              dataLinkAvailability: resolvePortControlAvailability(
+                portA?.capability_schema,
+                portA?.capabilities,
+                "data_set",
+              ),
             },
             port_c: {
               label: "USB-C",
@@ -85,8 +100,16 @@ export function DashboardPage() {
                 state === "online"
                   ? mergedPortState(port("port_c")?.state, pending("port_c"))
                   : fallbackState,
-              dataLinkAvailable:
-                port("port_c")?.capabilities?.data_set === true,
+              powerAvailability: resolvePortControlAvailability(
+                portC?.capability_schema,
+                portC?.capabilities,
+                "power_set",
+              ),
+              dataLinkAvailability: resolvePortControlAvailability(
+                portC?.capability_schema,
+                portC?.capabilities,
+                "data_set",
+              ),
             },
           },
         };

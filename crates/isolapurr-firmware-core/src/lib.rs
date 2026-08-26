@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod api_contract;
 pub mod display_ui;
 pub mod identify;
 pub mod idle_bias;

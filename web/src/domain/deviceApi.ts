@@ -7,7 +7,11 @@ export type DeviceInfoResponse = {
     fqdn: string;
     mac: string;
     variant: string;
-    firmware: { name: string; version: string };
+    firmware: {
+      name: string;
+      version: string;
+      build?: { source_sha?: string; dirty?: boolean };
+    };
     uptime_ms: number;
     wifi: {
       state: "idle" | "connecting" | "connected" | "error";

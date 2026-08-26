@@ -26,7 +26,7 @@ import {
   subscribeLocalUsbDeviceLinks,
 } from "../domain/localUsbLinks";
 import { subscribeNetworkDeviceLinks } from "../domain/networkLinks";
-import type { PortsResponse } from "../domain/ports";
+import { type PortsResponse, portWithCapabilitySchema } from "../domain/ports";
 import {
   forgetWebSerialDeviceTransport,
   getWebSerialDeviceTransport,
@@ -744,7 +744,16 @@ export function DeviceRuntimeProvider({
                 transport,
                 identityVerified,
                 hub,
-                ports: { port_a: portA, port_c: portC },
+                ports: {
+                  port_a: portWithCapabilitySchema(
+                    portA,
+                    res.value.capability_schema,
+                  ),
+                  port_c: portWithCapabilitySchema(
+                    portC,
+                    res.value.capability_schema,
+                  ),
+                },
               },
             };
           }

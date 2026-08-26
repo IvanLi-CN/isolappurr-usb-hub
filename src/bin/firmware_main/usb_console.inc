@@ -114,8 +114,9 @@ async fn handle_usb_jsonl_request(
         let state = { *api_state.lock().await };
         let _ = write!(
             body,
-            "{{\"id\":{},\"ok\":true,\"result\":{{\"hub\":{{\"upstream_connected\":{},\"isolated_usb_fault\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{},\"usb_c_downstream_route\":\"{}\",\"usb_c_downstream_persisted\":{}}},\"capabilities\":{{\"identify\":true}},\"ports\":[",
+            "{{\"id\":{},\"ok\":true,\"result\":{{\"capability_schema\":{},\"hub\":{{\"upstream_connected\":{},\"isolated_usb_fault\":{},\"isolated_downstream_connected\":{},\"isolated_usb_ready\":{},\"usb_c_downstream_route\":\"{}\",\"usb_c_downstream_persisted\":{}}},\"capabilities\":{{\"identify\":true}},\"ports\":[",
             id.as_str(),
+            PORT_CAPABILITY_SCHEMA_V1,
             state.hub.upstream_connected,
             state.hub.isolated_usb_fault,
             state.hub.isolated_downstream_connected,
@@ -960,12 +961,14 @@ fn write_usb_port_json(
     }
     let _ = write!(
         body,
-        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"data_set\":true,\"power_set\":true}}}}",
+        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":",
         port.state.power_enabled,
         port.state.data_connected,
         port.state.replugging,
         port.state.busy
     );
+    let _ = write_port_capabilities_json(body);
+    let _ = body.push('}');
 }
 
 #[cfg(feature = "net_http")]
@@ -1008,9 +1011,14 @@ fn write_usb_info_json(
 
     let _ = write!(
         body,
-        "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}},\"hardware\":{{\"mcu\":\"ESP32-S3\",\"flash_bytes\":4194304,\"ram_bytes\":524288,\"psram_bytes\":{}}},\"uptime_ms\":{},",
+        "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
         env!("CARGO_PKG_NAME"),
         release_version(),
+    );
+    let _ = write_firmware_build_json(body, BUILD_GIT_SHA_FULL, BUILD_GIT_DIRTY == "true");
+    let _ = write!(
+        body,
+        "}},\"hardware\":{{\"mcu\":\"ESP32-S3\",\"flash_bytes\":4194304,\"ram_bytes\":524288,\"psram_bytes\":{}}},\"uptime_ms\":{},",
         PSRAM_SIZE_BYTES.load(Ordering::Acquire),
         firmware_uptime_ms()
     );

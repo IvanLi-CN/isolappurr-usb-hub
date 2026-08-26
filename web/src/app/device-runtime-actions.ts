@@ -21,6 +21,7 @@ import type {
   PortsResponse,
   UsbCDownstreamRoute,
 } from "../domain/ports";
+import { portWithCapabilitySchema } from "../domain/ports";
 import type {
   CrossTabRuntimeCoordinator,
   RuntimeChannelMessage,
@@ -162,7 +163,10 @@ export function applyConfirmedPortsSnapshot(
           capabilities: snapshot.hub.capabilities ?? snapshot.capabilities,
         }
       : current.hub,
-    ports: { port_a: portA, port_c: portC },
+    ports: {
+      port_a: portWithCapabilitySchema(portA, snapshot.capability_schema),
+      port_c: portWithCapabilitySchema(portC, snapshot.capability_schema),
+    },
   };
 }
 

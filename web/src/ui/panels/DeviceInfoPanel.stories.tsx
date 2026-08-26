@@ -18,7 +18,14 @@ const mockInfo = {
     fqdn: "isolapurr-usb-hub-aabbcc001122.local/this/is/a/very/long/fqdn/to/ensure/truncate/works/in/narrow/layouts",
     mac: "AA:BB:CC:DD:EE:FF",
     variant: "tps-sw",
-    firmware: { name: "isolapurr-usb-hub", version: "0.1.0" },
+    firmware: {
+      name: "isolapurr-usb-hub",
+      version: "0.1.0",
+      build: {
+        source_sha: "0123456789abcdef0123456789abcdef01234567",
+        dirty: false,
+      },
+    },
     uptime_ms: 123_456,
     wifi: { state: "connected", ipv4: "192.168.1.42", is_static: false },
   },

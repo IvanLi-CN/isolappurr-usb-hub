@@ -357,12 +357,9 @@ export const OutputOffManualHighVoltage: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(
-      await canvas.findByTestId("usb-c-power-state"),
-    ).toHaveAccessibleName("Power off");
-    await expect(
-      await canvas.findByTestId("runtime-output-toggle"),
-    ).toHaveTextContent("Power");
+    const outputToggle = await canvas.findByTestId("runtime-output-toggle");
+    await expect(outputToggle).toHaveTextContent("Power");
+    await expect(outputToggle).toHaveAttribute("aria-pressed", "false");
     await expect(
       await canvas.findByTestId("runtime-discharge-toggle"),
     ).toHaveTextContent("Enabled");

@@ -6,6 +6,10 @@ USB-C 对应的 Hub 下行通道需要在 MCU USB 数据路径与外部 USB-C �
 
 现有硬件使用 CH442E U8 作为 USB-C/ESP/TPS 数据路径开关：`P2_CED` 控制 `EN#`，`P1_ESP` 控制 `IN`。`P2_CED=low` 使能连接，`P2_CED=high` 断开；`P1_ESP=low` 选择 `ESP_DP/ESP_DM`，`P1_ESP=high` 选择 `DP_TPS/DM_TPS`。
 
+## Related ADRs
+
+- [Capability declaration for port controls](../../adr/0001-capability-declaration-for-port-controls.md)
+
 ## 目标 / 非目标
 
 ### Goals
@@ -53,8 +57,9 @@ USB-C 对应的 Hub 下行通道需要在 MCU USB 数据路径与外部 USB-C �
 - USB-C 端口 busy、已有 route 切换 pending 时，新的 route 请求必须返回 busy 且不改变 route。
 - route API 成功响应必须表示 EEPROM 写入已成功；写入失败必须返回 `eeprom_failed`。
 - `ports.get` / `GET /api/v1/ports` 必须包含 `hub.usb_c_downstream_route` 与 `hub.usb_c_downstream_persisted`。
-- Web UI 每张端口卡片必须保留完整端口状态信息：端口健康状态、电源开关状态、数据连接或 replugging 状态、Voltage、Current、Power、`Power` 操作和 `Data link` 操作。
-- `Data link` 操作 MUST 使用固件 `data_set` capability，并在旧 firmware 缺少该 capability 时显示升级提示，不得回退调用 `replug`。它是运行时状态：断电强制断开，上电恢复连接，不写入 EEPROM。
+- Web UI 每张端口卡片必须保留端口健康状态、Voltage、Current、Power、`Power` 操作和 `Data link` 操作。`Power` 与 `Data link` 按钮是 `power_enabled` 与 `data_connected` 的唯一常驻可见状态面；卡片不得重复渲染独立 `State` 行。
+- `replugging` 必须由 `Data link` 按钮承接：保持最近一次已确认状态图标，进入 warning/busy 外观并阻止新的长按；用户显式点击时才能显示“Data path is switching. Wait for it to finish.”。`replugging` 说明优先于 `unsupported` 或 `unknown` capability 说明。不得为该瞬态新增常驻状态区域。
+- `Data link` 操作 MUST 使用固件 `data_set` capability，不得回退调用 `replug`。它是运行时状态：断电强制断开，上电恢复连接，不写入 EEPROM。设备在 capability schema 中明确声明 `data_set: false` 时，Web 显示设备明确不支持；schema 缺失、未知或 schema 内缺少该字段时，Web 只能显示设备未声明能力，且保持禁用。
 - `Power` 与 `Data link` MUST 使用同一套二阶段短时按住交互：按下快照实际状态，约 600ms 切到反向目标，约 1250ms 在第一阶段确认后恢复初始目标；短按仅显示如何触发的帮助，结果必须以设备快照确认而非仅以动画确认。
 - Web UI route 控件必须作为设备设置呈现，不得放入 USB-A 或 USB-C 端口状态卡片，也不得放入 dashboard 概览卡。
 - Web UI 必须用用户语义展示 `Normal` / `Upgrade` 模式：`Normal` 对应 `USB-C` route，`Upgrade` 对应 `MCU` route。
@@ -147,9 +152,17 @@ USB-C 对应的 Hub 下行通道需要在 MCU USB 数据路径与外部 USB-C �
 
 ### HTTP
 
+- `GET /api/v1/info`
+  - `device.firmware.build.source_sha`: 完整 40 位 Git 提交；`device.firmware.build.dirty`：JSON boolean。
+  - `source_sha` 仅表示发布目录关联的源码提交，不作为刷写二进制内容哈希或签名证明。
+
 - `GET /api/v1/ports`
+  - `capability_schema`: `1`；缺失或未知版本代表端口能力未知。
+  - schema `1` 的每个 port `capabilities` 必须显式声明 `power_set`、`data_replug`、`data_set` 为 `true|false`；缺少任一字段时，该能力为未知。
   - `hub.usb_c_downstream_route`: `"mcu" | "usb_c"`
   - `hub.usb_c_downstream_persisted`: `boolean`
+- `GET /api/v1/ports/:portId`
+  - 响应根对象必须包含与聚合端点相同语义的 `capability_schema`；端口 `capabilities` 同样遵守 schema `1` 的完整显式声明要求。
 - `POST /api/v1/hub/usb-c-downstream-route?route=mcu|usb_c`
   - 成功：`200 OK {"accepted":true,"usb_c_downstream_route":"mcu|usb_c","persisted":true}`
   - Busy：`409 {"error":{"code":"busy",...}}`
@@ -157,7 +170,8 @@ USB-C 对应的 Hub 下行通道需要在 MCU USB 数据路径与外部 USB-C �
 
 ### USB JSONL
 
-- `ports.get` 返回与 HTTP `GET /api/v1/ports` 等价的 hub route 字段。
+- `info` 返回与 HTTP `GET /api/v1/info` 等价的 `firmware.build.source_sha` 和 `firmware.build.dirty` 字段。
+- `ports.get` 返回与 HTTP `GET /api/v1/ports` 等价的 capability schema、per-port capabilities 与 hub route 字段。
 - `hub.route_set` 参数：`{"route":"mcu"|"usb_c"}`。
 - `hub.route_set` 成功 result：`{"accepted":true,"usb_c_downstream_route":"mcu|usb_c","persisted":true}`。
 - `settings.reset` 参数：`{"scope":"other","owner"?:number}`。成功 result 包含 `{"accepted":true,"scope":"other","wifi_preserved":true}`，并清空 route record。

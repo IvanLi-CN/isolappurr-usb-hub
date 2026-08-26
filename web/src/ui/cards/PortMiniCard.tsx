@@ -1,4 +1,9 @@
-import type { PortId, PortState, PortTelemetry } from "../../domain/ports";
+import type {
+  PortControlAvailability,
+  PortId,
+  PortState,
+  PortTelemetry,
+} from "../../domain/ports";
 import {
   type HoldActionResult,
   TwoStageHoldButton,
@@ -12,7 +17,8 @@ export type PortMiniCardProps = {
   state: PortState;
   disabled: boolean;
   className?: string;
-  dataLinkAvailable?: boolean;
+  powerAvailability?: PortControlAvailability;
+  dataLinkAvailability?: PortControlAvailability;
   onSetPower: (enabled: boolean) => Promise<HoldActionResult>;
   onSetData: (connected: boolean) => Promise<HoldActionResult>;
 };
@@ -25,10 +31,19 @@ export function PortMiniCard({
   className,
   onSetPower,
   onSetData,
-  dataLinkAvailable = true,
+  powerAvailability = { state: "supported" },
+  dataLinkAvailability = { state: "supported" },
 }: PortMiniCardProps) {
   const busy = state.busy;
   const actionDisabled = disabled || busy;
+  const dataSwitching = state.replugging;
+  const dataLinkDisabled =
+    actionDisabled ||
+    dataSwitching ||
+    dataLinkAvailability.state !== "supported";
+  const dataLinkReason = dataSwitching
+    ? "Data path is switching. Wait for it to finish."
+    : dataLinkAvailability.reason;
 
   const valueClass = [
     "text-[16px] font-bold",
@@ -63,22 +78,20 @@ export function PortMiniCard({
         <TwoStageHoldButton
           className="w-full min-w-0"
           compact
-          disabled={actionDisabled}
+          disabled={actionDisabled || powerAvailability.state !== "supported"}
           label="Power"
           onSetValue={onSetPower}
+          unavailableReason={powerAvailability.reason}
           value={state.power_enabled}
         />
         <TwoStageHoldButton
           className="w-full min-w-0"
           compact
-          disabled={actionDisabled || !dataLinkAvailable}
+          disabled={dataLinkDisabled}
           label="Data link"
           onSetValue={onSetData}
-          unavailableReason={
-            dataLinkAvailable
-              ? undefined
-              : "This firmware does not support the Data link control. Update the device firmware to use it."
-          }
+          unavailableReason={dataLinkReason}
+          unavailableTone={dataSwitching ? "warning" : "neutral"}
           value={state.data_connected}
         />
       </div>
