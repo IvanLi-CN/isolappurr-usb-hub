@@ -202,9 +202,6 @@ export function TwoStageHoldButton({
     if (session !== sessionRef.current) {
       return;
     }
-    if (stopIfUnavailable()) {
-      return;
-    }
     if (!result.ok) {
       holdingRef.current = false;
       clearTimers();
@@ -237,9 +234,6 @@ export function TwoStageHoldButton({
       busyRef.current = false;
     }
     if (session !== sessionRef.current) {
-      return;
-    }
-    if (stopIfUnavailable()) {
       return;
     }
     if (!result.ok) {
