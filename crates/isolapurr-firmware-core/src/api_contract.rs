@@ -14,11 +14,15 @@ pub fn write_firmware_build_json<W: fmt::Write>(
     source_sha: &str,
     dirty: bool,
 ) -> fmt::Result {
-    write!(
-        out,
-        "{{\"source_sha\":\"{}\",\"dirty\":{}}}",
-        source_sha, dirty
-    )
+    out.write_str("{")?;
+    if is_full_source_sha(source_sha) {
+        write!(out, "\"source_sha\":\"{}\",", source_sha)?;
+    }
+    write!(out, "\"dirty\":{}}}", dirty)
+}
+
+fn is_full_source_sha(value: &str) -> bool {
+    value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[cfg(test)]
@@ -52,5 +56,13 @@ mod tests {
             body,
             "{\"source_sha\":\"0123456789abcdef0123456789abcdef01234567\",\"dirty\":false}"
         );
+    }
+
+    #[test]
+    fn firmware_build_metadata_omits_unverified_source_sha() {
+        let mut body = String::new();
+        write_firmware_build_json(&mut body, "unknown", true).unwrap();
+
+        assert_eq!(body, "{\"dirty\":true}");
     }
 }
