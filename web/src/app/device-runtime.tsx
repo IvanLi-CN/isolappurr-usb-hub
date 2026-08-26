@@ -26,7 +26,7 @@ import {
   subscribeLocalUsbDeviceLinks,
 } from "../domain/localUsbLinks";
 import { subscribeNetworkDeviceLinks } from "../domain/networkLinks";
-import { type PortsResponse, portWithCapabilitySchema } from "../domain/ports";
+import { type PortsResponse, runtimePortsFromResponse } from "../domain/ports";
 import {
   forgetWebSerialDeviceTransport,
   getWebSerialDeviceTransport,
@@ -720,9 +720,8 @@ export function DeviceRuntimeProvider({
                     res.value.hub.capabilities ?? res.value.capabilities,
                 }
               : null;
-            const portA = res.value.ports.find((p) => p.portId === "port_a");
-            const portC = res.value.ports.find((p) => p.portId === "port_c");
-            if (!portA || !portC) {
+            const ports = runtimePortsFromResponse(res.value);
+            if (!ports) {
               return {
                 ...prev,
                 [deviceId]: {
@@ -744,16 +743,7 @@ export function DeviceRuntimeProvider({
                 transport,
                 identityVerified,
                 hub,
-                ports: {
-                  port_a: portWithCapabilitySchema(
-                    portA,
-                    res.value.capability_schema,
-                  ),
-                  port_c: portWithCapabilitySchema(
-                    portC,
-                    res.value.capability_schema,
-                  ),
-                },
+                ports,
               },
             };
           }

@@ -63,6 +63,19 @@ export function portWithCapabilitySchema(
   return { ...port, capability_schema: capabilitySchema };
 }
 
+export function runtimePortsFromResponse(
+  response: PortsResponse,
+): Record<PortId, Port> | null {
+  const portA = response.ports.find((port) => port.portId === "port_a");
+  const portC = response.ports.find((port) => port.portId === "port_c");
+  return portA && portC
+    ? {
+        port_a: portWithCapabilitySchema(portA, response.capability_schema),
+        port_c: portWithCapabilitySchema(portC, response.capability_schema),
+      }
+    : null;
+}
+
 export type PortsResponse = {
   // Backward-compat: older firmware may omit `hub` entirely.
   hub?: HubState;

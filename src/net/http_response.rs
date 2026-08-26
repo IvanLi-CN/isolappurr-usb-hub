@@ -2,6 +2,41 @@ use isolapurr_firmware_core::api_contract::{
     PORT_CAPABILITY_SCHEMA_V1, write_firmware_build_json, write_port_capabilities_json,
 };
 
+fn write_info_json(body: &mut String, device_names: &DeviceNames, wifi: WifiState) {
+    let mac = format_mac_lower(device_names.mac);
+    let ipv4 = wifi.ipv4.map(format_ipv4);
+    let wifi_state_s = wifi_state_str(wifi.state);
+    let _ = core::write!(
+        body,
+        "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
+        device_names.device_id.as_str(),
+        device_names.hostname.as_str(),
+        device_names.hostname_fqdn.as_str(),
+        mac.as_str(),
+        env!("CARGO_PKG_NAME"),
+        release_version(),
+    );
+    let _ = write_firmware_build_json(
+        body,
+        crate::BUILD_GIT_SHA_FULL,
+        crate::BUILD_GIT_DIRTY == "true",
+    );
+    let _ = core::write!(
+        body,
+        "}},\"uptime_ms\":{},\"wifi\":{{\"state\":\"{}\",\"ipv4\":",
+        uptime_ms(),
+        wifi_state_s
+    );
+    match ipv4 {
+        None => body.push_str("null"),
+        Some(ip) => {
+            let _ = core::write!(body, "\"{}\"", ip.as_str());
+        }
+    }
+    let _ = core::write!(body, ",\"is_static\":{}", wifi.is_static);
+    let _ = body.push_str("}},\"capabilities\":{\"identify\":true}}");
+}
+
 fn write_port_telemetry_json(body: &mut String, telemetry: &ApiPortTelemetry) {
     let _ = core::write!(
         body,

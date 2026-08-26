@@ -519,32 +519,6 @@ mod tests {
     }
 
     #[test]
-    fn bridge_redaction_preserves_port_capability_declarations() {
-        let value = json!({
-            "id": 1,
-            "ok": true,
-            "result": {
-                "capability_schema": 1,
-                "ports": [{
-                    "portId": "port_c",
-                    "capabilities": {
-                        "data_replug": true,
-                        "data_set": false,
-                        "power_set": true,
-                    },
-                }],
-            },
-        });
-
-        let forwarded = redact_sensitive(&value);
-        assert_eq!(forwarded["result"]["capability_schema"], 1);
-        assert_eq!(
-            forwarded["result"]["ports"][0]["capabilities"]["data_set"],
-            false
-        );
-    }
-
-    #[test]
     fn prunes_stale_usb_devices_after_scan() {
         let mut inner = DevdState::default();
         reconcile_scanned_usb_devices(

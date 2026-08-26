@@ -279,44 +279,7 @@ async fn handle_api_request(
         ("GET", "/api/v1/info") => {
             let wifi = { *wifi_state.lock().await };
             let mut body = String::new();
-
-            let mac = format_mac_lower(device_names.mac);
-            let ipv4 = wifi.ipv4.map(format_ipv4);
-            let wifi_state_s = wifi_state_str(wifi.state);
-
-            let _ = core::write!(
-                body,
-                "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
-                device_names.device_id.as_str(),
-                device_names.hostname.as_str(),
-                device_names.hostname_fqdn.as_str(),
-                mac.as_str(),
-                env!("CARGO_PKG_NAME"),
-                release_version(),
-            );
-            let _ = write_firmware_build_json(
-                &mut body,
-                crate::BUILD_GIT_SHA_FULL,
-                crate::BUILD_GIT_DIRTY == "true",
-            );
-            let _ = core::write!(
-                body,
-                "}},\"uptime_ms\":{},\"wifi\":{{\"state\":\"{}\",\"ipv4\":",
-                uptime_ms(),
-                wifi_state_s
-            );
-
-            match ipv4 {
-                None => {
-                    let _ = body.push_str("null");
-                }
-                Some(ip) => {
-                    let _ = core::write!(body, "\"{}\"", ip.as_str());
-                }
-            }
-
-            let _ = core::write!(body, ",\"is_static\":{}", wifi.is_static);
-            let _ = body.push_str("}},\"capabilities\":{\"identify\":true}}");
+            write_info_json(&mut body, device_names, wifi);
 
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());

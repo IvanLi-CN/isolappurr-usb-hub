@@ -1,3 +1,5 @@
+import { useRef } from "react";
+
 import type {
   PortControlAvailability,
   PortId,
@@ -37,6 +39,13 @@ export function PortMiniCard({
   const busy = state.busy;
   const actionDisabled = disabled || busy;
   const dataSwitching = state.replugging;
+  const confirmedDataValueRef = useRef(state.data_connected);
+  if (!dataSwitching) {
+    confirmedDataValueRef.current = state.data_connected;
+  }
+  const dataLinkValue = dataSwitching
+    ? confirmedDataValueRef.current
+    : state.data_connected;
   const dataLinkDisabled =
     actionDisabled ||
     dataSwitching ||
@@ -92,7 +101,7 @@ export function PortMiniCard({
           onSetValue={onSetData}
           unavailableReason={dataLinkReason}
           unavailableTone={dataSwitching ? "warning" : "neutral"}
-          value={state.data_connected}
+          value={dataLinkValue}
         />
       </div>
     </div>

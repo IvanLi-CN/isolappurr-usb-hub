@@ -8,6 +8,16 @@ fn main() {
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
         let env_path = std::path::Path::new(&manifest_dir).join(".env");
         println!("cargo:rerun-if-changed={}", env_path.display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            std::path::Path::new(&manifest_dir).join("src").display()
+        );
+        println!(
+            "cargo:rerun-if-changed={}",
+            std::path::Path::new(&manifest_dir)
+                .join("Cargo.toml")
+                .display()
+        );
     }
     println!("cargo:rerun-if-env-changed=USB_HUB_WIFI_HOSTNAME");
     println!("cargo:rerun-if-env-changed=USB_HUB_WIFI_STATIC_IP");
@@ -107,7 +117,7 @@ impl GitBuildMetadata {
             .unwrap_or_else(|| "unknown".to_string());
         let git_ref = run_git(manifest_dir, &["symbolic-ref", "--short", "HEAD"])
             .unwrap_or_else(|| "detached".to_string());
-        let dirty = git_dirty_state(manifest_dir).unwrap_or_else(|| "unknown".to_string());
+        let dirty = git_dirty_state(manifest_dir).unwrap_or_else(|| "true".to_string());
 
         Self {
             sha_short,
@@ -140,7 +150,7 @@ fn run_git(cwd: &std::path::Path, args: &[&str]) -> Option<String> {
 
 fn git_dirty_state(cwd: &std::path::Path) -> Option<String> {
     let output = std::process::Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=no"])
+        .args(["status", "--porcelain", "--untracked-files=all"])
         .current_dir(cwd)
         .output()
         .ok()?;

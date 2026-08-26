@@ -5,6 +5,32 @@ use axum::{
 };
 use tower::util::ServiceExt as _;
 
+#[test]
+fn bridge_redaction_preserves_port_capability_declarations() {
+    let value = json!({
+        "id": 1,
+        "ok": true,
+        "result": {
+            "capability_schema": 1,
+            "ports": [{
+                "portId": "port_c",
+                "capabilities": {
+                    "data_replug": true,
+                    "data_set": false,
+                    "power_set": true,
+                },
+            }],
+        },
+    });
+
+    let forwarded = redact_sensitive(&value);
+    assert_eq!(forwarded["result"]["capability_schema"], 1);
+    assert_eq!(
+        forwarded["result"]["ports"][0]["capabilities"]["data_set"],
+        false
+    );
+}
+
 #[tokio::test]
 async fn web_root_serves_spa_index_for_unknown_app_routes() {
     let temp = tempfile::tempdir().expect("temp dir");

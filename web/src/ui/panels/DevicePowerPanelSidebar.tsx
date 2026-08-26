@@ -1,3 +1,5 @@
+import { useRef } from "react";
+
 import type { PowerConfigResponse, Result } from "../../domain/deviceApi";
 import type {
   PortControlAvailability,
@@ -121,6 +123,13 @@ export function DevicePowerPanelSidebar({
   const usbCCurrentAvailable = typeof usbCTelemetry?.current_ma === "number";
   const usbCPowerAvailable = typeof usbCTelemetry?.power_mw === "number";
   const dataSwitching = usbCState?.replugging === true;
+  const confirmedDataValueRef = useRef(usbCState?.data_connected ?? false);
+  if (!dataSwitching && usbCState) {
+    confirmedDataValueRef.current = usbCState.data_connected;
+  }
+  const dataLinkValue = dataSwitching
+    ? confirmedDataValueRef.current
+    : (usbCState?.data_connected ?? false);
   const dataLinkDisabled =
     usbCPowerActionDisabled ||
     dataSwitching ||
@@ -181,7 +190,7 @@ export function DevicePowerPanelSidebar({
             onSetValue={onSetUsbCData}
             unavailableReason={dataLinkReason}
             unavailableTone={dataSwitching ? "warning" : "neutral"}
-            value={usbCState?.data_connected ?? false}
+            value={dataLinkValue}
           />
         </div>
       </section>

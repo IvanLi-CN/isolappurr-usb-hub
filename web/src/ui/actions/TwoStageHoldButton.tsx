@@ -115,6 +115,10 @@ export function TwoStageHoldButton({
   const activeKeyboardKeyRef = useRef<" " | "Enter" | null>(null);
   const pointerHoldRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const disabledRef = useRef(disabled);
+  const unavailableReasonRef = useRef(unavailableReason);
+  disabledRef.current = disabled;
+  unavailableReasonRef.current = unavailableReason;
 
   const releaseHoldRef = useRef<(cancelled?: boolean) => void>(() => {});
 
@@ -153,6 +157,21 @@ export function TwoStageHoldButton({
     [],
   );
 
+  const stopIfUnavailable = () => {
+    if (!disabledRef.current && !unavailableReasonRef.current) {
+      return false;
+    }
+    holdingRef.current = false;
+    sessionRef.current += 1;
+    clearTimers();
+    showResult(
+      "hint",
+      unavailableReasonRef.current ??
+        "Control is unavailable right now. Try again.",
+    );
+    return true;
+  };
+
   const runSecondStage = async (session: number) => {
     if (
       !holdingRef.current ||
@@ -160,6 +179,9 @@ export function TwoStageHoldButton({
       secondStartedRef.current ||
       session !== sessionRef.current
     ) {
+      return;
+    }
+    if (stopIfUnavailable()) {
       return;
     }
     secondStartedRef.current = true;
@@ -180,6 +202,9 @@ export function TwoStageHoldButton({
     if (session !== sessionRef.current) {
       return;
     }
+    if (stopIfUnavailable()) {
+      return;
+    }
     if (!result.ok) {
       holdingRef.current = false;
       clearTimers();
@@ -192,6 +217,9 @@ export function TwoStageHoldButton({
 
   const runFirstStage = async (session: number) => {
     if (firstStartedRef.current || session !== sessionRef.current) {
+      return;
+    }
+    if (stopIfUnavailable()) {
       return;
     }
     firstStartedRef.current = true;
@@ -209,6 +237,9 @@ export function TwoStageHoldButton({
       busyRef.current = false;
     }
     if (session !== sessionRef.current) {
+      return;
+    }
+    if (stopIfUnavailable()) {
       return;
     }
     if (!result.ok) {

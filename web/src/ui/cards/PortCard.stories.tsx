@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, within } from "@storybook/test";
+import { useLayoutEffect, useState } from "react";
 
 import { PortCard } from "./PortCard";
 
@@ -177,6 +178,18 @@ export const DataSwitching: Story = {
       busy: true,
     },
   },
+  render: (args) => {
+    const [state, setState] = useState({
+      ...args.state,
+      data_connected: true,
+      replugging: false,
+      busy: false,
+    });
+    useLayoutEffect(() => {
+      setState(args.state);
+    }, [args.state]);
+    return <PortCard {...args} state={state} />;
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const [, dataButton] = canvas.getAllByRole("button");
@@ -187,6 +200,10 @@ export const DataSwitching: Story = {
     await expect(await canvas.findByRole("tooltip")).toHaveTextContent(
       "Data path is switching. Wait for it to finish.",
     );
+    await expect(
+      dataButton.querySelector(".two-stage-hold__feedback"),
+    ).toHaveAccessibleName("Data link connected");
+    await expect(dataButton).toHaveAttribute("aria-pressed", "true");
   },
 };
 
