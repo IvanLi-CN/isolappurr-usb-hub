@@ -343,9 +343,11 @@ export function AddDeviceDialog({
             completedScanRunIdRef.current !== ownedScanRunId
           ) {
             completedScanRunIdRef.current = ownedScanRunId;
-            if (
-              (ownedScan.reachableResponses ?? ownedScan.devices.length) > 0
-            ) {
+            const completedScanHadReachableResponse =
+              ownedScan.reachableResponses !== undefined
+                ? ownedScan.reachableResponses > 0
+                : ownedScan.devices.length > 0 || ownedScan.status === "ready";
+            if (completedScanHadReachableResponse) {
               const session = createIpScanSession(
                 ownedScan.cidr,
                 ownedScan.devices,
