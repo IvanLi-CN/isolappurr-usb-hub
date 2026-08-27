@@ -63,3 +63,9 @@ right-side device drawer on Dashboard plus saved-device detail routes. The
 drawer now reuses the saved-device list panel, keeps `+ Add`, and owns the
 narrow `About` entry so device switching stays in the shell instead of inside
 page content.
+
+The Add device discovery flow now retains only the latest completed IP scan for
+ten minutes, keeps live and demo browser sessions separate, and keeps a
+multi-result dialog open until its final addable result is saved. Desktop scan
+results use an opaque monotonic run identifier and remain separate from live
+service discovery.
