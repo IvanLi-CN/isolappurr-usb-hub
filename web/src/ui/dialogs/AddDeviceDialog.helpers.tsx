@@ -188,7 +188,10 @@ export function parseDesktopDiscoverySnapshot(
 
   const scanDone = scan && typeof scan.done === "number" ? scan.done : null;
   const scanTotal = scan && typeof scan.total === "number" ? scan.total : null;
+  const hasExplicitScanStatus =
+    scan?.status === "ready" || scan?.status === "scanning";
   const legacyScanComplete =
+    !hasExplicitScanStatus &&
     status === "ready" &&
     scanDone !== null &&
     scanTotal !== null &&

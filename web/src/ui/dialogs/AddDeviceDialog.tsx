@@ -146,6 +146,7 @@ export function AddDeviceDialog({
 
   const agentRef = useRef<DesktopAgent | null>(null);
   const agentPollRef = useRef<number | null>(null);
+  const snapshotPollSequenceRef = useRef(0);
 
   const scanRunIdRef = useRef(0);
   const scanAbortRef = useRef<AbortController | null>(null);
@@ -302,6 +303,7 @@ export function AddDeviceDialog({
             return;
           }
           const pollGeneration = scanRunIdRef.current;
+          const pollSequence = ++snapshotPollSequenceRef.current;
           const res = await agentFetch(
             current,
             "/api/v1/discovery/snapshot",
@@ -310,7 +312,8 @@ export function AddDeviceDialog({
           if (
             current !== agentRef.current ||
             !openRef.current ||
-            scanRunIdRef.current !== pollGeneration
+            scanRunIdRef.current !== pollGeneration ||
+            pollSequence !== snapshotPollSequenceRef.current
           ) {
             return;
           }
