@@ -25,6 +25,7 @@ impl DiscoveryController {
                 ip_scan: IpScanSnapshot::default(),
             }),
             ip_scan_cancel: RwLock::new(CancellationToken::new()),
+            ip_scan_lifecycle: TokioMutex::new(()),
             mdns,
             mdns_error,
             mdns_unavailable: AtomicBool::new(mdns_unavailable),
@@ -282,13 +283,14 @@ impl DiscoveryController {
     }
 
     async fn start_ip_scan(self: &Arc<Self>, cidr: String) -> anyhow::Result<u64> {
+        let _lifecycle = self.ip_scan_lifecycle.lock().await;
         let net: ipnet::Ipv4Net = cidr.parse().context("invalid cidr")?;
         let hosts: Vec<Ipv4Addr> = net.hosts().collect();
         if hosts.is_empty() {
             return Err(anyhow!("empty cidr"));
         }
 
-        self.cancel_ip_scan(None).await;
+        self.cancel_ip_scan_inner(None).await;
         let run_id = self.next_ip_scan_run.fetch_add(1, Ordering::Relaxed) + 1;
         let cancel = CancellationToken::new();
         *self.ip_scan_cancel.write().await = cancel.clone();
@@ -370,6 +372,11 @@ impl DiscoveryController {
     }
 
     async fn cancel_ip_scan(&self, requested_run_id: Option<u64>) {
+        let _lifecycle = self.ip_scan_lifecycle.lock().await;
+        self.cancel_ip_scan_inner(requested_run_id).await;
+    }
+
+    async fn cancel_ip_scan_inner(&self, requested_run_id: Option<u64>) {
         let mut snapshot = self.snapshot.write().await;
         if let Some(requested_run_id) = requested_run_id {
             let current_run_matches = snapshot
