@@ -120,7 +120,7 @@ Default selection is only defined after more than one path is immediately usable
 - Add device MUST keep the dialog open after a successful discovery add while another deduplicated discovery result remains addable; it MUST close and navigate after the final addable result succeeds.
 - Web UI MUST persist only the latest completed IP scan with normalized CIDR, deduplicated devices, completion time, and a ten-minute expiry. A completed zero-result scan replaces the previous session.
 - Web UI MUST ignore expired sessions when Add device opens and MUST remove them from browser storage. Live and `?demo=true` sessions MUST use separate browser-local namespaces.
-- Web UI MUST NOT persist typed-but-unstarted CIDR input, partial scans, cancelled scans, failed scans, or scans blocked by browser private-network policy.
+- Web UI MUST NOT persist typed-but-unstarted CIDR input, partial scans, cancelled scans, or failed scans. A completed scan MUST be persisted when at least one probe receives an HTTP response, even if other addresses are offline or browser-blocked; a scan with no HTTP responses that is entirely browser-blocked MUST remain non-persistable and show the private-network guidance.
 - Desktop discovery MUST keep live service results separate from IP scan results and MUST associate scan progress/completion with a monotonic `runId` so stale runs cannot update a current run.
 
 ## JSONL Protocol

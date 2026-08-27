@@ -168,6 +168,19 @@ describe("reduceDiscoverySnapshot scan ownership", () => {
 });
 
 describe("reduceDiscoverySnapshot", () => {
+  test("restoring a scan also restores its CIDR as the next input", () => {
+    const snapshot = reduceDiscoverySnapshot(
+      createInitialDiscoverySnapshot({ status: "ready" }),
+      {
+        type: "restore_scan",
+        cidr: "192.168.31.0/24",
+        devices: [],
+      },
+    );
+
+    expect(snapshot.ipScan?.defaultCidr).toBe("192.168.31.0/24");
+  });
+
   test("supports user toggle and scan progress", () => {
     let snap = createInitialDiscoverySnapshot({ status: "unavailable" });
     snap = reduceDiscoverySnapshot(snap, {

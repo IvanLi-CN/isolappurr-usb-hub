@@ -36,6 +36,7 @@ import {
   WebSerialJsonlTransport,
 } from "../../domain/hardwareConsole";
 import {
+  classifyIpScanCompletion,
   createIpScanSession,
   type IpScanSession,
   loadIpScanSession,
@@ -1066,7 +1067,8 @@ export function AddDeviceDialog({
                       const concurrency = 12;
                       let nextIndex = 0;
                       let done = 0;
-                      let preflightBlocked = false;
+                      let reachableResponses = 0;
+                      let browserBlockedRequests = 0;
 
                       const worker = async () => {
                         for (;;) {
@@ -1092,10 +1094,12 @@ export function AddDeviceDialog({
 
                           if (!res.ok) {
                             if (res.error.kind === "browser_blocked") {
-                              preflightBlocked = true;
+                              browserBlockedRequests += 1;
                             }
                             continue;
                           }
+
+                          reachableResponses += 1;
 
                           const nowIso = new Date().toISOString();
                           const device = parseDiscoveredDeviceFromApiInfo(
@@ -1119,7 +1123,11 @@ export function AddDeviceDialog({
                         if (scanRunIdRef.current !== runId) {
                           return;
                         }
-                        if (preflightBlocked) {
+                        const completion = classifyIpScanCompletion({
+                          reachableResponses,
+                          browserBlockedRequests,
+                        });
+                        if (completion === "browser_blocked") {
                           dispatch({
                             type: "set_error",
                             error:
@@ -1129,7 +1137,7 @@ export function AddDeviceDialog({
                         dispatch({ type: "scan_done", runId });
                         activeScanKindRef.current = null;
                         scanAbortRef.current = null;
-                        if (!preflightBlocked) {
+                        if (completion === "completed") {
                           const session = createIpScanSession(
                             parsed.cidr,
                             foundDevices,

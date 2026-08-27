@@ -141,7 +141,7 @@ export function reduceDiscoverySnapshot(
           expanded: prevIpScan.expanded,
           expandedBy: prevIpScan.expandedBy,
           autoExpandAfterMs: prevIpScan.autoExpandAfterMs,
-          defaultCidr: nextIpScan?.defaultCidr,
+          defaultCidr: nextIpScan?.defaultCidr ?? prevIpScan.defaultCidr,
           candidates: nextIpScan?.candidates,
         },
       };
@@ -183,6 +183,12 @@ export function reduceDiscoverySnapshot(
         ...snapshot,
         mode: "scan",
         status: "ready",
+        ipScan: {
+          ...(snapshot.ipScan ?? { expanded: false }),
+          expanded: true,
+          expandedBy: "auto",
+          defaultCidr: action.cidr,
+        },
         scan: {
           cidr: action.cidr,
           done: 0,

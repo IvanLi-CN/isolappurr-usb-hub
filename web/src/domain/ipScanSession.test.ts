@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  classifyIpScanCompletion,
   createIpScanSession,
   IP_SCAN_SESSION_TTL_MS,
+  isPersistableIpScanCompletion,
   loadIpScanSession,
   saveIpScanSession,
 } from "./ipScanSession";
@@ -32,6 +34,39 @@ afterEach(() => {
 });
 
 describe("IP scan session storage", () => {
+  test("persists a completed scan when at least one host responded", () => {
+    expect(
+      classifyIpScanCompletion({
+        reachableResponses: 1,
+        browserBlockedRequests: 3,
+      }),
+    ).toBe("completed");
+    expect(
+      isPersistableIpScanCompletion({
+        reachableResponses: 1,
+        browserBlockedRequests: 3,
+      }),
+    ).toBe(true);
+    expect(
+      classifyIpScanCompletion({
+        reachableResponses: 0,
+        browserBlockedRequests: 3,
+      }),
+    ).toBe("browser_blocked");
+    expect(
+      classifyIpScanCompletion({
+        reachableResponses: 0,
+        browserBlockedRequests: 0,
+      }),
+    ).toBe("failed");
+    expect(
+      isPersistableIpScanCompletion({
+        reachableResponses: 0,
+        browserBlockedRequests: 3,
+      }),
+    ).toBe(false);
+  });
+
   test("stores a completed scan with deduplicated devices", () => {
     installStorage();
     const session = createIpScanSession(

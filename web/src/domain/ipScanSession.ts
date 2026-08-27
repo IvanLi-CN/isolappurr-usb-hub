@@ -4,6 +4,43 @@ import { mergeDiscoveredDevice, parseCidr } from "./discovery";
 export const IP_SCAN_SESSION_VERSION = 1;
 export const IP_SCAN_SESSION_TTL_MS = 10 * 60 * 1000;
 
+export type IpScanCompletionMetrics = {
+  reachableResponses: number;
+  browserBlockedRequests: number;
+};
+
+export type IpScanCompletionStatus = "completed" | "browser_blocked" | "failed";
+
+export function classifyIpScanCompletion({
+  reachableResponses,
+  browserBlockedRequests,
+}: IpScanCompletionMetrics): IpScanCompletionStatus {
+  if (reachableResponses > 0) {
+    return "completed";
+  }
+  if (browserBlockedRequests > 0) {
+    return "browser_blocked";
+  }
+  return "failed";
+}
+
+/**
+ * A completed scan is persistable when at least one probe reached an HTTP
+ * endpoint. Other hosts may legitimately be offline or blocked by browser
+ * private-network policy during the same LAN sweep.
+ */
+export function isPersistableIpScanCompletion({
+  reachableResponses,
+  browserBlockedRequests,
+}: IpScanCompletionMetrics): boolean {
+  return (
+    classifyIpScanCompletion({
+      reachableResponses,
+      browserBlockedRequests,
+    }) === "completed"
+  );
+}
+
 export type IpScanSession = {
   cidr: string;
   devices: DiscoveredDevice[];
