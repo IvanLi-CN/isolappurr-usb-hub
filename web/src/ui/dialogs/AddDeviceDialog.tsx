@@ -359,6 +359,14 @@ export function AddDeviceDialog({
             return;
           }
           const value = (await res.json()) as unknown;
+          if (
+            current !== agentRef.current ||
+            !openRef.current ||
+            scanRunIdRef.current !== pollGeneration ||
+            pollSequence !== snapshotPollSequenceRef.current
+          ) {
+            return;
+          }
           const parsed = parseDesktopDiscoverySnapshot(value);
           if (!parsed) {
             return;
@@ -409,9 +417,7 @@ export function AddDeviceDialog({
               scan: ownedScan,
               ipScan: parsed.ipScan,
             },
-            replaceScan:
-              activeScanKindRef.current === "desktop" &&
-              desktopScanRunIdRef.current !== null,
+            replaceScan: Boolean(ownsScan),
           });
         })();
       }, 1000);
@@ -1134,10 +1140,9 @@ export function AddDeviceDialog({
                               ).catch(() => undefined);
                             } else if (
                               legacyAccepted &&
-                              !openRef.current &&
                               activeScanKindRef.current === null
                             ) {
-                              // Legacy agents cannot scope cancellation; only cancel when this dialog owns no newer work.
+                              // Legacy agents cannot scope cancellation; cancel when this dialog owns no newer work.
                               void agentFetch(
                                 agent,
                                 "/api/v1/discovery/cancel",
