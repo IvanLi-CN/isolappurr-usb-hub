@@ -7,7 +7,7 @@ use std::{
     process::Command,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration as StdDuration, Instant as StdInstant},
 };
@@ -546,6 +546,38 @@ mod tests {
         assert!(result.is_err(), "expected refresh to fail");
         let snapshot = controller.snapshot().await;
         assert_eq!(snapshot.status, DiscoveryStatus::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn ip_scan_has_monotonic_run_id_and_keeps_service_devices() {
+        init_tracing();
+        let server = spawn_info_server(InfoResponse::Valid {
+            device_id: Some("aabbcc001122".to_string()),
+        })
+        .await;
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        controller
+            .handle_resolved(resolved_for(&server))
+            .await
+            .expect("seed service discovery");
+
+        let first = controller
+            .start_ip_scan("127.0.0.0/30".to_string())
+            .await
+            .expect("start first scan");
+        let second = controller
+            .start_ip_scan("127.0.0.0/30".to_string())
+            .await
+            .expect("start second scan");
+        assert!(second > first);
+
+        let snapshot = controller.snapshot().await;
+        assert_eq!(snapshot.devices.len(), 1);
+        assert_eq!(snapshot.scan.as_ref().map(|scan| scan.run_id), Some(second));
+        assert_eq!(
+            snapshot.scan.as_ref().map(|scan| scan.status.clone()),
+            Some(ScanStatus::Scanning)
+        );
     }
 
     fn temp_storage_path(label: &str) -> PathBuf {

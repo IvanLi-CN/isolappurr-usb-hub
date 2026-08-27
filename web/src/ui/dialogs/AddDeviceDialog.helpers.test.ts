@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { readLocalUsbInfo } from "./AddDeviceDialog.helpers";
+import {
+  parseDesktopDiscoverySnapshot,
+  parseDesktopIpScanRunId,
+  readLocalUsbInfo,
+} from "./AddDeviceDialog.helpers";
 
 const originalFetch = globalThis.fetch;
 
@@ -112,5 +116,31 @@ describe("readLocalUsbInfo", () => {
       ),
     ).rejects.toThrow("device did not respond to IsolaPurr `info`");
     expect(attempts).toBe(3);
+  });
+});
+
+describe("desktop discovery scan ownership", () => {
+  test("parses a run id and scan-owned devices separately", () => {
+    expect(parseDesktopIpScanRunId({ runId: 9 })).toBe(9);
+    expect(parseDesktopIpScanRunId({ runId: 0 })).toBeNull();
+
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [{ baseUrl: "http://service.local", device_id: "aabbcc001122" }],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+        runId: 9,
+        devices: [{ baseUrl: "http://192.168.1.2", device_id: "ddeeff001122" }],
+      },
+    });
+
+    expect(parsed?.devices).toHaveLength(1);
+    expect(parsed?.scan?.devices).toHaveLength(1);
+    expect(parsed?.scan?.runId).toBe(9);
+    expect(parsed?.scan?.status).toBe("ready");
   });
 });

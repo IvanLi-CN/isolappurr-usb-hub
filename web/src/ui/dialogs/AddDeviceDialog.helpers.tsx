@@ -42,7 +42,14 @@ export type DiscoverySnapshotShape = {
   status: "idle" | "scanning" | "ready" | "unavailable";
   devices: DiscoveredDevice[];
   error?: string;
-  scan?: { cidr: string; done: number; total: number };
+  scan?: {
+    cidr: string;
+    done: number;
+    total: number;
+    status: "scanning" | "ready";
+    devices: DiscoveredDevice[];
+    runId?: number;
+  };
   ipScan?: {
     expanded: false;
     defaultCidr?: string;
@@ -178,12 +185,63 @@ export function parseDesktopDiscoverySnapshot(
       ? (obj.ipScan as Record<string, unknown>)
       : undefined;
 
+  const scanDevicesRaw =
+    scan && Array.isArray(scan.devices) ? scan.devices : [];
+  const scanDevices: DiscoveredDevice[] = [];
+  for (const item of scanDevicesRaw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const device = item as Record<string, unknown>;
+    if (typeof device.baseUrl !== "string") {
+      continue;
+    }
+    scanDevices.push({
+      baseUrl: device.baseUrl,
+      device_id:
+        typeof device.device_id === "string" ? device.device_id : undefined,
+      hostname:
+        typeof device.hostname === "string" ? device.hostname : undefined,
+      fqdn: typeof device.fqdn === "string" ? device.fqdn : undefined,
+      ipv4: typeof device.ipv4 === "string" ? device.ipv4 : undefined,
+      variant: typeof device.variant === "string" ? device.variant : undefined,
+      firmware:
+        device.firmware &&
+        typeof device.firmware === "object" &&
+        typeof (device.firmware as Record<string, unknown>).name === "string" &&
+        typeof (device.firmware as Record<string, unknown>).version === "string"
+          ? {
+              name: (device.firmware as Record<string, unknown>).name as string,
+              version: (device.firmware as Record<string, unknown>)
+                .version as string,
+            }
+          : undefined,
+      last_seen_at:
+        typeof device.last_seen_at === "string"
+          ? device.last_seen_at
+          : undefined,
+    });
+  }
+
+  const scanStatus: "scanning" | "ready" =
+    scan?.status === "ready" ? "ready" : "scanning";
+  const scanRunId =
+    scan && typeof scan.runId === "number" && Number.isSafeInteger(scan.runId)
+      ? scan.runId
+      : undefined;
   const scanShape =
     scan &&
     typeof scan.cidr === "string" &&
     typeof scan.done === "number" &&
     typeof scan.total === "number"
-      ? { cidr: scan.cidr, done: scan.done, total: scan.total }
+      ? {
+          cidr: scan.cidr,
+          done: scan.done,
+          total: scan.total,
+          status: scanStatus,
+          devices: scanDevices,
+          runId: scanRunId,
+        }
       : undefined;
 
   const defaultCidr =
@@ -269,6 +327,16 @@ export function parseDesktopDiscoverySnapshot(
     scan: scanShape,
     ipScan: ipScan ? { expanded: false, defaultCidr, candidates } : undefined,
   };
+}
+
+export function parseDesktopIpScanRunId(value: unknown): number | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const runId = (value as Record<string, unknown>).runId;
+  return typeof runId === "number" && Number.isSafeInteger(runId) && runId > 0
+    ? runId
+    : null;
 }
 
 export function delay(ms: number): Promise<void> {

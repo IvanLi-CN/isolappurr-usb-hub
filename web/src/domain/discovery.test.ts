@@ -136,6 +136,37 @@ describe("parseCidr", () => {
   });
 });
 
+describe("reduceDiscoverySnapshot scan ownership", () => {
+  test("keeps service devices separate and ignores stale run events", () => {
+    let snapshot = createInitialDiscoverySnapshot({ status: "ready" });
+    snapshot = reduceDiscoverySnapshot(snapshot, {
+      type: "set_devices",
+      devices: [{ baseUrl: "http://service.local", device_id: "aabbcc001122" }],
+    });
+    snapshot = reduceDiscoverySnapshot(snapshot, {
+      type: "start_scan",
+      cidr: "192.168.1.0/30",
+      total: 2,
+      runId: 7,
+    });
+    snapshot = reduceDiscoverySnapshot(snapshot, {
+      type: "scan_device",
+      runId: 7,
+      device: { baseUrl: "http://192.168.1.2", device_id: "ddeeff001122" },
+    });
+    snapshot = reduceDiscoverySnapshot(snapshot, {
+      type: "scan_device",
+      runId: 6,
+      device: { baseUrl: "http://stale.local", device_id: "112233445566" },
+    });
+
+    expect(snapshot.devices).toHaveLength(1);
+    expect(snapshot.scan?.devices).toEqual([
+      { baseUrl: "http://192.168.1.2", device_id: "ddeeff001122" },
+    ]);
+  });
+});
+
 describe("reduceDiscoverySnapshot", () => {
   test("supports user toggle and scan progress", () => {
     let snap = createInitialDiscoverySnapshot({ status: "unavailable" });
@@ -151,15 +182,37 @@ describe("reduceDiscoverySnapshot", () => {
       type: "start_scan",
       cidr: "192.168.1.0/24",
       total: 254,
+      runId: 11,
     });
     expect(snap.status).toBe("scanning");
     expect(snap.mode).toBe("scan");
     expect(snap.scan?.done).toBe(0);
 
-    snap = reduceDiscoverySnapshot(snap, { type: "scan_progress", done: 10 });
+    snap = reduceDiscoverySnapshot(snap, {
+      type: "scan_progress",
+      done: 10,
+      runId: 11,
+    });
     expect(snap.scan?.done).toBe(10);
 
-    snap = reduceDiscoverySnapshot(snap, { type: "scan_done" });
+    snap = reduceDiscoverySnapshot(snap, { type: "scan_done", runId: 11 });
+    expect(snap.status).toBe("ready");
+  });
+
+  test("does not let a stale scan completion finish the current run", () => {
+    let snap = createInitialDiscoverySnapshot({ status: "ready" });
+    snap = reduceDiscoverySnapshot(snap, {
+      type: "start_scan",
+      cidr: "192.168.1.0/30",
+      total: 2,
+      runId: 12,
+    });
+
+    snap = reduceDiscoverySnapshot(snap, { type: "scan_done", runId: 11 });
+    expect(snap.status).toBe("scanning");
+    expect(snap.scan?.status).toBe("scanning");
+
+    snap = reduceDiscoverySnapshot(snap, { type: "scan_done", runId: 12 });
     expect(snap.status).toBe("ready");
   });
 });

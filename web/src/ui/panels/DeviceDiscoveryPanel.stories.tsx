@@ -72,7 +72,13 @@ export const WithResults: Story = {
         },
       ],
       ipScan: { expanded: true, expandedBy: "user" },
-      scan: { cidr: "192.168.31.0/24", done: 254, total: 254 },
+      scan: {
+        cidr: "192.168.31.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+        devices: [],
+      },
     },
   },
 };
@@ -88,7 +94,13 @@ export const ScanningIpScan: Story = {
       status: "scanning",
       devices: [],
       ipScan: { expanded: true, expandedBy: "auto" },
-      scan: { cidr: "192.168.31.0/24", done: 42, total: 254 },
+      scan: {
+        cidr: "192.168.31.0/24",
+        done: 42,
+        total: 254,
+        status: "scanning",
+        devices: [],
+      },
     },
   },
 };

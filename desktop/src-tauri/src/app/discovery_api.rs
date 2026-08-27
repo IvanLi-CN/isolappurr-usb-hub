@@ -83,13 +83,16 @@ async fn api_discovery_ip_scan(
     if !is_authorized(&headers, &state) {
         return unauthorized("missing/invalid bearer token");
     }
-    if let Err(err) = state.discovery.start_ip_scan(req.cidr).await {
-        tracing::warn!("ip scan: {err:#}");
-        return bad_request(&err.to_string());
-    }
+    let run_id = match state.discovery.start_ip_scan(req.cidr).await {
+        Ok(run_id) => run_id,
+        Err(err) => {
+            tracing::warn!("ip scan: {err:#}");
+            return bad_request(&err.to_string());
+        }
+    };
     (
         StatusCode::ACCEPTED,
-        Json(serde_json::json!({ "accepted": true })),
+        Json(serde_json::json!({ "accepted": true, "runId": run_id })),
     )
         .into_response()
 }

@@ -1,8 +1,13 @@
 import type { Decorator, Meta, StoryObj } from "@storybook/react";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { MemoryRouter } from "react-router";
 
 import type { DiscoveredDevice } from "../../domain/discovery";
+import {
+  clearIpScanSession,
+  createIpScanSession,
+  saveIpScanSession,
+} from "../../domain/ipScanSession";
 import {
   jsonResponse,
   mockFetchDecorator,
@@ -27,7 +32,14 @@ type AgentSnapshot = {
   status: "idle" | "scanning" | "ready" | "unavailable";
   devices: DiscoveredDevice[];
   error?: string;
-  scan?: { cidr: string; done: number; total: number };
+  scan?: {
+    cidr: string;
+    done: number;
+    total: number;
+    status: "scanning" | "ready";
+    devices: DiscoveredDevice[];
+    runId?: number;
+  };
 };
 
 function mockAgent(snapshot: AgentSnapshot) {
@@ -83,6 +95,28 @@ function longDevices(count: number): DiscoveredDevice[] {
       last_seen_at: new Date(Date.now() - n * 60_000).toISOString(),
     };
   });
+}
+
+function cachedScanDecorator(): Decorator {
+  return (Story) => {
+    useLayoutEffect(() => {
+      saveIpScanSession(
+        false,
+        createIpScanSession("192.168.31.0/24", longDevices(2)),
+      );
+      return () => clearIpScanSession(false);
+    }, []);
+    return <Story />;
+  };
+}
+
+function clearCachedScanDecorator(): Decorator {
+  return (Story) => {
+    useLayoutEffect(() => {
+      clearIpScanSession(false);
+    }, []);
+    return <Story />;
+  };
 }
 
 const meta: Meta<typeof AddDeviceDialog> = {
@@ -182,6 +216,32 @@ export const ErrorHint: Story = {
         devices: [],
         error:
           "No devices found yet — try IP scan (advanced) with a CIDR range.",
+      }),
+    ),
+  ],
+};
+
+export const MultiResultAdded: Story = {
+  decorators: [
+    clearCachedScanDecorator(),
+    mockFetchDecorator(
+      mockAgent({
+        mode: "service",
+        status: "ready",
+        devices: [longDevices(2)[0], longDevices(2)[1]],
+      }),
+    ),
+  ],
+};
+
+export const CachedScan: Story = {
+  decorators: [
+    cachedScanDecorator(),
+    mockFetchDecorator(
+      mockAgent({
+        mode: "service",
+        status: "ready",
+        devices: [],
       }),
     ),
   ],

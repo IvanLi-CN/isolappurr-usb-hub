@@ -563,6 +563,15 @@ async function fetchJson<T>(
   const url = new URL(path, baseUrl).toString();
 
   const controller = new AbortController();
+  const externalSignal = init.signal;
+  const abortFromCaller = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", abortFromCaller, { once: true });
+    }
+  }
   const timeout = window.setTimeout(
     () => controller.abort(),
     requestTimeoutMs(baseUrl),
@@ -632,6 +641,7 @@ async function fetchJson<T>(
     };
   } finally {
     window.clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -845,9 +855,11 @@ export async function clearIdleBiasCalibration(
 
 export async function getDeviceInfo(
   baseUrl: string,
+  options?: { signal?: AbortSignal },
 ): Promise<Result<DeviceInfoResponse>> {
   return fetchJson<DeviceInfoResponse>(baseUrl, "/api/v1/info", {
     method: "GET",
+    signal: options?.signal,
   });
 }
 

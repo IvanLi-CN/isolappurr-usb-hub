@@ -28,6 +28,7 @@ impl DiscoveryController {
             mdns,
             mdns_error,
             mdns_unavailable: AtomicBool::new(mdns_unavailable),
+            next_ip_scan_run: AtomicU64::new(0),
             http,
         }
     }
@@ -178,9 +179,58 @@ impl DiscoveryController {
         let mut snapshot = self.snapshot.write().await;
         snapshot.error = None;
 
+        Self::merge_device_list(&mut snapshot.devices, device);
+        snapshot.status = DiscoveryStatus::Ready;
+    }
+
+    async fn merge_scan_device(&self, run_id: u64, device: DiscoveredDevice) {
+        let mut snapshot = self.snapshot.write().await;
+        let Some(scan) = snapshot.scan.as_mut() else {
+            return;
+        };
+        if scan.run_id != run_id || scan.status != ScanStatus::Scanning {
+            return;
+        }
+        Self::merge_device_list(&mut scan.devices, device);
+    }
+
+    async fn mark_scan_progress(&self, run_id: u64, done: u32) -> bool {
+        let mut snapshot = self.snapshot.write().await;
+        let Some(scan) = snapshot.scan.as_mut() else {
+            return false;
+        };
+        if scan.run_id != run_id || scan.status != ScanStatus::Scanning {
+            return false;
+        }
+        scan.done = done;
+        true
+    }
+
+    async fn finish_scan(&self, run_id: u64, cancelled: bool) {
+        let mut snapshot = self.snapshot.write().await;
+        if cancelled {
+            if snapshot
+                .scan
+                .as_ref()
+                .map(|scan| scan.run_id == run_id)
+                .unwrap_or(false)
+            {
+                snapshot.scan = None;
+            }
+            return;
+        }
+        let Some(scan) = snapshot.scan.as_mut() else {
+            return;
+        };
+        if scan.run_id == run_id {
+            scan.status = ScanStatus::Ready;
+            scan.done = scan.total;
+        }
+    }
+
+    fn merge_device_list(devices: &mut Vec<DiscoveredDevice>, device: DiscoveredDevice) {
         let key = device_dedup_key(&device);
-        let mut map: HashMap<String, DiscoveredDevice> = snapshot
-            .devices
+        let mut map: HashMap<String, DiscoveredDevice> = devices
             .drain(..)
             .map(|d| (device_dedup_key(&d), d))
             .collect();
@@ -199,8 +249,7 @@ impl DiscoveryController {
             device
         };
         map.insert(key, merged);
-        snapshot.devices = map.into_values().collect();
-        snapshot.status = DiscoveryStatus::Ready;
+        *devices = map.into_values().collect();
     }
 
     async fn snapshot(&self) -> DiscoverySnapshot {
@@ -219,7 +268,6 @@ impl DiscoveryController {
             snapshot.mode = DiscoveryMode::Service;
             snapshot.status = DiscoveryStatus::Unavailable;
             snapshot.error = Some(message);
-            snapshot.scan = None;
             return Err(anyhow!("mdns unavailable"));
         }
 
@@ -227,11 +275,10 @@ impl DiscoveryController {
         snapshot.mode = DiscoveryMode::Service;
         snapshot.status = DiscoveryStatus::Scanning;
         snapshot.error = None;
-        snapshot.scan = None;
         Ok(())
     }
 
-    async fn start_ip_scan(self: &Arc<Self>, cidr: String) -> anyhow::Result<()> {
+    async fn start_ip_scan(self: &Arc<Self>, cidr: String) -> anyhow::Result<u64> {
         let net: ipnet::Ipv4Net = cidr.parse().context("invalid cidr")?;
         let hosts: Vec<Ipv4Addr> = net.hosts().collect();
         if hosts.is_empty() {
@@ -239,19 +286,21 @@ impl DiscoveryController {
         }
 
         self.cancel_ip_scan().await;
+        let run_id = self.next_ip_scan_run.fetch_add(1, Ordering::Relaxed) + 1;
         let cancel = CancellationToken::new();
         *self.ip_scan_cancel.write().await = cancel.clone();
 
         {
             let mut snapshot = self.snapshot.write().await;
-            snapshot.mode = DiscoveryMode::Scan;
-            snapshot.status = DiscoveryStatus::Scanning;
-            snapshot.devices.clear();
+            snapshot.mode = DiscoveryMode::Service;
             snapshot.error = None;
             snapshot.scan = Some(ScanState {
                 cidr: cidr.clone(),
                 done: 0,
                 total: hosts.len().try_into().unwrap_or(u32::MAX),
+                status: ScanStatus::Scanning,
+                devices: Vec::new(),
+                run_id,
             });
         }
 
@@ -291,32 +340,22 @@ impl DiscoveryController {
                     break;
                 }
                 done += 1;
-                {
-                    let mut snapshot = this.snapshot.write().await;
-                    if let Some(scan) = snapshot.scan.as_mut() {
-                        scan.done = done;
-                    }
+                if !this.mark_scan_progress(run_id, done).await {
+                    break;
                 }
                 if let Some(device) = item {
-                    this.merge_device(device).await;
+                    this.merge_scan_device(run_id, device).await;
                 }
             }
-
-            let mut snapshot = this.snapshot.write().await;
-            snapshot.status = if cancel.is_cancelled() {
-                DiscoveryStatus::Idle
-            } else {
-                DiscoveryStatus::Ready
-            };
+            this.finish_scan(run_id, cancel.is_cancelled()).await;
         });
 
-        Ok(())
+        Ok(run_id)
     }
 
     async fn cancel_ip_scan(&self) {
         self.ip_scan_cancel.read().await.cancel();
         let mut snapshot = self.snapshot.write().await;
-        snapshot.status = DiscoveryStatus::Idle;
         snapshot.scan = None;
     }
 }

@@ -209,6 +209,17 @@ struct ScanState {
     cidr: String,
     done: u32,
     total: u32,
+    status: ScanStatus,
+    devices: Vec<DiscoveredDevice>,
+    #[serde(rename = "runId")]
+    run_id: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum ScanStatus {
+    Scanning,
+    Ready,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -369,6 +380,7 @@ struct DiscoveryController {
     mdns: Option<ServiceDaemon>,
     mdns_error: Option<String>,
     mdns_unavailable: AtomicBool,
+    next_ip_scan_run: AtomicU64,
     http: reqwest::Client,
 }
 
