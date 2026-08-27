@@ -158,6 +158,24 @@ describe("desktop discovery scan ownership", () => {
 
     expect(parsed?.scan?.status).toBe("ready");
     expect(parsed?.scan?.devices).toHaveLength(1);
+    expect(parsed?.scan?.legacyDevicesAreAmbiguous).toBe(true);
+  });
+
+  test("keeps an empty legacy scan persistable when service discovery is empty", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+      },
+    });
+
+    expect(parsed?.scan?.status).toBe("ready");
+    expect(parsed?.scan?.devices).toHaveLength(0);
+    expect(parsed?.scan?.legacyDevicesAreAmbiguous).toBe(false);
   });
 
   test("keeps an explicitly scanning desktop scan in progress", () => {

@@ -50,6 +50,7 @@ export type DiscoverySnapshotShape = {
     devices: DiscoveredDevice[];
     runId?: number;
     reachableResponses?: number;
+    legacyDevicesAreAmbiguous?: boolean;
   };
   ipScan?: {
     expanded: false;
@@ -264,6 +265,10 @@ export function parseDesktopDiscoverySnapshot(
           devices: scanDevices,
           runId: scanRunId,
           reachableResponses,
+          legacyDevicesAreAmbiguous:
+            legacyScanComplete &&
+            !(scan && Array.isArray(scan.devices)) &&
+            scanDevices.length > 0,
         }
       : undefined;
 

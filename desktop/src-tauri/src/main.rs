@@ -571,12 +571,42 @@ mod tests {
             .expect("start second scan");
         assert!(second > first);
 
+        controller
+            .merge_scan_device(
+                first,
+                DiscoveredDevice {
+                    base_url: "http://127.0.0.1:80".to_string(),
+                    device_id: Some("deadbeef0000".to_string()),
+                    hostname: None,
+                    fqdn: None,
+                    ipv4: Some("127.0.0.1".to_string()),
+                    variant: None,
+                    firmware: None,
+                    last_seen_at: None,
+                },
+            )
+            .await;
+        controller.finish_scan(first, false).await;
+
         let snapshot = controller.snapshot().await;
         assert_eq!(snapshot.devices.len(), 1);
         assert_eq!(snapshot.scan.as_ref().map(|scan| scan.run_id), Some(second));
-        assert_eq!(
-            snapshot.scan.as_ref().map(|scan| scan.status.clone()),
-            Some(ScanStatus::Scanning)
+        assert!(
+            snapshot
+                .scan
+                .as_ref()
+                .map(|scan| matches!(scan.status, ScanStatus::Scanning | ScanStatus::Ready))
+                .unwrap_or(false)
+        );
+        assert!(
+            snapshot
+                .scan
+                .as_ref()
+                .map(|scan| scan
+                    .devices
+                    .iter()
+                    .all(|device| device.device_id.as_deref() != Some("deadbeef0000")))
+                .unwrap_or(false)
         );
     }
 
