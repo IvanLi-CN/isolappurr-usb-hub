@@ -56,6 +56,7 @@ export type DiscoveryAction =
   | {
       type: "set_snapshot";
       snapshot: DiscoverySnapshot;
+      replaceScan?: boolean;
     }
   | { type: "set_devices"; devices: DiscoveredDevice[] }
   | { type: "set_error"; error: string }
@@ -133,7 +134,7 @@ export function reduceDiscoverySnapshot(
       const prevIpScan = snapshot.ipScan ?? { expanded: false };
       const currentScan = snapshot.scan;
       const nextScan = action.snapshot.scan;
-      const preserveScan = currentScan && !nextScan;
+      const preserveScan = !action.replaceScan && currentScan && !nextScan;
       const nextIpScan = action.snapshot.ipScan;
       return {
         ...action.snapshot,

@@ -143,4 +143,20 @@ describe("desktop discovery scan ownership", () => {
     expect(parsed?.scan?.runId).toBe(9);
     expect(parsed?.scan?.status).toBe("ready");
   });
+
+  test("recognizes completed legacy desktop scans", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [{ baseUrl: "http://192.168.1.2", device_id: "ddeeff001122" }],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+      },
+    });
+
+    expect(parsed?.scan?.status).toBe("ready");
+    expect(parsed?.scan?.devices).toHaveLength(1);
+  });
 });

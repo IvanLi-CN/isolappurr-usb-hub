@@ -330,6 +330,7 @@ function handleDemoStorageRequest(url: URL, init?: RequestInit): Response {
   if (url.pathname === "/api/v1/storage/reset" && method === "POST") {
     const next = createCanonicalDemoWorld();
     writeDemoWorld(next);
+    clearIpScanSession(true);
     return new Response(null, { status: 204 });
   }
   return apiError(404, "not_found", "Demo storage endpoint not found");

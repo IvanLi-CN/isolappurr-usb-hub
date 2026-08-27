@@ -169,7 +169,8 @@ export function AddDeviceDialog({
   };
 
   const cancelActiveIpScan = useCallback(async (): Promise<number> => {
-    const cancelledRunId = scanRunIdRef.current + 1;
+    const activeRunId = scanRunIdRef.current;
+    const cancelledRunId = activeRunId + 1;
     const desktopRunId = desktopScanRunIdRef.current;
     scanRunIdRef.current = cancelledRunId;
     scanAbortRef.current?.abort();
@@ -177,14 +178,12 @@ export function AddDeviceDialog({
     activeScanKindRef.current = null;
     desktopScanRunIdRef.current = null;
     completedScanRunIdRef.current = null;
-    dispatch({ type: "scan_cancelled", runId: cancelledRunId });
+    dispatch({ type: "scan_cancelled" });
     const agent = agentRef.current;
-    if (agent) {
+    if (agent && desktopRunId !== null) {
       await agentFetch(agent, "/api/v1/discovery/cancel", {
         method: "POST",
-        body: JSON.stringify(
-          desktopRunId === null ? {} : { runId: desktopRunId },
-        ),
+        body: JSON.stringify({ runId: desktopRunId }),
       });
     }
     return cancelledRunId;
@@ -365,6 +364,9 @@ export function AddDeviceDialog({
               error: parsed.error,
               scan: ownedScan,
               ipScan: parsed.ipScan,
+              replaceScan:
+                activeScanKindRef.current === "desktop" &&
+                desktopScanRunIdRef.current !== null,
             },
           });
         })();
@@ -1031,13 +1033,13 @@ export function AddDeviceDialog({
                               body: JSON.stringify({ cidr: parsed.cidr }),
                             },
                           );
-                          if (
-                            scanRunIdRef.current !== runId ||
-                            !openRef.current
-                          ) {
-                            return;
-                          }
                           if (!response.ok) {
+                            if (
+                              scanRunIdRef.current !== runId ||
+                              !openRef.current
+                            ) {
+                              return;
+                            }
                             activeScanKindRef.current = null;
                             dispatch({
                               type: "set_error",
@@ -1046,9 +1048,42 @@ export function AddDeviceDialog({
                             dispatch({ type: "scan_cancelled", runId });
                             return;
                           }
-                          const serverRunId = parseDesktopIpScanRunId(
-                            await response.json().catch(() => null),
-                          );
+                          const responseBody =
+                            response.status === 204
+                              ? null
+                              : await response.json().catch(() => null);
+                          const serverRunId =
+                            parseDesktopIpScanRunId(responseBody);
+                          if (
+                            scanRunIdRef.current !== runId ||
+                            !openRef.current
+                          ) {
+                            if (serverRunId !== null) {
+                              void agentFetch(
+                                agent,
+                                "/api/v1/discovery/cancel",
+                                {
+                                  method: "POST",
+                                  body: JSON.stringify({ runId: serverRunId }),
+                                },
+                              );
+                            } else if (
+                              response.status === 204 &&
+                              !openRef.current &&
+                              activeScanKindRef.current === null
+                            ) {
+                              // Legacy agents cannot scope cancellation; only cancel when this dialog owns no newer work.
+                              void agentFetch(
+                                agent,
+                                "/api/v1/discovery/cancel",
+                                {
+                                  method: "POST",
+                                  body: JSON.stringify({}),
+                                },
+                              );
+                            }
+                            return;
+                          }
                           if (serverRunId === null && response.status === 204) {
                             desktopScanRunIdRef.current = runId;
                             return;

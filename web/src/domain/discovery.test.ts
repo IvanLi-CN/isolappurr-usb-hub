@@ -228,4 +228,44 @@ describe("reduceDiscoverySnapshot", () => {
     snap = reduceDiscoverySnapshot(snap, { type: "scan_done", runId: 12 });
     expect(snap.status).toBe("ready");
   });
+
+  test("clears an owned scan when cancellation arrives without a run id", () => {
+    let snap = reduceDiscoverySnapshot(
+      createInitialDiscoverySnapshot({ status: "ready" }),
+      {
+        type: "start_scan",
+        cidr: "192.168.1.0/30",
+        total: 2,
+        runId: 12,
+      },
+    );
+
+    snap = reduceDiscoverySnapshot(snap, { type: "scan_cancelled" });
+    expect(snap.scan).toBeUndefined();
+    expect(snap.status).toBe("idle");
+  });
+
+  test("can explicitly replace a local scan from a desktop snapshot", () => {
+    let snap = reduceDiscoverySnapshot(
+      createInitialDiscoverySnapshot({ status: "ready" }),
+      {
+        type: "restore_scan",
+        cidr: "192.168.1.0/24",
+        devices: [{ baseUrl: "http://192.168.1.2" }],
+      },
+    );
+
+    snap = reduceDiscoverySnapshot(snap, {
+      type: "set_snapshot",
+      replaceScan: true,
+      snapshot: {
+        mode: "service",
+        status: "ready",
+        devices: [{ baseUrl: "http://service.local" }],
+      },
+    });
+
+    expect(snap.scan).toBeUndefined();
+    expect(snap.devices).toEqual([{ baseUrl: "http://service.local" }]);
+  });
 });

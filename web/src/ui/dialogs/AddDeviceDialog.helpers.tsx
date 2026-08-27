@@ -186,8 +186,19 @@ export function parseDesktopDiscoverySnapshot(
       ? (obj.ipScan as Record<string, unknown>)
       : undefined;
 
+  const scanDone = scan && typeof scan.done === "number" ? scan.done : null;
+  const scanTotal = scan && typeof scan.total === "number" ? scan.total : null;
+  const legacyScanComplete =
+    status === "ready" &&
+    scanDone !== null &&
+    scanTotal !== null &&
+    scanDone >= scanTotal;
   const scanDevicesRaw =
-    scan && Array.isArray(scan.devices) ? scan.devices : [];
+    scan && Array.isArray(scan.devices)
+      ? scan.devices
+      : legacyScanComplete && devices
+        ? devices
+        : [];
   const scanDevices: DiscoveredDevice[] = [];
   for (const item of scanDevicesRaw) {
     if (!item || typeof item !== "object") {
@@ -225,7 +236,7 @@ export function parseDesktopDiscoverySnapshot(
   }
 
   const scanStatus: "scanning" | "ready" =
-    scan?.status === "ready" ? "ready" : "scanning";
+    scan?.status === "ready" || legacyScanComplete ? "ready" : "scanning";
   const scanRunId =
     scan && typeof scan.runId === "number" && Number.isSafeInteger(scan.runId)
       ? scan.runId

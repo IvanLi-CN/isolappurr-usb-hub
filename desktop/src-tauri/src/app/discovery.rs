@@ -370,11 +370,9 @@ impl DiscoveryController {
     }
 
     async fn cancel_ip_scan(&self, requested_run_id: Option<u64>) {
+        let mut snapshot = self.snapshot.write().await;
         if let Some(requested_run_id) = requested_run_id {
-            let current_run_matches = self
-                .snapshot
-                .read()
-                .await
+            let current_run_matches = snapshot
                 .scan
                 .as_ref()
                 .map(|scan| scan.run_id == requested_run_id)
@@ -384,7 +382,6 @@ impl DiscoveryController {
             }
         }
         self.ip_scan_cancel.read().await.cancel();
-        let mut snapshot = self.snapshot.write().await;
         snapshot.scan = None;
     }
 }
