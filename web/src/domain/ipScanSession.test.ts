@@ -12,18 +12,21 @@ import {
 const originalWindow = globalThis.window;
 
 function installStorage() {
-  const values = new Map<string, string>();
+  const localValues = new Map<string, string>();
+  const sessionValues = new Map<string, string>();
+  const makeStorage = (values: Map<string, string>) => ({
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  });
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
-      localStorage: {
-        getItem: (key: string) => values.get(key) ?? null,
-        setItem: (key: string, value: string) => values.set(key, value),
-        removeItem: (key: string) => values.delete(key),
-      },
+      localStorage: makeStorage(localValues),
+      sessionStorage: makeStorage(sessionValues),
     },
   });
-  return values;
+  return { localValues, sessionValues };
 }
 
 afterEach(() => {
@@ -102,15 +105,17 @@ describe("IP scan session storage", () => {
   });
 
   test("expires and removes the session on the next open", () => {
-    const values = installStorage();
+    const { localValues } = installStorage();
     saveIpScanSession(false, createIpScanSession("192.168.1.0/24", [], 1_000));
 
     expect(loadIpScanSession(false, 1_000 + IP_SCAN_SESSION_TTL_MS)).toBeNull();
-    expect(values.has("isolapurr_usb_hub.ip_scan_session.v1.live")).toBe(false);
+    expect(localValues.has("isolapurr_usb_hub.ip_scan_session.v1.live")).toBe(
+      false,
+    );
   });
 
   test("keeps live and demo sessions isolated", () => {
-    installStorage();
+    const { localValues, sessionValues } = installStorage();
     const live = createIpScanSession("192.168.1.0/24", [], 1_000);
     const demo = createIpScanSession("10.0.0.0/24", [], 1_000);
     saveIpScanSession(false, live);
@@ -118,5 +123,11 @@ describe("IP scan session storage", () => {
 
     expect(loadIpScanSession(false, 1_001)?.cidr).toBe(live.cidr);
     expect(loadIpScanSession(true, 1_001)?.cidr).toBe(demo.cidr);
+    expect(localValues.has("isolapurr_usb_hub.ip_scan_session.v1.demo")).toBe(
+      false,
+    );
+    expect(sessionValues.has("isolapurr_usb_hub.ip_scan_session.v1.demo")).toBe(
+      true,
+    );
   });
 });

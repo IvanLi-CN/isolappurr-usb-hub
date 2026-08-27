@@ -194,7 +194,7 @@ impl DiscoveryController {
         Self::merge_device_list(&mut scan.devices, device);
     }
 
-    async fn mark_scan_progress(&self, run_id: u64, done: u32) -> bool {
+    async fn mark_scan_progress(&self, run_id: u64, done: u32, reachable: bool) -> bool {
         let mut snapshot = self.snapshot.write().await;
         let Some(scan) = snapshot.scan.as_mut() else {
             return false;
@@ -203,6 +203,9 @@ impl DiscoveryController {
             return false;
         }
         scan.done = done;
+        if reachable {
+            scan.reachable_responses = scan.reachable_responses.saturating_add(1);
+        }
         true
     }
 
@@ -300,6 +303,7 @@ impl DiscoveryController {
                 total: hosts.len().try_into().unwrap_or(u32::MAX),
                 status: ScanStatus::Scanning,
                 devices: Vec::new(),
+                reachable_responses: 0,
                 run_id,
             });
         }
@@ -324,26 +328,38 @@ impl DiscoveryController {
                         }
                         let base = format!("http://{ip}");
                         let url = format!("{base}/api/v1/info");
-                        let res = http.get(url).send().await.ok()?;
+                        let res = match http.get(url).send().await {
+                            Ok(res) => res,
+                            Err(_) => return Some((false, None)),
+                        };
                         if !res.status().is_success() {
-                            return None;
+                            return Some((true, None));
                         }
-                        let value: serde_json::Value = res.json().await.ok()?;
-                        parse_device_from_api_info(&base, value, Some(&ip), &now_base)
+                        let value: serde_json::Value = match res.json().await {
+                            Ok(value) => value,
+                            Err(_) => return Some((true, None)),
+                        };
+                        Some((
+                            true,
+                            parse_device_from_api_info(&base, value, Some(&ip), &now_base),
+                        ))
                     }
                 })
                 .buffer_unordered(max_concurrency);
 
             tokio::pin!(stream);
             while let Some(item) = stream.next().await {
+                let Some((reachable, device)) = item else {
+                    continue;
+                };
                 if cancel.is_cancelled() {
                     break;
                 }
                 done += 1;
-                if !this.mark_scan_progress(run_id, done).await {
+                if !this.mark_scan_progress(run_id, done, reachable).await {
                     break;
                 }
-                if let Some(device) = item {
+                if let Some(device) = device {
                     this.merge_scan_device(run_id, device).await;
                 }
             }

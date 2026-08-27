@@ -57,6 +57,17 @@ function storageKey(demo: boolean): string {
   return demo ? DEMO_KEY : LIVE_KEY;
 }
 
+function storageFor(demo: boolean): Storage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    return demo ? window.sessionStorage : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object";
 }
@@ -159,17 +170,16 @@ export function loadIpScanSession(
     return null;
   }
   const key = storageKey(demo);
-  let raw: string | null = null;
-  try {
-    raw = window.localStorage.getItem(key);
-  } catch {
+  const storage = storageFor(demo);
+  if (!storage) {
     return null;
   }
+  const raw = storage.getItem(key);
   const session = parseStored(raw);
   if (!session || session.expiresAt <= now) {
     if (raw !== null) {
       try {
-        window.localStorage.removeItem(key);
+        storage.removeItem(key);
       } catch {
         // Storage may be unavailable in privacy-restricted contexts.
       }
@@ -187,8 +197,12 @@ export function saveIpScanSession(demo: boolean, session: IpScanSession): void {
     version: IP_SCAN_SESSION_VERSION,
     ...session,
   };
+  const storage = storageFor(demo);
+  if (!storage) {
+    return;
+  }
   try {
-    window.localStorage.setItem(storageKey(demo), JSON.stringify(value));
+    storage.setItem(storageKey(demo), JSON.stringify(value));
   } catch {
     // A full or restricted storage area must not make a scan fail.
   }
@@ -198,8 +212,12 @@ export function clearIpScanSession(demo: boolean): void {
   if (typeof window === "undefined") {
     return;
   }
+  const storage = storageFor(demo);
+  if (!storage) {
+    return;
+  }
   try {
-    window.localStorage.removeItem(storageKey(demo));
+    storage.removeItem(storageKey(demo));
   } catch {
     // Ignore storage cleanup failures.
   }

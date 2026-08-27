@@ -211,6 +211,8 @@ struct ScanState {
     total: u32,
     status: ScanStatus,
     devices: Vec<DiscoveredDevice>,
+    #[serde(rename = "reachableResponses")]
+    reachable_responses: u32,
     #[serde(rename = "runId")]
     run_id: u64,
 }

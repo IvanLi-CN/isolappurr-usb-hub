@@ -35,6 +35,7 @@ export type DiscoverySnapshot = {
     status: "scanning" | "ready";
     devices: DiscoveredDevice[];
     runId?: number;
+    reachableResponses?: number;
   };
   ipScan?: {
     expanded: boolean;

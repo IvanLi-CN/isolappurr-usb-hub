@@ -6,7 +6,7 @@ The Add device dialog combines desktop service discovery, browser IP scans, and 
 
 ## Decision
 
-- Store only the latest completed IP scan in the current browser profile. Keep live and demo modes in separate storage namespaces.
+- Store only the latest completed IP scan in the current browser profile. Keep live and demo modes in separate storage namespaces; live uses `localStorage`, while demo uses `sessionStorage` so the demo world cannot outlive the browser session.
 - Store the normalized CIDR, deduplicated discovered devices, completion time, and an expiry exactly ten minutes after completion. A completed scan with zero devices replaces the previous record.
 - Evaluate expiry when Add device opens. Expired data is removed and is not rendered. Do not persist typed-but-unstarted input, partial results, cancellations, or failed scans. A completed sweep is persistable when at least one probe receives an HTTP response, even if other addresses are offline or browser-blocked; an all-blocked sweep remains non-persistable and shows the browser private-network guidance.
 - Keep desktop service discovery devices separate from scan devices. Each desktop scan receives a monotonic `runId`; clients accept progress and completion only for the run they started.

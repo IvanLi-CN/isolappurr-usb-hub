@@ -49,6 +49,7 @@ export type DiscoverySnapshotShape = {
     status: "scanning" | "ready";
     devices: DiscoveredDevice[];
     runId?: number;
+    reachableResponses?: number;
   };
   ipScan?: {
     expanded: false;
@@ -229,6 +230,13 @@ export function parseDesktopDiscoverySnapshot(
     scan && typeof scan.runId === "number" && Number.isSafeInteger(scan.runId)
       ? scan.runId
       : undefined;
+  const reachableResponses =
+    scan &&
+    typeof scan.reachableResponses === "number" &&
+    Number.isSafeInteger(scan.reachableResponses) &&
+    scan.reachableResponses >= 0
+      ? scan.reachableResponses
+      : undefined;
   const scanShape =
     scan &&
     typeof scan.cidr === "string" &&
@@ -241,6 +249,7 @@ export function parseDesktopDiscoverySnapshot(
           status: scanStatus,
           devices: scanDevices,
           runId: scanRunId,
+          reachableResponses,
         }
       : undefined;
 

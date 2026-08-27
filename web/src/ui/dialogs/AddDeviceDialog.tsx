@@ -168,7 +168,7 @@ export function AddDeviceDialog({
     appendUsbLog(message, tone);
   };
 
-  const cancelActiveIpScan = useCallback(() => {
+  const cancelActiveIpScan = useCallback(async () => {
     scanRunIdRef.current += 1;
     scanAbortRef.current?.abort();
     scanAbortRef.current = null;
@@ -178,7 +178,7 @@ export function AddDeviceDialog({
     dispatch({ type: "scan_cancelled" });
     const agent = agentRef.current;
     if (agent) {
-      void agentFetch(agent, "/api/v1/discovery/cancel", {
+      await agentFetch(agent, "/api/v1/discovery/cancel", {
         method: "POST",
         body: JSON.stringify({}),
       });
@@ -186,7 +186,7 @@ export function AddDeviceDialog({
   }, []);
 
   const handleClose = useCallback(() => {
-    cancelActiveIpScan();
+    void cancelActiveIpScan();
     onClose();
   }, [cancelActiveIpScan, onClose]);
 
@@ -247,7 +247,7 @@ export function AddDeviceDialog({
       return;
     }
 
-    cancelActiveIpScan();
+    void cancelActiveIpScan();
     usbRunIdRef.current += 1;
     setLastIpScanSession(null);
     agentRef.current = null;
@@ -335,12 +335,16 @@ export function AddDeviceDialog({
             completedScanRunIdRef.current !== ownedScan.runId
           ) {
             completedScanRunIdRef.current = ownedScan.runId;
-            const session = createIpScanSession(
-              ownedScan.cidr,
-              ownedScan.devices,
-            );
-            saveIpScanSession(demoEnabled, session);
-            setLastIpScanSession(session);
+            if (
+              (ownedScan.reachableResponses ?? ownedScan.devices.length) > 0
+            ) {
+              const session = createIpScanSession(
+                ownedScan.cidr,
+                ownedScan.devices,
+              );
+              saveIpScanSession(demoEnabled, session);
+              setLastIpScanSession(session);
+            }
           }
 
           dispatch({
@@ -968,8 +972,8 @@ export function AddDeviceDialog({
                     snapshot={snapshot}
                     existingDeviceIds={discoveryIds}
                     existingDeviceBaseUrls={discoveryBaseUrls}
-                    onRefresh={() => {
-                      cancelActiveIpScan();
+                    onRefresh={async () => {
+                      await cancelActiveIpScan();
                       const agent = agentRef.current;
                       if (agent) {
                         dispatch({ type: "reset", status: "scanning" });
@@ -988,14 +992,14 @@ export function AddDeviceDialog({
                         expandedBy: "user",
                       })
                     }
-                    onStartScan={(cidr) => {
+                    onStartScan={async (cidr) => {
                       const parsed = parseCidr(cidr);
                       if (!parsed.ok) {
                         dispatch({ type: "set_error", error: parsed.error });
                         return;
                       }
 
-                      cancelActiveIpScan();
+                      await cancelActiveIpScan();
                       const runId = scanRunIdRef.current;
                       const agent = agentRef.current;
                       if (agent) {
@@ -1093,6 +1097,9 @@ export function AddDeviceDialog({
                           dispatch({ type: "scan_progress", done, runId });
 
                           if (!res.ok) {
+                            if (res.error.reachable) {
+                              reachableResponses += 1;
+                            }
                             if (res.error.kind === "browser_blocked") {
                               browserBlockedRequests += 1;
                             }

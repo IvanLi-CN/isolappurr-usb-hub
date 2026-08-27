@@ -41,6 +41,7 @@ import {
 import type { ThemeId } from "./theme";
 
 let demoFetchRestore: (() => void) | null = null;
+let demoIpScanRunId = 0;
 
 const DEMO_ENABLED_STORAGE_KEY = "isolapurr.demo.enabled";
 export const DEMO_ENTER_QUERY = "?demo=true";
@@ -112,6 +113,7 @@ type DemoApiResponse =
       duration_ms?: 5000;
       scope?: "wifi" | "other";
       wifi_preserved?: boolean;
+      runId?: number;
     }
   | { migrated: boolean; imported?: { devices: number; settings: boolean } };
 
@@ -341,9 +343,36 @@ function handleDemoDiscoveryRequest(url: URL, init?: RequestInit): Response {
     return jsonResponse(readDemoWorld().discovery);
   }
   if (url.pathname === "/api/v1/discovery/ip-scan" && method === "POST") {
-    return new Response(null, { status: 204 });
+    const body = readJsonBody(init) as { cidr?: string } | null;
+    const cidr = typeof body?.cidr === "string" ? body.cidr.trim() : "";
+    if (!cidr) {
+      return apiError(400, "invalid_request", "cidr is required");
+    }
+    const runId = ++demoIpScanRunId;
+    updateWorld((world) => ({
+      ...world,
+      discovery: {
+        ...world.discovery,
+        mode: "service",
+        status: "ready",
+        scan: {
+          cidr,
+          done: world.discovery.devices.length,
+          total: world.discovery.devices.length,
+          status: "ready",
+          devices: world.discovery.devices,
+          runId,
+          reachableResponses: world.discovery.devices.length,
+        },
+      },
+    }));
+    return jsonResponse({ accepted: true, runId });
   }
   if (url.pathname === "/api/v1/discovery/cancel" && method === "POST") {
+    updateWorld((world) => ({
+      ...world,
+      discovery: { ...world.discovery, scan: undefined },
+    }));
     return new Response(null, { status: 204 });
   }
   return apiError(404, "not_found", "Demo discovery endpoint not found");
