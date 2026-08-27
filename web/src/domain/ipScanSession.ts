@@ -174,7 +174,12 @@ export function loadIpScanSession(
   if (!storage) {
     return null;
   }
-  const raw = storage.getItem(key);
+  let raw: string | null;
+  try {
+    raw = storage.getItem(key);
+  } catch {
+    return null;
+  }
   const session = parseStored(raw);
   if (!session || session.expiresAt <= now) {
     if (raw !== null) {

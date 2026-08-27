@@ -130,4 +130,20 @@ describe("IP scan session storage", () => {
       true,
     );
   });
+
+  test("treats storage read failures as an unavailable cache", () => {
+    const storage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } as unknown as Storage;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { localStorage: storage, sessionStorage: storage },
+    });
+
+    expect(loadIpScanSession(false)).toBeNull();
+  });
 });

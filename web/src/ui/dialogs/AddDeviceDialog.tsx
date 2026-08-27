@@ -154,6 +154,10 @@ export function AddDeviceDialog({
   const desktopScanRunIdRef = useRef<number | null>(null);
   const completedScanRunIdRef = useRef<number | null>(null);
   const addingDiscoveredRef = useRef(false);
+  const snapshotRef = useRef(snapshot);
+  const lastIpScanSessionRef = useRef(lastIpScanSession);
+  const discoveryIdsRef = useRef(discoveryIds);
+  const discoveryBaseUrlsRef = useRef(discoveryBaseUrls);
   const usbLogSeqRef = useRef(1);
 
   const appendUsbLog = (
@@ -205,9 +209,13 @@ export function AddDeviceDialog({
   }, [method]);
 
   useEffect(() => {
+    snapshotRef.current = snapshot;
+    lastIpScanSessionRef.current = lastIpScanSession;
+    discoveryIdsRef.current = discoveryIds;
+    discoveryBaseUrlsRef.current = discoveryBaseUrls;
     devicesCountRef.current = snapshot.devices.length;
     ipScanExpandedRef.current = snapshot.ipScan?.expanded ?? false;
-  }, [snapshot.devices.length, snapshot.ipScan?.expanded]);
+  }, [snapshot, lastIpScanSession, discoveryIds, discoveryBaseUrls]);
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -542,9 +550,9 @@ export function AddDeviceDialog({
       }
       setAddError(null);
       const nextIds = device.device_id
-        ? [...discoveryIds, device.device_id]
-        : discoveryIds;
-      const nextBaseUrls = [...discoveryBaseUrls, device.baseUrl];
+        ? [...discoveryIdsRef.current, device.device_id]
+        : discoveryIdsRef.current;
+      const nextBaseUrls = [...discoveryBaseUrlsRef.current, device.baseUrl];
       setLocallyAddedIds((current) =>
         device.device_id && !current.includes(device.device_id)
           ? [...current, device.device_id]
@@ -557,9 +565,13 @@ export function AddDeviceDialog({
       );
 
       let merged: DiscoveredDevice[] = [];
-      const visibleCandidates = snapshot.scan
-        ? [...snapshot.devices, ...snapshot.scan.devices]
-        : [...snapshot.devices, ...(lastIpScanSession?.devices ?? [])];
+      const currentSnapshot = snapshotRef.current;
+      const visibleCandidates = currentSnapshot.scan
+        ? [...currentSnapshot.devices, ...currentSnapshot.scan.devices]
+        : [
+            ...currentSnapshot.devices,
+            ...(lastIpScanSessionRef.current?.devices ?? []),
+          ];
       for (const candidate of visibleCandidates) {
         merged = mergeDiscoveredDevice(merged, candidate);
       }
