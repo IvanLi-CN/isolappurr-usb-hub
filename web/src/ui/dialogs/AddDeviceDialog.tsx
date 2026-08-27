@@ -152,6 +152,7 @@ export function AddDeviceDialog({
   const activeScanKindRef = useRef<"browser" | "desktop" | null>(null);
   const desktopScanRunIdRef = useRef<number | null>(null);
   const completedScanRunIdRef = useRef<number | null>(null);
+  const addingDiscoveredRef = useRef(false);
   const usbLogSeqRef = useRef(1);
 
   const appendUsbLog = (
@@ -300,11 +301,19 @@ export function AddDeviceDialog({
           if (!current || !openRef.current) {
             return;
           }
+          const pollGeneration = scanRunIdRef.current;
           const res = await agentFetch(
             current,
             "/api/v1/discovery/snapshot",
             {},
           );
+          if (
+            current !== agentRef.current ||
+            !openRef.current ||
+            scanRunIdRef.current !== pollGeneration
+          ) {
+            return;
+          }
           if (!res.ok) {
             dispatch({
               type: "set_error",
@@ -366,10 +375,10 @@ export function AddDeviceDialog({
               error: parsed.error,
               scan: ownedScan,
               ipScan: parsed.ipScan,
-              replaceScan:
-                activeScanKindRef.current === "desktop" &&
-                desktopScanRunIdRef.current !== null,
             },
+            replaceScan:
+              activeScanKindRef.current === "desktop" &&
+              desktopScanRunIdRef.current !== null,
           });
         })();
       }, 1000);
@@ -502,58 +511,69 @@ export function AddDeviceDialog({
   };
 
   const addDiscoveredDevice = async (device: DiscoveredDevice) => {
-    if (!device.baseUrl) {
-      setAddError("Discovered hub did not include a network URL.");
+    if (addingDiscoveredRef.current) {
       return;
     }
-    const input: AddDeviceInput = {
-      name:
-        device.hostname ??
-        device.fqdn ??
-        device.device_id ??
-        "IsolaPurr USB Hub",
-      baseUrl: device.baseUrl,
-      id: device.device_id,
-    };
-    const saved = await onCreate(input, { navigate: false });
-    if (!saved.ok) {
-      setAddError(
-        saved.errors.baseUrl ??
-          saved.errors.id ??
-          saved.errors.name ??
-          "Could not add this hub.",
+    addingDiscoveredRef.current = true;
+    try {
+      if (!device.baseUrl) {
+        setAddError("Discovered hub did not include a network URL.");
+        return;
+      }
+      const input: AddDeviceInput = {
+        name:
+          device.hostname ??
+          device.fqdn ??
+          device.device_id ??
+          "IsolaPurr USB Hub",
+        baseUrl: device.baseUrl,
+        id: device.device_id,
+      };
+      const saved = await onCreate(input, { navigate: false });
+      if (!saved.ok) {
+        setAddError(
+          saved.errors.baseUrl ??
+            saved.errors.id ??
+            saved.errors.name ??
+            "Could not add this hub.",
+        );
+        return;
+      }
+      setAddError(null);
+      const nextIds = device.device_id
+        ? [...discoveryIds, device.device_id]
+        : discoveryIds;
+      const nextBaseUrls = [...discoveryBaseUrls, device.baseUrl];
+      setLocallyAddedIds((current) =>
+        device.device_id && !current.includes(device.device_id)
+          ? [...current, device.device_id]
+          : current,
       );
-      return;
-    }
-    setAddError(null);
-    const nextIds = device.device_id
-      ? [...discoveryIds, device.device_id]
-      : discoveryIds;
-    const nextBaseUrls = [...discoveryBaseUrls, device.baseUrl];
-    setLocallyAddedIds((current) =>
-      device.device_id && !current.includes(device.device_id)
-        ? [...current, device.device_id]
-        : current,
-    );
-    setLocallyAddedBaseUrls((current) =>
-      current.includes(device.baseUrl) ? current : [...current, device.baseUrl],
-    );
+      setLocallyAddedBaseUrls((current) =>
+        current.includes(device.baseUrl)
+          ? current
+          : [...current, device.baseUrl],
+      );
 
-    let merged: DiscoveredDevice[] = [];
-    const visibleCandidates = snapshot.scan
-      ? [...snapshot.devices, ...snapshot.scan.devices]
-      : [...snapshot.devices, ...(lastIpScanSession?.devices ?? [])];
-    for (const candidate of visibleCandidates) {
-      merged = mergeDiscoveredDevice(merged, candidate);
+      let merged: DiscoveredDevice[] = [];
+      const visibleCandidates = snapshot.scan
+        ? [...snapshot.devices, ...snapshot.scan.devices]
+        : [...snapshot.devices, ...(lastIpScanSession?.devices ?? [])];
+      for (const candidate of visibleCandidates) {
+        merged = mergeDiscoveredDevice(merged, candidate);
+      }
+      const hasAnotherAddable = merged.some(
+        (candidate) =>
+          !isDiscoveredDeviceAdded(candidate, nextIds, nextBaseUrls),
+      );
+      if (hasAnotherAddable) {
+        return;
+      }
+      handleClose();
+      navigate(`/devices/${saved.device.id}`);
+    } finally {
+      addingDiscoveredRef.current = false;
     }
-    const hasAnotherAddable = merged.some(
-      (candidate) => !isDiscoveredDeviceAdded(candidate, nextIds, nextBaseUrls),
-    );
-    if (hasAnotherAddable) {
-      return;
-    }
-    handleClose();
-    navigate(`/devices/${saved.device.id}`);
   };
 
   const resolveReachableUsbBaseUrl = async (
@@ -1086,7 +1106,14 @@ export function AddDeviceDialog({
                             }
                             return;
                           }
-                          if (serverRunId === null && response.status === 204) {
+                          const legacyAccepted =
+                            response.status === 204 ||
+                            (response.status === 202 &&
+                              responseBody &&
+                              typeof responseBody === "object" &&
+                              (responseBody as Record<string, unknown>)
+                                .accepted === true);
+                          if (serverRunId === null && legacyAccepted) {
                             desktopScanRunIdRef.current = runId;
                             return;
                           }
