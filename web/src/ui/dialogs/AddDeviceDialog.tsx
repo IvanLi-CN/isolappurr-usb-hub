@@ -1131,7 +1131,7 @@ export function AddDeviceDialog({
                                   method: "POST",
                                   body: JSON.stringify({ runId: serverRunId }),
                                 },
-                              );
+                              ).catch(() => undefined);
                             } else if (
                               legacyAccepted &&
                               !openRef.current &&
@@ -1145,7 +1145,7 @@ export function AddDeviceDialog({
                                   method: "POST",
                                   body: JSON.stringify({}),
                                 },
-                              );
+                              ).catch(() => undefined);
                             }
                             return;
                           }
