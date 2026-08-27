@@ -317,6 +317,24 @@ Add device discovery canonical device IDs:
 
 ![Add device discovery canonical device IDs](./assets/add-device-discovery-canonical-device-ids.png)
 
+Add device cached IP scan restoration:
+
+- source_type: storybook_canvas
+  target_program: mock-only
+  capture_scope: browser-viewport
+  requested_viewport: 1082x965
+  viewport_strategy: storybook-viewport
+  margin_policy: trim_only
+  evidence_surface: page
+  sensitive_exclusion: N/A
+  submission_gate: approved
+  story_id_or_title: `dialogs-adddevicedialog--cached-scan`
+  state: restored ten-minute IP scan session
+  evidence_note: verifies the cached scan summary, discovered devices, and normalized CIDR are restored together without warning overlap or clipping.
+
+PR: none
+![Add device cached IP scan restoration](./assets/add-device-cached-scan-restored.png)
+
 Device info canonical device ID:
 
 ![Device info canonical device ID](./assets/device-info-canonical-device-id.png)
