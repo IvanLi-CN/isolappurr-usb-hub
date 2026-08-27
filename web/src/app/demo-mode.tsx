@@ -364,7 +364,7 @@ function handleDemoDiscoveryRequest(url: URL, init?: RequestInit): Response {
           status: "ready",
           devices: world.discovery.devices,
           runId,
-          reachableResponses: world.discovery.devices.length,
+          reachableResponses: Math.max(world.discovery.devices.length, 1),
         },
       },
     }));
