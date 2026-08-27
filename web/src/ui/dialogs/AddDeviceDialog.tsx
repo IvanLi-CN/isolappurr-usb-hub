@@ -168,21 +168,26 @@ export function AddDeviceDialog({
     appendUsbLog(message, tone);
   };
 
-  const cancelActiveIpScan = useCallback(async () => {
-    scanRunIdRef.current += 1;
+  const cancelActiveIpScan = useCallback(async (): Promise<number> => {
+    const cancelledRunId = scanRunIdRef.current + 1;
+    const desktopRunId = desktopScanRunIdRef.current;
+    scanRunIdRef.current = cancelledRunId;
     scanAbortRef.current?.abort();
     scanAbortRef.current = null;
     activeScanKindRef.current = null;
     desktopScanRunIdRef.current = null;
     completedScanRunIdRef.current = null;
-    dispatch({ type: "scan_cancelled" });
+    dispatch({ type: "scan_cancelled", runId: cancelledRunId });
     const agent = agentRef.current;
     if (agent) {
       await agentFetch(agent, "/api/v1/discovery/cancel", {
         method: "POST",
-        body: JSON.stringify({}),
+        body: JSON.stringify(
+          desktopRunId === null ? {} : { runId: desktopRunId },
+        ),
       });
     }
+    return cancelledRunId;
   }, []);
 
   const handleClose = useCallback(() => {
@@ -322,19 +327,23 @@ export function AddDeviceDialog({
             merged = mergeDiscoveredDevice(merged, d);
           }
 
-          const ownedScan =
+          const scanRunId = parsed.scan?.runId;
+          const ownsScan =
             activeScanKindRef.current === "desktop" &&
             parsed.scan &&
-            parsed.scan.runId !== undefined &&
-            parsed.scan.runId === desktopScanRunIdRef.current
-              ? parsed.scan
-              : undefined;
+            ((scanRunId !== undefined &&
+              scanRunId === desktopScanRunIdRef.current) ||
+              (scanRunId === undefined &&
+                desktopScanRunIdRef.current === scanRunIdRef.current));
+          const ownedScan = ownsScan ? parsed.scan : undefined;
+          const ownedScanRunId =
+            ownedScan?.runId ?? desktopScanRunIdRef.current;
           if (
             ownedScan?.status === "ready" &&
-            ownedScan.runId !== undefined &&
-            completedScanRunIdRef.current !== ownedScan.runId
+            ownedScanRunId !== null &&
+            completedScanRunIdRef.current !== ownedScanRunId
           ) {
-            completedScanRunIdRef.current = ownedScan.runId;
+            completedScanRunIdRef.current = ownedScanRunId;
             if (
               (ownedScan.reachableResponses ?? ownedScan.devices.length) > 0
             ) {
@@ -527,11 +536,10 @@ export function AddDeviceDialog({
     );
 
     let merged: DiscoveredDevice[] = [];
-    for (const candidate of [
-      ...snapshot.devices,
-      ...(snapshot.scan?.devices ?? []),
-      ...(lastIpScanSession?.devices ?? []),
-    ]) {
+    const visibleCandidates = snapshot.scan
+      ? [...snapshot.devices, ...snapshot.scan.devices]
+      : [...snapshot.devices, ...(lastIpScanSession?.devices ?? [])];
+    for (const candidate of visibleCandidates) {
       merged = mergeDiscoveredDevice(merged, candidate);
     }
     const hasAnotherAddable = merged.some(
@@ -999,8 +1007,10 @@ export function AddDeviceDialog({
                         return;
                       }
 
-                      await cancelActiveIpScan();
-                      const runId = scanRunIdRef.current;
+                      const runId = await cancelActiveIpScan();
+                      if (!openRef.current || scanRunIdRef.current !== runId) {
+                        return;
+                      }
                       const agent = agentRef.current;
                       if (agent) {
                         activeScanKindRef.current = "desktop";
@@ -1039,6 +1049,10 @@ export function AddDeviceDialog({
                           const serverRunId = parseDesktopIpScanRunId(
                             await response.json().catch(() => null),
                           );
+                          if (serverRunId === null && response.status === 204) {
+                            desktopScanRunIdRef.current = runId;
+                            return;
+                          }
                           if (serverRunId === null) {
                             activeScanKindRef.current = null;
                             dispatch({

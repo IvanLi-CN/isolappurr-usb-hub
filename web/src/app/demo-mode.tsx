@@ -17,6 +17,7 @@ import type {
 } from "../domain/deviceApi";
 import type { AddDeviceInput, StoredDevice } from "../domain/devices";
 import type { DiscoverySnapshot } from "../domain/discovery";
+import { clearIpScanSession } from "../domain/ipScanSession";
 import type { PortsResponse } from "../domain/ports";
 import { handleDemoPortAction } from "./demo-mode-port-actions";
 import {
@@ -369,10 +370,19 @@ function handleDemoDiscoveryRequest(url: URL, init?: RequestInit): Response {
     return jsonResponse({ accepted: true, runId });
   }
   if (url.pathname === "/api/v1/discovery/cancel" && method === "POST") {
-    updateWorld((world) => ({
-      ...world,
-      discovery: { ...world.discovery, scan: undefined },
-    }));
+    const body = readJsonBody(init) as { runId?: number } | null;
+    updateWorld((world) => {
+      if (
+        body?.runId !== undefined &&
+        world.discovery.scan?.runId !== body.runId
+      ) {
+        return world;
+      }
+      return {
+        ...world,
+        discovery: { ...world.discovery, scan: undefined },
+      };
+    });
     return new Response(null, { status: 204 });
   }
   return apiError(404, "not_found", "Demo discovery endpoint not found");
@@ -1085,6 +1095,7 @@ export function initDemoMode(pathname: string, search: string): boolean {
 export function clearDemoMode(): void {
   writeDemoEnabled(false);
   clearDemoWorld();
+  clearIpScanSession(true);
 }
 
 export function withDemoSearch(pathname: string, enabled: boolean): string {

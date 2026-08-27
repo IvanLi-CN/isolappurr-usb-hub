@@ -72,6 +72,12 @@ struct IpScanRequest {
     cidr: String,
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct DiscoveryCancelRequest {
+    #[serde(rename = "runId")]
+    run_id: Option<u64>,
+}
+
 async fn api_discovery_ip_scan(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -97,14 +103,21 @@ async fn api_discovery_ip_scan(
         .into_response()
 }
 
-async fn api_discovery_cancel(State(state): State<AppState>, headers: HeaderMap) -> Response {
+async fn api_discovery_cancel(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Option<Json<DiscoveryCancelRequest>>,
+) -> Response {
     if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
         return forbidden("origin not allowed");
     }
     if !is_authorized(&headers, &state) {
         return unauthorized("missing/invalid bearer token");
     }
-    state.discovery.cancel_ip_scan().await;
+    state
+        .discovery
+        .cancel_ip_scan(body.map(|Json(req)| req.run_id).flatten())
+        .await;
     (
         StatusCode::ACCEPTED,
         Json(serde_json::json!({ "accepted": true })),

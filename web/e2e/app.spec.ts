@@ -1155,7 +1155,7 @@ test("restores only a valid ten-minute IP scan session on dialog open", async ({
   await page.addInitScript(
     ({ key, completedAt }) => {
       window.sessionStorage.setItem("isolapurr.demo.enabled", "true");
-      window.localStorage.setItem(
+      window.sessionStorage.setItem(
         key,
         JSON.stringify({
           version: 1,
