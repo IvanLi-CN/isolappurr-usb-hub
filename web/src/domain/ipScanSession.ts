@@ -100,7 +100,7 @@ function parseDevice(value: unknown): DiscoveredDevice | null {
   };
 }
 
-function parseStored(value: string | null): IpScanSession | null {
+function parseStored(value: string | null, now: number): IpScanSession | null {
   if (!value) {
     return null;
   }
@@ -114,10 +114,11 @@ function parseStored(value: string | null): IpScanSession | null {
       !raw.cidr.trim() ||
       typeof raw.completedAt !== "number" ||
       !Number.isFinite(raw.completedAt) ||
+      raw.completedAt <= 0 ||
+      raw.completedAt > now ||
       typeof raw.expiresAt !== "number" ||
       !Number.isFinite(raw.expiresAt) ||
-      raw.expiresAt <= raw.completedAt ||
-      raw.expiresAt - raw.completedAt > IP_SCAN_SESSION_TTL_MS
+      raw.expiresAt !== raw.completedAt + IP_SCAN_SESSION_TTL_MS
     ) {
       return null;
     }
@@ -180,7 +181,7 @@ export function loadIpScanSession(
   } catch {
     return null;
   }
-  const session = parseStored(raw);
+  const session = parseStored(raw, now);
   if (!session || session.expiresAt <= now) {
     if (raw !== null) {
       try {

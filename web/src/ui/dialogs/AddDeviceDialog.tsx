@@ -154,6 +154,7 @@ export function AddDeviceDialog({
   const desktopScanRunIdRef = useRef<number | null>(null);
   const completedScanRunIdRef = useRef<number | null>(null);
   const addingDiscoveredRef = useRef(false);
+  const scanCancellationRef = useRef(Promise.resolve());
   const snapshotRef = useRef(snapshot);
   const lastIpScanSessionRef = useRef(lastIpScanSession);
   const discoveryIdsRef = useRef(discoveryIds);
@@ -174,25 +175,47 @@ export function AddDeviceDialog({
     appendUsbLog(message, tone);
   };
 
-  const cancelActiveIpScan = useCallback(async (): Promise<number> => {
-    const activeRunId = scanRunIdRef.current;
-    const cancelledRunId = activeRunId + 1;
-    const desktopRunId = desktopScanRunIdRef.current;
-    scanRunIdRef.current = cancelledRunId;
-    scanAbortRef.current?.abort();
-    scanAbortRef.current = null;
-    activeScanKindRef.current = null;
-    desktopScanRunIdRef.current = null;
-    completedScanRunIdRef.current = null;
-    dispatch({ type: "scan_cancelled" });
-    const agent = agentRef.current;
-    if (agent && desktopRunId !== null) {
-      await agentFetch(agent, "/api/v1/discovery/cancel", {
-        method: "POST",
-        body: JSON.stringify({ runId: desktopRunId }),
+  const cancelActiveIpScan = useCallback((): Promise<number> => {
+    const operation = scanCancellationRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const activeRunId = scanRunIdRef.current;
+        const cancelledRunId = activeRunId + 1;
+        const desktopRunId = desktopScanRunIdRef.current;
+        scanRunIdRef.current = cancelledRunId;
+        scanAbortRef.current?.abort();
+        scanAbortRef.current = null;
+        activeScanKindRef.current = null;
+        desktopScanRunIdRef.current = null;
+        completedScanRunIdRef.current = null;
+        dispatch({ type: "scan_cancelled" });
+        const agent = agentRef.current;
+        if (agent && desktopRunId !== null) {
+          try {
+            await Promise.race([
+              agentFetch(agent, "/api/v1/discovery/cancel", {
+                method: "POST",
+                body: JSON.stringify({ runId: desktopRunId }),
+              }),
+              new Promise<never>((_, reject) => {
+                window.setTimeout(
+                  () =>
+                    reject(new Error("Desktop scan cancellation timed out")),
+                  1_500,
+                );
+              }),
+            ]);
+          } catch {
+            // Cancellation is best-effort; local ownership is already invalidated.
+          }
+        }
+        return cancelledRunId;
       });
-    }
-    return cancelledRunId;
+    scanCancellationRef.current = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }, []);
 
   const handleClose = useCallback(() => {
@@ -364,7 +387,8 @@ export function AddDeviceDialog({
           ) {
             completedScanRunIdRef.current = ownedScanRunId;
             const completedScanHadReachableResponse =
-              (ownedScan.reachableResponses ?? ownedScan.devices.length) > 0;
+              ownedScan.reachableResponses === undefined ||
+              ownedScan.reachableResponses > 0;
             if (completedScanHadReachableResponse) {
               const session = createIpScanSession(
                 ownedScan.cidr,
@@ -566,12 +590,11 @@ export function AddDeviceDialog({
 
       let merged: DiscoveredDevice[] = [];
       const currentSnapshot = snapshotRef.current;
-      const visibleCandidates = currentSnapshot.scan
-        ? [...currentSnapshot.devices, ...currentSnapshot.scan.devices]
-        : [
-            ...currentSnapshot.devices,
-            ...(lastIpScanSessionRef.current?.devices ?? []),
-          ];
+      const visibleCandidates = [
+        ...currentSnapshot.devices,
+        ...(currentSnapshot.scan?.devices ?? []),
+        ...(lastIpScanSessionRef.current?.devices ?? []),
+      ];
       for (const candidate of visibleCandidates) {
         merged = mergeDiscoveredDevice(merged, candidate);
       }
@@ -1089,6 +1112,13 @@ export function AddDeviceDialog({
                               : await response.json().catch(() => null);
                           const serverRunId =
                             parseDesktopIpScanRunId(responseBody);
+                          const legacyAccepted =
+                            response.status === 204 ||
+                            (response.status === 202 &&
+                              responseBody &&
+                              typeof responseBody === "object" &&
+                              (responseBody as Record<string, unknown>)
+                                .accepted === true);
                           if (
                             scanRunIdRef.current !== runId ||
                             !openRef.current
@@ -1103,7 +1133,7 @@ export function AddDeviceDialog({
                                 },
                               );
                             } else if (
-                              response.status === 204 &&
+                              legacyAccepted &&
                               !openRef.current &&
                               activeScanKindRef.current === null
                             ) {
@@ -1119,13 +1149,6 @@ export function AddDeviceDialog({
                             }
                             return;
                           }
-                          const legacyAccepted =
-                            response.status === 204 ||
-                            (response.status === 202 &&
-                              responseBody &&
-                              typeof responseBody === "object" &&
-                              (responseBody as Record<string, unknown>)
-                                .accepted === true);
                           if (serverRunId === null && legacyAccepted) {
                             desktopScanRunIdRef.current = runId;
                             return;

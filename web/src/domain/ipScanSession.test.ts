@@ -114,6 +114,35 @@ describe("IP scan session storage", () => {
     );
   });
 
+  test("rejects malformed or future expiry timestamps", () => {
+    const { localValues } = installStorage();
+    const key = "isolapurr_usb_hub.ip_scan_session.v1.live";
+    const completedAt = 1_000;
+    localValues.set(
+      key,
+      JSON.stringify({
+        version: 1,
+        cidr: "192.168.1.0/24",
+        devices: [],
+        completedAt,
+        expiresAt: completedAt + IP_SCAN_SESSION_TTL_MS - 1,
+      }),
+    );
+    expect(loadIpScanSession(false, 1_001)).toBeNull();
+
+    localValues.set(
+      key,
+      JSON.stringify({
+        version: 1,
+        cidr: "192.168.1.0/24",
+        devices: [],
+        completedAt: 2_000,
+        expiresAt: 2_000 + IP_SCAN_SESSION_TTL_MS,
+      }),
+    );
+    expect(loadIpScanSession(false, 1_001)).toBeNull();
+  });
+
   test("keeps live and demo sessions isolated", () => {
     const { localValues, sessionValues } = installStorage();
     const live = createIpScanSession("192.168.1.0/24", [], 1_000);
