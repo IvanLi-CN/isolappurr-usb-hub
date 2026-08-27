@@ -1,10 +1,7 @@
+import { useRef } from "react";
+
 import { TwoStageHoldButton } from "../actions/TwoStageHoldButton";
 import { formatTelemetryValue } from "../format/telemetry";
-import {
-  PortStateIcon,
-  portStateIconKind,
-  portStateLabel,
-} from "../status/PortStateIcon";
 import type { PortCardProps } from "./types";
 
 function statusBadgeStyles(status: string): { bg: string; text: string } {
@@ -26,54 +23,6 @@ function statusBadgeStyles(status: string): { bg: string; text: string } {
   };
 }
 
-function PortStateSummary({
-  powerEnabled,
-  dataConnected,
-  replugging,
-}: {
-  powerEnabled: boolean;
-  dataConnected: boolean;
-  replugging: boolean;
-}) {
-  const items = [
-    {
-      channel: "power",
-      icon: portStateIconKind("power", powerEnabled),
-      label: portStateLabel("power", powerEnabled),
-      active: powerEnabled,
-    },
-    {
-      channel: "data",
-      icon: portStateIconKind("data", dataConnected),
-      label: replugging
-        ? "Data switching"
-        : portStateLabel("data", dataConnected),
-      active: dataConnected && !replugging,
-    },
-  ];
-
-  return (
-    <div className="flex h-7 items-center gap-1.5">
-      {items.map((item) => (
-        <div
-          className={[
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px]",
-            item.active
-              ? "bg-[var(--surface-success-bg)] text-[var(--badge-success-text)]"
-              : "bg-[var(--btn-disabled-fill-soft)] text-[var(--muted)]",
-          ].join(" ")}
-          aria-label={item.label}
-          data-testid={`port-state-${item.channel}`}
-          key={item.label}
-          role="img"
-        >
-          <PortStateIcon kind={item.icon} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function PortCard({
   portId,
   label,
@@ -82,12 +31,28 @@ export function PortCard({
   headerBadges = [],
   showStatusBadge = true,
   disabled,
-  dataLinkAvailable = true,
+  powerAvailability = { state: "supported" },
+  dataLinkAvailability = { state: "supported" },
   onSetPower,
   onSetData,
 }: PortCardProps) {
   const busy = state.busy;
   const actionDisabled = !!disabled || busy;
+  const dataSwitching = state.replugging;
+  const confirmedDataValueRef = useRef(state.data_connected);
+  if (!dataSwitching) {
+    confirmedDataValueRef.current = state.data_connected;
+  }
+  const dataLinkValue = dataSwitching
+    ? confirmedDataValueRef.current
+    : state.data_connected;
+  const dataLinkDisabled =
+    actionDisabled ||
+    dataSwitching ||
+    dataLinkAvailability.state !== "supported";
+  const dataLinkReason = dataSwitching
+    ? "Data path is switching. Wait for it to finish."
+    : dataLinkAvailability.reason;
   const badge = statusBadgeStyles(telemetry.status);
 
   return (
@@ -131,17 +96,6 @@ export function PortCard({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-[76px_minmax(0,1fr)] items-center gap-3">
-        <div className="text-[12px] font-semibold text-[var(--muted)]">
-          State
-        </div>
-        <PortStateSummary
-          powerEnabled={state.power_enabled}
-          dataConnected={state.data_connected}
-          replugging={state.replugging}
-        />
-      </div>
-
       <div className="mt-5 grid grid-cols-3 gap-6 sm:gap-10">
         <div>
           <div className="text-[12px] font-semibold text-[var(--muted)]">
@@ -172,22 +126,20 @@ export function PortCard({
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <TwoStageHoldButton
           className="w-full sm:w-[180px]"
-          disabled={actionDisabled}
+          disabled={actionDisabled || powerAvailability.state !== "supported"}
           label="Power"
           onSetValue={onSetPower}
+          unavailableReason={powerAvailability.reason}
           value={state.power_enabled}
         />
         <TwoStageHoldButton
           className="w-full sm:w-[190px]"
-          disabled={actionDisabled || !dataLinkAvailable}
+          disabled={dataLinkDisabled}
           label="Data link"
           onSetValue={onSetData}
-          unavailableReason={
-            dataLinkAvailable
-              ? undefined
-              : "This firmware does not support the Data link control. Update the device firmware to use it."
-          }
-          value={state.data_connected}
+          unavailableReason={dataLinkReason}
+          unavailableTone={dataSwitching ? "warning" : "neutral"}
+          value={dataLinkValue}
         />
       </div>
     </div>

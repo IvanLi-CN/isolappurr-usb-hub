@@ -353,6 +353,7 @@ export const defaultArgs: DevicePowerPanelProps = {
   usbCTelemetry,
   usbCState,
   usbCPending: false,
-  usbCDataLinkAvailable: true,
+  usbCPowerAvailability: { state: "supported" },
+  usbCDataLinkAvailability: { state: "supported" },
   setUsbCData: async () => ({ ok: true }),
 };

@@ -296,9 +296,40 @@ async function routeOnlineDeviceWithLegacyPdDiagnostics(page: Page) {
     power_set: true,
   };
 
+  await page.route("**/api/v1/info", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        device: {
+          device_id: "aabbcc001122",
+          hostname: "isolapurr-usb-hub-aabbcc001122",
+          fqdn: "isolapurr-usb-hub-aabbcc001122.local",
+          mac: "aabbcc001122",
+          variant: "tps-sw",
+          firmware: {
+            name: "isolapurr-usb-hub",
+            version: "0.8.0",
+            build: {
+              source_sha: "0123456789abcdef0123456789abcdef01234567",
+              dirty: false,
+            },
+          },
+          uptime_ms: 123456,
+          wifi: {
+            state: "connected",
+            ipv4: "192.168.31.224",
+            is_static: false,
+          },
+        },
+      }),
+      headers: jsonHeaders,
+      status: 200,
+    });
+  });
+
   await page.route("**/api/v1/ports", async (route) => {
     await route.fulfill({
       body: JSON.stringify({
+        capability_schema: 1,
         hub: {
           upstream_connected: true,
           isolated_usb_fault: false,

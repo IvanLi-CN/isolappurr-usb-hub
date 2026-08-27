@@ -279,35 +279,7 @@ async fn handle_api_request(
         ("GET", "/api/v1/info") => {
             let wifi = { *wifi_state.lock().await };
             let mut body = String::new();
-
-            let mac = format_mac_lower(device_names.mac);
-            let ipv4 = wifi.ipv4.map(format_ipv4);
-            let wifi_state_s = wifi_state_str(wifi.state);
-
-            let _ = core::write!(
-                body,
-                "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\"}},\"uptime_ms\":{},\"wifi\":{{\"state\":\"{}\",\"ipv4\":",
-                device_names.device_id.as_str(),
-                device_names.hostname.as_str(),
-                device_names.hostname_fqdn.as_str(),
-                mac.as_str(),
-                env!("CARGO_PKG_NAME"),
-                release_version(),
-                uptime_ms(),
-                wifi_state_s,
-            );
-
-            match ipv4 {
-                None => {
-                    let _ = body.push_str("null");
-                }
-                Some(ip) => {
-                    let _ = core::write!(body, "\"{}\"", ip.as_str());
-                }
-            }
-
-            let _ = core::write!(body, ",\"is_static\":{}", wifi.is_static);
-            let _ = body.push_str("}},\"capabilities\":{\"identify\":true}}");
+            write_info_json(&mut body, device_names, wifi);
 
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
@@ -347,10 +319,26 @@ async fn handle_api_request(
             } else {
                 "false"
             });
-            let _ = body.push_str("},\"capabilities\":{\"identify\":true},\"ports\":[");
-            write_port_json(&mut body, ApiPortId::PortA, "USB-A", &state.ports.port_a);
+            let _ = core::write!(
+                body,
+                "}},\"capabilities\":{{\"identify\":true}},\"capability_schema\":{},\"ports\":[",
+                PORT_CAPABILITY_SCHEMA_V1
+            );
+            write_port_json(
+                &mut body,
+                ApiPortId::PortA,
+                "USB-A",
+                &state.ports.port_a,
+                None,
+            );
             let _ = body.push(',');
-            write_port_json(&mut body, ApiPortId::PortC, "USB-C", &state.ports.port_c);
+            write_port_json(
+                &mut body,
+                ApiPortId::PortC,
+                "USB-C",
+                &state.ports.port_c,
+                None,
+            );
             let _ = body.push_str("]}");
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
@@ -769,6 +757,7 @@ async fn handle_api_request(
                     ApiPortId::PortC => "USB-C",
                 },
                 &port,
+                Some(PORT_CAPABILITY_SCHEMA_V1),
             );
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());

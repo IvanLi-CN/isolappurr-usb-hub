@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, within } from "@storybook/test";
+import { useLayoutEffect, useState } from "react";
 
 import { PortCard } from "./PortCard";
 
@@ -54,12 +55,15 @@ export const ActionLabelsVisible: Story = {
         feedback?.querySelectorAll(".two-stage-hold__status-icon"),
       ).toHaveLength(1);
     }
-    await expect(canvas.getByTestId("port-state-power")).toHaveAccessibleName(
-      "Power on",
-    );
-    await expect(canvas.getByTestId("port-state-data")).toHaveAccessibleName(
-      "Data link connected",
-    );
+    const buttons = canvas.getAllByRole("button");
+    await expect(buttons[0]).toHaveAttribute("aria-pressed", "true");
+    await expect(buttons[1]).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      buttons[0].querySelector(".two-stage-hold__feedback"),
+    ).toHaveAccessibleName("Power on");
+    await expect(
+      buttons[1].querySelector(".two-stage-hold__feedback"),
+    ).toHaveAccessibleName("Data link connected");
   },
 };
 
@@ -87,6 +91,48 @@ export const Unavailable: Story = {
   },
 };
 
+export const UndeclaredCapability: Story = {
+  args: {
+    dataLinkAvailability: {
+      state: "unknown",
+      reason:
+        "This device has not declared the Data link control capability, so it is unavailable.",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const [, dataButton] = canvas.getAllByRole("button");
+    await expect(dataButton).toHaveAttribute("aria-disabled", "true");
+    await dataButton.click();
+    await expect(await canvas.findByRole("tooltip")).toHaveTextContent(
+      "This device has not declared the Data link control capability, so it is unavailable.",
+    );
+  },
+};
+
+export const ExplicitlyUnsupportedCapability: Story = {
+  args: {
+    powerAvailability: {
+      state: "unsupported",
+      reason: "This device does not support the Power control.",
+    },
+    dataLinkAvailability: {
+      state: "unsupported",
+      reason: "This device does not support the Data link control.",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const [powerButton, dataButton] = canvas.getAllByRole("button");
+    await expect(powerButton).toHaveAttribute("aria-disabled", "true");
+    await expect(dataButton).toHaveAttribute("aria-disabled", "true");
+    await dataButton.click();
+    await expect(await canvas.findByRole("tooltip")).toHaveTextContent(
+      "This device does not support the Data link control.",
+    );
+  },
+};
+
 export const PowerOff: Story = {
   args: {
     state: {
@@ -105,15 +151,20 @@ export const PowerOff: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const powerState = canvas.getByTestId("port-state-power");
-    const dataState = canvas.getByTestId("port-state-data");
-    await expect(powerState).toHaveAccessibleName("Power off");
-    await expect(dataState).toHaveAccessibleName("Data link disconnected");
+    const [powerButton, dataButton] = canvas.getAllByRole("button");
+    await expect(powerButton).toHaveAttribute("aria-pressed", "false");
+    await expect(dataButton).toHaveAttribute("aria-pressed", "false");
     await expect(
-      powerState.querySelector('[data-status-icon="power-off"]'),
+      powerButton.querySelector(".two-stage-hold__feedback"),
+    ).toHaveAccessibleName("Power off");
+    await expect(
+      dataButton.querySelector(".two-stage-hold__feedback"),
+    ).toHaveAccessibleName("Data link disconnected");
+    await expect(
+      powerButton.querySelector('[data-status-icon="power-off"]'),
     ).not.toBeNull();
     await expect(
-      dataState.querySelector('[data-status-icon="data-unlinked"]'),
+      dataButton.querySelector('[data-status-icon="data-unlinked"]'),
     ).not.toBeNull();
   },
 };
@@ -127,11 +178,32 @@ export const DataSwitching: Story = {
       busy: true,
     },
   },
+  render: (args) => {
+    const [state, setState] = useState({
+      ...args.state,
+      data_connected: true,
+      replugging: false,
+      busy: false,
+    });
+    useLayoutEffect(() => {
+      setState(args.state);
+    }, [args.state]);
+    return <PortCard {...args} state={state} />;
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId("port-state-data")).toHaveAccessibleName(
-      "Data switching",
+    const [, dataButton] = canvas.getAllByRole("button");
+    const dataControl = dataButton.closest(".two-stage-hold");
+    await expect(dataControl).toHaveAttribute("data-tone", "warning");
+    await expect(dataButton).toHaveAttribute("aria-disabled", "true");
+    await dataButton.click();
+    await expect(await canvas.findByRole("tooltip")).toHaveTextContent(
+      "Data path is switching. Wait for it to finish.",
     );
+    await expect(
+      dataButton.querySelector(".two-stage-hold__feedback"),
+    ).toHaveAccessibleName("Data link connected");
+    await expect(dataButton).toHaveAttribute("aria-pressed", "true");
   },
 };
 

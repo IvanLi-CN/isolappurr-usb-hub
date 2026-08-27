@@ -60,6 +60,7 @@ type TwoStageHoldButtonProps = {
   value: boolean;
   disabled?: boolean;
   unavailableReason?: string;
+  unavailableTone?: TwoStageHoldTone;
   compact?: boolean;
   className?: string;
   testId?: string;
@@ -81,6 +82,7 @@ export function TwoStageHoldButton({
   value,
   disabled = false,
   unavailableReason,
+  unavailableTone = "neutral",
   compact = false,
   className,
   testId,
@@ -113,6 +115,10 @@ export function TwoStageHoldButton({
   const activeKeyboardKeyRef = useRef<" " | "Enter" | null>(null);
   const pointerHoldRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const disabledRef = useRef(disabled);
+  const unavailableReasonRef = useRef(unavailableReason);
+  disabledRef.current = disabled;
+  unavailableReasonRef.current = unavailableReason;
 
   const releaseHoldRef = useRef<(cancelled?: boolean) => void>(() => {});
 
@@ -151,6 +157,21 @@ export function TwoStageHoldButton({
     [],
   );
 
+  const stopIfUnavailable = () => {
+    if (!disabledRef.current && !unavailableReasonRef.current) {
+      return false;
+    }
+    holdingRef.current = false;
+    sessionRef.current += 1;
+    clearTimers();
+    showResult(
+      "hint",
+      unavailableReasonRef.current ??
+        "Control is unavailable right now. Try again.",
+    );
+    return true;
+  };
+
   const runSecondStage = async (session: number) => {
     if (
       !holdingRef.current ||
@@ -158,6 +179,9 @@ export function TwoStageHoldButton({
       secondStartedRef.current ||
       session !== sessionRef.current
     ) {
+      return;
+    }
+    if (stopIfUnavailable()) {
       return;
     }
     secondStartedRef.current = true;
@@ -190,6 +214,9 @@ export function TwoStageHoldButton({
 
   const runFirstStage = async (session: number) => {
     if (firstStartedRef.current || session !== sessionRef.current) {
+      return;
+    }
+    if (stopIfUnavailable()) {
       return;
     }
     firstStartedRef.current = true;
@@ -453,15 +480,17 @@ export function TwoStageHoldButton({
       : confirmedStageRef.current;
   const tone =
     preview?.tone ??
-    (phase === "error" || phase === "external"
-      ? "error"
-      : phase === "confirmed"
-        ? confirmedStageRef.current === "second"
-          ? "success"
-          : "warning"
-        : phase === "holding" || phase === "stage-one" || phase === "waiting"
-          ? "warning"
-          : "neutral");
+    (unavailableReason
+      ? unavailableTone
+      : phase === "error" || phase === "external"
+        ? "error"
+        : phase === "confirmed"
+          ? confirmedStageRef.current === "second"
+            ? "success"
+            : "warning"
+          : phase === "holding" || phase === "stage-one" || phase === "waiting"
+            ? "warning"
+            : "neutral");
   const usage = unavailableReason
     ? unavailableReason
     : `${label} is ${value ? "enabled" : "disabled"}. Hold 0.6s to ${actionLabel(label, !value).toLowerCase()}, or continue to 1.25s to restore the current state.`;

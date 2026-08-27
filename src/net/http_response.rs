@@ -1,3 +1,42 @@
+use isolapurr_firmware_core::api_contract::{
+    PORT_CAPABILITY_SCHEMA_V1, write_firmware_build_json, write_port_capabilities_json,
+};
+
+fn write_info_json(body: &mut String, device_names: &DeviceNames, wifi: WifiState) {
+    let mac = format_mac_lower(device_names.mac);
+    let ipv4 = wifi.ipv4.map(format_ipv4);
+    let wifi_state_s = wifi_state_str(wifi.state);
+    let _ = core::write!(
+        body,
+        "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
+        device_names.device_id.as_str(),
+        device_names.hostname.as_str(),
+        device_names.hostname_fqdn.as_str(),
+        mac.as_str(),
+        env!("CARGO_PKG_NAME"),
+        release_version(),
+    );
+    let _ = write_firmware_build_json(
+        body,
+        crate::BUILD_GIT_SHA_FULL,
+        crate::BUILD_GIT_DIRTY == "true",
+    );
+    let _ = core::write!(
+        body,
+        "}},\"uptime_ms\":{},\"wifi\":{{\"state\":\"{}\",\"ipv4\":",
+        uptime_ms(),
+        wifi_state_s
+    );
+    match ipv4 {
+        None => body.push_str("null"),
+        Some(ip) => {
+            let _ = core::write!(body, "\"{}\"", ip.as_str());
+        }
+    }
+    let _ = core::write!(body, ",\"is_static\":{}", wifi.is_static);
+    let _ = body.push_str("}},\"capabilities\":{\"identify\":true}}");
+}
+
 fn write_port_telemetry_json(body: &mut String, telemetry: &ApiPortTelemetry) {
     let _ = core::write!(
         body,
@@ -16,10 +55,20 @@ fn write_port_telemetry_json(body: &mut String, telemetry: &ApiPortTelemetry) {
     );
 }
 
-fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &ApiPortSnapshot) {
+fn write_port_json(
+    body: &mut String,
+    port_id: ApiPortId,
+    label: &str,
+    port: &ApiPortSnapshot,
+    capability_schema: Option<u8>,
+) {
+    let _ = body.push('{');
+    if let Some(schema) = capability_schema {
+        let _ = core::write!(body, "\"capability_schema\":{},", schema);
+    }
     let _ = core::write!(
         body,
-        "{{\"portId\":\"{}\",\"label\":\"{}\",\"telemetry\":",
+        "\"portId\":\"{}\",\"label\":\"{}\",\"telemetry\":",
         port_id.as_str(),
         label,
     );
@@ -33,7 +82,7 @@ fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &Ap
     }
     let _ = core::write!(
         body,
-        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":{{\"data_replug\":true,\"data_set\":true,\"power_set\":true}}}}",
+        ",\"state\":{{\"power_enabled\":{},\"data_connected\":{},\"replugging\":{},\"busy\":{}}},\"capabilities\":",
         if port.state.power_enabled {
             "true"
         } else {
@@ -51,6 +100,8 @@ fn write_port_json(body: &mut String, port_id: ApiPortId, label: &str, port: &Ap
         },
         if port.state.busy { "true" } else { "false" },
     );
+    let _ = write_port_capabilities_json(body);
+    let _ = body.push('}');
 }
 
 pub fn write_pd_diagnostics_json(
@@ -1030,8 +1081,15 @@ mod tests {
         port.state.power_enabled = true;
         port.state.data_connected = true;
 
-        write_port_json(&mut body, ApiPortId::PortA, "USB-A", &port);
+        write_port_json(
+            &mut body,
+            ApiPortId::PortA,
+            "USB-A",
+            &port,
+            Some(PORT_CAPABILITY_SCHEMA_V1),
+        );
 
+        assert!(body.starts_with("{\"capability_schema\":1,"));
         assert!(body.contains("\"data_replug\":true"));
         assert!(body.contains("\"data_set\":true"));
         assert!(body.contains("\"data_connected\":true"));

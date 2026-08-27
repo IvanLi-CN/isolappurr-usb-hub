@@ -2,6 +2,7 @@ import { useParams } from "react-router";
 
 import { useDeviceRuntime } from "../app/device-runtime";
 import { useDevices } from "../app/devices-store";
+import { resolvePortControlAvailability } from "../domain/ports";
 import { toHoldActionResult } from "../ui/actions/TwoStageHoldButton";
 import { MissingDeviceState } from "../ui/errors/MissingDeviceState";
 import { DevicePageTabs } from "../ui/nav/DevicePageTabs";
@@ -74,7 +75,16 @@ export function DevicePowerPage() {
         }
         transportLabel={runtime.transport(deviceId) ?? "unknown"}
         usbCPending={runtime.pending(deviceId, "port_c")}
-        usbCDataLinkAvailable={usbCPort?.capabilities?.data_set === true}
+        usbCPowerAvailability={resolvePortControlAvailability(
+          usbCPort?.capability_schema,
+          usbCPort?.capabilities,
+          "power_set",
+        )}
+        usbCDataLinkAvailability={resolvePortControlAvailability(
+          usbCPort?.capability_schema,
+          usbCPort?.capabilities,
+          "data_set",
+        )}
         usbCState={usbCPort?.state ?? null}
         usbCTelemetry={usbCPort?.telemetry ?? null}
       />

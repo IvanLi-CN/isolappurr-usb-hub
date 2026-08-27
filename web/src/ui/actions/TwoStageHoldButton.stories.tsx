@@ -213,12 +213,12 @@ const stateCards: StateCard[] = [
     },
   },
   {
-    title: "Update required",
+    title: "Undeclared capability",
     status: "Control is unavailable",
     value: true,
     disabled: true,
     unavailableReason:
-      "This firmware does not support the Data link control. Update the device firmware to use it.",
+      "This device has not declared the Data link control capability, so it is unavailable.",
     preview: { phase: "idle", stage: "result", tone: "neutral" },
   },
 ];
@@ -335,7 +335,7 @@ export const AllStates: Story = {
       "two-stage-hold-failure-button",
     );
     const unavailableControl = canvasElement.querySelector(
-      'section[aria-label^="Update required"] .two-stage-hold',
+      'section[aria-label^="Undeclared capability"] .two-stage-hold',
     );
     await expect(unavailableControl).toHaveAttribute("data-tone", "neutral");
     await expect(unavailableControl?.querySelector("button")).toHaveAttribute(
@@ -417,7 +417,7 @@ export const CompactAllStates: Story = {
       ).toBeLessThanOrEqual(2);
     }
     const unavailableButton = canvasElement.querySelector<HTMLButtonElement>(
-      'section[aria-label^="Update required"] .two-stage-hold__button',
+      'section[aria-label^="Undeclared capability"] .two-stage-hold__button',
     );
     const unavailableFeedback = unavailableButton?.querySelector<HTMLElement>(
       ".two-stage-hold__feedback",
@@ -658,7 +658,7 @@ export const UnavailableTooltip: Story = {
   render: () => (
     <HoldDemo
       disabled
-      unavailableReason="This firmware does not support the Data link control. Update the device firmware to use it."
+      unavailableReason="This device has not declared the Data link control capability, so it is unavailable."
     />
   ),
   play: async ({ canvasElement }) => {
@@ -666,7 +666,7 @@ export const UnavailableTooltip: Story = {
     const button = canvas.getByTestId("two-stage-hold");
     fireEvent.click(button);
     await expect(await canvas.findByRole("tooltip")).toHaveTextContent(
-      /update the device firmware/i,
+      /has not declared the data link control capability/i,
     );
   },
 };

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect } from "@storybook/test";
+import { useLayoutEffect, useState } from "react";
 
 import { PortMiniCard } from "./PortMiniCard";
 
@@ -66,5 +67,35 @@ export const Unavailable: Story = {
       power_mw: null,
       sample_uptime_ms: 123_456,
     },
+  },
+};
+
+export const RepluggingKeepsConfirmedState: Story = {
+  args: {
+    state: {
+      power_enabled: true,
+      data_connected: false,
+      replugging: true,
+      busy: true,
+    },
+  },
+  render: (args) => {
+    const [state, setState] = useState({
+      ...args.state,
+      data_connected: true,
+      replugging: false,
+      busy: false,
+    });
+    useLayoutEffect(() => {
+      setState(args.state);
+    }, [args.state]);
+    return <PortMiniCard {...args} state={state} />;
+  },
+  play: async ({ canvasElement }) => {
+    const dataButton = canvasElement.querySelectorAll("button")[1];
+    await expect(dataButton).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      dataButton.querySelector(".two-stage-hold__feedback"),
+    ).toHaveAccessibleName("Data link connected");
   },
 };

@@ -34,6 +34,35 @@
 - Normal runtime, storage, and owner-facing control must reject them and require firmware upgrade first.
 - Existing local records that do not use the canonical 12-character `device_id` are cleared instead of migrated by guesswork.
 
+## Port controls
+
+- `confirmed port state`
+  The latest device-confirmed `power_enabled`, `data_connected`, or transient
+  `replugging` state for one physical port. The associated port action control
+  is its sole owner-facing visual representation.
+
+- `port control availability`
+  The evidence-based ability to safely offer one port action. It is distinct
+  from confirmed port state and is one of `supported`, `unsupported`, or
+  `unknown`.
+
+- `capability schema`
+  The versioned, endpoint-provided declaration that gives port control
+  availability its meaning. Missing or unrecognized schema versions leave the
+  relevant capability unknown; the Web client never infers it from firmware
+  version strings.
+
+- `supported`
+  The device explicitly declares the capability required by the action.
+
+- `unsupported`
+  The device explicitly declares that the capability required by the action is
+  unavailable.
+
+- `unknown`
+  The device does not provide enough compatibility information to safely offer
+  the action. It must not be described as unsupported.
+
 ## Power configuration
 
 - `tps_mode`

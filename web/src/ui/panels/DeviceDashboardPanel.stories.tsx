@@ -390,6 +390,35 @@ function mockUsbCDiagnostics(hostname: string): PdDiagnosticsResponse {
   return autoPdDiagnostics;
 }
 
+function mockDeviceInfo(hostname: string) {
+  const deviceId =
+    hostname.match(/([a-f0-9]{12})\.local$/)?.[1] ?? "aabbcc001122";
+  return {
+    device: {
+      device_id: deviceId,
+      hostname: hostname.replace(/\.local$/, ""),
+      fqdn: hostname,
+      mac:
+        deviceId.match(/.{2}/g)?.join(":").toUpperCase() ?? "AA:BB:CC:00:11:22",
+      variant: "tps-sw",
+      firmware: {
+        name: "isolapurr-usb-hub",
+        version: "0.6.9",
+        build: {
+          source_sha: "0123456789abcdef0123456789abcdef01234567",
+          dirty: false,
+        },
+      },
+      uptime_ms: 123_456,
+      wifi: {
+        state: "connected",
+        ipv4: "192.168.31.224",
+        is_static: false,
+      },
+    },
+  };
+}
+
 const mockDeviceApi = async (
   input: Parameters<typeof fetch>[0],
   init: Parameters<typeof fetch>[1],
@@ -421,9 +450,14 @@ const mockDeviceApi = async (
     return original(input, init);
   }
 
+  if (url.pathname === "/api/v1/info") {
+    return jsonResponse(mockDeviceInfo(url.hostname));
+  }
+
   if (url.pathname === "/api/v1/ports") {
     return jsonResponse({
       hub: mockHub(url.hostname),
+      capability_schema: 1,
       ports: [
         {
           portId: "port_a",

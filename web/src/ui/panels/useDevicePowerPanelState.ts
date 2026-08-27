@@ -10,7 +10,11 @@ import type {
   PowerConfigResponse,
   Result,
 } from "../../domain/deviceApi";
-import type { PortState, PortTelemetry } from "../../domain/ports";
+import type {
+  PortControlAvailability,
+  PortState,
+  PortTelemetry,
+} from "../../domain/ports";
 import type { HoldActionResult } from "../actions/TwoStageHoldButton";
 import { useToast } from "../toast/ToastProvider";
 import {
@@ -75,7 +79,8 @@ export type DevicePowerPanelProps = {
   usbCTelemetry: PortTelemetry | null;
   usbCState: PortState | null;
   usbCPending: boolean;
-  usbCDataLinkAvailable: boolean;
+  usbCPowerAvailability: PortControlAvailability;
+  usbCDataLinkAvailability: PortControlAvailability;
   setUsbCData: (connected: boolean) => Promise<HoldActionResult>;
 };
 

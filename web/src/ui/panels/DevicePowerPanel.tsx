@@ -86,7 +86,8 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
     setIdleBiasCorrection,
     transportLabel,
     usbCPending,
-    usbCDataLinkAvailable,
+    usbCPowerAvailability,
+    usbCDataLinkAvailability,
     usbCState,
     usbCTelemetry,
   } = props;
@@ -449,7 +450,8 @@ export function DevicePowerPanel(props: DevicePowerPanelProps) {
             runtimeOutputEnabled={runtimeOutputEnabled}
             sw2303LineCompensation={form.sw2303_line_compensation}
             usbCPending={usbCPending}
-            usbCDataLinkAvailable={usbCDataLinkAvailable}
+            usbCPowerAvailability={usbCPowerAvailability}
+            usbCDataLinkAvailability={usbCDataLinkAvailability}
             usbCState={usbCState}
             usbCTelemetry={usbCTelemetry}
           />
