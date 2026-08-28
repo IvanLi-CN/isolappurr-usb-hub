@@ -39,6 +39,7 @@ type PendingDesktopStart = {
   legacyAccepted: boolean;
   abortController: AbortController;
   cancelRequested: boolean;
+  requestId: string;
 };
 
 export type IpScanController = {
@@ -130,12 +131,17 @@ export function useIpScanController({
         const cancellationAgent = agent ?? pendingStart?.agent ?? null;
         const cancellationRunId = desktopRunId ?? pendingStart?.serverRunId;
         const legacyCancellation =
-          (pendingStart?.legacyAccepted === true ||
-            pendingStart?.cancelRequested === true) &&
+          pendingStart?.legacyAccepted === true &&
           pendingStart.serverRunId === null;
+        const cancellationRequestId =
+          cancellationRunId === null && !legacyCancellation
+            ? pendingStart?.requestId
+            : undefined;
         if (
           cancellationAgent &&
-          (cancellationRunId !== null || legacyCancellation)
+          (cancellationRunId !== null ||
+            cancellationRequestId ||
+            legacyCancellation)
         ) {
           const cancellationController = new AbortController();
           const timeoutId = window.setTimeout(
@@ -146,7 +152,11 @@ export function useIpScanController({
             await agentFetch(cancellationAgent, "/api/v1/discovery/cancel", {
               method: "POST",
               body: JSON.stringify(
-                cancellationRunId === null ? {} : { runId: cancellationRunId },
+                cancellationRunId !== null
+                  ? { runId: cancellationRunId }
+                  : cancellationRequestId
+                    ? { requestId: cancellationRequestId }
+                    : {},
               ),
               signal: cancellationController.signal,
             });
@@ -263,6 +273,7 @@ export function useIpScanController({
           legacyAccepted: false,
           abortController: new AbortController(),
           cancelRequested: false,
+          requestId: crypto.randomUUID(),
         };
         pendingDesktopStartRef.current = pendingStart;
         const startTimeoutId = window.setTimeout(
@@ -275,7 +286,10 @@ export function useIpScanController({
             try {
               response = await agentFetch(agent, "/api/v1/discovery/ip-scan", {
                 method: "POST",
-                body: JSON.stringify({ cidr: parsed.cidr }),
+                body: JSON.stringify({
+                  cidr: parsed.cidr,
+                  requestId: pendingStart.requestId,
+                }),
                 signal: pendingStart.abortController.signal,
               });
             } catch {
@@ -516,6 +530,7 @@ export function useIpScanController({
             return;
           }
           const pollGeneration = scanRunIdRef.current;
+          const pollCommandGeneration = commandGenerationRef.current;
           const pollSequence = ++snapshotPollSequenceRef.current;
           let res: Response;
           try {
@@ -525,7 +540,8 @@ export function useIpScanController({
               current !== agentRef.current ||
               !openRef.current ||
               scanRunIdRef.current !== pollGeneration ||
-              pollSequence !== snapshotPollSequenceRef.current
+              pollSequence !== snapshotPollSequenceRef.current ||
+              commandGenerationRef.current !== pollCommandGeneration
             ) {
               return;
             }
@@ -542,7 +558,8 @@ export function useIpScanController({
             current !== agentRef.current ||
             !openRef.current ||
             scanRunIdRef.current !== pollGeneration ||
-            pollSequence !== snapshotPollSequenceRef.current
+            pollSequence !== snapshotPollSequenceRef.current ||
+            commandGenerationRef.current !== pollCommandGeneration
           ) {
             return;
           }
@@ -567,7 +584,8 @@ export function useIpScanController({
               current !== agentRef.current ||
               !openRef.current ||
               scanRunIdRef.current !== pollGeneration ||
-              pollSequence !== snapshotPollSequenceRef.current
+              pollSequence !== snapshotPollSequenceRef.current ||
+              commandGenerationRef.current !== pollCommandGeneration
             ) {
               return;
             }
@@ -584,7 +602,8 @@ export function useIpScanController({
             current !== agentRef.current ||
             !openRef.current ||
             scanRunIdRef.current !== pollGeneration ||
-            pollSequence !== snapshotPollSequenceRef.current
+            pollSequence !== snapshotPollSequenceRef.current ||
+            commandGenerationRef.current !== pollCommandGeneration
           ) {
             return;
           }

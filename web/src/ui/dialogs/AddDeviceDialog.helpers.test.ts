@@ -203,6 +203,40 @@ describe("desktop discovery scan ownership", () => {
     ).toBe(true);
   });
 
+  test("rejects malformed explicit ready scans without completion metrics", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: -1,
+        total: -1,
+      },
+    });
+
+    expect(parsed?.scan).toBeUndefined();
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+  });
+
+  test("does not infer legacy completion from an explicit ready scan", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+      },
+    });
+
+    expect(parsed?.scan?.status).toBe("ready");
+    expect(parsed?.scan?.legacyScanComplete).toBe(false);
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+  });
+
   test("keeps an explicitly scanning desktop scan in progress", () => {
     const parsed = parseDesktopDiscoverySnapshot({
       mode: "service",

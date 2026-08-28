@@ -55,6 +55,7 @@ export type DiscoverySnapshotShape = {
     runId?: number;
     reachableResponses?: number;
     legacyDevicesAreAmbiguous?: boolean;
+    legacyScanComplete?: boolean;
   };
   ipScan?: {
     expanded: false;
@@ -74,7 +75,7 @@ export function isPersistableDesktopScan(
   }
   // Legacy agents did not report response metrics. A completed empty result
   // is still authoritative and must replace any older cached session.
-  return scan.devices.length === 0;
+  return scan.legacyScanComplete === true && scan.devices.length === 0;
 }
 
 function extractUsbDevice(value: unknown): UsbDeviceInfo | null {
@@ -207,6 +208,13 @@ export function parseDesktopDiscoverySnapshot(
 
   const scanDone = scan && typeof scan.done === "number" ? scan.done : null;
   const scanTotal = scan && typeof scan.total === "number" ? scan.total : null;
+  const hasValidProgress =
+    scanDone !== null &&
+    Number.isSafeInteger(scanDone) &&
+    scanDone >= 0 &&
+    scanTotal !== null &&
+    Number.isSafeInteger(scanTotal) &&
+    scanTotal >= 0;
   const scanCidr =
     scan && typeof scan.cidr === "string" ? parseCidr(scan.cidr) : null;
   const hasExplicitScanStatus =
@@ -214,6 +222,7 @@ export function parseDesktopDiscoverySnapshot(
   const legacyScanComplete =
     !hasExplicitScanStatus &&
     status === "ready" &&
+    hasValidProgress &&
     scanDone !== null &&
     scanTotal !== null &&
     scanDone >= scanTotal;
@@ -273,10 +282,7 @@ export function parseDesktopDiscoverySnapshot(
       ? scan.reachableResponses
       : undefined;
   const scanShape =
-    scan &&
-    scanCidr?.ok === true &&
-    typeof scan.done === "number" &&
-    typeof scan.total === "number"
+    scan && scanCidr?.ok === true && hasValidProgress
       ? {
           cidr: scanCidr.cidr,
           done: scan.done,
@@ -289,6 +295,7 @@ export function parseDesktopDiscoverySnapshot(
             legacyScanComplete &&
             !(scan && Array.isArray(scan.devices)) &&
             scanDevices.length > 0,
+          legacyScanComplete,
         }
       : undefined;
 

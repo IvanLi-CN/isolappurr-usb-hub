@@ -562,11 +562,11 @@ mod tests {
             .expect("seed service discovery");
 
         let first = controller
-            .start_ip_scan("127.0.0.0/30".to_string())
+            .start_ip_scan("127.0.0.0/30".to_string(), None)
             .await
             .expect("start first scan");
         let second = controller
-            .start_ip_scan("127.0.0.0/30".to_string())
+            .start_ip_scan("127.0.0.0/30".to_string(), None)
             .await
             .expect("start second scan");
         assert!(second > first);
@@ -607,6 +607,22 @@ mod tests {
                     .iter()
                     .all(|device| device.device_id.as_deref() != Some("deadbeef0000")))
                 .unwrap_or(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn ip_scan_rejects_ranges_larger_than_web_limit() {
+        init_tracing();
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        let result = controller
+            .start_ip_scan("192.168.0.0/16".to_string(), None)
+            .await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .expect_err("oversized range should be rejected")
+                .to_string()
+                .contains("too many hosts")
         );
     }
 

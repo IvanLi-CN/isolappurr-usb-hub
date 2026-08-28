@@ -215,6 +215,8 @@ struct ScanState {
     reachable_responses: u32,
     #[serde(rename = "runId")]
     run_id: u64,
+    #[serde(rename = "requestId", skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

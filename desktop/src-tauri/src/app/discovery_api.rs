@@ -70,12 +70,16 @@ async fn api_discovery_refresh(State(state): State<AppState>, headers: HeaderMap
 #[derive(Debug, Deserialize)]
 struct IpScanRequest {
     cidr: String,
+    #[serde(rename = "requestId")]
+    request_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct DiscoveryCancelRequest {
     #[serde(rename = "runId")]
     run_id: Option<u64>,
+    #[serde(rename = "requestId")]
+    request_id: Option<String>,
 }
 
 async fn api_discovery_ip_scan(
@@ -89,7 +93,11 @@ async fn api_discovery_ip_scan(
     if !is_authorized(&headers, &state) {
         return unauthorized("missing/invalid bearer token");
     }
-    let run_id = match state.discovery.start_ip_scan(req.cidr).await {
+    let run_id = match state
+        .discovery
+        .start_ip_scan(req.cidr, req.request_id)
+        .await
+    {
         Ok(run_id) => run_id,
         Err(err) => {
             tracing::warn!("ip scan: {err:#}");
@@ -114,9 +122,12 @@ async fn api_discovery_cancel(
     if !is_authorized(&headers, &state) {
         return unauthorized("missing/invalid bearer token");
     }
+    let (requested_run_id, requested_request_id) = body
+        .map(|Json(req)| (req.run_id, req.request_id))
+        .unwrap_or((None, None));
     state
         .discovery
-        .cancel_ip_scan(body.map(|Json(req)| req.run_id).flatten())
+        .cancel_ip_scan(requested_run_id, requested_request_id)
         .await;
     (
         StatusCode::ACCEPTED,

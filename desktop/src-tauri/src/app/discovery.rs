@@ -282,15 +282,28 @@ impl DiscoveryController {
         Ok(())
     }
 
-    async fn start_ip_scan(self: &Arc<Self>, cidr: String) -> anyhow::Result<u64> {
+    async fn start_ip_scan(
+        self: &Arc<Self>,
+        cidr: String,
+        request_id: Option<String>,
+    ) -> anyhow::Result<u64> {
         let _lifecycle = self.ip_scan_lifecycle.lock().await;
         let net: ipnet::Ipv4Net = cidr.parse().context("invalid cidr")?;
+        let host_bits = 32 - u32::from(net.prefix_len());
+        let host_count = if host_bits >= 31 {
+            u64::MAX
+        } else {
+            (1_u64 << host_bits).saturating_sub(2)
+        };
+        if host_count > 1024 {
+            return Err(anyhow!("cidr contains too many hosts"));
+        }
         let hosts: Vec<Ipv4Addr> = net.hosts().collect();
         if hosts.is_empty() {
             return Err(anyhow!("empty cidr"));
         }
 
-        self.cancel_ip_scan_inner(None).await;
+        self.cancel_ip_scan_inner(None, None).await;
         let run_id = self.next_ip_scan_run.fetch_add(1, Ordering::Relaxed) + 1;
         let cancel = CancellationToken::new();
         *self.ip_scan_cancel.write().await = cancel.clone();
@@ -307,6 +320,7 @@ impl DiscoveryController {
                 devices: Vec::new(),
                 reachable_responses: 0,
                 run_id,
+                request_id,
             });
         }
 
@@ -371,12 +385,21 @@ impl DiscoveryController {
         Ok(run_id)
     }
 
-    async fn cancel_ip_scan(&self, requested_run_id: Option<u64>) {
+    async fn cancel_ip_scan(
+        &self,
+        requested_run_id: Option<u64>,
+        requested_request_id: Option<String>,
+    ) {
         let _lifecycle = self.ip_scan_lifecycle.lock().await;
-        self.cancel_ip_scan_inner(requested_run_id).await;
+        self.cancel_ip_scan_inner(requested_run_id, requested_request_id)
+            .await;
     }
 
-    async fn cancel_ip_scan_inner(&self, requested_run_id: Option<u64>) {
+    async fn cancel_ip_scan_inner(
+        &self,
+        requested_run_id: Option<u64>,
+        requested_request_id: Option<String>,
+    ) {
         let mut snapshot = self.snapshot.write().await;
         if let Some(requested_run_id) = requested_run_id {
             let current_run_matches = snapshot
@@ -385,6 +408,17 @@ impl DiscoveryController {
                 .map(|scan| scan.run_id == requested_run_id)
                 .unwrap_or(false);
             if !current_run_matches {
+                return;
+            }
+        }
+        if let Some(requested_request_id) = requested_request_id {
+            let current_request_matches = snapshot
+                .scan
+                .as_ref()
+                .and_then(|scan| scan.request_id.as_deref())
+                .map(|request_id| request_id == requested_request_id)
+                .unwrap_or(false);
+            if !current_request_matches {
                 return;
             }
         }
