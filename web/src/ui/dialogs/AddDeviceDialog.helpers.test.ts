@@ -321,6 +321,35 @@ describe("desktop discovery scan ownership", () => {
     expect(isPersistableDesktopScan(malformedLegacyDevices?.scan)).toBe(false);
   });
 
+  test("rejects invalid scan metadata instead of inferring completion", () => {
+    const invalidStatus = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "finished",
+        reachableResponses: 0,
+      },
+    });
+    expect(invalidStatus?.scanMalformed).toBe(true);
+
+    const invalidMetric = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        reachableResponses: "1",
+      },
+    });
+    expect(invalidMetric?.scanMalformed).toBe(true);
+  });
+
   test("keeps an explicitly scanning desktop scan in progress", () => {
     const parsed = parseDesktopDiscoverySnapshot({
       mode: "service",

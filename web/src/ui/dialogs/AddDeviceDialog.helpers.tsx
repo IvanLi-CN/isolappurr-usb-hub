@@ -244,8 +244,11 @@ export function parseDesktopDiscoverySnapshot(
     scanTotal >= 0;
   const scanCidr =
     scan && typeof scan.cidr === "string" ? parseCidr(scan.cidr) : null;
+  const hasScanStatusField =
+    scan !== undefined && Object.hasOwn(scan, "status");
   const hasExplicitScanStatus =
     scan?.status === "ready" || scan?.status === "scanning";
+  const hasMalformedScanStatus = hasScanStatusField && !hasExplicitScanStatus;
   const legacyScanComplete =
     !hasExplicitScanStatus &&
     status === "ready" &&
@@ -331,6 +334,10 @@ export function parseDesktopDiscoverySnapshot(
     scan.reachableResponses >= 0
       ? scan.reachableResponses
       : undefined;
+  const hasReachableResponsesField =
+    scan !== undefined && Object.hasOwn(scan, "reachableResponses");
+  const hasMalformedReachableResponses =
+    hasReachableResponsesField && reachableResponses === undefined;
   const scanShape =
     scan &&
     scanCidr?.ok === true &&
@@ -435,7 +442,10 @@ export function parseDesktopDiscoverySnapshot(
     devices: parsedDevices,
     error,
     scanMalformed: Boolean(
-      (hasScanField && scan === undefined) || (scan && !scanShape),
+      (hasScanField && scan === undefined) ||
+        (scan && !scanShape) ||
+        hasMalformedScanStatus ||
+        hasMalformedReachableResponses,
     ),
     scan: scanShape,
     ipScan: ipScan ? { expanded: false, defaultCidr, candidates } : undefined,

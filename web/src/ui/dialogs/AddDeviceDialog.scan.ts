@@ -611,7 +611,15 @@ export function useIpScanController({
           if (!parsed) {
             return;
           }
-          if (activeScanKindRef.current === "desktop" && parsed.scanMalformed) {
+          const pendingDesktopStart = pendingDesktopStartRef.current;
+          const preservingPendingDesktopStart =
+            activeScanKindRef.current === "desktop" &&
+            pendingDesktopStart?.localRunId === pollGeneration;
+          if (
+            activeScanKindRef.current === "desktop" &&
+            (parsed.scanMalformed ||
+              (!parsed.scan && !preservingPendingDesktopStart))
+          ) {
             void cancelActiveIpScan();
             dispatch({
               type: "set_error",
@@ -633,10 +641,6 @@ export function useIpScanController({
               (scanRunId === undefined &&
                 desktopScanRunIdRef.current === scanRunIdRef.current));
           const ownedScan = ownsScan ? parsed.scan : undefined;
-          const pendingDesktopStart = pendingDesktopStartRef.current;
-          const preservingPendingDesktopStart =
-            activeScanKindRef.current === "desktop" &&
-            pendingDesktopStart?.localRunId === pollGeneration;
           const ownedScanRunId =
             ownedScan?.runId ?? desktopScanRunIdRef.current;
           if (
