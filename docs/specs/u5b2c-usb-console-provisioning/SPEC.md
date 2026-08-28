@@ -122,6 +122,7 @@ Default selection is only defined after more than one path is immediately usable
 - Web UI MUST ignore expired sessions when Add device opens and MUST remove them from browser storage. Live and `?demo=true` sessions MUST use separate browser-local namespaces.
 - Web UI MUST NOT persist typed-but-unstarted CIDR input, partial scans, cancelled scans, or failed scans. A completed scan MUST be persisted when at least one probe receives an HTTP response, even if other addresses are offline or browser-blocked; a scan with no HTTP responses that is entirely browser-blocked MUST remain non-persistable and show the private-network guidance.
 - Desktop discovery MUST keep live service results separate from IP scan results and MUST associate scan progress/completion with a monotonic `runId` so stale runs cannot update a current run.
+- Desktop IP scan start requests MUST include a client request token for cancellation before the server `runId` is observed. The desktop agent MUST scope token cancellation to the matching current run and reject CIDR ranges that exceed the web scan host limit before allocating scan hosts.
 
 ## JSONL Protocol
 
