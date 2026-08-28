@@ -633,6 +633,7 @@ export function useIpScanController({
           const ownedScanRunId =
             ownedScan?.runId ?? desktopScanRunIdRef.current;
           if (
+            ownedScan &&
             isTrustedDesktopScanCompletion(ownedScan) &&
             ownedScanRunId !== null &&
             completedScanRunIdRef.current !== ownedScanRunId

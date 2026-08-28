@@ -56,6 +56,7 @@ export type DiscoverySnapshotShape = {
     reachableResponses?: number;
     legacyDevicesAreAmbiguous?: boolean;
     legacyScanComplete?: boolean;
+    hasMalformedDevices?: boolean;
   };
   ipScan?: {
     expanded: false;
@@ -67,7 +68,12 @@ export type DiscoverySnapshotShape = {
 export function isPersistableDesktopScan(
   scan: DiscoverySnapshotShape["scan"],
 ): boolean {
-  if (!scan || scan.status !== "ready" || scan.legacyDevicesAreAmbiguous) {
+  if (
+    !scan ||
+    scan.status !== "ready" ||
+    scan.legacyDevicesAreAmbiguous ||
+    scan.hasMalformedDevices
+  ) {
     return false;
   }
   if (scan.reachableResponses !== undefined) {
@@ -251,12 +257,28 @@ export function parseDesktopDiscoverySnapshot(
         ? devices
         : [];
   const scanDevices: DiscoveredDevice[] = [];
+  let hasMalformedDevices = false;
   for (const item of scanDevicesRaw) {
     if (!item || typeof item !== "object") {
+      hasMalformedDevices = true;
       continue;
     }
     const device = item as Record<string, unknown>;
-    if (typeof device.baseUrl !== "string") {
+    if (typeof device.baseUrl !== "string" || !device.baseUrl.trim()) {
+      hasMalformedDevices = true;
+      continue;
+    }
+    try {
+      const parsedBaseUrl = new URL(device.baseUrl);
+      if (
+        !["http:", "https:"].includes(parsedBaseUrl.protocol) ||
+        !parsedBaseUrl.hostname
+      ) {
+        hasMalformedDevices = true;
+        continue;
+      }
+    } catch {
+      hasMalformedDevices = true;
       continue;
     }
     scanDevices.push({
@@ -300,11 +322,15 @@ export function parseDesktopDiscoverySnapshot(
       ? scan.reachableResponses
       : undefined;
   const scanShape =
-    scan && scanCidr?.ok === true && hasValidProgress
+    scan &&
+    scanCidr?.ok === true &&
+    hasValidProgress &&
+    scanDone !== null &&
+    scanTotal !== null
       ? {
           cidr: scanCidr.cidr,
-          done: scan.done,
-          total: scan.total,
+          done: scanDone,
+          total: scanTotal,
           status: scanStatus,
           devices: scanDevices,
           runId: scanRunId,
@@ -314,6 +340,7 @@ export function parseDesktopDiscoverySnapshot(
             !(scan && Array.isArray(scan.devices)) &&
             scanDevices.length > 0,
           legacyScanComplete,
+          hasMalformedDevices,
         }
       : undefined;
 

@@ -746,6 +746,7 @@ export function AddDeviceDialog({
     if (nextMethod === methodRef.current) {
       return;
     }
+    void cancelActiveIpScan();
     usbRunIdRef.current += 1;
     methodRef.current = nextMethod;
     setMethod(nextMethod);

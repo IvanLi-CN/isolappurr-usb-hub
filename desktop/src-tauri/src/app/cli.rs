@@ -382,6 +382,7 @@ struct DiscoveryController {
     snapshot: RwLock<DiscoverySnapshot>,
     ip_scan_cancel: RwLock<CancellationToken>,
     ip_scan_lifecycle: TokioMutex<()>,
+    ip_scan_cancelled_requests: TokioMutex<HashSet<String>>,
     mdns: Option<ServiceDaemon>,
     mdns_error: Option<String>,
     mdns_unavailable: AtomicBool,

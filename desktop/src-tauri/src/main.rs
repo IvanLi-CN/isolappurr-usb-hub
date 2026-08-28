@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     io::{Read as _, Write as _},
     net::{Ipv4Addr, SocketAddr},
@@ -46,6 +46,7 @@ const STORAGE_FILE_NAME: &str = "storage.json";
 const PORT_CACHE_FILE_NAME: &str = ".esp32-port";
 const DEFAULT_FLASH_ADDRESS: u32 = 0x10000;
 const PORT_IDENTITY_UNCONFIRMED: &str = "unconfirmed";
+const MAX_CANCELLED_IP_SCAN_REQUESTS: usize = 256;
 
 include!("app/cli.rs");
 
@@ -624,6 +625,25 @@ mod tests {
                 .to_string()
                 .contains("too many hosts")
         );
+    }
+
+    #[tokio::test]
+    async fn cancelled_ip_scan_request_blocks_late_start() {
+        init_tracing();
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        controller
+            .cancel_ip_scan(None, Some("request-1".to_string()))
+            .await;
+        let result = controller
+            .start_ip_scan("127.0.0.0/30".to_string(), Some("request-1".to_string()))
+            .await;
+        assert!(
+            result
+                .expect_err("cancelled request should not install a scan")
+                .to_string()
+                .contains("request was cancelled")
+        );
+        assert!(controller.snapshot().await.scan.is_none());
     }
 
     fn temp_storage_path(label: &str) -> PathBuf {

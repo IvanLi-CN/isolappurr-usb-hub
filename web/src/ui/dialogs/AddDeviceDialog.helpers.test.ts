@@ -256,6 +256,26 @@ describe("desktop discovery scan ownership", () => {
     expect(isTrustedDesktopScanCompletion(parsed?.scan)).toBe(false);
   });
 
+  test("rejects desktop cache persistence when any scan device is malformed", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+        reachableResponses: 1,
+        devices: [{ baseUrl: "http://192.168.1.2" }, { baseUrl: "" }],
+      },
+    });
+
+    expect(parsed?.scan?.devices).toHaveLength(1);
+    expect(parsed?.scan?.hasMalformedDevices).toBe(true);
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+  });
+
   test("keeps an explicitly scanning desktop scan in progress", () => {
     const parsed = parseDesktopDiscoverySnapshot({
       mode: "service",

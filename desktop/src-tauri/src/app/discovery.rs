@@ -26,6 +26,7 @@ impl DiscoveryController {
             }),
             ip_scan_cancel: RwLock::new(CancellationToken::new()),
             ip_scan_lifecycle: TokioMutex::new(()),
+            ip_scan_cancelled_requests: TokioMutex::new(HashSet::new()),
             mdns,
             mdns_error,
             mdns_unavailable: AtomicBool::new(mdns_unavailable),
@@ -298,6 +299,12 @@ impl DiscoveryController {
         if host_count > 1024 {
             return Err(anyhow!("cidr contains too many hosts"));
         }
+        if let Some(request_id) = request_id.as_ref() {
+            let mut cancelled_requests = self.ip_scan_cancelled_requests.lock().await;
+            if cancelled_requests.remove(request_id) {
+                return Err(anyhow!("ip scan request was cancelled"));
+            }
+        }
         let hosts: Vec<Ipv4Addr> = net.hosts().collect();
         if hosts.is_empty() {
             return Err(anyhow!("empty cidr"));
@@ -419,6 +426,14 @@ impl DiscoveryController {
                 .map(|request_id| request_id == requested_request_id)
                 .unwrap_or(false);
             if !current_request_matches {
+                if snapshot.scan.is_none() && requested_run_id.is_none() {
+                    drop(snapshot);
+                    let mut cancelled_requests = self.ip_scan_cancelled_requests.lock().await;
+                    if cancelled_requests.len() >= MAX_CANCELLED_IP_SCAN_REQUESTS {
+                        cancelled_requests.clear();
+                    }
+                    cancelled_requests.insert(requested_request_id);
+                }
                 return;
             }
         }
