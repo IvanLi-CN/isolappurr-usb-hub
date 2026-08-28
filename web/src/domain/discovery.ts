@@ -28,7 +28,15 @@ export type DiscoverySnapshot = {
   status: DiscoveryStatus;
   devices: DiscoveredDevice[];
   error?: string;
-  scan?: { cidr: string; done: number; total: number };
+  scan?: {
+    cidr: string;
+    done: number;
+    total: number;
+    status: "scanning" | "ready";
+    devices: DiscoveredDevice[];
+    runId?: number;
+    reachableResponses?: number;
+  };
   ipScan?: {
     expanded: boolean;
     expandedBy?: "user" | "auto";
@@ -39,19 +47,26 @@ export type DiscoverySnapshot = {
 };
 
 export type DiscoveryAction =
-  | { type: "reset"; status: DiscoveryStatus; error?: string }
+  | {
+      type: "reset";
+      status: DiscoveryStatus;
+      error?: string;
+      preserveScan?: boolean;
+    }
   | {
       type: "set_snapshot";
       snapshot: DiscoverySnapshot;
+      replaceScan?: boolean;
     }
   | { type: "set_devices"; devices: DiscoveredDevice[] }
   | { type: "set_error"; error: string }
   | { type: "toggle_ip_scan"; expanded: boolean; expandedBy: "user" | "auto" }
-  | { type: "start_scan"; cidr: string; total: number }
-  | { type: "scan_progress"; done: number }
-  | { type: "scan_device"; device: DiscoveredDevice }
-  | { type: "scan_done" }
-  | { type: "scan_cancelled" };
+  | { type: "start_scan"; cidr: string; total: number; runId?: number }
+  | { type: "restore_scan"; cidr: string; devices: DiscoveredDevice[] }
+  | { type: "scan_progress"; done: number; runId?: number }
+  | { type: "scan_device"; device: DiscoveredDevice; runId?: number }
+  | { type: "scan_done"; runId?: number }
+  | { type: "scan_cancelled"; runId?: number };
 
 export function createInitialDiscoverySnapshot({
   status,
@@ -112,19 +127,23 @@ export function reduceDiscoverySnapshot(
         status: action.status,
         devices: [],
         error: action.error,
-        scan: undefined,
+        scan: action.preserveScan ? snapshot.scan : undefined,
       };
     }
     case "set_snapshot": {
       const prevIpScan = snapshot.ipScan ?? { expanded: false };
+      const currentScan = snapshot.scan;
+      const nextScan = action.snapshot.scan;
+      const preserveScan = !action.replaceScan && currentScan && !nextScan;
       const nextIpScan = action.snapshot.ipScan;
       return {
         ...action.snapshot,
+        scan: preserveScan ? currentScan : nextScan,
         ipScan: {
           expanded: prevIpScan.expanded,
           expandedBy: prevIpScan.expandedBy,
           autoExpandAfterMs: prevIpScan.autoExpandAfterMs,
-          defaultCidr: nextIpScan?.defaultCidr,
+          defaultCidr: nextIpScan?.defaultCidr ?? prevIpScan.defaultCidr,
           candidates: nextIpScan?.candidates,
         },
       };
@@ -151,28 +170,86 @@ export function reduceDiscoverySnapshot(
         mode: "scan",
         status: "scanning",
         error: undefined,
-        scan: { cidr: action.cidr, done: 0, total: action.total },
+        scan: {
+          cidr: action.cidr,
+          done: 0,
+          total: action.total,
+          status: "scanning",
+          devices: [],
+          runId: action.runId,
+        },
+      };
+    }
+    case "restore_scan": {
+      return {
+        ...snapshot,
+        mode: "scan",
+        status: "ready",
+        ipScan: {
+          ...(snapshot.ipScan ?? { expanded: false }),
+          expanded: true,
+          expandedBy: "auto",
+          defaultCidr: action.cidr,
+        },
+        scan: {
+          cidr: action.cidr,
+          done: 0,
+          total: 0,
+          status: "ready",
+          devices: action.devices,
+        },
       };
     }
     case "scan_progress": {
-      if (!snapshot.scan) {
+      if (
+        !snapshot.scan ||
+        (action.runId !== undefined && snapshot.scan.runId !== action.runId)
+      ) {
         return snapshot;
       }
       return {
         ...snapshot,
-        scan: { ...snapshot.scan, done: action.done },
+        scan: { ...snapshot.scan, done: action.done, status: "scanning" },
       };
     }
     case "scan_device": {
       return {
         ...snapshot,
-        devices: mergeDiscoveredDevice(snapshot.devices, action.device),
+        scan:
+          snapshot.scan &&
+          (action.runId === undefined || snapshot.scan.runId === action.runId)
+            ? {
+                ...snapshot.scan,
+                devices: mergeDiscoveredDevice(
+                  snapshot.scan.devices,
+                  action.device,
+                ),
+              }
+            : snapshot.scan,
       };
     }
     case "scan_done": {
-      return { ...snapshot, status: "ready" };
+      if (
+        !snapshot.scan ||
+        (action.runId !== undefined && snapshot.scan.runId !== action.runId)
+      ) {
+        return snapshot;
+      }
+      return {
+        ...snapshot,
+        mode: "scan",
+        status: "ready",
+        scan: { ...snapshot.scan, status: "ready", done: snapshot.scan.total },
+      };
     }
     case "scan_cancelled": {
+      if (
+        snapshot.scan &&
+        action.runId !== undefined &&
+        snapshot.scan.runId !== action.runId
+      ) {
+        return snapshot;
+      }
       return {
         ...snapshot,
         status: snapshot.mode === "scan" ? "idle" : snapshot.status,

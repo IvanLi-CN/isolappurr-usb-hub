@@ -61,6 +61,30 @@ describe("getDeviceInfo HTTP error classification", () => {
     expect(res.error.kind).toBe("browser_blocked");
   });
 
+  test("marks HTTP responses and malformed JSON as reachable", async () => {
+    installWindow();
+    const responses = [
+      new Response("not found", { status: 404 }),
+      new Response("{malformed", { status: 200 }),
+    ];
+    globalThis.fetch = async () => responses.shift() as Response;
+
+    const httpError = await getDeviceInfo("http://192.168.1.42");
+    expect(httpError.ok).toBe(false);
+    if (httpError.ok) {
+      throw new Error("expected HTTP error");
+    }
+    expect(httpError.error.reachable).toBe(true);
+
+    const malformed = await getDeviceInfo("http://192.168.1.43");
+    expect(malformed.ok).toBe(false);
+    if (malformed.ok) {
+      throw new Error("expected malformed response error");
+    }
+    expect(malformed.error.kind).toBe("invalid_response");
+    expect(malformed.error.reachable).toBe(true);
+  });
+
   test("keeps timeout failures as offline", async () => {
     installWindow();
     globalThis.fetch = async (_input, init) => {

@@ -66,12 +66,17 @@ function RootLayout() {
     devices.map((d) => [d.id, d.name]),
   );
 
-  const onAdd = async (input: AddDeviceInput) => {
+  const onAdd = async (
+    input: AddDeviceInput,
+    options?: { navigate?: boolean },
+  ) => {
     const result = await addDevice(input);
     if (!result.ok) {
       return result;
     }
-    navigate(`/devices/${result.device.id}`);
+    if (options?.navigate !== false) {
+      navigate(`/devices/${result.device.id}`);
+    }
     return result;
   };
 

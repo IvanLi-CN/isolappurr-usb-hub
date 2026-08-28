@@ -21,6 +21,10 @@ IsolaPurr USB Hub 需要在同一套 Web / Desktop 控制台里支持三类连�
 - `docs/plan/0008:tauri-desktop-client/PLAN.md`
 - `docs/plan/0012:desktop-persistent-storage/PLAN.md`
 
+## Related ADRs
+
+- [ADR 0001: IP Scan Session Ownership and Retention](../../adr/0001-ip-scan-session-ownership.md)
+
 ## Goals
 
 - 通信方案等价交付
@@ -37,6 +41,9 @@ IsolaPurr USB Hub 需要在同一套 Web / Desktop 控制台里支持三类连�
 
 - 产品控制台
   Web App 在原 Add device 流程中表达 Wi-Fi、Web Serial、Local USB 三条添加路径；已添加设备的 Hardware 页承载固件更新、遥测与端口维护动作，不另建独立连接流程。
+
+- 短期 IP 扫描会话
+  Add device 只记住当前浏览器配置文件中最近一次完整 IP 扫描十分钟；有效记录在下次打开时回填并合并展示，过期记录静默清除。
 
 ## Non-goals
 
@@ -110,6 +117,12 @@ Default selection is only defined after more than one path is immediately usable
 - On viewports narrower than `lg`, the Dashboard and saved-device detail routes MUST replace the inline device list with a right-side device drawer opened from the header. That drawer MUST reuse the saved-device list panel, include `+ Add`, expose an `About` entry, and close before opening Add device, navigating to `About`, or selecting another saved device.
 - The app-shell sidebar breakpoint MUST switch to the left-column layout at `lg` rather than `xl`, so `lg` and wider viewports keep the stable two-column saved-device shell while narrower viewports use the header-triggered drawer contract.
 - Storybook MUST cover the Add device and saved-device Hardware page states before visual evidence is accepted.
+- Add device MUST keep the dialog open after a successful discovery add while another deduplicated discovery result remains addable; it MUST close and navigate after the final addable result succeeds.
+- Web UI MUST persist only the latest completed IP scan with normalized CIDR, deduplicated devices, completion time, and a ten-minute expiry. A completed zero-result scan replaces the previous session.
+- Web UI MUST ignore expired sessions when Add device opens and MUST remove them from browser storage. Live and `?demo=true` sessions MUST use separate browser-local namespaces.
+- Web UI MUST NOT persist typed-but-unstarted CIDR input, partial scans, cancelled scans, or failed scans. A completed scan MUST be persisted when at least one probe receives an HTTP response, even if other addresses are offline or browser-blocked; a scan with no HTTP responses that is entirely browser-blocked MUST remain non-persistable and show the private-network guidance.
+- Desktop discovery MUST keep live service results separate from IP scan results and MUST associate scan progress/completion with a monotonic `runId` so stale runs cannot update a current run.
+- Desktop IP scan start requests MUST include a client request token for cancellation before the server `runId` is observed. The desktop agent MUST scope token cancellation to the matching current run and reject CIDR ranges that exceed the web scan host limit before allocating scan hosts.
 
 ## JSONL Protocol
 
@@ -304,6 +317,24 @@ PR: include
 Add device discovery canonical device IDs:
 
 ![Add device discovery canonical device IDs](./assets/add-device-discovery-canonical-device-ids.png)
+
+Add device cached IP scan restoration:
+
+- source_type: storybook_canvas
+  target_program: mock-only
+  capture_scope: browser-viewport
+  requested_viewport: 1082x965
+  viewport_strategy: storybook-viewport
+  margin_policy: trim_only
+  evidence_surface: page
+  sensitive_exclusion: N/A
+  submission_gate: approved
+  story_id_or_title: `dialogs-adddevicedialog--cached-scan`
+  state: restored ten-minute IP scan session
+  evidence_note: verifies the cached scan summary, discovered devices, and normalized CIDR are restored together without warning overlap or clipping.
+
+PR: none
+![Add device cached IP scan restoration](./assets/add-device-cached-scan-restored.png)
 
 Device info canonical device ID:
 

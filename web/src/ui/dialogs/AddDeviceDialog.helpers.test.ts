@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { readLocalUsbInfo } from "./AddDeviceDialog.helpers";
+import {
+  isPersistableDesktopScan,
+  isTrustedDesktopScanCompletion,
+  parseDesktopDiscoverySnapshot,
+  parseDesktopIpScanRunId,
+  readLocalUsbInfo,
+} from "./AddDeviceDialog.helpers";
 
 const originalFetch = globalThis.fetch;
 
@@ -112,5 +118,335 @@ describe("readLocalUsbInfo", () => {
       ),
     ).rejects.toThrow("device did not respond to IsolaPurr `info`");
     expect(attempts).toBe(3);
+  });
+});
+
+describe("desktop discovery scan ownership", () => {
+  test("parses a run id and scan-owned devices separately", () => {
+    expect(parseDesktopIpScanRunId({ runId: 9 })).toBe(9);
+    expect(parseDesktopIpScanRunId({ runId: 0 })).toBeNull();
+
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [{ baseUrl: "http://service.local", device_id: "aabbcc001122" }],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+        runId: 9,
+        devices: [{ baseUrl: "http://192.168.1.2", device_id: "ddeeff001122" }],
+      },
+    });
+
+    expect(parsed?.devices).toHaveLength(1);
+    expect(parsed?.scan?.devices).toHaveLength(1);
+    expect(parsed?.scan?.runId).toBe(9);
+    expect(parsed?.scan?.status).toBe("ready");
+  });
+
+  test("recognizes completed legacy desktop scans", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [{ baseUrl: "http://192.168.1.2", device_id: "ddeeff001122" }],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+      },
+    });
+
+    expect(parsed?.scan?.status).toBe("ready");
+    expect(parsed?.scan?.devices).toHaveLength(1);
+    expect(parsed?.scan?.legacyDevicesAreAmbiguous).toBe(true);
+  });
+
+  test("keeps an empty legacy scan persistable when service discovery is empty", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+      },
+    });
+
+    expect(parsed?.scan?.status).toBe("ready");
+    expect(parsed?.scan?.devices).toHaveLength(0);
+    expect(parsed?.scan?.legacyDevicesAreAmbiguous).toBe(false);
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(true);
+  });
+
+  test("requires trusted response metrics for non-empty desktop scans", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+        devices: [{ baseUrl: "http://192.168.1.2" }],
+      },
+    });
+
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+    expect(
+      isPersistableDesktopScan({
+        ...parsed?.scan,
+        reachableResponses: 1,
+      }),
+    ).toBe(true);
+  });
+
+  test("rejects malformed explicit ready scans without completion metrics", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: -1,
+        total: -1,
+      },
+    });
+
+    expect(parsed?.scan).toBeUndefined();
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+  });
+
+  test("does not infer legacy completion from an explicit ready scan", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+      },
+    });
+
+    expect(parsed?.scan?.status).toBe("ready");
+    expect(parsed?.scan?.legacyScanComplete).toBe(false);
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+    expect(isTrustedDesktopScanCompletion(parsed?.scan)).toBe(false);
+  });
+
+  test("waits for complete progress before consuming a desktop completion", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 12,
+        total: 254,
+        status: "ready",
+        reachableResponses: 1,
+      },
+    });
+
+    expect(isTrustedDesktopScanCompletion(parsed?.scan)).toBe(false);
+  });
+
+  test("rejects desktop cache persistence when any scan device is malformed", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+        reachableResponses: 1,
+        devices: [{ baseUrl: "http://192.168.1.2" }, { baseUrl: "" }],
+      },
+    });
+
+    expect(parsed?.scan?.devices).toHaveLength(1);
+    expect(parsed?.scan?.hasMalformedDevices).toBe(true);
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+  });
+
+  test("rejects a ready desktop scan whose device container is missing or malformed", () => {
+    for (const devices of [undefined, { baseUrl: "http://192.168.1.2" }]) {
+      const parsed = parseDesktopDiscoverySnapshot({
+        mode: "service",
+        status: "ready",
+        devices: [],
+        scan: {
+          cidr: "192.168.1.0/24",
+          done: 254,
+          total: 254,
+          status: "ready",
+          reachableResponses: 1,
+          ...(devices === undefined ? {} : { devices }),
+        },
+      });
+
+      expect(parsed?.scan?.hasMalformedDevices).toBe(true);
+      expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+    }
+  });
+
+  test("marks primitive scan payloads and legacy device containers as malformed", () => {
+    const primitiveScan = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: "not-an-object",
+    });
+    expect(primitiveScan?.scan).toBeUndefined();
+    expect(primitiveScan?.scanMalformed).toBe(true);
+
+    const malformedLegacyDevices = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: { baseUrl: "http://192.168.1.2" },
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+      },
+    });
+    expect(malformedLegacyDevices?.scan?.hasMalformedDevices).toBe(true);
+    expect(isPersistableDesktopScan(malformedLegacyDevices?.scan)).toBe(false);
+  });
+
+  test("rejects invalid scan metadata instead of inferring completion", () => {
+    const invalidStatus = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "finished",
+        reachableResponses: 0,
+      },
+    });
+    expect(invalidStatus?.scanMalformed).toBe(true);
+
+    const invalidMetric = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        reachableResponses: "1",
+      },
+    });
+    expect(invalidMetric?.scanMalformed).toBe(true);
+
+    const invalidRunId = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 0,
+        total: 254,
+        runId: null,
+      },
+    });
+    expect(invalidRunId?.scanMalformed).toBe(true);
+
+    for (const runId of [0, -1]) {
+      const nonPositiveRunId = parseDesktopDiscoverySnapshot({
+        mode: "service",
+        status: "ready",
+        devices: [],
+        scan: {
+          cidr: "192.168.1.0/24",
+          done: 0,
+          total: 254,
+          runId,
+        },
+      });
+      expect(nonPositiveRunId?.scanMalformed).toBe(true);
+    }
+
+    const impossibleProgress = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 255,
+        total: 254,
+        reachableResponses: 255,
+      },
+    });
+    expect(impossibleProgress?.scanMalformed).toBe(true);
+
+    const impossibleResponses = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 10,
+        total: 254,
+        reachableResponses: 11,
+      },
+    });
+    expect(impossibleResponses?.scanMalformed).toBe(true);
+
+    const impossiblePersistedScan = {
+      cidr: "192.168.1.0/24",
+      done: 254,
+      total: 254,
+      status: "ready" as const,
+      devices: [],
+      runId: 0,
+      reachableResponses: 255,
+    };
+    expect(isPersistableDesktopScan(impossiblePersistedScan)).toBe(false);
+    expect(isTrustedDesktopScanCompletion(impossiblePersistedScan)).toBe(false);
+  });
+
+  test("keeps an explicitly scanning desktop scan in progress", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [{ baseUrl: "http://192.168.1.2" }],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "scanning",
+      },
+    });
+
+    expect(parsed?.scan?.status).toBe("scanning");
+  });
+
+  test("rejects a desktop scan with an invalid CIDR", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "not-a-cidr",
+        done: 1,
+        total: 1,
+        status: "ready",
+        reachableResponses: 1,
+      },
+    });
+
+    expect(parsed?.scan).toBeUndefined();
+    expect(parsed?.scanMalformed).toBe(true);
   });
 });

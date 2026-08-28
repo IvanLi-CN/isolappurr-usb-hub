@@ -209,6 +209,21 @@ struct ScanState {
     cidr: String,
     done: u32,
     total: u32,
+    status: ScanStatus,
+    devices: Vec<DiscoveredDevice>,
+    #[serde(rename = "reachableResponses")]
+    reachable_responses: u32,
+    #[serde(rename = "runId")]
+    run_id: u64,
+    #[serde(rename = "requestId", skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum ScanStatus {
+    Scanning,
+    Ready,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -366,9 +381,12 @@ struct FirmwareResetResponse {
 struct DiscoveryController {
     snapshot: RwLock<DiscoverySnapshot>,
     ip_scan_cancel: RwLock<CancellationToken>,
+    ip_scan_lifecycle: TokioMutex<()>,
+    ip_scan_cancelled_requests: TokioMutex<HashSet<String>>,
     mdns: Option<ServiceDaemon>,
     mdns_error: Option<String>,
     mdns_unavailable: AtomicBool,
+    next_ip_scan_run: AtomicU64,
     http: reqwest::Client,
 }
 

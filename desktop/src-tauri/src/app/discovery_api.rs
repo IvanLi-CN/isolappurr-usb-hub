@@ -70,6 +70,16 @@ async fn api_discovery_refresh(State(state): State<AppState>, headers: HeaderMap
 #[derive(Debug, Deserialize)]
 struct IpScanRequest {
     cidr: String,
+    #[serde(rename = "requestId")]
+    request_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct DiscoveryCancelRequest {
+    #[serde(rename = "runId")]
+    run_id: Option<u64>,
+    #[serde(rename = "requestId")]
+    request_id: Option<String>,
 }
 
 async fn api_discovery_ip_scan(
@@ -83,25 +93,42 @@ async fn api_discovery_ip_scan(
     if !is_authorized(&headers, &state) {
         return unauthorized("missing/invalid bearer token");
     }
-    if let Err(err) = state.discovery.start_ip_scan(req.cidr).await {
-        tracing::warn!("ip scan: {err:#}");
-        return bad_request(&err.to_string());
-    }
+    let run_id = match state
+        .discovery
+        .start_ip_scan(req.cidr, req.request_id)
+        .await
+    {
+        Ok(run_id) => run_id,
+        Err(err) => {
+            tracing::warn!("ip scan: {err:#}");
+            return bad_request(&err.to_string());
+        }
+    };
     (
         StatusCode::ACCEPTED,
-        Json(serde_json::json!({ "accepted": true })),
+        Json(serde_json::json!({ "accepted": true, "runId": run_id })),
     )
         .into_response()
 }
 
-async fn api_discovery_cancel(State(state): State<AppState>, headers: HeaderMap) -> Response {
+async fn api_discovery_cancel(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Option<Json<DiscoveryCancelRequest>>,
+) -> Response {
     if !is_origin_allowed(&headers, state.agent_base_url.port().unwrap()) {
         return forbidden("origin not allowed");
     }
     if !is_authorized(&headers, &state) {
         return unauthorized("missing/invalid bearer token");
     }
-    state.discovery.cancel_ip_scan().await;
+    let (requested_run_id, requested_request_id) = body
+        .map(|Json(req)| (req.run_id, req.request_id))
+        .unwrap_or((None, None));
+    state
+        .discovery
+        .cancel_ip_scan(requested_run_id, requested_request_id)
+        .await;
     (
         StatusCode::ACCEPTED,
         Json(serde_json::json!({ "accepted": true })),

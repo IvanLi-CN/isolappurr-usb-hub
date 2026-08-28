@@ -17,7 +17,9 @@ import type {
 } from "../domain/deviceApi";
 import type { AddDeviceInput, StoredDevice } from "../domain/devices";
 import type { DiscoverySnapshot } from "../domain/discovery";
+import { clearIpScanSession } from "../domain/ipScanSession";
 import type { PortsResponse } from "../domain/ports";
+import { applyDemoIpScan, cancelDemoIpScan } from "./demo-mode-discovery";
 import { handleDemoPortAction } from "./demo-mode-port-actions";
 import {
   buildDefaultDemoPowerConfig,
@@ -41,6 +43,7 @@ import {
 import type { ThemeId } from "./theme";
 
 let demoFetchRestore: (() => void) | null = null;
+let demoIpScanRunId = 0;
 
 const DEMO_ENABLED_STORAGE_KEY = "isolapurr.demo.enabled";
 export const DEMO_ENTER_QUERY = "?demo=true";
@@ -112,6 +115,7 @@ type DemoApiResponse =
       duration_ms?: 5000;
       scope?: "wifi" | "other";
       wifi_preserved?: boolean;
+      runId?: number;
     }
   | { migrated: boolean; imported?: { devices: number; settings: boolean } };
 
@@ -327,6 +331,7 @@ function handleDemoStorageRequest(url: URL, init?: RequestInit): Response {
   if (url.pathname === "/api/v1/storage/reset" && method === "POST") {
     const next = createCanonicalDemoWorld();
     writeDemoWorld(next);
+    clearIpScanSession(true);
     return new Response(null, { status: 204 });
   }
   return apiError(404, "not_found", "Demo storage endpoint not found");
@@ -341,9 +346,18 @@ function handleDemoDiscoveryRequest(url: URL, init?: RequestInit): Response {
     return jsonResponse(readDemoWorld().discovery);
   }
   if (url.pathname === "/api/v1/discovery/ip-scan" && method === "POST") {
-    return new Response(null, { status: 204 });
+    const body = readJsonBody(init) as { cidr?: string } | null;
+    const cidr = typeof body?.cidr === "string" ? body.cidr.trim() : "";
+    if (!cidr) {
+      return apiError(400, "invalid_request", "cidr is required");
+    }
+    const runId = ++demoIpScanRunId;
+    updateWorld((world) => applyDemoIpScan(world, cidr, runId));
+    return jsonResponse({ accepted: true, runId });
   }
   if (url.pathname === "/api/v1/discovery/cancel" && method === "POST") {
+    const body = readJsonBody(init) as { runId?: number } | null;
+    updateWorld((world) => cancelDemoIpScan(world, body?.runId));
     return new Response(null, { status: 204 });
   }
   return apiError(404, "not_found", "Demo discovery endpoint not found");
@@ -1056,6 +1070,7 @@ export function initDemoMode(pathname: string, search: string): boolean {
 export function clearDemoMode(): void {
   writeDemoEnabled(false);
   clearDemoWorld();
+  clearIpScanSession(true);
 }
 
 export function withDemoSearch(pathname: string, enabled: boolean): string {

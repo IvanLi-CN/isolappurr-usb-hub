@@ -4,7 +4,11 @@ import {
   isLegacyDeviceId,
   normalizeStoredDeviceId,
 } from "../../domain/devices";
-import type { DiscoveredDevice, LanCandidate } from "../../domain/discovery";
+import {
+  type DiscoveredDevice,
+  type LanCandidate,
+  parseCidr,
+} from "../../domain/discovery";
 import {
   nextJsonlRequestId,
   type SerialPortInfo,
@@ -42,13 +46,89 @@ export type DiscoverySnapshotShape = {
   status: "idle" | "scanning" | "ready" | "unavailable";
   devices: DiscoveredDevice[];
   error?: string;
-  scan?: { cidr: string; done: number; total: number };
+  scanMalformed?: boolean;
+  scan?: {
+    cidr: string;
+    done: number;
+    total: number;
+    status: "scanning" | "ready";
+    devices: DiscoveredDevice[];
+    runId?: number;
+    reachableResponses?: number;
+    legacyDevicesAreAmbiguous?: boolean;
+    legacyScanComplete?: boolean;
+    hasMalformedDevices?: boolean;
+  };
   ipScan?: {
     expanded: false;
     defaultCidr?: string;
     candidates?: LanCandidate[];
   };
 };
+
+function hasCoherentDesktopScanMetrics(
+  scan: DiscoverySnapshotShape["scan"],
+): boolean {
+  if (!scan) {
+    return false;
+  }
+  if (
+    !Number.isSafeInteger(scan.done) ||
+    !Number.isSafeInteger(scan.total) ||
+    scan.total <= 0 ||
+    scan.done < 0 ||
+    scan.done > scan.total
+  ) {
+    return false;
+  }
+  if (scan.reachableResponses === undefined) {
+    return true;
+  }
+  return (
+    Number.isSafeInteger(scan.reachableResponses) &&
+    scan.reachableResponses >= 0 &&
+    scan.reachableResponses <= scan.done
+  );
+}
+
+function hasValidDesktopScanRunId(runId: number | undefined): boolean {
+  return runId === undefined || (Number.isSafeInteger(runId) && runId > 0);
+}
+
+export function isPersistableDesktopScan(
+  scan: DiscoverySnapshotShape["scan"],
+): boolean {
+  if (
+    !scan ||
+    scan.status !== "ready" ||
+    scan.legacyDevicesAreAmbiguous ||
+    scan.hasMalformedDevices ||
+    !hasCoherentDesktopScanMetrics(scan) ||
+    !hasValidDesktopScanRunId(scan.runId)
+  ) {
+    return false;
+  }
+  if (scan.reachableResponses !== undefined) {
+    return scan.reachableResponses > 0;
+  }
+  // Legacy agents did not report response metrics. A completed empty result
+  // is still authoritative and must replace any older cached session.
+  return scan.legacyScanComplete === true && scan.devices.length === 0;
+}
+
+export function isTrustedDesktopScanCompletion(
+  scan: DiscoverySnapshotShape["scan"],
+): boolean {
+  if (!scan || scan.status !== "ready") {
+    return false;
+  }
+  const completeProgress =
+    hasCoherentDesktopScanMetrics(scan) && scan.done === scan.total;
+  return (
+    completeProgress &&
+    (scan.reachableResponses !== undefined || scan.legacyScanComplete === true)
+  );
+}
 
 function extractUsbDevice(value: unknown): UsbDeviceInfo | null {
   if (!value || typeof value !== "object") {
@@ -158,6 +238,7 @@ export function parseDesktopDiscoverySnapshot(
     return null;
   }
   const obj = value as Record<string, unknown>;
+  const hasDevicesField = Object.hasOwn(obj, "devices");
   const devices = Array.isArray(obj.devices) ? obj.devices : null;
   const mode =
     obj.mode === "service" || obj.mode === "scan" ? obj.mode : "service";
@@ -169,8 +250,9 @@ export function parseDesktopDiscoverySnapshot(
       ? obj.status
       : "unavailable";
   const error = typeof obj.error === "string" ? obj.error : undefined;
+  const hasScanField = Object.hasOwn(obj, "scan");
   const scan =
-    obj.scan && typeof obj.scan === "object"
+    obj.scan && typeof obj.scan === "object" && !Array.isArray(obj.scan)
       ? (obj.scan as Record<string, unknown>)
       : undefined;
   const ipScan =
@@ -178,13 +260,142 @@ export function parseDesktopDiscoverySnapshot(
       ? (obj.ipScan as Record<string, unknown>)
       : undefined;
 
+  const scanDone = scan && typeof scan.done === "number" ? scan.done : null;
+  const scanTotal = scan && typeof scan.total === "number" ? scan.total : null;
+  const hasValidProgress =
+    scanDone !== null &&
+    Number.isSafeInteger(scanDone) &&
+    scanDone >= 0 &&
+    scanTotal !== null &&
+    Number.isSafeInteger(scanTotal) &&
+    scanTotal > 0 &&
+    scanDone <= scanTotal;
+  const scanCidr =
+    scan && typeof scan.cidr === "string" ? parseCidr(scan.cidr) : null;
+  const hasScanStatusField =
+    scan !== undefined && Object.hasOwn(scan, "status");
+  const hasExplicitScanStatus =
+    scan?.status === "ready" || scan?.status === "scanning";
+  const hasMalformedScanStatus = hasScanStatusField && !hasExplicitScanStatus;
+  const legacyScanComplete =
+    !hasExplicitScanStatus &&
+    status === "ready" &&
+    hasValidProgress &&
+    scanDone !== null &&
+    scanTotal !== null &&
+    scanDone >= scanTotal;
+  const hasScanDevicesField =
+    scan !== undefined && Object.hasOwn(scan, "devices");
+  let hasMalformedDevices = Boolean(
+    (hasDevicesField && !Array.isArray(obj.devices)) ||
+      (scan &&
+        ((hasScanDevicesField && !Array.isArray(scan.devices)) ||
+          (!hasScanDevicesField && hasExplicitScanStatus))),
+  );
+  const scanDevicesRaw =
+    scan && Array.isArray(scan.devices)
+      ? scan.devices
+      : legacyScanComplete && devices
+        ? devices
+        : [];
+  const scanDevices: DiscoveredDevice[] = [];
+  for (const item of scanDevicesRaw) {
+    if (!item || typeof item !== "object") {
+      hasMalformedDevices = true;
+      continue;
+    }
+    const device = item as Record<string, unknown>;
+    if (typeof device.baseUrl !== "string" || !device.baseUrl.trim()) {
+      hasMalformedDevices = true;
+      continue;
+    }
+    try {
+      const parsedBaseUrl = new URL(device.baseUrl);
+      if (
+        !["http:", "https:"].includes(parsedBaseUrl.protocol) ||
+        !parsedBaseUrl.hostname
+      ) {
+        hasMalformedDevices = true;
+        continue;
+      }
+    } catch {
+      hasMalformedDevices = true;
+      continue;
+    }
+    scanDevices.push({
+      baseUrl: device.baseUrl,
+      device_id:
+        typeof device.device_id === "string" ? device.device_id : undefined,
+      hostname:
+        typeof device.hostname === "string" ? device.hostname : undefined,
+      fqdn: typeof device.fqdn === "string" ? device.fqdn : undefined,
+      ipv4: typeof device.ipv4 === "string" ? device.ipv4 : undefined,
+      variant: typeof device.variant === "string" ? device.variant : undefined,
+      firmware:
+        device.firmware &&
+        typeof device.firmware === "object" &&
+        typeof (device.firmware as Record<string, unknown>).name === "string" &&
+        typeof (device.firmware as Record<string, unknown>).version === "string"
+          ? {
+              name: (device.firmware as Record<string, unknown>).name as string,
+              version: (device.firmware as Record<string, unknown>)
+                .version as string,
+            }
+          : undefined,
+      last_seen_at:
+        typeof device.last_seen_at === "string"
+          ? device.last_seen_at
+          : undefined,
+    });
+  }
+
+  const scanStatus: "scanning" | "ready" =
+    scan?.status === "ready" || legacyScanComplete ? "ready" : "scanning";
+  const scanRunId =
+    scan && typeof scan.runId === "number" && Number.isSafeInteger(scan.runId)
+      ? scan.runId
+      : undefined;
+  const hasRunIdField = scan !== undefined && Object.hasOwn(scan, "runId");
+  const hasMalformedRunId =
+    hasRunIdField &&
+    (scanRunId === undefined || !hasValidDesktopScanRunId(scanRunId));
+  const reachableResponses =
+    scan &&
+    typeof scan.reachableResponses === "number" &&
+    Number.isSafeInteger(scan.reachableResponses) &&
+    scan.reachableResponses >= 0
+      ? scan.reachableResponses
+      : undefined;
+  const hasReachableResponsesField =
+    scan !== undefined && Object.hasOwn(scan, "reachableResponses");
+  const hasMalformedReachableResponses =
+    hasReachableResponsesField && reachableResponses === undefined;
   const scanShape =
     scan &&
-    typeof scan.cidr === "string" &&
-    typeof scan.done === "number" &&
-    typeof scan.total === "number"
-      ? { cidr: scan.cidr, done: scan.done, total: scan.total }
+    scanCidr?.ok === true &&
+    hasValidProgress &&
+    scanDone !== null &&
+    scanTotal !== null
+      ? {
+          cidr: scanCidr.cidr,
+          done: scanDone,
+          total: scanTotal,
+          status: scanStatus,
+          devices: scanDevices,
+          runId: scanRunId,
+          reachableResponses,
+          legacyDevicesAreAmbiguous:
+            legacyScanComplete &&
+            !(scan && Array.isArray(scan.devices)) &&
+            scanDevices.length > 0,
+          legacyScanComplete,
+          hasMalformedDevices,
+        }
       : undefined;
+  const hasImpossibleReachableResponses =
+    reachableResponses !== undefined &&
+    hasValidProgress &&
+    (reachableResponses > scanDone || reachableResponses > scanTotal);
 
   const defaultCidr =
     ipScan && typeof ipScan.defaultCidr === "string"
@@ -266,9 +477,27 @@ export function parseDesktopDiscoverySnapshot(
     status,
     devices: parsedDevices,
     error,
+    scanMalformed: Boolean(
+      (hasScanField && scan === undefined) ||
+        (scan && !scanShape) ||
+        hasMalformedScanStatus ||
+        hasMalformedReachableResponses ||
+        hasMalformedRunId ||
+        hasImpossibleReachableResponses,
+    ),
     scan: scanShape,
     ipScan: ipScan ? { expanded: false, defaultCidr, candidates } : undefined,
   };
+}
+
+export function parseDesktopIpScanRunId(value: unknown): number | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const runId = (value as Record<string, unknown>).runId;
+  return typeof runId === "number" && Number.isSafeInteger(runId) && runId > 0
+    ? runId
+    : null;
 }
 
 export function delay(ms: number): Promise<void> {

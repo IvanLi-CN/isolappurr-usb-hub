@@ -25,9 +25,12 @@ impl DiscoveryController {
                 ip_scan: IpScanSnapshot::default(),
             }),
             ip_scan_cancel: RwLock::new(CancellationToken::new()),
+            ip_scan_lifecycle: TokioMutex::new(()),
+            ip_scan_cancelled_requests: TokioMutex::new(HashSet::new()),
             mdns,
             mdns_error,
             mdns_unavailable: AtomicBool::new(mdns_unavailable),
+            next_ip_scan_run: AtomicU64::new(0),
             http,
         }
     }
@@ -178,9 +181,61 @@ impl DiscoveryController {
         let mut snapshot = self.snapshot.write().await;
         snapshot.error = None;
 
+        Self::merge_device_list(&mut snapshot.devices, device);
+        snapshot.status = DiscoveryStatus::Ready;
+    }
+
+    async fn merge_scan_device(&self, run_id: u64, device: DiscoveredDevice) {
+        let mut snapshot = self.snapshot.write().await;
+        let Some(scan) = snapshot.scan.as_mut() else {
+            return;
+        };
+        if scan.run_id != run_id || scan.status != ScanStatus::Scanning {
+            return;
+        }
+        Self::merge_device_list(&mut scan.devices, device);
+    }
+
+    async fn mark_scan_progress(&self, run_id: u64, done: u32, reachable: bool) -> bool {
+        let mut snapshot = self.snapshot.write().await;
+        let Some(scan) = snapshot.scan.as_mut() else {
+            return false;
+        };
+        if scan.run_id != run_id || scan.status != ScanStatus::Scanning {
+            return false;
+        }
+        scan.done = done;
+        if reachable {
+            scan.reachable_responses = scan.reachable_responses.saturating_add(1);
+        }
+        true
+    }
+
+    async fn finish_scan(&self, run_id: u64, cancelled: bool) {
+        let mut snapshot = self.snapshot.write().await;
+        if cancelled {
+            if snapshot
+                .scan
+                .as_ref()
+                .map(|scan| scan.run_id == run_id)
+                .unwrap_or(false)
+            {
+                snapshot.scan = None;
+            }
+            return;
+        }
+        let Some(scan) = snapshot.scan.as_mut() else {
+            return;
+        };
+        if scan.run_id == run_id {
+            scan.status = ScanStatus::Ready;
+            scan.done = scan.total;
+        }
+    }
+
+    fn merge_device_list(devices: &mut Vec<DiscoveredDevice>, device: DiscoveredDevice) {
         let key = device_dedup_key(&device);
-        let mut map: HashMap<String, DiscoveredDevice> = snapshot
-            .devices
+        let mut map: HashMap<String, DiscoveredDevice> = devices
             .drain(..)
             .map(|d| (device_dedup_key(&d), d))
             .collect();
@@ -199,8 +254,7 @@ impl DiscoveryController {
             device
         };
         map.insert(key, merged);
-        snapshot.devices = map.into_values().collect();
-        snapshot.status = DiscoveryStatus::Ready;
+        *devices = map.into_values().collect();
     }
 
     async fn snapshot(&self) -> DiscoverySnapshot {
@@ -219,7 +273,6 @@ impl DiscoveryController {
             snapshot.mode = DiscoveryMode::Service;
             snapshot.status = DiscoveryStatus::Unavailable;
             snapshot.error = Some(message);
-            snapshot.scan = None;
             return Err(anyhow!("mdns unavailable"));
         }
 
@@ -227,31 +280,55 @@ impl DiscoveryController {
         snapshot.mode = DiscoveryMode::Service;
         snapshot.status = DiscoveryStatus::Scanning;
         snapshot.error = None;
-        snapshot.scan = None;
         Ok(())
     }
 
-    async fn start_ip_scan(self: &Arc<Self>, cidr: String) -> anyhow::Result<()> {
+    async fn start_ip_scan(
+        self: &Arc<Self>,
+        cidr: String,
+        request_id: Option<String>,
+    ) -> anyhow::Result<u64> {
+        let _lifecycle = self.ip_scan_lifecycle.lock().await;
         let net: ipnet::Ipv4Net = cidr.parse().context("invalid cidr")?;
+        let host_bits = 32 - u32::from(net.prefix_len());
+        let address_count = 1_u64 << host_bits;
+        let host_count = if host_bits <= 1 {
+            address_count
+        } else {
+            address_count.saturating_sub(2)
+        };
+        if host_count > 1024 {
+            return Err(anyhow!("cidr contains too many hosts"));
+        }
+        if let Some(request_id) = request_id.as_ref() {
+            let mut cancelled_requests = self.ip_scan_cancelled_requests.lock().await;
+            if cancelled_requests.remove(request_id) {
+                return Err(anyhow!("ip scan request was cancelled"));
+            }
+        }
         let hosts: Vec<Ipv4Addr> = net.hosts().collect();
         if hosts.is_empty() {
             return Err(anyhow!("empty cidr"));
         }
 
-        self.cancel_ip_scan().await;
+        self.cancel_ip_scan_inner(None, None).await;
+        let run_id = self.next_ip_scan_run.fetch_add(1, Ordering::Relaxed) + 1;
         let cancel = CancellationToken::new();
         *self.ip_scan_cancel.write().await = cancel.clone();
 
         {
             let mut snapshot = self.snapshot.write().await;
-            snapshot.mode = DiscoveryMode::Scan;
-            snapshot.status = DiscoveryStatus::Scanning;
-            snapshot.devices.clear();
+            snapshot.mode = DiscoveryMode::Service;
             snapshot.error = None;
             snapshot.scan = Some(ScanState {
                 cidr: cidr.clone(),
                 done: 0,
                 total: hosts.len().try_into().unwrap_or(u32::MAX),
+                status: ScanStatus::Scanning,
+                devices: Vec::new(),
+                reachable_responses: 0,
+                run_id,
+                request_id,
             });
         }
 
@@ -275,48 +352,93 @@ impl DiscoveryController {
                         }
                         let base = format!("http://{ip}");
                         let url = format!("{base}/api/v1/info");
-                        let res = http.get(url).send().await.ok()?;
+                        let res = match http.get(url).send().await {
+                            Ok(res) => res,
+                            Err(_) => return Some((false, None)),
+                        };
                         if !res.status().is_success() {
-                            return None;
+                            return Some((true, None));
                         }
-                        let value: serde_json::Value = res.json().await.ok()?;
-                        parse_device_from_api_info(&base, value, Some(&ip), &now_base)
+                        let value: serde_json::Value = match res.json().await {
+                            Ok(value) => value,
+                            Err(_) => return Some((true, None)),
+                        };
+                        Some((
+                            true,
+                            parse_device_from_api_info(&base, value, Some(&ip), &now_base),
+                        ))
                     }
                 })
                 .buffer_unordered(max_concurrency);
 
             tokio::pin!(stream);
             while let Some(item) = stream.next().await {
+                let Some((reachable, device)) = item else {
+                    continue;
+                };
                 if cancel.is_cancelled() {
                     break;
                 }
                 done += 1;
-                {
-                    let mut snapshot = this.snapshot.write().await;
-                    if let Some(scan) = snapshot.scan.as_mut() {
-                        scan.done = done;
-                    }
+                if !this.mark_scan_progress(run_id, done, reachable).await {
+                    break;
                 }
-                if let Some(device) = item {
-                    this.merge_device(device).await;
+                if let Some(device) = device {
+                    this.merge_scan_device(run_id, device).await;
                 }
             }
-
-            let mut snapshot = this.snapshot.write().await;
-            snapshot.status = if cancel.is_cancelled() {
-                DiscoveryStatus::Idle
-            } else {
-                DiscoveryStatus::Ready
-            };
+            this.finish_scan(run_id, cancel.is_cancelled()).await;
         });
 
-        Ok(())
+        Ok(run_id)
     }
 
-    async fn cancel_ip_scan(&self) {
-        self.ip_scan_cancel.read().await.cancel();
+    async fn cancel_ip_scan(
+        &self,
+        requested_run_id: Option<u64>,
+        requested_request_id: Option<String>,
+    ) {
+        let _lifecycle = self.ip_scan_lifecycle.lock().await;
+        self.cancel_ip_scan_inner(requested_run_id, requested_request_id)
+            .await;
+    }
+
+    async fn cancel_ip_scan_inner(
+        &self,
+        requested_run_id: Option<u64>,
+        requested_request_id: Option<String>,
+    ) {
         let mut snapshot = self.snapshot.write().await;
-        snapshot.status = DiscoveryStatus::Idle;
+        if let Some(requested_run_id) = requested_run_id {
+            let current_run_matches = snapshot
+                .scan
+                .as_ref()
+                .map(|scan| scan.run_id == requested_run_id)
+                .unwrap_or(false);
+            if !current_run_matches {
+                return;
+            }
+        }
+        if let Some(requested_request_id) = requested_request_id {
+            let current_request_matches = snapshot
+                .scan
+                .as_ref()
+                .and_then(|scan| scan.request_id.as_deref())
+                .map(|request_id| request_id == requested_request_id)
+                .unwrap_or(false);
+            if !current_request_matches {
+                if requested_run_id.is_none() {
+                    drop(snapshot);
+                    let mut cancelled_requests = self.ip_scan_cancelled_requests.lock().await;
+                    if cancelled_requests.len() >= MAX_CANCELLED_IP_SCAN_REQUESTS {
+                        cancelled_requests.clear();
+                    }
+                    cancelled_requests.insert(requested_request_id);
+                }
+                return;
+            }
+        }
+        self.ip_scan_cancel.read().await.cancel();
         snapshot.scan = None;
     }
 }

@@ -6,6 +6,7 @@ import type {
 } from "../../domain/discovery";
 import {
   isDiscoveredDeviceAdded,
+  mergeDiscoveredDevice,
   validateCidrInput,
 } from "../../domain/discovery";
 import { ActionButton } from "../actions/ActionButton";
@@ -75,29 +76,35 @@ export function DeviceDiscoveryPanel({
   }, [cidr, cidrTouched, snapshot.ipScan?.defaultCidr]);
 
   const filteredDevices = useMemo(() => {
+    let merged: DiscoveredDevice[] = [];
+    for (const device of [
+      ...snapshot.devices,
+      ...(snapshot.scan?.devices ?? []),
+    ]) {
+      merged = mergeDiscoveredDevice(merged, device);
+    }
     const q = filter.trim().toLowerCase();
     if (!q) {
-      return snapshot.devices;
+      return merged;
     }
-    return snapshot.devices.filter((d) => {
+    return merged.filter((d) => {
       const fields = [d.hostname, d.fqdn, d.device_id, d.ipv4, d.baseUrl]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return fields.includes(q);
     });
-  }, [filter, snapshot.devices]);
+  }, [filter, snapshot.devices, snapshot.scan?.devices]);
 
   const ipScanExpanded = snapshot.ipScan?.expanded ?? false;
   const ipScanCandidates = snapshot.ipScan?.candidates;
   const ipScanCandidatesList = ipScanCandidates ?? [];
-  const scanning = snapshot.status === "scanning" && snapshot.mode === "scan";
-  const emptyLabel =
-    snapshot.status === "scanning"
-      ? "Scanning…"
-      : snapshot.status === "ready"
-        ? "No devices found."
-        : "No devices yet.";
+  const scanning = snapshot.scan?.status === "scanning";
+  const emptyLabel = scanning
+    ? "Scanning…"
+    : snapshot.scan?.status === "ready" || snapshot.status === "ready"
+      ? "No devices found."
+      : "No devices yet.";
 
   const startScan = () => {
     const res = validateCidrInput(cidr);
@@ -142,6 +149,17 @@ export function DeviceDiscoveryPanel({
               </div>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {snapshot.scan?.status === "ready" ? (
+        <div
+          className="mt-3 text-[12px] font-semibold text-[var(--muted)]"
+          data-testid="last-ip-scan-session"
+        >
+          Last IP scan: {snapshot.scan.devices.length} device
+          {snapshot.scan.devices.length === 1 ? "" : "s"} found for{" "}
+          {snapshot.scan.cidr}.
         </div>
       ) : null}
 

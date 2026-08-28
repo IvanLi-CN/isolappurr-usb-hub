@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     io::{Read as _, Write as _},
     net::{Ipv4Addr, SocketAddr},
@@ -7,7 +7,7 @@ use std::{
     process::Command,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration as StdDuration, Instant as StdInstant},
 };
@@ -46,6 +46,7 @@ const STORAGE_FILE_NAME: &str = "storage.json";
 const PORT_CACHE_FILE_NAME: &str = ".esp32-port";
 const DEFAULT_FLASH_ADDRESS: u32 = 0x10000;
 const PORT_IDENTITY_UNCONFIRMED: &str = "unconfirmed";
+const MAX_CANCELLED_IP_SCAN_REQUESTS: usize = 256;
 
 include!("app/cli.rs");
 
@@ -546,6 +547,148 @@ mod tests {
         assert!(result.is_err(), "expected refresh to fail");
         let snapshot = controller.snapshot().await;
         assert_eq!(snapshot.status, DiscoveryStatus::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn ip_scan_has_monotonic_run_id_and_keeps_service_devices() {
+        init_tracing();
+        let server = spawn_info_server(InfoResponse::Valid {
+            device_id: Some("aabbcc001122".to_string()),
+        })
+        .await;
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        controller
+            .handle_resolved(resolved_for(&server))
+            .await
+            .expect("seed service discovery");
+
+        let first = controller
+            .start_ip_scan("127.0.0.0/30".to_string(), None)
+            .await
+            .expect("start first scan");
+        let second = controller
+            .start_ip_scan("127.0.0.0/30".to_string(), None)
+            .await
+            .expect("start second scan");
+        assert!(second > first);
+
+        controller
+            .merge_scan_device(
+                first,
+                DiscoveredDevice {
+                    base_url: "http://127.0.0.1:80".to_string(),
+                    device_id: Some("deadbeef0000".to_string()),
+                    hostname: None,
+                    fqdn: None,
+                    ipv4: Some("127.0.0.1".to_string()),
+                    variant: None,
+                    firmware: None,
+                    last_seen_at: None,
+                },
+            )
+            .await;
+        controller.finish_scan(first, false).await;
+
+        let snapshot = controller.snapshot().await;
+        assert_eq!(snapshot.devices.len(), 1);
+        assert_eq!(snapshot.scan.as_ref().map(|scan| scan.run_id), Some(second));
+        assert!(
+            snapshot
+                .scan
+                .as_ref()
+                .map(|scan| matches!(scan.status, ScanStatus::Scanning | ScanStatus::Ready))
+                .unwrap_or(false)
+        );
+        assert!(
+            snapshot
+                .scan
+                .as_ref()
+                .map(|scan| scan
+                    .devices
+                    .iter()
+                    .all(|device| device.device_id.as_deref() != Some("deadbeef0000")))
+                .unwrap_or(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn ip_scan_rejects_ranges_larger_than_web_limit() {
+        init_tracing();
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        let result = controller
+            .start_ip_scan("192.168.0.0/16".to_string(), None)
+            .await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .expect_err("oversized range should be rejected")
+                .to_string()
+                .contains("too many hosts")
+        );
+    }
+
+    #[tokio::test]
+    async fn ip_scan_accepts_point_to_point_ranges() {
+        init_tracing();
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        for cidr in ["192.168.1.0/31", "192.168.1.1/32"] {
+            let run_id = controller
+                .start_ip_scan(cidr.to_string(), None)
+                .await
+                .expect("small point-to-point range should be accepted");
+            controller.cancel_ip_scan(Some(run_id), None).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_ip_scan_request_blocks_late_start() {
+        init_tracing();
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        controller
+            .cancel_ip_scan(None, Some("request-1".to_string()))
+            .await;
+        let result = controller
+            .start_ip_scan("127.0.0.0/30".to_string(), Some("request-1".to_string()))
+            .await;
+        assert!(
+            result
+                .expect_err("cancelled request should not install a scan")
+                .to_string()
+                .contains("request was cancelled")
+        );
+        assert!(controller.snapshot().await.scan.is_none());
+    }
+
+    #[tokio::test]
+    async fn cancelled_pending_request_does_not_replace_an_active_scan() {
+        init_tracing();
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        let active_run = controller
+            .start_ip_scan("127.0.0.0/30".to_string(), Some("request-a".to_string()))
+            .await
+            .expect("start active scan");
+        controller
+            .cancel_ip_scan(None, Some("request-b".to_string()))
+            .await;
+        let result = controller
+            .start_ip_scan("127.0.0.0/30".to_string(), Some("request-b".to_string()))
+            .await;
+        assert!(
+            result
+                .expect_err("cancelled request should not replace active scan")
+                .to_string()
+                .contains("request was cancelled")
+        );
+        assert_eq!(
+            controller
+                .snapshot()
+                .await
+                .scan
+                .as_ref()
+                .map(|scan| scan.run_id),
+            Some(active_run)
+        );
+        controller.cancel_ip_scan(Some(active_run), None).await;
     }
 
     fn temp_storage_path(label: &str) -> PathBuf {

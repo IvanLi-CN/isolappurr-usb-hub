@@ -1,8 +1,14 @@
 import type { Decorator, Meta, StoryObj } from "@storybook/react";
-import { useEffect } from "react";
+import { expect, userEvent, waitFor } from "@storybook/test";
+import { useEffect, useLayoutEffect } from "react";
 import { MemoryRouter } from "react-router";
 
 import type { DiscoveredDevice } from "../../domain/discovery";
+import {
+  clearIpScanSession,
+  createIpScanSession,
+  saveIpScanSession,
+} from "../../domain/ipScanSession";
 import {
   jsonResponse,
   mockFetchDecorator,
@@ -27,7 +33,14 @@ type AgentSnapshot = {
   status: "idle" | "scanning" | "ready" | "unavailable";
   devices: DiscoveredDevice[];
   error?: string;
-  scan?: { cidr: string; done: number; total: number };
+  scan?: {
+    cidr: string;
+    done: number;
+    total: number;
+    status: "scanning" | "ready";
+    devices: DiscoveredDevice[];
+    runId?: number;
+  };
 };
 
 function mockAgent(snapshot: AgentSnapshot) {
@@ -68,6 +81,94 @@ function mockAgent(snapshot: AgentSnapshot) {
   };
 }
 
+const desktopScanLifecycleRequests = {
+  starts: [] as Array<Record<string, unknown>>,
+  cancellations: [] as Array<Record<string, unknown>>,
+  ready: false,
+};
+
+function desktopScanLifecycleMock(
+  input: Parameters<typeof fetch>[0],
+  init: Parameters<typeof fetch>[1],
+  original: typeof fetch,
+) {
+  const url = new URL(
+    typeof input === "string"
+      ? input
+      : input instanceof Request
+        ? input.url
+        : input.toString(),
+    window.location.origin,
+  );
+  if (url.pathname === "/api/v1/bootstrap") {
+    return Promise.resolve(
+      jsonResponse({ token: "demo", agentBaseUrl: "http://agent.local" }),
+    );
+  }
+  if (url.pathname === "/api/v1/discovery/refresh") {
+    desktopScanLifecycleRequests.ready = true;
+    return Promise.resolve(new Response(null, { status: 204 }));
+  }
+  if (url.pathname === "/api/v1/discovery/ip-scan") {
+    const body =
+      typeof init?.body === "string"
+        ? JSON.parse(init.body)
+        : Object.create(null);
+    desktopScanLifecycleRequests.starts.push(body);
+    return Promise.resolve(
+      desktopScanLifecycleRequests.starts.length === 1
+        ? jsonResponse({ accepted: false }, { status: 202 })
+        : jsonResponse({ accepted: true, runId: 9 }, { status: 202 }),
+    );
+  }
+  if (url.pathname === "/api/v1/discovery/cancel") {
+    const body =
+      typeof init?.body === "string"
+        ? JSON.parse(init.body)
+        : Object.create(null);
+    desktopScanLifecycleRequests.cancellations.push(body);
+    return Promise.resolve(new Response(null, { status: 204 }));
+  }
+  if (url.pathname === "/api/v1/discovery/snapshot") {
+    const secondScanActive =
+      desktopScanLifecycleRequests.starts.length >= 2 &&
+      !desktopScanLifecycleRequests.cancellations.some(
+        (cancellation) => cancellation.runId === 9,
+      );
+    return Promise.resolve(
+      jsonResponse({
+        mode: "service",
+        status: "ready",
+        devices: [],
+        scan: secondScanActive
+          ? {
+              cidr: "192.168.1.0/31",
+              done: 0,
+              total: 2,
+              status: "scanning",
+              devices: [],
+              runId: 9,
+            }
+          : undefined,
+      }),
+    );
+  }
+  return original(input, init);
+}
+
+function desktopScanLifecycleDecorator(): Decorator {
+  return (Story) => {
+    useLayoutEffect(() => {
+      clearIpScanSession(false);
+      clearIpScanSession(true);
+      desktopScanLifecycleRequests.starts = [];
+      desktopScanLifecycleRequests.cancellations = [];
+      desktopScanLifecycleRequests.ready = false;
+    }, []);
+    return <Story />;
+  };
+}
+
 function longDevices(count: number): DiscoveredDevice[] {
   return Array.from({ length: count }, (_, i) => {
     const n = i + 1;
@@ -83,6 +184,28 @@ function longDevices(count: number): DiscoveredDevice[] {
       last_seen_at: new Date(Date.now() - n * 60_000).toISOString(),
     };
   });
+}
+
+function cachedScanDecorator(): Decorator {
+  return (Story) => {
+    useLayoutEffect(() => {
+      saveIpScanSession(
+        false,
+        createIpScanSession("192.168.31.0/24", longDevices(2)),
+      );
+      return () => clearIpScanSession(false);
+    }, []);
+    return <Story />;
+  };
+}
+
+function clearCachedScanDecorator(): Decorator {
+  return (Story) => {
+    useLayoutEffect(() => {
+      clearIpScanSession(false);
+    }, []);
+    return <Story />;
+  };
 }
 
 const meta: Meta<typeof AddDeviceDialog> = {
@@ -187,6 +310,32 @@ export const ErrorHint: Story = {
   ],
 };
 
+export const MultiResultAdded: Story = {
+  decorators: [
+    clearCachedScanDecorator(),
+    mockFetchDecorator(
+      mockAgent({
+        mode: "service",
+        status: "ready",
+        devices: [longDevices(2)[0], longDevices(2)[1]],
+      }),
+    ),
+  ],
+};
+
+export const CachedScan: Story = {
+  decorators: [
+    cachedScanDecorator(),
+    mockFetchDecorator(
+      mockAgent({
+        mode: "service",
+        status: "ready",
+        devices: [],
+      }),
+    ),
+  ],
+};
+
 export const IpScanExpanded: Story = {
   decorators: [
     mockFetchDecorator(
@@ -201,6 +350,77 @@ export const IpScanExpanded: Story = {
       return buttons.find((b) => b.textContent?.trim() === "Show") ?? null;
     }),
   ],
+};
+
+export const DesktopScanLifecycle: Story = {
+  decorators: [
+    desktopScanLifecycleDecorator(),
+    mockFetchDecorator(desktopScanLifecycleMock),
+  ],
+  play: async ({ canvasElement }) => {
+    const findButton = (label: string): HTMLButtonElement | null =>
+      Array.from(
+        canvasElement.querySelectorAll<HTMLButtonElement>("button"),
+      ).find((button) => button.textContent?.trim() === label) ?? null;
+    const clickButton = async (label: string) => {
+      const button = findButton(label);
+      if (!button) {
+        throw new Error(`Missing ${label} button`);
+      }
+      await userEvent.click(button);
+    };
+    await waitFor(() => expect(desktopScanLifecycleRequests.ready).toBe(true));
+    desktopScanLifecycleRequests.starts = [];
+    desktopScanLifecycleRequests.cancellations = [];
+    await clickButton("Show");
+    const cidr = canvasElement.querySelector<HTMLInputElement>(
+      'input[placeholder="CIDR, e.g. 192.168.1.0/24"]',
+    );
+    if (!cidr) {
+      throw new Error("Missing CIDR input");
+    }
+    await userEvent.clear(cidr);
+    await userEvent.type(cidr, "192.168.1.0/31");
+    await clickButton("Scan");
+    await waitFor(() =>
+      expect(desktopScanLifecycleRequests.starts).toHaveLength(1),
+    );
+    await waitFor(() =>
+      expect(
+        desktopScanLifecycleRequests.cancellations.filter(
+          (cancellation) => typeof cancellation.requestId === "string",
+        ),
+      ).toHaveLength(1),
+    );
+    await expect(desktopScanLifecycleRequests.starts[0].requestId).toEqual(
+      expect.any(String),
+    );
+    await expect(
+      desktopScanLifecycleRequests.cancellations.find(
+        (cancellation) => typeof cancellation.requestId === "string",
+      )?.requestId,
+    ).toEqual(desktopScanLifecycleRequests.starts[0].requestId);
+
+    await clickButton("Scan");
+    await waitFor(() =>
+      expect(desktopScanLifecycleRequests.starts).toHaveLength(2),
+    );
+    await clickButton("Cancel");
+    await waitFor(() =>
+      expect(
+        desktopScanLifecycleRequests.cancellations.filter(
+          (cancellation) => cancellation.runId === 9,
+        ),
+      ).toHaveLength(1),
+    );
+    await expect(
+      desktopScanLifecycleRequests.cancellations.find(
+        (cancellation) => cancellation.runId === 9,
+      ),
+    ).toEqual({
+      runId: 9,
+    });
+  },
 };
 
 export const AddFailure: Story = {

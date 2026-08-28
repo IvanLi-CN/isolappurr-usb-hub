@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { useDemoMode } from "../../app/demo-mode";
 import { useDemoNavigate } from "../../app/demo-navigation";
-import {
-  agentFetch,
-  type DesktopAgent,
-  tryBootstrapDesktopAgent,
-} from "../../domain/desktopAgent";
+import { tryBootstrapDesktopAgent } from "../../domain/desktopAgent";
 import { getDeviceInfo } from "../../domain/deviceApi";
 import type {
   AddDeviceInput,
@@ -15,9 +18,8 @@ import { loadStoredDevices } from "../../domain/devices";
 import type { DiscoveredDevice } from "../../domain/discovery";
 import {
   createInitialDiscoverySnapshot,
+  isDiscoveredDeviceAdded,
   mergeDiscoveredDevice,
-  parseCidr,
-  parseDiscoveredDeviceFromApiInfo,
   reduceDiscoverySnapshot,
 } from "../../domain/discovery";
 import {
@@ -27,17 +29,25 @@ import {
   type SerialPortInfo,
   WebSerialJsonlTransport,
 } from "../../domain/hardwareConsole";
+import {
+  type IpScanSession,
+  loadIpScanSession,
+} from "../../domain/ipScanSession";
 import { announceLocalUsbDeviceLink } from "../../domain/localUsbLinks";
 import { announceNetworkDeviceLink } from "../../domain/networkLinks";
 import { announceWebSerialDeviceLink } from "../../domain/webSerialLinks";
 import { ActionButton } from "../actions/ActionButton";
 import { DeviceDiscoveryPanel } from "../panels/DeviceDiscoveryPanel";
-
+import {
+  AddDeviceDialogFooter,
+  AddDeviceDialogHeader,
+  AddDeviceDialogMethodTabs,
+  type AddDeviceMethod,
+} from "./AddDeviceDialog.chrome";
 import {
   hydrateInitialUsbLog,
   InlineAddError,
   isIsolaPurrDeviceInfo,
-  parseDesktopDiscoverySnapshot,
   parseOwnerFacingUsbDeviceId,
   parseUsbInfoEnvelope,
   readLocalUsbInfo,
@@ -46,8 +56,7 @@ import {
   type UsbLogEntry,
   usbInfoMatchesHttpInfo,
 } from "./AddDeviceDialog.helpers";
-
-type AddDeviceMethod = "wifi" | "web_serial" | "local_usb";
+import { useIpScanController } from "./AddDeviceDialog.scan";
 
 export type AddDeviceDialogProps = {
   open: boolean;
@@ -57,7 +66,10 @@ export type AddDeviceDialogProps = {
   existingDeviceBaseUrls?: string[];
   existingDeviceNamesById?: Record<string, string>;
   onClose: () => void;
-  onCreate: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
+  onCreate: (
+    input: AddDeviceInput,
+    options?: { navigate?: boolean },
+  ) => Promise<AddDeviceValidationResult>;
   onUpsert: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
 };
 
@@ -94,6 +106,11 @@ export function AddDeviceDialog({
   const [manualBaseUrl, setManualBaseUrl] = useState("");
   const [manualId, setManualId] = useState("");
   const [manualBusy, setManualBusy] = useState(false);
+  const [locallyAddedIds, setLocallyAddedIds] = useState<string[]>([]);
+  const [locallyAddedBaseUrls, setLocallyAddedBaseUrls] = useState<string[]>(
+    [],
+  );
+  const [, setLastIpScanSession] = useState<IpScanSession | null>(null);
 
   const ids = useMemo(() => existingDeviceIds ?? [], [existingDeviceIds]);
   const baseUrls = useMemo(
@@ -101,6 +118,14 @@ export function AddDeviceDialog({
       existingDeviceBaseUrls ??
       (open ? loadStoredDevices().map((d) => d.baseUrl) : []),
     [existingDeviceBaseUrls, open],
+  );
+  const discoveryIds = useMemo(
+    () => [...new Set([...ids, ...locallyAddedIds])],
+    [ids, locallyAddedIds],
+  );
+  const discoveryBaseUrls = useMemo(
+    () => [...new Set([...baseUrls, ...locallyAddedBaseUrls])],
+    [baseUrls, locallyAddedBaseUrls],
   );
 
   const [snapshot, dispatch] = useReducer(
@@ -111,10 +136,11 @@ export function AddDeviceDialog({
     }),
   );
 
-  const agentRef = useRef<DesktopAgent | null>(null);
-  const agentPollRef = useRef<number | null>(null);
-
-  const scanRunIdRef = useRef(0);
+  const addingDiscoveredRef = useRef(false);
+  const addingDiscoveredSessionRef = useRef<number | null>(null);
+  const snapshotRef = useRef(snapshot);
+  const discoveryIdsRef = useRef(discoveryIds);
+  const discoveryBaseUrlsRef = useRef(discoveryBaseUrls);
   const usbLogSeqRef = useRef(1);
 
   const appendUsbLog = (
@@ -131,6 +157,26 @@ export function AddDeviceDialog({
     appendUsbLog(message, tone);
   };
 
+  const {
+    agentRef,
+    cancelActiveIpScan,
+    onRefresh: refreshDiscovery,
+    onStartScan: startIpScan,
+  } = useIpScanController({
+    open,
+    demoEnabled,
+    openRef,
+    usbRunIdRef,
+    dispatch,
+    setLastIpScanSession,
+  });
+
+  const handleClose = useCallback(() => {
+    void cancelActiveIpScan();
+    usbRunIdRef.current += 1;
+    onClose();
+  }, [cancelActiveIpScan, onClose]);
+
   useEffect(() => {
     openRef.current = open;
   }, [open]);
@@ -140,9 +186,12 @@ export function AddDeviceDialog({
   }, [method]);
 
   useEffect(() => {
+    snapshotRef.current = snapshot;
+    discoveryIdsRef.current = discoveryIds;
+    discoveryBaseUrlsRef.current = discoveryBaseUrls;
     devicesCountRef.current = snapshot.devices.length;
     ipScanExpandedRef.current = snapshot.ipScan?.expanded ?? false;
-  }, [snapshot.devices.length, snapshot.ipScan?.expanded]);
+  }, [snapshot, discoveryIds, discoveryBaseUrls]);
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -163,98 +212,46 @@ export function AddDeviceDialog({
       setManualBaseUrl("");
       setManualId("");
       setManualBusy(false);
+      setLocallyAddedIds([]);
+      setLocallyAddedBaseUrls([]);
+      setLastIpScanSession(null);
       methodRef.current = initialMethod;
       usbRunIdRef.current += 1;
       setMethod(initialMethod);
       setDiscoveryPanelKey((v) => v + 1);
       dispatch({ type: "reset", status: "unavailable" });
+      const cached = loadIpScanSession(demoEnabled);
+      if (cached) {
+        setLastIpScanSession(cached);
+        dispatch({
+          type: "restore_scan",
+          cidr: cached.cidr,
+          devices: cached.devices,
+        });
+        dispatch({
+          type: "toggle_ip_scan",
+          expanded: true,
+          expandedBy: "auto",
+        });
+      }
       return;
     }
 
-    scanRunIdRef.current += 1;
+    void cancelActiveIpScan();
     usbRunIdRef.current += 1;
-    dispatch({ type: "scan_cancelled" });
+    setLastIpScanSession(null);
     agentRef.current = null;
-    if (agentPollRef.current) {
-      window.clearInterval(agentPollRef.current);
-      agentPollRef.current = null;
-    }
     if (el.open) {
       el.close();
     }
-  }, [initialMethod, initialUsbLog, open]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    void (async () => {
-      const agent = await tryBootstrapDesktopAgent();
-      agentRef.current = agent;
-      if (!agent) {
-        dispatch({ type: "reset", status: "unavailable" });
-        return;
-      }
-
-      dispatch({ type: "reset", status: "scanning" });
-      await agentFetch(agent, "/api/v1/discovery/refresh", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-
-      if (agentPollRef.current) {
-        window.clearInterval(agentPollRef.current);
-        agentPollRef.current = null;
-      }
-
-      agentPollRef.current = window.setInterval(() => {
-        void (async () => {
-          const current = agentRef.current;
-          if (!current) {
-            return;
-          }
-          const res = await agentFetch(
-            current,
-            "/api/v1/discovery/snapshot",
-            {},
-          );
-          if (!res.ok) {
-            dispatch({
-              type: "set_error",
-              error:
-                res.status === 401 || res.status === 403
-                  ? "Desktop agent authorization failed."
-                  : "Desktop agent unavailable.",
-            });
-            return;
-          }
-          const value = (await res.json()) as unknown;
-          const parsed = parseDesktopDiscoverySnapshot(value);
-          if (!parsed) {
-            return;
-          }
-          // Preserve local reducer dedup semantics (device_id preferred).
-          let merged: DiscoveredDevice[] = [];
-          for (const d of parsed.devices) {
-            merged = mergeDiscoveredDevice(merged, d);
-          }
-
-          dispatch({
-            type: "set_snapshot",
-            snapshot: {
-              mode: parsed.mode,
-              status: parsed.status,
-              devices: merged,
-              error: parsed.error,
-              scan: parsed.scan,
-              ipScan: parsed.ipScan,
-            },
-          });
-        })();
-      }, 1000);
-    })();
-  }, [open]);
+  }, [
+    agentRef,
+    cancelActiveIpScan,
+    demoEnabled,
+    initialMethod,
+    initialUsbLog,
+    open,
+  ]);
 
   useEffect(() => {
     if (!open || method !== "local_usb") {
@@ -312,7 +309,7 @@ export function AddDeviceDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, method]);
+  }, [agentRef, open, method]);
 
   useEffect(() => {
     if (!open) {
@@ -352,6 +349,7 @@ export function AddDeviceDialog({
   }, [open, snapshot.ipScan, snapshot.mode, snapshot.status]);
 
   const saveManualDevice = async () => {
+    const sessionGeneration = usbRunIdRef.current;
     setManualBusy(true);
     setAddError(null);
     try {
@@ -360,7 +358,10 @@ export function AddDeviceDialog({
         baseUrl: manualBaseUrl,
         id: manualId,
       };
-      const saved = await onCreate(input);
+      const saved = await onCreate(input, { navigate: false });
+      if (!openRef.current || usbRunIdRef.current !== sessionGeneration) {
+        return;
+      }
       if (!saved.ok) {
         setAddError(
           saved.errors.baseUrl ??
@@ -374,39 +375,92 @@ export function AddDeviceDialog({
       setManualBaseUrl("");
       setManualId("");
       setAddError(null);
-      onClose();
+      handleClose();
       navigate(`/devices/${saved.device.id}`);
     } finally {
-      setManualBusy(false);
+      if (openRef.current && usbRunIdRef.current === sessionGeneration) {
+        setManualBusy(false);
+      }
     }
   };
 
   const addDiscoveredDevice = async (device: DiscoveredDevice) => {
-    if (!device.baseUrl) {
-      setAddError("Discovered hub did not include a network URL.");
+    const sessionGeneration = usbRunIdRef.current;
+    if (
+      addingDiscoveredRef.current &&
+      addingDiscoveredSessionRef.current === sessionGeneration
+    ) {
       return;
     }
-    const input: AddDeviceInput = {
-      name:
-        device.hostname ??
-        device.fqdn ??
-        device.device_id ??
-        "IsolaPurr USB Hub",
-      baseUrl: device.baseUrl,
-      id: device.device_id,
-    };
-    const saved = await onCreate(input);
-    if (!saved.ok) {
-      setAddError(
-        saved.errors.baseUrl ??
-          saved.errors.id ??
-          saved.errors.name ??
-          "Could not add this hub.",
+    addingDiscoveredRef.current = true;
+    addingDiscoveredSessionRef.current = sessionGeneration;
+    try {
+      if (!device.baseUrl) {
+        setAddError("Discovered hub did not include a network URL.");
+        return;
+      }
+      const input: AddDeviceInput = {
+        name:
+          device.hostname ??
+          device.fqdn ??
+          device.device_id ??
+          "IsolaPurr USB Hub",
+        baseUrl: device.baseUrl,
+        id: device.device_id,
+      };
+      const saved = await onCreate(input, { navigate: false });
+      if (!openRef.current || usbRunIdRef.current !== sessionGeneration) {
+        return;
+      }
+      if (!saved.ok) {
+        setAddError(
+          saved.errors.baseUrl ??
+            saved.errors.id ??
+            saved.errors.name ??
+            "Could not add this hub.",
+        );
+        return;
+      }
+      setAddError(null);
+      const nextIds = device.device_id
+        ? [...discoveryIdsRef.current, device.device_id]
+        : discoveryIdsRef.current;
+      const nextBaseUrls = [...discoveryBaseUrlsRef.current, device.baseUrl];
+      setLocallyAddedIds((current) =>
+        device.device_id && !current.includes(device.device_id)
+          ? [...current, device.device_id]
+          : current,
       );
-      return;
+      setLocallyAddedBaseUrls((current) =>
+        current.includes(device.baseUrl)
+          ? current
+          : [...current, device.baseUrl],
+      );
+
+      let merged: DiscoveredDevice[] = [];
+      const currentSnapshot = snapshotRef.current;
+      const visibleCandidates = [
+        ...currentSnapshot.devices,
+        ...(currentSnapshot.scan?.devices ?? []),
+      ];
+      for (const candidate of visibleCandidates) {
+        merged = mergeDiscoveredDevice(merged, candidate);
+      }
+      const hasAnotherAddable = merged.some(
+        (candidate) =>
+          !isDiscoveredDeviceAdded(candidate, nextIds, nextBaseUrls),
+      );
+      if (hasAnotherAddable) {
+        return;
+      }
+      handleClose();
+      navigate(`/devices/${saved.device.id}`);
+    } finally {
+      if (addingDiscoveredSessionRef.current === sessionGeneration) {
+        addingDiscoveredRef.current = false;
+        addingDiscoveredSessionRef.current = null;
+      }
     }
-    setAddError(null);
-    onClose();
   };
 
   const resolveReachableUsbBaseUrl = async (
@@ -497,7 +551,7 @@ export function AddDeviceDialog({
     };
     const saved = ids.includes(id)
       ? await onUpsert(input)
-      : await onCreate(input);
+      : await onCreate(input, { navigate: false });
     if (run && !isActiveUsbRun(run.id, run.method)) {
       return false;
     }
@@ -516,13 +570,16 @@ export function AddDeviceDialog({
           });
         }
         const updated = await onUpsert(input);
+        if (run && !isActiveUsbRun(run.id, run.method)) {
+          return false;
+        }
         if (updated.ok) {
           setUsbStep(
             "Existing hub updated with the latest connection link.",
             "success",
           );
           setAddError(null);
-          onClose();
+          handleClose();
           navigate(`/devices/${id}`);
           return true;
         }
@@ -546,7 +603,7 @@ export function AddDeviceDialog({
       });
     }
     setAddError(null);
-    onClose();
+    handleClose();
     navigate(`/devices/${id}`);
     return true;
   };
@@ -689,6 +746,7 @@ export function AddDeviceDialog({
     if (nextMethod === methodRef.current) {
       return;
     }
+    void cancelActiveIpScan();
     usbRunIdRef.current += 1;
     methodRef.current = nextMethod;
     setMethod(nextMethod);
@@ -696,6 +754,7 @@ export function AddDeviceDialog({
     setUsbStatus(null);
     setUsbLog([]);
     setUsbBusy(false);
+    setManualBusy(false);
   };
 
   const startUsbRun = (runMethod: AddDeviceMethod) => {
@@ -714,38 +773,12 @@ export function AddDeviceDialog({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        handleClose();
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  const methodOptions: Array<{
-    id: AddDeviceMethod;
-    title: string;
-    description: string;
-  }> = [
-    {
-      id: "wifi",
-      title: "Wi-Fi / LAN",
-      description: "Discover or add a hub already reachable on the network.",
-    },
-    {
-      id: "web_serial",
-      title: "Web Serial",
-      description: demoEnabled
-        ? "Disabled in demo mode. Use discovery or manual add."
-        : "Use the browser USB serial path to identify and add a hub.",
-    },
-    {
-      id: "local_usb",
-      title: "Local USB",
-      description: demoEnabled
-        ? "Disabled in demo mode. Use discovery or manual add."
-        : "Use the desktop app for local USB identification.",
-    },
-  ];
+  }, [handleClose]);
 
   return (
     <dialog
@@ -755,11 +788,11 @@ export function AddDeviceDialog({
       data-testid="add-device-dialog"
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        handleClose();
       }}
       onClick={(e) => {
         if (e.target === dialogRef.current) {
-          onClose();
+          handleClose();
         }
       }}
       onKeyDown={(e) => {
@@ -768,64 +801,22 @@ export function AddDeviceDialog({
         }
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onClose();
+          handleClose();
         }
       }}
     >
       <div className="modal-box iso-modal flex max-h-[calc(100vh-32px)] w-[1040px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-[22px] border border-[var(--border)] bg-[var(--panel)] px-8 pb-7 pt-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <div className="text-[24px] font-bold">Add device</div>
-            <div className="mt-2 text-[14px] font-medium text-[var(--muted)]">
-              Store locally; used for Dashboard and device pages.
-            </div>
-          </div>
-          <ActionButton
-            tone="secondary"
-            onClick={() => {
-              onClose();
-              navigate("/flash/");
-            }}
-          >
-            Open firmware flash
-          </ActionButton>
-        </div>
-
-        <div
-          className="mt-6 grid grid-cols-1 gap-3 min-[760px]:grid-cols-3"
-          role="tablist"
-          aria-label="Connection method"
-        >
-          {methodOptions.map((option) => {
-            const selected = method === option.id;
-            return (
-              <button
-                key={option.id}
-                className={[
-                  "min-h-[86px] rounded-[14px] border px-4 py-3 text-left transition-colors",
-                  selected
-                    ? "border-[var(--primary)] bg-[var(--panel)] shadow-[inset_0_0_0_1px_var(--primary)]"
-                    : "border-[var(--border)] bg-[var(--panel-2)] hover:border-[var(--primary)]",
-                ].join(" ")}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                disabled={
-                  demoEnabled &&
-                  (option.id === "web_serial" || option.id === "local_usb")
-                }
-                onClick={() => selectMethod(option.id)}
-              >
-                <div className="text-[14px] font-bold text-[var(--text)]">
-                  {option.title}
-                </div>
-                <div className="mt-2 text-[12px] font-semibold leading-5 text-[var(--muted)]">
-                  {option.description}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <AddDeviceDialogHeader
+          onOpenFlash={() => {
+            handleClose();
+            navigate("/flash/");
+          }}
+        />
+        <AddDeviceDialogMethodTabs
+          method={method}
+          demoEnabled={demoEnabled}
+          onSelect={selectMethod}
+        />
 
         <div className="mt-6 flex min-h-0 flex-1 flex-col gap-6">
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -835,21 +826,9 @@ export function AddDeviceDialog({
                   <DeviceDiscoveryPanel
                     key={discoveryPanelKey}
                     snapshot={snapshot}
-                    existingDeviceIds={ids}
-                    existingDeviceBaseUrls={baseUrls}
-                    onRefresh={() => {
-                      scanRunIdRef.current += 1;
-                      const agent = agentRef.current;
-                      if (agent) {
-                        dispatch({ type: "reset", status: "scanning" });
-                        void agentFetch(agent, "/api/v1/discovery/refresh", {
-                          method: "POST",
-                          body: JSON.stringify({}),
-                        });
-                      } else {
-                        dispatch({ type: "reset", status: "unavailable" });
-                      }
-                    }}
+                    existingDeviceIds={discoveryIds}
+                    existingDeviceBaseUrls={discoveryBaseUrls}
+                    onRefresh={refreshDiscovery}
                     onToggleIpScan={(expanded) =>
                       dispatch({
                         type: "toggle_ip_scan",
@@ -857,110 +836,8 @@ export function AddDeviceDialog({
                         expandedBy: "user",
                       })
                     }
-                    onStartScan={(cidr) => {
-                      const parsed = parseCidr(cidr);
-                      if (!parsed.ok) {
-                        dispatch({ type: "set_error", error: parsed.error });
-                        return;
-                      }
-
-                      const agent = agentRef.current;
-                      if (agent) {
-                        dispatch({
-                          type: "start_scan",
-                          cidr: parsed.cidr,
-                          total: parsed.hosts.length,
-                        });
-                        void agentFetch(agent, "/api/v1/discovery/ip-scan", {
-                          method: "POST",
-                          body: JSON.stringify({ cidr: parsed.cidr }),
-                        });
-                        return;
-                      }
-
-                      scanRunIdRef.current += 1;
-                      const runId = scanRunIdRef.current;
-
-                      dispatch({
-                        type: "start_scan",
-                        cidr: parsed.cidr,
-                        total: parsed.hosts.length,
-                      });
-
-                      const concurrency = 12;
-                      let nextIndex = 0;
-                      let done = 0;
-                      let preflightBlocked = false;
-
-                      const worker = async () => {
-                        for (;;) {
-                          if (scanRunIdRef.current !== runId) {
-                            return;
-                          }
-                          const idx = nextIndex;
-                          nextIndex += 1;
-                          if (idx >= parsed.hosts.length) {
-                            return;
-                          }
-
-                          const ip = parsed.hosts[idx];
-                          const baseUrlByIp = `http://${ip}`;
-                          const res = await getDeviceInfo(baseUrlByIp);
-                          if (scanRunIdRef.current !== runId) {
-                            return;
-                          }
-                          done += 1;
-                          dispatch({ type: "scan_progress", done });
-
-                          if (!res.ok) {
-                            if (res.error.kind === "browser_blocked") {
-                              preflightBlocked = true;
-                            }
-                            continue;
-                          }
-
-                          const nowIso = new Date().toISOString();
-                          const device = parseDiscoveredDeviceFromApiInfo(
-                            baseUrlByIp,
-                            res.value as unknown,
-                            ip,
-                            nowIso,
-                          );
-                          if (!device) {
-                            continue;
-                          }
-                          dispatch({ type: "scan_device", device });
-                        }
-                      };
-
-                      void (async () => {
-                        await Promise.all(
-                          Array.from({ length: concurrency }, () => worker()),
-                        );
-                        if (scanRunIdRef.current !== runId) {
-                          return;
-                        }
-                        if (preflightBlocked) {
-                          dispatch({
-                            type: "set_error",
-                            error:
-                              "Browser blocked private-network access. Allow LAN access in the browser, or connect by USB first to verify and save the IPv4 path.",
-                          });
-                        }
-                        dispatch({ type: "scan_done" });
-                      })();
-                    }}
-                    onCancelScan={() => {
-                      scanRunIdRef.current += 1;
-                      dispatch({ type: "scan_cancelled" });
-                      const agent = agentRef.current;
-                      if (agent) {
-                        void agentFetch(agent, "/api/v1/discovery/cancel", {
-                          method: "POST",
-                          body: JSON.stringify({}),
-                        });
-                      }
-                    }}
+                    onStartScan={startIpScan}
+                    onCancelScan={cancelActiveIpScan}
                     onSelect={(device: DiscoveredDevice) => {
                       void addDiscoveredDevice(device);
                     }}
@@ -1150,11 +1027,7 @@ export function AddDeviceDialog({
           </div>
         </div>
 
-        <div className="mt-6 flex items-center justify-end">
-          <ActionButton tone="secondary" onClick={onClose}>
-            Cancel
-          </ActionButton>
-        </div>
+        <AddDeviceDialogFooter onCancel={handleClose} />
       </div>
     </dialog>
   );

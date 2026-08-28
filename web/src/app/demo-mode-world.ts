@@ -12,6 +12,7 @@ import {
   type StoredDevice,
 } from "../domain/devices";
 import type { DiscoveredDevice, DiscoverySnapshot } from "../domain/discovery";
+import { clearIpScanSession } from "../domain/ipScanSession";
 import type { HubState, Port, PortId, PortsResponse } from "../domain/ports";
 import type { ThemeId } from "./theme";
 
@@ -484,6 +485,7 @@ export function clearDemoWorld(): void {
 export function resetDemoModeSession(): void {
   writeDemoEnabled(true);
   writeDemoWorld(createCanonicalDemoWorld());
+  clearIpScanSession(true);
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(DEMO_RESET_EVENT));
   }

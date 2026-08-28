@@ -22,7 +22,10 @@ export function AddDeviceUiProvider({
   existingDeviceIds: string[];
   existingDeviceBaseUrls: string[];
   existingDeviceNamesById: Record<string, string>;
-  onCreate: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
+  onCreate: (
+    input: AddDeviceInput,
+    options?: { navigate?: boolean },
+  ) => Promise<AddDeviceValidationResult>;
   onUpsert: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   children: React.ReactNode;
 }) {

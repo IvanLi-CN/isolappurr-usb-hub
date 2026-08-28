@@ -29,7 +29,7 @@ export type IdentifyResponse = {
   duration_ms: 5000;
 };
 
-export type DeviceApiError =
+export type DeviceApiError = (
   | { kind: "offline"; message: string }
   | {
       kind: "name_resolution";
@@ -49,7 +49,8 @@ export type DeviceApiError =
       message: string;
       retryable: boolean;
     }
-  | { kind: "invalid_response"; message: string };
+  | { kind: "invalid_response"; message: string }
+) & { reachable?: boolean };
 
 export type Result<T> =
   | { ok: true; value: T }
@@ -563,6 +564,15 @@ async function fetchJson<T>(
   const url = new URL(path, baseUrl).toString();
 
   const controller = new AbortController();
+  const externalSignal = init.signal;
+  const abortFromCaller = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", abortFromCaller, { once: true });
+    }
+  }
   const timeout = window.setTimeout(
     () => controller.abort(),
     requestTimeoutMs(baseUrl),
@@ -583,8 +593,21 @@ async function fetchJson<T>(
   try {
     const res = await fetch(url, requestInit as RequestInit);
     const text = await res.text();
-
-    const json: unknown = text.length === 0 ? null : JSON.parse(text);
+    let json: unknown = null;
+    if (text.length > 0) {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        return {
+          ok: false,
+          error: {
+            kind: "invalid_response",
+            message: "Device returned invalid JSON.",
+            reachable: true,
+          },
+        };
+      }
+    }
 
     if (res.ok) {
       return { ok: true, value: json as T };
@@ -599,6 +622,7 @@ async function fetchJson<T>(
             kind: "busy",
             message: envelope.error.message,
             retryable: true,
+            reachable: true,
           },
         };
       }
@@ -611,6 +635,7 @@ async function fetchJson<T>(
           code: envelope.error.code,
           message: envelope.error.message,
           retryable: envelope.error.retryable,
+          reachable: true,
         },
       };
     }
@@ -623,6 +648,7 @@ async function fetchJson<T>(
         code: "unknown",
         message: text || res.statusText,
         retryable: false,
+        reachable: true,
       },
     };
   } catch (err) {
@@ -632,6 +658,7 @@ async function fetchJson<T>(
     };
   } finally {
     window.clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -845,9 +872,11 @@ export async function clearIdleBiasCalibration(
 
 export async function getDeviceInfo(
   baseUrl: string,
+  options?: { signal?: AbortSignal },
 ): Promise<Result<DeviceInfoResponse>> {
   return fetchJson<DeviceInfoResponse>(baseUrl, "/api/v1/info", {
     method: "GET",
+    signal: options?.signal,
   });
 }
 
