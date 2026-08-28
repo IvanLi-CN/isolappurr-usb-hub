@@ -361,6 +361,59 @@ describe("desktop discovery scan ownership", () => {
       },
     });
     expect(invalidRunId?.scanMalformed).toBe(true);
+
+    for (const runId of [0, -1]) {
+      const nonPositiveRunId = parseDesktopDiscoverySnapshot({
+        mode: "service",
+        status: "ready",
+        devices: [],
+        scan: {
+          cidr: "192.168.1.0/24",
+          done: 0,
+          total: 254,
+          runId,
+        },
+      });
+      expect(nonPositiveRunId?.scanMalformed).toBe(true);
+    }
+
+    const impossibleProgress = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 255,
+        total: 254,
+        reachableResponses: 255,
+      },
+    });
+    expect(impossibleProgress?.scanMalformed).toBe(true);
+
+    const impossibleResponses = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 10,
+        total: 254,
+        reachableResponses: 11,
+      },
+    });
+    expect(impossibleResponses?.scanMalformed).toBe(true);
+
+    const impossiblePersistedScan = {
+      cidr: "192.168.1.0/24",
+      done: 254,
+      total: 254,
+      status: "ready" as const,
+      devices: [],
+      runId: 0,
+      reachableResponses: 255,
+    };
+    expect(isPersistableDesktopScan(impossiblePersistedScan)).toBe(false);
+    expect(isTrustedDesktopScanCompletion(impossiblePersistedScan)).toBe(false);
   });
 
   test("keeps an explicitly scanning desktop scan in progress", () => {

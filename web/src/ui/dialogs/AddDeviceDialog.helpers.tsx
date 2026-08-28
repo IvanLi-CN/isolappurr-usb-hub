@@ -66,6 +66,35 @@ export type DiscoverySnapshotShape = {
   };
 };
 
+function hasCoherentDesktopScanMetrics(
+  scan: DiscoverySnapshotShape["scan"],
+): boolean {
+  if (!scan) {
+    return false;
+  }
+  if (
+    !Number.isSafeInteger(scan.done) ||
+    !Number.isSafeInteger(scan.total) ||
+    scan.total <= 0 ||
+    scan.done < 0 ||
+    scan.done > scan.total
+  ) {
+    return false;
+  }
+  if (scan.reachableResponses === undefined) {
+    return true;
+  }
+  return (
+    Number.isSafeInteger(scan.reachableResponses) &&
+    scan.reachableResponses >= 0 &&
+    scan.reachableResponses <= scan.done
+  );
+}
+
+function hasValidDesktopScanRunId(runId: number | undefined): boolean {
+  return runId === undefined || (Number.isSafeInteger(runId) && runId > 0);
+}
+
 export function isPersistableDesktopScan(
   scan: DiscoverySnapshotShape["scan"],
 ): boolean {
@@ -73,7 +102,9 @@ export function isPersistableDesktopScan(
     !scan ||
     scan.status !== "ready" ||
     scan.legacyDevicesAreAmbiguous ||
-    scan.hasMalformedDevices
+    scan.hasMalformedDevices ||
+    !hasCoherentDesktopScanMetrics(scan) ||
+    !hasValidDesktopScanRunId(scan.runId)
   ) {
     return false;
   }
@@ -92,11 +123,7 @@ export function isTrustedDesktopScanCompletion(
     return false;
   }
   const completeProgress =
-    Number.isSafeInteger(scan.done) &&
-    scan.done >= 0 &&
-    Number.isSafeInteger(scan.total) &&
-    scan.total >= 0 &&
-    scan.done >= scan.total;
+    hasCoherentDesktopScanMetrics(scan) && scan.done === scan.total;
   return (
     completeProgress &&
     (scan.reachableResponses !== undefined || scan.legacyScanComplete === true)
@@ -241,7 +268,8 @@ export function parseDesktopDiscoverySnapshot(
     scanDone >= 0 &&
     scanTotal !== null &&
     Number.isSafeInteger(scanTotal) &&
-    scanTotal >= 0;
+    scanTotal > 0 &&
+    scanDone <= scanTotal;
   const scanCidr =
     scan && typeof scan.cidr === "string" ? parseCidr(scan.cidr) : null;
   const hasScanStatusField =
@@ -328,7 +356,9 @@ export function parseDesktopDiscoverySnapshot(
       ? scan.runId
       : undefined;
   const hasRunIdField = scan !== undefined && Object.hasOwn(scan, "runId");
-  const hasMalformedRunId = hasRunIdField && scanRunId === undefined;
+  const hasMalformedRunId =
+    hasRunIdField &&
+    (scanRunId === undefined || !hasValidDesktopScanRunId(scanRunId));
   const reachableResponses =
     scan &&
     typeof scan.reachableResponses === "number" &&
@@ -362,6 +392,10 @@ export function parseDesktopDiscoverySnapshot(
           hasMalformedDevices,
         }
       : undefined;
+  const hasImpossibleReachableResponses =
+    reachableResponses !== undefined &&
+    hasValidProgress &&
+    (reachableResponses > scanDone || reachableResponses > scanTotal);
 
   const defaultCidr =
     ipScan && typeof ipScan.defaultCidr === "string"
@@ -448,7 +482,8 @@ export function parseDesktopDiscoverySnapshot(
         (scan && !scanShape) ||
         hasMalformedScanStatus ||
         hasMalformedReachableResponses ||
-        hasMalformedRunId,
+        hasMalformedRunId ||
+        hasImpossibleReachableResponses,
     ),
     scan: scanShape,
     ipScan: ipScan ? { expanded: false, defaultCidr, candidates } : undefined,

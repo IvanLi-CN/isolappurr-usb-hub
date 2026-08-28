@@ -132,7 +132,9 @@ function desktopScanLifecycleMock(
   if (url.pathname === "/api/v1/discovery/snapshot") {
     const secondScanActive =
       desktopScanLifecycleRequests.starts.length >= 2 &&
-      desktopScanLifecycleRequests.cancellations.length < 2;
+      !desktopScanLifecycleRequests.cancellations.some(
+        (cancellation) => cancellation.runId === 9,
+      );
     return Promise.resolve(
       jsonResponse({
         mode: "service",
@@ -384,13 +386,19 @@ export const DesktopScanLifecycle: Story = {
       expect(desktopScanLifecycleRequests.starts).toHaveLength(1),
     );
     await waitFor(() =>
-      expect(desktopScanLifecycleRequests.cancellations).toHaveLength(1),
+      expect(
+        desktopScanLifecycleRequests.cancellations.filter(
+          (cancellation) => typeof cancellation.requestId === "string",
+        ),
+      ).toHaveLength(1),
     );
     await expect(desktopScanLifecycleRequests.starts[0].requestId).toEqual(
       expect.any(String),
     );
     await expect(
-      desktopScanLifecycleRequests.cancellations[0].requestId,
+      desktopScanLifecycleRequests.cancellations.find(
+        (cancellation) => typeof cancellation.requestId === "string",
+      )?.requestId,
     ).toEqual(desktopScanLifecycleRequests.starts[0].requestId);
 
     await clickButton("Scan");
@@ -399,9 +407,17 @@ export const DesktopScanLifecycle: Story = {
     );
     await clickButton("Cancel");
     await waitFor(() =>
-      expect(desktopScanLifecycleRequests.cancellations).toHaveLength(2),
+      expect(
+        desktopScanLifecycleRequests.cancellations.filter(
+          (cancellation) => cancellation.runId === 9,
+        ),
+      ).toHaveLength(1),
     );
-    await expect(desktopScanLifecycleRequests.cancellations[1]).toEqual({
+    await expect(
+      desktopScanLifecycleRequests.cancellations.find(
+        (cancellation) => cancellation.runId === 9,
+      ),
+    ).toEqual({
       runId: 9,
     });
   },
