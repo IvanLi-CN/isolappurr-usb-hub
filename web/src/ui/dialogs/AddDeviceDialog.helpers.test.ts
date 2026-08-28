@@ -297,6 +297,30 @@ describe("desktop discovery scan ownership", () => {
     }
   });
 
+  test("marks primitive scan payloads and legacy device containers as malformed", () => {
+    const primitiveScan = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: "not-an-object",
+    });
+    expect(primitiveScan?.scan).toBeUndefined();
+    expect(primitiveScan?.scanMalformed).toBe(true);
+
+    const malformedLegacyDevices = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: { baseUrl: "http://192.168.1.2" },
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+      },
+    });
+    expect(malformedLegacyDevices?.scan?.hasMalformedDevices).toBe(true);
+    expect(isPersistableDesktopScan(malformedLegacyDevices?.scan)).toBe(false);
+  });
+
   test("keeps an explicitly scanning desktop scan in progress", () => {
     const parsed = parseDesktopDiscoverySnapshot({
       mode: "service",

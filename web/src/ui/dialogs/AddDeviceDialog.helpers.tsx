@@ -211,6 +211,7 @@ export function parseDesktopDiscoverySnapshot(
     return null;
   }
   const obj = value as Record<string, unknown>;
+  const hasDevicesField = Object.hasOwn(obj, "devices");
   const devices = Array.isArray(obj.devices) ? obj.devices : null;
   const mode =
     obj.mode === "service" || obj.mode === "scan" ? obj.mode : "service";
@@ -222,8 +223,9 @@ export function parseDesktopDiscoverySnapshot(
       ? obj.status
       : "unavailable";
   const error = typeof obj.error === "string" ? obj.error : undefined;
+  const hasScanField = Object.hasOwn(obj, "scan");
   const scan =
-    obj.scan && typeof obj.scan === "object"
+    obj.scan && typeof obj.scan === "object" && !Array.isArray(obj.scan)
       ? (obj.scan as Record<string, unknown>)
       : undefined;
   const ipScan =
@@ -254,9 +256,10 @@ export function parseDesktopDiscoverySnapshot(
   const hasScanDevicesField =
     scan !== undefined && Object.hasOwn(scan, "devices");
   let hasMalformedDevices = Boolean(
-    scan &&
-      ((hasScanDevicesField && !Array.isArray(scan.devices)) ||
-        (!hasScanDevicesField && hasExplicitScanStatus)),
+    (hasDevicesField && !Array.isArray(obj.devices)) ||
+      (scan &&
+        ((hasScanDevicesField && !Array.isArray(scan.devices)) ||
+          (!hasScanDevicesField && hasExplicitScanStatus))),
   );
   const scanDevicesRaw =
     scan && Array.isArray(scan.devices)
@@ -431,7 +434,9 @@ export function parseDesktopDiscoverySnapshot(
     status,
     devices: parsedDevices,
     error,
-    scanMalformed: Boolean(scan && !scanShape),
+    scanMalformed: Boolean(
+      (hasScanField && scan === undefined) || (scan && !scanShape),
+    ),
     scan: scanShape,
     ipScan: ipScan ? { expanded: false, defaultCidr, candidates } : undefined,
   };
