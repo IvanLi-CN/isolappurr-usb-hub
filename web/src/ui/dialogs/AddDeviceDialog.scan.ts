@@ -105,22 +105,21 @@ export function useIpScanController({
       .catch(() => undefined)
       .then(async () => {
         if (agent && desktopRunId !== null) {
+          const cancellationController = new AbortController();
+          const timeoutId = window.setTimeout(
+            () => cancellationController.abort(),
+            1_500,
+          );
           try {
-            await Promise.race([
-              agentFetch(agent, "/api/v1/discovery/cancel", {
-                method: "POST",
-                body: JSON.stringify({ runId: desktopRunId }),
-              }),
-              new Promise<never>((_, reject) => {
-                window.setTimeout(
-                  () =>
-                    reject(new Error("Desktop scan cancellation timed out")),
-                  1_500,
-                );
-              }),
-            ]);
+            await agentFetch(agent, "/api/v1/discovery/cancel", {
+              method: "POST",
+              body: JSON.stringify({ runId: desktopRunId }),
+              signal: cancellationController.signal,
+            });
           } catch {
             // Cancellation is best-effort; local ownership is already invalidated.
+          } finally {
+            window.clearTimeout(timeoutId);
           }
         }
         return cancelledRunId;

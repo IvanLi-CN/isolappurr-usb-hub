@@ -4,7 +4,11 @@ import {
   isLegacyDeviceId,
   normalizeStoredDeviceId,
 } from "../../domain/devices";
-import type { DiscoveredDevice, LanCandidate } from "../../domain/discovery";
+import {
+  type DiscoveredDevice,
+  type LanCandidate,
+  parseCidr,
+} from "../../domain/discovery";
 import {
   nextJsonlRequestId,
   type SerialPortInfo,
@@ -189,6 +193,8 @@ export function parseDesktopDiscoverySnapshot(
 
   const scanDone = scan && typeof scan.done === "number" ? scan.done : null;
   const scanTotal = scan && typeof scan.total === "number" ? scan.total : null;
+  const scanCidr =
+    scan && typeof scan.cidr === "string" ? parseCidr(scan.cidr) : null;
   const hasExplicitScanStatus =
     scan?.status === "ready" || scan?.status === "scanning";
   const legacyScanComplete =
@@ -254,11 +260,11 @@ export function parseDesktopDiscoverySnapshot(
       : undefined;
   const scanShape =
     scan &&
-    typeof scan.cidr === "string" &&
+    scanCidr?.ok === true &&
     typeof scan.done === "number" &&
     typeof scan.total === "number"
       ? {
-          cidr: scan.cidr,
+          cidr: scanCidr.cidr,
           done: scan.done,
           total: scan.total,
           status: scanStatus,

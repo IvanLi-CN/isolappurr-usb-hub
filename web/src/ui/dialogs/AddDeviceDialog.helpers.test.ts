@@ -193,4 +193,21 @@ describe("desktop discovery scan ownership", () => {
 
     expect(parsed?.scan?.status).toBe("scanning");
   });
+
+  test("rejects a desktop scan with an invalid CIDR", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "not-a-cidr",
+        done: 1,
+        total: 1,
+        status: "ready",
+        reachableResponses: 1,
+      },
+    });
+
+    expect(parsed?.scan).toBeUndefined();
+  });
 });
