@@ -19,6 +19,7 @@ import type { AddDeviceInput, StoredDevice } from "../domain/devices";
 import type { DiscoverySnapshot } from "../domain/discovery";
 import { clearIpScanSession } from "../domain/ipScanSession";
 import type { PortsResponse } from "../domain/ports";
+import { applyDemoIpScan, cancelDemoIpScan } from "./demo-mode-discovery";
 import { handleDemoPortAction } from "./demo-mode-port-actions";
 import {
   buildDefaultDemoPowerConfig,
@@ -351,39 +352,12 @@ function handleDemoDiscoveryRequest(url: URL, init?: RequestInit): Response {
       return apiError(400, "invalid_request", "cidr is required");
     }
     const runId = ++demoIpScanRunId;
-    updateWorld((world) => ({
-      ...world,
-      discovery: {
-        ...world.discovery,
-        mode: "service",
-        status: "ready",
-        scan: {
-          cidr,
-          done: world.discovery.devices.length,
-          total: world.discovery.devices.length,
-          status: "ready",
-          devices: world.discovery.devices,
-          runId,
-          reachableResponses: Math.max(world.discovery.devices.length, 1),
-        },
-      },
-    }));
+    updateWorld((world) => applyDemoIpScan(world, cidr, runId));
     return jsonResponse({ accepted: true, runId });
   }
   if (url.pathname === "/api/v1/discovery/cancel" && method === "POST") {
     const body = readJsonBody(init) as { runId?: number } | null;
-    updateWorld((world) => {
-      if (
-        body?.runId !== undefined &&
-        world.discovery.scan?.runId !== body.runId
-      ) {
-        return world;
-      }
-      return {
-        ...world,
-        discovery: { ...world.discovery, scan: undefined },
-      };
-    });
+    updateWorld((world) => cancelDemoIpScan(world, body?.runId));
     return new Response(null, { status: 204 });
   }
   return apiError(404, "not_found", "Demo discovery endpoint not found");
