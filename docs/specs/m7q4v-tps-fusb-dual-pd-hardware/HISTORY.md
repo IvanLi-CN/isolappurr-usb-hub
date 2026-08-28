@@ -1,5 +1,17 @@
 # History
 
+## 2026-08-29
+
+- 将 `tps-fusb` 当前设计网表归档为 `hardware/tps-fusb/netlist.enet`，明确
+  不覆盖或替代 `hardware/tps-sw/netlist.enet`。
+- 以归档网表更新 MCU 合同：U19 为 `ESP32-S3FH4R2`；GPIO33=`BTNL`、
+  GPIO34=`VIN_EN`、GPIO35=`VIN_SEL`、GPIO47=`LED_TPS`。
+- 冻结双 I2C 成员：输入 PHY、TPS55288 和系统设备位于 `SDA2/SCL2`，输出 PHY
+  和输出 INA226 位于 `SDA/SCL`；`INT` 跨总线服务 TPS55288，`INT2` 服务
+  输入 PHY/系统设备。
+- 记录 TPS62933 `EN` 浮空以支持低压冷启动，并将 LED EDA 占位料与生产实装
+  料号分离。
+
 ## 2026-07-11
 
 - 新增与 `tps-sw` 并存的 `tps-fusb` variant，状态为待设计，不建立

@@ -5,7 +5,8 @@
 并以 DC 输入优先。本文是该模块的项目文档真相源；总体硬件设计和 MCU 使用
 规范只引用本文，不重复维护控制细节。
 
-当前状态：待设计。本文不表示正式原理图、PCB、BOM 或固件已经实现。
+当前状态：网表已归档，待硬件验证。本文不表示 PCB、BOM、生产贴装或固件已经
+实现；当前设计基线见 `hardware/tps-fusb/netlist.enet`。
 
 ## 1. 模块职责与边界
 
@@ -19,8 +20,8 @@
 模块输出：
 
 - `VIN_SYS`：3.3 V、5 V 和后级 TPS55288 的系统输入母线。
-- `PWR_INPUT_EN`：两路 PMOS gate-driver 的总主动增强使能。
-- `PWR_INPUT_SEL`：选择 DC 或 USB gate-driver。
+- `VIN_EN`：两路 PMOS gate-driver 的总主动增强使能。
+- `VIN_SEL`：选择 DC 或 USB gate-driver。
 
 模块不负责：
 
@@ -55,7 +56,7 @@ VIN_USB -> PMOS_USB drain  PMOS_USB source -> VIN_SYS
 单 PMOS不提供输入隔离。未选输入高于 `VIN_SYS` 时，仍可能通过体二极管向
 `VIN_SYS` 供电。模块互锁只约束 gate-driver 的主动增强，不承诺：
 
-- `PWR_INPUT_EN=0` 时输入与 `VIN_SYS` 断开。
+- `VIN_EN=0` 时输入与 `VIN_SYS` 断开。
 - 未选输入电流为零。
 - `VIN_SYS` 电压严格等于主动选择输入的电压。
 
@@ -72,9 +73,9 @@ SN74LVC1G3157 只路由一个总使能信号，使 MCU 无法通过两根独立 
 | 1 | `B2` | USB gate-driver enable | 外部默认下拉 |
 | 2 | `GND` | `GND` | 完整地平面 |
 | 3 | `B1` | DC gate-driver enable | 外部默认下拉 |
-| 4 | `A` | `PWR_INPUT_EN` | MCU GPIO33 |
+| 4 | `A` | `VIN_EN` | MCU GPIO34 |
 | 5 | `VCC` | `3V3` | 就近 `100nF` 去耦 |
-| 6 | `S` | `PWR_INPUT_SEL` | MCU GPIO34 |
+| 6 | `S` | `VIN_SEL` | MCU GPIO35 |
 
 正式原理图必须使用与上述 pin mapping 一致的器件封装；替换制造商或封装时
 必须重新核对 pin 号，不得只按逻辑符号名称连线。
@@ -84,15 +85,15 @@ SN74LVC1G3157 只路由一个总使能信号，使 MCU 无法通过两根独立 
 | MCU 资源 | 网络 | 方向 | 最早初始化状态 | 用途 |
 | --- | --- | --- | --- | --- |
 | GPIO1 / ADC1_CH0 | `VIN_DC_SENSE` | 模拟输入 | 高阻，无数字上下拉 | DC 输入测量 |
-| GPIO33 | `PWR_INPUT_EN` | 推挽输出 | Low | 禁止两路主动增强 |
-| GPIO34 | `PWR_INPUT_SEL` | 推挽输出 | Low | 预选 DC，不产生增强动作 |
+| GPIO34 | `VIN_EN` | 推挽输出 | Low | 禁止两路主动增强 |
+| GPIO35 | `VIN_SEL` | 推挽输出 | Low | 预选 DC，不产生增强动作 |
 
-GPIO33 必须在固件最早 GPIO 初始化阶段设为 Low。B1/B2 的外部下拉必须确保
+GPIO34 必须在固件最早 GPIO 初始化阶段设为 Low。B1/B2 的外部下拉必须确保
 MCU 复位、高阻、下载模式或崩溃重启期间，两颗 PMOS 均不被主动增强。
 
 ## 6. 主动增强真值表
 
-| `PWR_INPUT_EN` | `PWR_INPUT_SEL` | DC PMOS | USB PMOS | 说明 |
+| `VIN_EN` | `VIN_SEL` | DC PMOS | USB PMOS | 说明 |
 | --- | --- | --- | --- | --- |
 | 0 | X | 不主动增强 | 不主动增强 | 体二极管路径仍存在 |
 | 1 | 0 | 主动增强 | 不主动增强 | DC 主动路径 |
@@ -162,7 +163,7 @@ VIN_DC -> 200k -> VIN_DC_SENSE -> 20k -> GND
 
 建议状态：
 
-| 状态 | GPIO33 | GPIO34 | 含义 |
+| 状态 | GPIO34 | GPIO35 | 含义 |
 | --- | ---: | ---: | --- |
 | `Off` | 0 | 保持 | 两路均不主动增强 |
 | `Evaluating` | 0 | 保持 | 测量/协商中 |
@@ -171,23 +172,23 @@ VIN_DC -> 200k -> VIN_DC_SENSE -> 20k -> GND
 | `Fault` | 0 | 保持 | 故障锁存，不主动增强 |
 
 所有切换必须由唯一的 input-power-selector 状态机执行。PD policy、ADC sampler
-和 UI 只能发布状态或请求，禁止直接写 GPIO33/34。
+和 UI 只能发布状态或请求，禁止直接写 GPIO34/35。
 
 ### 9.1 Break-before-make
 
 任意来源切换固定执行：
 
-1. GPIO33=`Low`，禁止两路主动增强。
+1. GPIO34=`Low`，禁止两路主动增强。
 2. 等待至少 5 ms。
-3. 设置 GPIO34 为目标来源。
+3. 设置 GPIO35 为目标来源。
 4. 再次确认目标输入有效且没有故障。
-5. GPIO33=`High`，只主动增强目标 PMOS。
+5. GPIO34=`High`，只主动增强目标 PMOS。
 
-不得通过同时更新 GPIO33/34、跳过等待或在 ISR 内切换来缩短流程。
+不得通过同时更新 GPIO34/35、跳过等待或在 ISR 内切换来缩短流程。
 
 ## 10. 故障处理
 
-以下情况必须立即令 GPIO33=`Low`：
+以下情况必须立即令 GPIO34=`Low`：
 
 - ADC 或 FUSB302B 测量不可用、超时或相互矛盾。
 - 目标输入跌破退出阈值。
@@ -204,9 +205,9 @@ VIN_DC -> 200k -> VIN_DC_SENSE -> 20k -> GND
 - SN74LVC1G3157 B1/B2 各自具有默认下拉，VCC 旁放置 `100nF`。
 - `VIN_DC_SENSE` 分压器靠近 ADC 侧放置 `20kOhm/100nF`，模拟线远离 TPS55288
   switching nodes 和大 di/dt 回路。
-- `PWR_INPUT_EN`、`PWR_INPUT_SEL`、两路 gate-driver 输出和 PMOS gate 网络
+- `VIN_EN`、`VIN_SEL`、两路 gate-driver 输出和 PMOS gate 网络
   必须使用本文网络名，禁止再引入两根独立 MCU enable 网络。
-- 预留 `VIN_DC`、`VIN_USB`、`VIN_SYS`、两颗 PMOS gate 和 GPIO33/34 测试点。
+- 预留 `VIN_DC`、`VIN_USB`、`VIN_SYS`、两颗 PMOS gate 和 GPIO34/35 测试点。
 
 ## 12. Bring-up 验收
 

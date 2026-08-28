@@ -1,194 +1,157 @@
 # `tps-fusb` MCU 使用规范
 
-本文是下一版 `tps-fusb` 硬件使用 ESP32-S3 的设计说明、指导和约束，包含
-MCU 资源分配、封装引脚分配、外设初始配置、用途、安全默认态和注意事项。
-当前版本处于设计阶段；“冻结”项可直接进入原理图，“候选/待确认”项必须在
-正式网表评审前闭环，不能描述为已实现。
+本文是 `tps-fusb` variant 的 ESP32-S3 资源、引脚、外设初始化和所有权规范。
+其硬件事实以 [`hardware/tps-fusb/netlist.enet`](../hardware/tps-fusb/netlist.enet)
+为准；该网表是设计基线，尚未完成 PCB、BOM、生产贴装或固件验证。
 
 ## 1. 适用范围与状态
 
 | 项目 | 本版合同 |
 | --- | --- |
-| Hardware variant | `tps-fusb`（待设计） |
-| MCU | 候选沿用 `ESP32-S3R2` |
-| 封装 | 候选沿用 QFN-56-EP |
+| Hardware variant | `tps-fusb`（网表已归档，待硬件与固件验证） |
+| MCU | `ESP32-S3FH4R2(U19)` |
+| 封装 | QFN-56-EP，7 mm x 7 mm，0.4 mm pitch |
+| 网表证据 | [`hardware/tps-fusb/netlist.enet`](../hardware/tps-fusb/netlist.enet) 中 U19 |
 | 规范来源 | [`#m7q4v`](specs/m7q4v-tps-fusb-dual-pd-hardware/SPEC.md) |
-| 正式网表/固件 | 尚不存在 |
 | PD 输入/输出 | FUSB302B sink PHY / FUSB302B source PHY + TPS55288 |
+| 固件 | 尚未建立 `tps-fusb` 独立 profile |
 
-标记定义：`冻结`=已决定；`候选`=计划继承当前版；`待确认`=画板前必须决定；
-`固定`=MCU 器件自身不可分配资源。若 MCU 精确料号不再是 ESP32-S3R2，必须
-重新审核 GPIO33-38、Flash/PSRAM 和封装 Pin，不允许只替换 BOM 料号。
+`ESP32-S3FH4R2` 是裸片而非模组。RF、40 MHz 晶体、`CHIP_PU`、供电去耦和
+exposed pad 都是板级责任。`tps-sw` 与 `tps-fusb` 必须使用独立编译期
+firmware profile 和镜像，不得运行时猜测硬件 variant。
 
-## 2. MCU 固定资源与设计前提
+## 2. 固定资源与板级前提
 
-- 候选 MCU 是裸片 `ESP32-S3R2`，不是模组；RF、晶体、复位和去耦必须保留。
-- Pin 28、30-37 为 SPI memory 固定资源，不分配为 GPIO。
-- GPIO0/3/45/46 受 strapping 约束；GPIO46 仅输入。
-- GPIO19/20 为原生 USB；GPIO39/40 若用于 I2C0，将与 PAD-JTAG 冲突。
-- 两版使用独立 firmware profile；不允许运行时猜测 variant。
+- U19 的封装内 Flash/PSRAM 占用 `SPICS1`、`SPIHD`、`SPIWP`、`SPICS0`、
+  `SPICLK`、`SPIQ` 和 `SPID` 路径；package pin 28、30 至 35 不分配为普通
+  GPIO。
+- package pin 37 `SPICLK_P` 可复用为 `GPIO47`，当前网表连接 `LED_TPS`；
+  package pin 36 `SPICLK_N/GPIO48` 保留，不由本 profile 使用。
+- GPIO0、GPIO3、GPIO45、GPIO46 受 strapping 约束；GPIO46 仅输入。GPIO39/40
+  被第二条 I2C 使用，因此外部 PAD-JTAG 不可作为本 variant 的调试接口。
+- GPIO19/20 固定为原生 USB 数据路径；UART0 使用 GPIO43/44。调试接口不得
+  获得电源路径 GPIO 的写权限。
+- TPS62933 `U3` 的 `EN` 在本网表中浮空，使芯片按自身默认行为启动以支持低压
+  冷启动；`tps-sw` 的 `R4/R5=330k/56k` EN 分压不适用于本 variant。
 
 ## 3. MCU 资源预算
 
-| 资源 | 分配/初始配置要求 | 用途 | 状态/注意事项 |
+| 资源 | 引脚 / 初始配置 | 网络与成员 | 约束 |
 | --- | --- | --- | --- |
-| `I2C0` | 400 kHz async，短事务、timeout | 一颗 FUSB302B/第二组设备 | 引脚与成员待确认 |
-| `I2C1` | 400 kHz async，短事务、timeout | 系统设备/另一颗 FUSB302B | GPIO8/9 候选 |
-| `SPI2` | Mode 0，40 MHz | GC9307 | 候选沿用 |
-| `DMA_CH0` | RX/TX 各 4096 bytes | 显示 | 候选独占 |
-| `LEDC` | LS timer0/channel0，10-bit | 蜂鸣器 | 候选沿用 |
-| GPIO interrupt 1 | GPIO7 `INT`，AnyEdge | 第一组共享中断 | 候选；成员待确认 |
-| GPIO interrupt 2 | GPIO38 `INT2`，AnyEdge | 第二组共享中断 | GPIO/电气冻结 |
-| `ADC1_CH0` | GPIO1，校准采样 | `VIN_DC_SENSE` | 冻结 |
-| `USB_DEVICE` | GPIO19/20 | USB Serial/JTAG | 候选沿用 |
-| `UART0` | GPIO43/44 | 调试 | 候选沿用 |
-| PSRAM | framebuffer/external allocator | 显示 | 候选；容量待实机确认 |
+| `I2C0` | GPIO39/40，400 kHz async | `SDA2/SCL2`: U10 FUSB302B input、U14 TPS55288、U17 INA226、U21 EEPROM、U23 TMP112 | 静态 allowlist、短事务和 timeout；占用 PAD-JTAG |
+| `I2C1` | GPIO8/9，400 kHz async | `SDA/SCL`: U11 FUSB302B output、U13 INA226 | 静态 allowlist、短事务和 timeout |
+| GPIO IRQ `INT` | GPIO7，AnyEdge，高阻输入 | U11 `INT_N`、U13 `Alert`、U14 `FB/INT` | 开漏共享；候选来源跨 I2C0/I2C1 |
+| GPIO IRQ `INT2` | GPIO38，AnyEdge，高阻输入 | U10 `INT_N`、U17 `Alert`、U23 `ALERT` | 开漏共享；全部来源在 I2C0 |
+| `ADC1_CH0` | GPIO1，高阻、无数字上下拉 | `VIN_DC_SENSE` | 11 dB、校准、滤波和滞回 |
+| `SPI2` | GPIO10 至 GPIO14 | `DC/MOSI/SCLK/CS/RES` | GC9307，Mode 0，40 MHz |
+| `LEDC` | GPIO21 | `BUZZER` | LS timer0/channel0，启动静音 |
+| LED control | GPIO47，推挽输出 High | `LED_TPS` | 低有效；High=关，Low=同步点亮 |
+| `USB_DEVICE` | GPIO19/20 | `USB_D-/USB_D+` | 原生 USB，不复用 |
+| `UART0` | GPIO43/44 | `U0TX/U0RX` | 调试接口 |
 
 ## 4. GPIO 引脚分配总表
 
-| Package Pin | MCU pin | 网络/功能 | 方向与初始配置 | 状态、用途与注意事项 |
+“初始配置”描述 firmware 接管 GPIO 后必须建立的状态；它不能替代外部上拉、
+下拉、gate 偏置或保护电路。网络名按当前网表保留，未连接引脚不代表可跨版本
+自由复用。
+
+| Package Pin | MCU pin | 网络/功能 | 方向与初始配置 | 用途与注意事项 |
 | ---: | --- | --- | --- | --- |
-| 5 | GPIO0 | `BTNR` | 输入，内部上拉，低有效 | 候选；[STRAP] 右键 |
-| 6 | GPIO1 | `VIN_DC_SENSE` | ADC1_CH0，高阻，无数字上下拉 | 冻结；1:11 DC 输入采样 |
-| 7 | GPIO2 | `P2_CED` | 推挽输出，安全态待 profile 冻结 | 候选；USB-C 数据开关 |
-| 8 | GPIO3 | NC | 不初始化 | 保留；[STRAP] |
-| 9 | GPIO4 | `P1_CED` | 推挽输出，安全态待 profile 冻结 | 候选；USB-A 数据开关 |
-| 10 | GPIO5 | `P1_ESP` | 推挽输出，路由默认态待确认 | 候选；USB-A 数据路由 |
-| 11 | GPIO6 | `LEDD` | 高阻输入，无内部上下拉 | 候选；隔离侧 ready |
-| 12 | GPIO7 | `INT` | 高阻输入，无内部上下拉，AnyEdge | 候选；仅开漏共享 |
-| 13 | GPIO8 | I2C1 SDA | 开漏，由 I2C 接管 | 候选；总线成员待确认 |
-| 14 | GPIO9 | I2C1 SCL | 开漏，由 I2C 接管 | 候选；总线成员待确认 |
-| 15 | GPIO10 | `DC` | 推挽输出，初始 Low | 候选；GC9307 |
-| 16 | GPIO11 | `MOSI` | SPI2 输出 | 候选；GC9307 |
-| 17 | GPIO12 | `SCLK` | SPI2 输出 | 候选；40 MHz |
-| 18 | GPIO13 | `CS` | 推挽输出，初始 High | 候选；GC9307 片选 |
-| 19 | GPIO14 | `RES` | 推挽输出，初始 High | 候选；GC9307 复位 |
-| 21 | GPIO15 | `BLK` | 推挽输出，安全态 High/背光关 | 候选；低有效；占用 32 kHz pin |
-| 22 | GPIO16 | `P1_EN#` | 推挽输出，安全态 High/电源关 | 候选；低有效；占用 32 kHz pin |
-| 23 | GPIO17 | `P1_FAULT` | 输入 | 候选；低有效故障 |
-| 24 | GPIO18 | `UP0_PG` | 高阻输入，无内部上下拉 | 候选；高有效 fault |
-| 25 | GPIO19 | `USB_D-` | USB peripheral | 候选固定原生 USB |
-| 26 | GPIO20 | `USB_D+` | USB peripheral | 候选固定原生 USB |
-| 27 | GPIO21 | `BUZZER` | 初始 Low，再交给 LEDC | 候选；默认静音 |
-| 38 | GPIO33 | `PWR_INPUT_EN` | 推挽输出，初始 Low | 冻结；Low=两路均不主动增强，体二极管仍存在 |
-| 39 | GPIO34 | `PWR_INPUT_SEL` | 推挽输出，初始 Low | 冻结；0=DC，1=USB；仅 EN=0 时改变 |
-| 40 | GPIO35 | `BTNL` | 输入，内部上拉，低有效 | 冻结；左键从 GPIO1 迁移 |
-| 41 | GPIO36 | `TPS_USB_C_VBUS_EN` | 推挽输出，初始 Low | 冻结；经 BSS138PS；逻辑极性须由 gate 电路复核 |
-| 42 | GPIO37 | `CE_TPS` | 推挽输出，初始 High | 冻结；经 BSS138PS，High=TPS 硬关闭 |
-| 43 | GPIO38 | `INT2` | 高阻输入，无内部上下拉，AnyEdge | 冻结；外部 3.3 V 上拉，仅开漏共享 |
-| 44 | GPIO39/MTCK | I2C0 SDA 候选 | 开漏，由 I2C 接管 | 待确认；占用 PAD-JTAG |
-| 45 | GPIO40/MTDO | I2C0 SCL 候选 | 开漏，由 I2C 接管 | 待确认；占用 PAD-JTAG |
-| 47 | GPIO41/MTDI | NC | 不初始化 | 预留/PAD-JTAG |
-| 48 | GPIO42/MTMS | NC | 不初始化 | 预留/PAD-JTAG |
-| 49 | GPIO43/U0TXD | `U0TX` | UART0 TX | 候选调试输出 |
-| 50 | GPIO44/U0RXD | `U0RX` | UART0 RX | 候选调试输入 |
+| 5 | GPIO0 | `BTNR` | 输入，内部上拉，低有效 | [STRAP] 右键；复位时不得持续拉低 |
+| 6 | GPIO1 | `VIN_DC_SENSE` | ADC1_CH0，高阻、无数字上下拉 | DC 输入 1:11 分压采样 |
+| 7 | GPIO2 | `P2_CED` | 推挽输出；由 profile 建立安全路由 | USB-C 数据开关；外部默认下拉 |
+| 8 | GPIO3 | NC | 不初始化 | [STRAP] 保留 |
+| 9 | GPIO4 | `P1_CED` | 推挽输出；由 profile 建立安全路由 | USB-A 数据开关；外部默认下拉 |
+| 10 | GPIO5 | `P1_ESP` | 推挽输出；由 profile 建立安全路由 | USB 数据路由选择；外部默认下拉 |
+| 11 | GPIO6 | `R41 -> LEDD` | 高阻输入、无内部上下拉 | CH318T sideband ready 采样，不得驱动 LEDD |
+| 12 | GPIO7 | `INT` | 高阻输入、AnyEdge | 3.3 V 开漏共享中断，跨总线服务 |
+| 13 | GPIO8 | `SDA` / I2C1 SDA | I2C 开漏 | U11、U13 |
+| 14 | GPIO9 | `SCL` / I2C1 SCL | I2C 开漏 | U11、U13 |
+| 15 | GPIO10 | `DC` | 推挽输出，初始 Low | GC9307 data/command |
+| 16 | GPIO11 | `MOSI` | SPI2 输出 | GC9307 |
+| 17 | GPIO12 | `SCLK` | SPI2 输出 | GC9307，40 MHz |
+| 18 | GPIO13 | `CS` | 推挽输出，初始 High | GC9307 chip select |
+| 19 | GPIO14 | `RES` | 推挽输出，初始 High | GC9307 reset |
+| 21 | GPIO15 | `BLK` | 推挽输出，初始 High | 背光低有效，先关闭 |
+| 22 | GPIO16 | `P1_EN#` | 推挽输出，初始 High | USB-A 电源低有效，先关闭 |
+| 23 | GPIO17 | `P1_FAULT` | 输入 | 低有效故障 |
+| 24 | GPIO18 | `R33 -> UP0_PG` | 高阻输入、无内部上下拉 | 高有效 sideband fault 采样 |
+| 25 | GPIO19 | `USB_D-` | USB peripheral | 原生 USB |
+| 26 | GPIO20 | `USB_D+` | USB peripheral | 原生 USB |
+| 27 | GPIO21 | `BUZZER` | 初始 Low，再交给 LEDC | 默认静音 |
+| 37 | GPIO47 / `SPICLK_P` | `LED_TPS` | 推挽输出，初始 High | 低有效同步 LED 视觉组 |
+| 38 | GPIO33 | `BTNL` | 输入，内部上拉，低有效 | 左键 |
+| 39 | GPIO34 | `VIN_EN` | 推挽输出，初始 Low | 输入总使能；Low=两路均不主动增强 |
+| 40 | GPIO35 | `VIN_SEL` | 推挽输出，初始 Low | 0=DC，1=USB；仅 `VIN_EN=0` 时改变 |
+| 41 | GPIO36 | `TPS_USB_C_VBUS_EN` | 推挽输出，初始 Low | 输出 PMOS gate 控制；Low=关闭 |
+| 42 | GPIO37 | `CE_TPS` | 推挽输出，初始 High | 经 NMOS 拉低 TPS EN/UVLO，High=TPS 硬关闭 |
+| 43 | GPIO38 | `INT2` | 高阻输入、AnyEdge | 3.3 V 开漏共享中断 |
+| 44 | GPIO39 / MTCK | `SDA2` / I2C0 SDA | I2C 开漏 | U10、U14、U17、U21、U23；占用 PAD-JTAG |
+| 45 | GPIO40 / MTDO | `SCL2` / I2C0 SCL | I2C 开漏 | U10、U14、U17、U21、U23；占用 PAD-JTAG |
+| 47 | GPIO41 / MTDI | NC | 不初始化 | 保留/PAD-JTAG |
+| 48 | GPIO42 / MTMS | NC | 不初始化 | 保留/PAD-JTAG |
+| 49 | GPIO43 / U0TXD | `U0TX` | UART0 TX | 调试输出 |
+| 50 | GPIO44 / U0RXD | `U0RX` | UART0 RX | 调试输入 |
 | 51 | GPIO45 | NC | 不初始化 | [STRAP] 保留 |
-| 52 | GPIO46 | NC | 仅输入/不初始化 | [STRAP] 保留，禁止输出用途 |
+| 52 | GPIO46 | NC | 仅输入、不初始化 | [STRAP] 保留，禁止输出用途 |
 
-## 5. 固定封装引脚
+## 5. I2C、告警与协议约束
 
-| Package Pin | 引脚 | 连接/要求 |
-| ---: | --- | --- |
-| 1 | `LNA_IN` | RF matching/antenna；沿用时必须重新通过 RF layout review |
-| 2, 3, 20, 46, 55, 56 | 3.3 V supply pins | 就近去耦；正式网表逐脚核对 |
-| 4 | `CHIP_PU` | 确定复位/上电网络，不可浮空 |
-| 28, 30-37 | SPI Flash/PSRAM | 固定，不得作为普通 GPIO |
-| 29 | `VDD_SPI` | 3.3 V memory domain |
-| 53, 54 | `XTAL_N/P` | 40 MHz 晶体网络 |
-| 57/EP | GND/exposed pad | 接地和散热过孔阵列 |
+两颗 FUSB302B 使用相同的固定 I2C 地址，因此不能放到同一物理总线。I2C0 和
+I2C1 必须各自维持 allowlist，禁止地址扫描。
 
-## 6. 外设初始配置规范
+- `INT` 触发后，ISR 只置 dirty flag。任务上下文先服务 `U11/U13`（I2C1），
+  同时必须服务 `U14`（I2C0）；任一设备都可能将 `INT` 保持为低。
+- `INT2` 触发后，任务上下文检查 `U10/U17/U23`（I2C0）。
+- TPS55288 的 `FB/INT` 接入 `INT`，因此 firmware MUST 保持 TPS 使用内部
+  输出反馈模式。将其切换为外部反馈会把共享告警线变成反馈输入，属于禁止配置。
+- FUSB302B 的 `VCONN` 由 `3V3` 供电。每个端口须在 PCB 中保留就近去耦和
+  足够的 VCONN bulk；该要求仍需通过 layout/硬件验证。
+- FUSB302B 的 VBUS 正常工作范围上限为 21 V。`VIN_DC` 的 28 V 额定输入
+  不得被解释为 USB-PD VBUS 可接受 28 V；firmware 不得协商或接受超过 21 V
+  的 USB-PD/PPS 合同。
 
-### 6.1 输入电源控制与 ADC
+## 6. 上电初始化顺序
 
-本模块的完整硬件和固件规范见
-[`tps-fusb` 输入电源路径选择模块](tps-fusb-input-power-path-selection.md)。
+1. 在其他外设初始化前建立 `VIN_EN=Low`、`VIN_SEL=Low`、
+   `TPS_USB_C_VBUS_EN=Low`、`CE_TPS=High`、`LED_TPS=High`。
+2. 配置 GPIO1 ADC、GPIO7/38 高阻中断输入和按键输入，读取初始输入、外部
+   `VBUS_TPS` 与按键状态。
+3. 初始化 I2C0/I2C1，使用静态 allowlist 确认可访问设备；不执行总线扫描。
+4. 运行 input-power-selector：先测量并验证，再使用不少于 5 ms 的
+   break-before-make 选择 DC 或 USB。
+5. 将 TPS55288 置于 OE off/安全 setpoint。输出 source attach 与 PD contract
+   完成前，不得启动 TPS 或接通 `VOUT_TPS -> VBUS_TPS`。
+6. 最后初始化显示、DMA、USB、UART、LEDC 和上层任务。
 
-- GPIO33 `PWR_INPUT_EN` 必须在最早 GPIO 初始化阶段输出 Low；外部 B1/B2
-  下拉必须在 MCU 高阻/复位期间也保证两路 PMOS 不被主动导通。
-- 单 PMOS 不隔离未选输入。未选输入电压高于 `VIN_SYS` 时仍可能经体二极管
-  供电；状态机只互锁主动增强信号，不得把 EN=0 报告成输入完全断开。
-- GPIO34 初始 Low 选择 DC，但只有 GPIO33=High 时选择才生效。切换固定顺序：
-  EN=0 -> wait >=5 ms -> set SEL -> EN=1。
-- GPIO1 配置 `ADC1_CH0`，不启用数字 pull。模拟前端为单颗
-  `200 kOhm` 上臂、`20 kOhm` 下臂、ADC 点 `100 nF`，分压比 1:11。
-- ADC 使用 11 dB 衰减配置。9 V 对应约 0.818 V，
-  28 V 对应约 2.545 V；不要求线性测量超过 28 V 的输入。
-- ADC 初始化或输入连接后等待至少 10 ms，再将采样结果用于输入
-  有效性和选源决策。
-- ADC 必须做校准、多样本滤波和滞回；`VIN_DC >= 9 V` 才可判定有效。
-
-### 6.2 TPS 与 USB-C 输出 PMOS
-
-- GPIO37 `CE_TPS` 在启动时先置 High，使 TPS55288 EN/UVLO 被 NMOS 拉低。
-- GPIO36 在启动时保持输出 PMOS 关闭。最终原理图必须明确 BSS138PS、PMOS
-  gate 上拉和 VGS clamp 后的 MCU 高/低电平真值，并回填本文。
-- 外部 `VBUS_TPS` 存在时不得开启 TPS 或输出 PMOS。允许的体二极管反灌
-  不得令 TPS VOUT 超过 25 V absolute maximum。
-- GPIO36 与 GPIO37 仅共享 BSS138PS 封装，两个 NMOS channel 的 gate/drain
-  不得互连，固件所有权也必须分离。
-
-### 6.3 双 I2C 与 FUSB302B
-
-- 两个控制器均按 400 kHz async、transaction timeout、静态 allowlist、禁止
-  扫描设计；PD 事件事务优先于 EEPROM 写入和周期遥测。
-- 正式选定 FUSB302B 料号后必须确认 7-bit 地址。若两颗地址相同且不可配置，
-  必须分别放在 I2C0/I2C1，或增加经批准的 mux，不能同总线并联。
-- 每颗 FUSB302B 必须有可确定服务的低有效中断路径。GPIO7/38 共享时只允许
-  开漏输出；ISR 仅置 dirty flag，寄存器读取在任务上下文执行。
-- GPIO39/40 若冻结为 I2C0，则外部 PAD-JTAG 不可用；调试保留 USB
-  Serial/JTAG 和 UART0。
-
-### 6.4 显示、蜂鸣器、USB 与 UART
-
-- 候选继承：SPI2 Mode 0/40 MHz、GPIO10-14、DMA_CH0 4096-byte RX/TX。
-- 与当前版不同，安全启动建议 `BLK=High` 先关闭背光，显示初始化成功后再按
-  UI 策略开启；最终 firmware profile 必须冻结此行为。
-- 候选 LEDC：APB clock、LS timer0/channel0、10-bit、初始 1 kHz/0% duty。
-- 原生 USB 固定 GPIO19/20；UART0 GPIO43/44。不得让调试接口控制电源路径。
-
-## 7. 资源所有权规范
+## 7. 所有权与禁止事项
 
 | 模块 | 独占资源 | 允许的跨模块接口 |
 | --- | --- | --- |
-| Input PD policy | input FUSB302B | 发布 USB contract/测量状态 |
-| Input power selector | ADC1_CH0、GPIO33/34 | 接收候选输入状态，执行唯一切换序列 |
-| Output PD policy | output FUSB302B | 提交 VBUS/电流请求 |
-| TPS coordinator | TPS55288、GPIO37 | 接收输出设定请求 |
+| Input PD policy | U10 FUSB302B | 发布 USB contract/测量状态 |
+| Input power selector | ADC1_CH0、GPIO34/35 | 接收候选输入状态，执行唯一切换序列 |
+| Output PD policy | U11 FUSB302B | 提交 VBUS/电流请求 |
+| TPS coordinator | U14 TPS55288、GPIO37 | 接收输出设定请求 |
 | VBUS gate controller | GPIO36 | 接收 source 状态机开关请求 |
-| Interrupt coordinator | GPIO7/38 | 唤醒对应总线服务，不直接切电源 |
+| Interrupt coordinator | GPIO7/38 | 唤醒对应 I2C 服务，不直接切电源 |
+| Indicator controller | GPIO47 | 只控制 `LED_TPS` 视觉组 |
 
-任何两个任务不得直接写同一控制 GPIO。尤其禁止 PD policy 绕过 input power
-selector 写 GPIO33/34，或绕过 TPS/VBUS controller 写 GPIO36/37。
+- PD policy、ADC sampler 和 UI 不得绕过 input-power-selector 写 GPIO34/35。
+- 不得将推挽输出并入 `INT` 或 `INT2`；每条告警线只允许一个上拉预算。
+- 不得仅因 I2C 为 400 kHz 就认定 PD timing 满足。必须验证 IRQ latency、
+  task scheduling、bus recovery 和最坏事务占用。
+- EDA LED 占位料不构成生产 BOM。实装前必须替换为经过批准的颜色、Vf、亮度
+  bin 和封装料号，详见 [`tps-fusb` 硬件设计](tps-fusb-hardware-design.md)。
 
-## 8. 上电初始化顺序
+## 8. Bring-up 验收
 
-1. 在外设初始化前建立 GPIO33=Low、GPIO36=关闭态、GPIO37=High。
-2. 配置 GPIO1 ADC 与 GPIO7/38 高阻中断输入，读取初始输入/外部 VBUS 状态。
-3. 初始化两条 I2C，并确认两颗 PHY、TPS 与系统设备可按 allowlist 访问。
-4. 运行输入源状态机：先验证，后按 >=5 ms break-before-make 选择电源。
-5. 初始化 TPS 为 OE off/安全 setpoint；完成 source attach/contract 后才开 TPS，
-   最后由 GPIO36 接通 `VOUT_TPS -> VBUS_TPS`。
-6. 初始化显示/DMA、USB、UART、LEDC 和上层任务。
-
-## 9. 设计注意事项与禁止事项
-
-- 不得用 MCU 软件替代 GPIO33/36/37 的外部复位安全偏置。
-- 不得将推挽中断并入 `INT` 或 `INT2`；整线只允许一个上拉预算。
-- 不得因 I2C 为 400 kHz 就认定 PD timing 自动满足；必须验证 IRQ latency、
-  task scheduling 和最坏总线占用。
-- GPIO0/3/45/46 不用于功率使能；GPIO19/20 不复用；memory pins 不引出。
-- `tps-sw` 与 `tps-fusb` 的 pin constants、feature/profile 和镜像必须独立。
-- 正式原理图改变任何网络、极性或外设实例时，必须先更新本文并重新审核。
-
-## 10. 原理图与 bring-up 验收
-
-- [ ] U19 精确料号、封装、Flash/PSRAM 容量与构建 target 已确认。
-- [ ] Package Pin 与 GPIO/网络逐脚对照本文，无重复分配或旧 `BTNL=GPIO1`。
-- [ ] GPIO33/36/37 在复位、高阻、下载模式和崩溃重启期间均保持安全。
-- [ ] 两颗 FUSB302B 的地址、总线、中断、上拉和 allowlist 已冻结。
-- [ ] 两条 I2C 通过上升时间、timeout、bus recovery 和并发压力验证。
-- [ ] ADC 在 9 V、24 V 和 28 V 完成校准/容差验证。
-- [ ] 验证 DC/USB 同插、掉电、重协商和 >=5 ms break-before-make。
-- [ ] 验证外部 VBUS、受控反灌、TPS 关闭和 VOUT <=25 V。
-- [ ] 验证显示、DMA、USB、UART、蜂鸣器和两个独立 firmware profile。
+- [ ] U19 料号、封装内 Flash/PSRAM、build target 与本 profile 一致。
+- [ ] Package Pin、GPIO 与网络逐脚符合本文；尤其 GPIO33=`BTNL`、
+  GPIO34=`VIN_EN`、GPIO35=`VIN_SEL`、GPIO47=`LED_TPS`。
+- [ ] GPIO34/36/37/47 在复位、高阻、下载模式和崩溃重启期间保持安全状态。
+- [ ] 两条 I2C 的地址、上拉、上升时间、timeout、bus recovery 和并发压力通过验证。
+- [ ] `INT` 的跨总线来源与 `INT2` 的 I2C0 来源都可被可靠消歧。
+- [ ] ADC 在 9 V、24 V、28 V 完成校准、容差和噪声验证。
+- [ ] 验证 DC/USB 同插、掉电、重协商、至少 5 ms break-before-make、外部 VBUS
+  与受控反灌；TPS `VOUT` 不得超过 25 V。
+- [ ] 每颗实装 LED 的料号、极性、光色与限流设计已通过生产前检查。

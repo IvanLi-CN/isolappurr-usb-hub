@@ -35,8 +35,9 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 - `skills/`
   - `vercel-labs/skills` 兼容的 Agent skills：`isolapurr-user-operations` 用于 released host tools 用户操作，`isolapurr-developer-operations` 用于源码开发/维护操作，`isolapurr-maintainer-workflow` 是本仓内部维护入口。
 - `hardware/`
-  - 硬件方案产物；当前正式网表位于 `hardware/tps-sw/netlist.enet`。
-    `tps-fusb` 尚处于设计阶段，没有正式网表。
+  - 硬件方案产物：当前 `tps-sw` 网表位于 `hardware/tps-sw/netlist.enet`；
+    `tps-fusb` 设计基线位于 `hardware/tps-fusb/netlist.enet`。后者尚未完成
+    PCB、BOM、生产贴装或固件验证，不能视为已发布硬件。
 - `docs/datasheets/`  
   - `ch224q-datasheet.md` – CH224Q/CH224A/CH224K/CH224D/CH221K 的官方手册 Markdown 版。  
   - `ch217-datasheet.md` – CH217 USB 限流配电开关芯片手册 Markdown 版。  
@@ -50,7 +51,7 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 其他设计笔记：
 
 - `docs/ch217-upstream-vbus-protection.md` – 上行 USB‑C VBUS 使用 CH217 替代 PPTC 的设计记录。  
-- `docs/tps62933-uvlo-en-divider.md` – TPS62933 通过 EN 分压实现约 8 V UVLO（`330 kΩ / 56 kΩ`）的选型记录。  
+- `docs/tps62933-uvlo-en-divider.md` – `tps-sw` 的 TPS62933 通过 EN 分压实现约 8 V UVLO（`330 kΩ / 56 kΩ`）的选型记录。
 - `docs/tps55288-uvlo-en-divider.md` – TPS55288 通过 EN/UVLO 分压实现约 8 V LVLO（`200 kΩ / 36 kΩ`）的选型记录。  
 
 后续会补充：

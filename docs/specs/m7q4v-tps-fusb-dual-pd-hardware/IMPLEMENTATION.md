@@ -1,6 +1,6 @@
 # Implementation Status
 
-Status: 待设计
+Status: 待实现
 
 ## Completed
 
@@ -12,13 +12,17 @@ Status: 待设计
 - 冻结输入 PMOS 选择器、SN74LVC1G3157 连接、测量策略、输出 PMOS、
   BSS138PS 双通道用途和 GPIO1/33-38 分配。
 - 明确 `tps-sw` 与 `tps-fusb` 使用独立编译期 firmware profile。
+- 导入独立 `hardware/tps-fusb/netlist.enet`，未覆盖 `hardware/tps-sw/netlist.enet`。
+- 按当前网表冻结 U19=`ESP32-S3FH4R2`、GPIO33=`BTNL`、GPIO34=`VIN_EN`、
+  GPIO35=`VIN_SEL`、GPIO47=`LED_TPS`，以及 `SDA/SCL`、`SDA2/SCL2` 与
+  `INT`/`INT2` 的设备成员。
 
 ## Pending Hardware Work
 
 - 选择并校核 PMOS、VGS 钳位、gate driver 和保护器件。
-- 决定两颗 FUSB302B 的 I2C bus membership、精确地址、冲突处理和 PCB 位置。
-- 确认 GPIO39/40 最终用途与 `INT2` 共享设备集合。
-- 完成正式原理图、网表、PCB、BOM 及制造检查。
+- 完成 PCB Layout、CC/PD、I2C、VCONN 去耦/bulk、gate 与热设计检查。
+- 冻结生产 BOM 和贴装数据，特别是替换 LED EDA 占位料为正确的实装料号。
+- 完成制造检查和硬件 bring-up。
 
 ## Pending Firmware Work
 
@@ -29,5 +33,5 @@ Status: 待设计
 
 ## Validation State
 
-本轮仅验证文档链接、网络名、GPIO 唯一性和 companion 一致性。没有
-`tps-fusb` 正式网表或固件可供电气、构建或 HIL 验证。
+本轮已验证导入网表可解析、SHA-256 与来源文件一致，并同步检查文档链接、
+网络名和 GPIO 合同。尚未完成 PCB、BOM、生产贴装、固件构建、电气或 HIL 验证。

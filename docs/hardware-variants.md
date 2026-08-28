@@ -8,10 +8,10 @@
 | 方案 | 状态 | 关键芯片（核心差异） | 网表 / 设计入口 |
 | --- | --- | --- | --- |
 | `tps-sw` | 当前版 | `CH224Q + TPS55288 + SW2303` | `hardware/tps-sw/netlist.enet`；[MCU 使用规范](mcu-resource-allocation-tps-sw.md) |
-| `tps-fusb` | 待设计 | `FUSB302B ×2 + TPS55288`，MCU 实现 PD 3.0 Fixed + PPS | [硬件设计](tps-fusb-hardware-design.md)；[输入电源路径](tps-fusb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-fusb.md)；尚无正式网表 |
+| `tps-fusb` | 网表已归档，待验证 | `FUSB302B ×2 + TPS55288`，MCU 实现 PD 3.0 Fixed + PPS | `hardware/tps-fusb/netlist.enet`；[网表检查清单](netlist/tps-fusb-checklist.md)；[硬件设计](tps-fusb-hardware-design.md)；[输入电源路径](tps-fusb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-fusb.md) |
 
 未显式标注 variant 的现有固件和网表文档仍按 `tps-sw` 维护。`tps-fusb`
-当前只冻结设计合同，不代表已有原理图、PCB、BOM 或固件支持。
+网表是独立的设计基线，不代表其 PCB、BOM、生产贴装或固件支持已经完成。
 
 ## `tps-sw` 关键供电关系
 
@@ -38,6 +38,7 @@
 如需确认仓库内网表是否与导出文件一致，可使用 sha256：
 
 - `tps-sw`：`bb281174e58a39d6e06f5ea9a9d986ab450386dccb49be98d4a517c8c84e8a5a`
+- `tps-fusb`：`57003ebd01c22c00ccdacd2a8e6bbf9386a9c057b86df1573b677835aadb85db`
 
 ## 文档适用范围
 
@@ -47,4 +48,5 @@
 - `tps-fusb` 设计入口：[`docs/tps-fusb-hardware-design.md`](tps-fusb-hardware-design.md)
 - `tps-fusb` 输入电源路径选择：[`docs/tps-fusb-input-power-path-selection.md`](tps-fusb-input-power-path-selection.md)
 - `tps-fusb` MCU 使用规范：[`docs/mcu-resource-allocation-tps-fusb.md`](mcu-resource-allocation-tps-fusb.md)
+- `tps-fusb` 网表检查清单：[`docs/netlist/tps-fusb-checklist.md`](netlist/tps-fusb-checklist.md)
 - `tps-fusb` 长期规格：[`#m7q4v`](specs/m7q4v-tps-fusb-dual-pd-hardware/SPEC.md)
