@@ -23,6 +23,7 @@ import {
   saveIpScanSession,
 } from "../../domain/ipScanSession";
 import {
+  isPersistableDesktopScan,
   parseDesktopDiscoverySnapshot,
   parseDesktopIpScanRunId,
 } from "./AddDeviceDialog.helpers";
@@ -519,6 +520,9 @@ export function useIpScanController({
             return;
           }
           if (!res.ok) {
+            if (activeScanKindRef.current === "desktop") {
+              void cancelActiveIpScan();
+            }
             dispatch({
               type: "set_error",
               error:
@@ -583,11 +587,7 @@ export function useIpScanController({
             completedScanRunIdRef.current !== ownedScanRunId
           ) {
             completedScanRunIdRef.current = ownedScanRunId;
-            const persist =
-              !ownedScan.legacyDevicesAreAmbiguous &&
-              ownedScan.reachableResponses !== undefined &&
-              ownedScan.reachableResponses > 0;
-            if (persist) {
+            if (isPersistableDesktopScan(ownedScan)) {
               const session = createIpScanSession(
                 ownedScan.cidr,
                 ownedScan.devices,

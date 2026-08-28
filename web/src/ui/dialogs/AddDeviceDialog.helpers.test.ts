@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  isPersistableDesktopScan,
   parseDesktopDiscoverySnapshot,
   parseDesktopIpScanRunId,
   readLocalUsbInfo,
@@ -176,6 +177,30 @@ describe("desktop discovery scan ownership", () => {
     expect(parsed?.scan?.status).toBe("ready");
     expect(parsed?.scan?.devices).toHaveLength(0);
     expect(parsed?.scan?.legacyDevicesAreAmbiguous).toBe(false);
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(true);
+  });
+
+  test("requires trusted response metrics for non-empty desktop scans", () => {
+    const parsed = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 254,
+        total: 254,
+        status: "ready",
+        devices: [{ baseUrl: "http://192.168.1.2" }],
+      },
+    });
+
+    expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+    expect(
+      isPersistableDesktopScan({
+        ...parsed?.scan,
+        reachableResponses: 1,
+      }),
+    ).toBe(true);
   });
 
   test("keeps an explicitly scanning desktop scan in progress", () => {

@@ -63,6 +63,20 @@ export type DiscoverySnapshotShape = {
   };
 };
 
+export function isPersistableDesktopScan(
+  scan: DiscoverySnapshotShape["scan"],
+): boolean {
+  if (!scan || scan.status !== "ready" || scan.legacyDevicesAreAmbiguous) {
+    return false;
+  }
+  if (scan.reachableResponses !== undefined) {
+    return scan.reachableResponses > 0;
+  }
+  // Legacy agents did not report response metrics. A completed empty result
+  // is still authoritative and must replace any older cached session.
+  return scan.devices.length === 0;
+}
+
 function extractUsbDevice(value: unknown): UsbDeviceInfo | null {
   if (!value || typeof value !== "object") {
     return null;
