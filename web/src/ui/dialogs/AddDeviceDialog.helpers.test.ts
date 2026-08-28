@@ -348,6 +348,19 @@ describe("desktop discovery scan ownership", () => {
       },
     });
     expect(invalidMetric?.scanMalformed).toBe(true);
+
+    const invalidRunId = parseDesktopDiscoverySnapshot({
+      mode: "service",
+      status: "ready",
+      devices: [],
+      scan: {
+        cidr: "192.168.1.0/24",
+        done: 0,
+        total: 254,
+        runId: null,
+      },
+    });
+    expect(invalidRunId?.scanMalformed).toBe(true);
   });
 
   test("keeps an explicitly scanning desktop scan in progress", () => {

@@ -327,6 +327,8 @@ export function parseDesktopDiscoverySnapshot(
     scan && typeof scan.runId === "number" && Number.isSafeInteger(scan.runId)
       ? scan.runId
       : undefined;
+  const hasRunIdField = scan !== undefined && Object.hasOwn(scan, "runId");
+  const hasMalformedRunId = hasRunIdField && scanRunId === undefined;
   const reachableResponses =
     scan &&
     typeof scan.reachableResponses === "number" &&
@@ -445,7 +447,8 @@ export function parseDesktopDiscoverySnapshot(
       (hasScanField && scan === undefined) ||
         (scan && !scanShape) ||
         hasMalformedScanStatus ||
-        hasMalformedReachableResponses,
+        hasMalformedReachableResponses ||
+        hasMalformedRunId,
     ),
     scan: scanShape,
     ipScan: ipScan ? { expanded: false, defaultCidr, candidates } : undefined,
