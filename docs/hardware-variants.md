@@ -1,16 +1,19 @@
 # 硬件方案（Hardware Variant）
 
-本仓库的硬件方案为 `tps-sw`，核心电源/协议链路为 `SW2303 + TPS55288`。
+本仓库同时维护当前版 `tps-sw` 和设计中的下一版 `tps-fusb`。两版硬件
+不会互相取代；后续分别使用独立的编译期固件 profile 和固件镜像。
 
 ## 方案
 
-| 方案 | 关键芯片（核心差异） | 网表 |
-| --- | --- | --- |
-| `tps-sw` | `CH224Q + TPS55288 + SW2303` | `hardware/tps-sw/netlist.enet` |
+| 方案 | 状态 | 关键芯片（核心差异） | 网表 / 设计入口 |
+| --- | --- | --- | --- |
+| `tps-sw` | 当前版 | `CH224Q + TPS55288 + SW2303` | `hardware/tps-sw/netlist.enet`；[MCU 使用规范](mcu-resource-allocation-tps-sw.md) |
+| `tps-fusb` | 网表已归档，待验证 | `FUSB302B ×2 + TPS55288`，MCU 实现 PD 3.0 Fixed + PPS | `hardware/tps-fusb/netlist.enet`；[网表检查清单](netlist/tps-fusb-checklist.md)；[硬件设计](tps-fusb-hardware-design.md)；[输入电源路径](tps-fusb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-fusb.md) |
 
-> 说明：项目文档与固件假设均按 `tps-sw` 维护。
+未显式标注 variant 的现有固件和网表文档仍按 `tps-sw` 维护。`tps-fusb`
+网表是独立的设计基线，不代表其 PCB、BOM、生产贴装或固件支持已经完成。
 
-## 关键供电关系
+## `tps-sw` 关键供电关系
 
 - `TPS55288(U14)`：`VIN` 接 `VIN`，`VCC` 接 `+5V`，`SDA/SCL` 接系统 I2C `SDA/SCL`。
 - `SW2303(U16)`：`VIN` 接 `VOUT_TPS`，`VBUS` 接 `VBUS_TPS`，`SDA/SCL` 接独立 I2C `SDA_SW/SCL_SW`。
@@ -35,8 +38,15 @@
 如需确认仓库内网表是否与导出文件一致，可使用 sha256：
 
 - `tps-sw`：`bb281174e58a39d6e06f5ea9a9d986ab450386dccb49be98d4a517c8c84e8a5a`
+- `tps-fusb`：`57003ebd01c22c00ccdacd2a8e6bbf9386a9c057b86df1573b677835aadb85db`
 
 ## 文档适用范围
 
 - 网表排查清单：`docs/netlist/tps-sw-checklist.md`
+- `tps-sw` MCU 使用规范：[`docs/mcu-resource-allocation-tps-sw.md`](mcu-resource-allocation-tps-sw.md)
 - 含 `SW2303` / `TPS55288` 的设计文档均按 `tps-sw` 方案维护。
+- `tps-fusb` 设计入口：[`docs/tps-fusb-hardware-design.md`](tps-fusb-hardware-design.md)
+- `tps-fusb` 输入电源路径选择：[`docs/tps-fusb-input-power-path-selection.md`](tps-fusb-input-power-path-selection.md)
+- `tps-fusb` MCU 使用规范：[`docs/mcu-resource-allocation-tps-fusb.md`](mcu-resource-allocation-tps-fusb.md)
+- `tps-fusb` 网表检查清单：[`docs/netlist/tps-fusb-checklist.md`](netlist/tps-fusb-checklist.md)
+- `tps-fusb` 长期规格：[`#m7q4v`](specs/m7q4v-tps-fusb-dual-pd-hardware/SPEC.md)

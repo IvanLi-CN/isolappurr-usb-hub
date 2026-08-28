@@ -1,6 +1,17 @@
-# TPS62933 EN 分压实现约 8 V UVLO（330 kΩ / 56 kΩ）
+# `tps-sw` TPS62933 EN 分压实现约 8 V UVLO（330 kΩ / 56 kΩ）
 
-本笔记记录：在 IsolaPurr USB Hub 项目中，针对 **TI TPS62933DRLR**（`VIN = 9–24 V`），通过 **EN 引脚分压**实现输入欠压锁定（UVLO）在 **8 V 左右**的选型结论。
+## 适用范围
+
+本文只适用于 `tps-sw` 的 TPS62933 `U3` EN 分压网络，记录
+`R4/R5 = 330 kOhm / 56 kOhm` 实现约 8 V UVLO 的选型结论。
+
+本文不适用于 `tps-fusb`。当前 `tps-fusb` 网表中 TPS62933 `U3` 的 `EN`
+浮空，使其按器件默认行为启动，以支持 USB-C 输入的低压冷启动；不得将本文
+的 8 V 门限或电阻值套用到该 variant。相关网表见
+[`hardware/tps-fusb/netlist.enet`](../hardware/tps-fusb/netlist.enet)。
+
+下文记录的是 `tps-sw` 的具体实现：针对 **TI TPS62933DRLR**（`VIN = 9–24 V`），
+通过 **EN 引脚分压**实现输入欠压锁定（UVLO）在 **8 V 左右**。
 
 ## 1. 目标
 

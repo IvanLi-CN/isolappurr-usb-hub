@@ -4,11 +4,19 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 
 - 上行：USB‑C 口（数据 + 供电），使用 **CH334P** 做 USB2.0 Hub 控制。  
 - 下行 USB‑A ×1：使用 **URB2405S‑3WR3** 隔离 DC/DC 模块独立供电，实现数据与电源隔离。  
-- 下行 USB‑C ×1：使用 **CH224Q + TPS55288 + SW2303**（USB‑PD 受电 + 3.3–21 V 可调输出；PPS/AVS 能力由 SW2303 侧控制），硬件记录见 `docs/hardware-variants.md`。  
-- 电源输入：
-  - 来自主机的 USB‑C 上行口，通过 **CH224Q** 争取更高功率 PD 档位；  
-  - 来自 DC5025 圆孔直流口（12–24 V 输入）；  
-  通过两个理想二极管实现双路电源 OR‑ing，自动择优供电。
+- USB‑C 供电与可调输出按硬件 variant 实现：当前 `tps-sw` 使用
+  **CH224Q + TPS55288 + SW2303**；下一版 `tps-fusb` 计划使用两颗
+  **FUSB302B + TPS55288**，由 MCU 固件分别实现 USB‑PD sink/source 的
+  PD 3.0 Fixed + PPS。variant 状态与适用文档见
+  [`docs/hardware-variants.md`](docs/hardware-variants.md)。
+- 两版 MCU 使用规范分别见
+  [`tps-sw`](docs/mcu-resource-allocation-tps-sw.md) 和
+  [`tps-fusb`](docs/mcu-resource-allocation-tps-fusb.md)，不得跨 variant 混用。
+- 电源输入按 variant 区分：当前 `tps-sw` 使用 USB‑PD 输入与 DC5025 的
+  既有 OR-ing 路径；设计中的 `tps-fusb` 将由 MCU 在两路 PMOS 输入之间
+  执行 DC 优先的 PMOS 主动增强互斥控制，避免两路输入同时被 gate driver
+  主动导通；单 PMOS 体二极管冷启动路径仍然存在。模块规范见
+  [`docs/tps-fusb-input-power-path-selection.md`](docs/tps-fusb-input-power-path-selection.md)。
 
 本仓库将包含完整的原理图、PCB、固件以及相关文档与数据手册的 Markdown 版本。
 
@@ -27,7 +35,9 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 - `skills/`
   - `vercel-labs/skills` 兼容的 Agent skills：`isolapurr-user-operations` 用于 released host tools 用户操作，`isolapurr-developer-operations` 用于源码开发/维护操作，`isolapurr-maintainer-workflow` 是本仓内部维护入口。
 - `hardware/`
-  - 硬件方案产物；网表位于 `hardware/tps-sw/netlist.enet`。
+  - 硬件方案产物：当前 `tps-sw` 网表位于 `hardware/tps-sw/netlist.enet`；
+    `tps-fusb` 设计基线位于 `hardware/tps-fusb/netlist.enet`。后者尚未完成
+    PCB、BOM、生产贴装或固件验证，不能视为已发布硬件。
 - `docs/datasheets/`  
   - `ch224q-datasheet.md` – CH224Q/CH224A/CH224K/CH224D/CH221K 的官方手册 Markdown 版。  
   - `ch217-datasheet.md` – CH217 USB 限流配电开关芯片手册 Markdown 版。  
@@ -41,7 +51,7 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 其他设计笔记：
 
 - `docs/ch217-upstream-vbus-protection.md` – 上行 USB‑C VBUS 使用 CH217 替代 PPTC 的设计记录。  
-- `docs/tps62933-uvlo-en-divider.md` – TPS62933 通过 EN 分压实现约 8 V UVLO（`330 kΩ / 56 kΩ`）的选型记录。  
+- `docs/tps62933-uvlo-en-divider.md` – `tps-sw` 的 TPS62933 通过 EN 分压实现约 8 V UVLO（`330 kΩ / 56 kΩ`）的选型记录。
 - `docs/tps55288-uvlo-en-divider.md` – TPS55288 通过 EN/UVLO 分压实现约 8 V LVLO（`200 kΩ / 36 kΩ`）的选型记录。  
 
 后续会补充：
