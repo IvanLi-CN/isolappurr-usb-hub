@@ -37,6 +37,8 @@ type PendingDesktopStart = {
   promise: Promise<void>;
   serverRunId: number | null;
   legacyAccepted: boolean;
+  abortController: AbortController;
+  cancelRequested: boolean;
 };
 
 export type IpScanController = {
@@ -79,6 +81,7 @@ export function useIpScanController({
   } | null>(null);
   const pendingDesktopStartRef = useRef<PendingDesktopStart | null>(null);
   const lastCancelledRunIdRef = useRef<number | null>(null);
+  const commandGenerationRef = useRef(0);
 
   const cancelActiveIpScan = useCallback((): Promise<number> => {
     const sessionGeneration = usbRunIdRef.current;
@@ -87,6 +90,10 @@ export function useIpScanController({
     const agent = agentRef.current;
     const pendingStart = pendingDesktopStartRef.current;
     const pending = pendingScanCancellationRef.current;
+    if (pendingStart) {
+      pendingStart.cancelRequested = true;
+      pendingStart.abortController.abort();
+    }
     if (
       pending &&
       pending.sessionGeneration === sessionGeneration &&
@@ -101,7 +108,7 @@ export function useIpScanController({
       scanAbortRef.current === null &&
       pendingStart === null
     ) {
-      return Promise.resolve(activeRunId);
+      return scanCancellationRef.current.then(() => activeRunId);
     }
 
     const cancelledRunId = activeRunId + 1;
@@ -123,7 +130,8 @@ export function useIpScanController({
         const cancellationAgent = agent ?? pendingStart?.agent ?? null;
         const cancellationRunId = desktopRunId ?? pendingStart?.serverRunId;
         const legacyCancellation =
-          pendingStart?.legacyAccepted === true &&
+          (pendingStart?.legacyAccepted === true ||
+            pendingStart?.cancelRequested === true) &&
           pendingStart.serverRunId === null;
         if (
           cancellationAgent &&
@@ -177,12 +185,14 @@ export function useIpScanController({
   }, [dispatch, usbRunIdRef]);
 
   const onRefresh = useCallback(async () => {
+    const commandGeneration = ++commandGenerationRef.current;
     const sessionGeneration = usbRunIdRef.current;
     const cancelledRunId = await cancelActiveIpScan();
     if (
       !openRef.current ||
       usbRunIdRef.current !== sessionGeneration ||
-      scanRunIdRef.current !== cancelledRunId
+      scanRunIdRef.current !== cancelledRunId ||
+      commandGenerationRef.current !== commandGeneration
     ) {
       return;
     }
@@ -202,7 +212,8 @@ export function useIpScanController({
         agentRef.current === agent &&
         openRef.current &&
         usbRunIdRef.current === sessionGeneration &&
-        scanRunIdRef.current === cancelledRunId
+        scanRunIdRef.current === cancelledRunId &&
+        commandGenerationRef.current === commandGeneration
       ) {
         dispatch({ type: "set_error", error: "Desktop agent unavailable." });
       }
@@ -218,11 +229,13 @@ export function useIpScanController({
         return;
       }
 
+      const commandGeneration = ++commandGenerationRef.current;
       const runId = await cancelActiveIpScan();
       if (
         !openRef.current ||
         usbRunIdRef.current !== sessionGeneration ||
-        scanRunIdRef.current !== runId
+        scanRunIdRef.current !== runId ||
+        commandGenerationRef.current !== commandGeneration
       ) {
         return;
       }
@@ -248,8 +261,14 @@ export function useIpScanController({
           promise: desktopStartSettled,
           serverRunId: null,
           legacyAccepted: false,
+          abortController: new AbortController(),
+          cancelRequested: false,
         };
         pendingDesktopStartRef.current = pendingStart;
+        const startTimeoutId = window.setTimeout(
+          () => pendingStart.abortController.abort(),
+          10_000,
+        );
         void (async () => {
           try {
             let response: Response;
@@ -257,12 +276,14 @@ export function useIpScanController({
               response = await agentFetch(agent, "/api/v1/discovery/ip-scan", {
                 method: "POST",
                 body: JSON.stringify({ cidr: parsed.cidr }),
+                signal: pendingStart.abortController.signal,
               });
             } catch {
               if (
                 scanRunIdRef.current !== runId ||
                 usbRunIdRef.current !== sessionGeneration ||
-                !openRef.current
+                !openRef.current ||
+                commandGenerationRef.current !== commandGeneration
               ) {
                 return;
               }
@@ -277,7 +298,8 @@ export function useIpScanController({
               if (
                 scanRunIdRef.current !== runId ||
                 usbRunIdRef.current !== sessionGeneration ||
-                !openRef.current
+                !openRef.current ||
+                commandGenerationRef.current !== commandGeneration
               ) {
                 return;
               }
@@ -305,7 +327,8 @@ export function useIpScanController({
             if (
               scanRunIdRef.current !== runId ||
               usbRunIdRef.current !== sessionGeneration ||
-              !openRef.current
+              !openRef.current ||
+              commandGenerationRef.current !== commandGeneration
             ) {
               return;
             }
@@ -324,6 +347,7 @@ export function useIpScanController({
             }
             desktopScanRunIdRef.current = serverRunId;
           } finally {
+            window.clearTimeout(startTimeoutId);
             resolveDesktopStart();
             if (pendingDesktopStartRef.current === pendingStart) {
               pendingDesktopStartRef.current = null;
@@ -357,7 +381,8 @@ export function useIpScanController({
           if (
             scanRunIdRef.current !== runId ||
             usbRunIdRef.current !== sessionGeneration ||
-            !openRef.current
+            !openRef.current ||
+            commandGenerationRef.current !== commandGeneration
           ) {
             return;
           }
@@ -375,7 +400,8 @@ export function useIpScanController({
           if (
             scanRunIdRef.current !== runId ||
             usbRunIdRef.current !== sessionGeneration ||
-            !openRef.current
+            !openRef.current ||
+            commandGenerationRef.current !== commandGeneration
           ) {
             return;
           }
@@ -412,7 +438,8 @@ export function useIpScanController({
         if (
           scanRunIdRef.current !== runId ||
           usbRunIdRef.current !== sessionGeneration ||
-          !openRef.current
+          !openRef.current ||
+          commandGenerationRef.current !== commandGeneration
         ) {
           return;
         }
@@ -579,6 +606,10 @@ export function useIpScanController({
               (scanRunId === undefined &&
                 desktopScanRunIdRef.current === scanRunIdRef.current));
           const ownedScan = ownsScan ? parsed.scan : undefined;
+          const pendingDesktopStart = pendingDesktopStartRef.current;
+          const preservingPendingDesktopStart =
+            activeScanKindRef.current === "desktop" &&
+            pendingDesktopStart?.localRunId === pollGeneration;
           const ownedScanRunId =
             ownedScan?.runId ?? desktopScanRunIdRef.current;
           if (
@@ -606,7 +637,9 @@ export function useIpScanController({
               scan: ownedScan,
               ipScan: parsed.ipScan,
             } satisfies DiscoverySnapshot,
-            replaceScan: activeScanKindRef.current === "desktop",
+            replaceScan:
+              activeScanKindRef.current === "desktop" &&
+              !preservingPendingDesktopStart,
           });
         })();
       }, 1000);

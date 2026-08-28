@@ -358,7 +358,7 @@ export function AddDeviceDialog({
         baseUrl: manualBaseUrl,
         id: manualId,
       };
-      const saved = await onCreate(input);
+      const saved = await onCreate(input, { navigate: false });
       if (!openRef.current || usbRunIdRef.current !== sessionGeneration) {
         return;
       }
@@ -551,7 +551,7 @@ export function AddDeviceDialog({
     };
     const saved = ids.includes(id)
       ? await onUpsert(input)
-      : await onCreate(input);
+      : await onCreate(input, { navigate: false });
     if (run && !isActiveUsbRun(run.id, run.method)) {
       return false;
     }
