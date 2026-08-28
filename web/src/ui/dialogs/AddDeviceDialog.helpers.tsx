@@ -46,6 +46,7 @@ export type DiscoverySnapshotShape = {
   status: "idle" | "scanning" | "ready" | "unavailable";
   devices: DiscoveredDevice[];
   error?: string;
+  scanMalformed?: boolean;
   scan?: {
     cidr: string;
     done: number;
@@ -250,6 +251,13 @@ export function parseDesktopDiscoverySnapshot(
     scanDone !== null &&
     scanTotal !== null &&
     scanDone >= scanTotal;
+  const hasScanDevicesField =
+    scan !== undefined && Object.hasOwn(scan, "devices");
+  let hasMalformedDevices = Boolean(
+    scan &&
+      ((hasScanDevicesField && !Array.isArray(scan.devices)) ||
+        (!hasScanDevicesField && hasExplicitScanStatus)),
+  );
   const scanDevicesRaw =
     scan && Array.isArray(scan.devices)
       ? scan.devices
@@ -257,7 +265,6 @@ export function parseDesktopDiscoverySnapshot(
         ? devices
         : [];
   const scanDevices: DiscoveredDevice[] = [];
-  let hasMalformedDevices = false;
   for (const item of scanDevicesRaw) {
     if (!item || typeof item !== "object") {
       hasMalformedDevices = true;
@@ -424,6 +431,7 @@ export function parseDesktopDiscoverySnapshot(
     status,
     devices: parsedDevices,
     error,
+    scanMalformed: Boolean(scan && !scanShape),
     scan: scanShape,
     ipScan: ipScan ? { expanded: false, defaultCidr, candidates } : undefined,
   };

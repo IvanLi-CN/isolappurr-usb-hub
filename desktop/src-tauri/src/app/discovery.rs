@@ -291,10 +291,11 @@ impl DiscoveryController {
         let _lifecycle = self.ip_scan_lifecycle.lock().await;
         let net: ipnet::Ipv4Net = cidr.parse().context("invalid cidr")?;
         let host_bits = 32 - u32::from(net.prefix_len());
-        let host_count = if host_bits >= 31 {
-            u64::MAX
+        let address_count = 1_u64 << host_bits;
+        let host_count = if host_bits <= 1 {
+            address_count
         } else {
-            (1_u64 << host_bits).saturating_sub(2)
+            address_count.saturating_sub(2)
         };
         if host_count > 1024 {
             return Err(anyhow!("cidr contains too many hosts"));

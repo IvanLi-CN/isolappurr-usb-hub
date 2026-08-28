@@ -352,12 +352,11 @@ export function useIpScanController({
               return;
             }
             if (serverRunId === null) {
-              activeScanKindRef.current = null;
+              void cancelActiveIpScan();
               dispatch({
                 type: "set_error",
                 error: "Desktop IP scan returned no run identifier.",
               });
-              dispatch({ type: "scan_cancelled", runId });
               return;
             }
             desktopScanRunIdRef.current = serverRunId;
@@ -610,6 +609,14 @@ export function useIpScanController({
           }
           const parsed = parseDesktopDiscoverySnapshot(value);
           if (!parsed) {
+            return;
+          }
+          if (activeScanKindRef.current === "desktop" && parsed.scanMalformed) {
+            void cancelActiveIpScan();
+            dispatch({
+              type: "set_error",
+              error: "Desktop agent returned invalid scan data.",
+            });
             return;
           }
           let merged: DiscoveredDevice[] = [];

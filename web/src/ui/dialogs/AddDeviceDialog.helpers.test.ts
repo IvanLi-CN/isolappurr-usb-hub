@@ -276,6 +276,27 @@ describe("desktop discovery scan ownership", () => {
     expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
   });
 
+  test("rejects a ready desktop scan whose device container is missing or malformed", () => {
+    for (const devices of [undefined, { baseUrl: "http://192.168.1.2" }]) {
+      const parsed = parseDesktopDiscoverySnapshot({
+        mode: "service",
+        status: "ready",
+        devices: [],
+        scan: {
+          cidr: "192.168.1.0/24",
+          done: 254,
+          total: 254,
+          status: "ready",
+          reachableResponses: 1,
+          ...(devices === undefined ? {} : { devices }),
+        },
+      });
+
+      expect(parsed?.scan?.hasMalformedDevices).toBe(true);
+      expect(isPersistableDesktopScan(parsed?.scan)).toBe(false);
+    }
+  });
+
   test("keeps an explicitly scanning desktop scan in progress", () => {
     const parsed = parseDesktopDiscoverySnapshot({
       mode: "service",
@@ -307,5 +328,6 @@ describe("desktop discovery scan ownership", () => {
     });
 
     expect(parsed?.scan).toBeUndefined();
+    expect(parsed?.scanMalformed).toBe(true);
   });
 });

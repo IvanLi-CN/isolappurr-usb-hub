@@ -628,6 +628,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ip_scan_accepts_point_to_point_ranges() {
+        init_tracing();
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        for cidr in ["192.168.1.0/31", "192.168.1.1/32"] {
+            let run_id = controller
+                .start_ip_scan(cidr.to_string(), None)
+                .await
+                .expect("small point-to-point range should be accepted");
+            controller.cancel_ip_scan(Some(run_id), None).await;
+        }
+    }
+
+    #[tokio::test]
     async fn cancelled_ip_scan_request_blocks_late_start() {
         init_tracing();
         let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
