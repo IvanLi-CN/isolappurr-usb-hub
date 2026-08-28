@@ -126,13 +126,17 @@ function parseStored(value: string | null, now: number): IpScanSession | null {
     if (!parsedCidr.ok) {
       return null;
     }
-    const devices = Array.isArray(raw.devices) ? raw.devices : [];
+    if (!Array.isArray(raw.devices)) {
+      return null;
+    }
+    const devices = raw.devices;
     let deduped: DiscoveredDevice[] = [];
     for (const item of devices) {
       const device = parseDevice(item);
-      if (device) {
-        deduped = mergeDiscoveredDevice(deduped, device);
+      if (!device) {
+        return null;
       }
+      deduped = mergeDiscoveredDevice(deduped, device);
     }
     return {
       cidr: parsedCidr.cidr,

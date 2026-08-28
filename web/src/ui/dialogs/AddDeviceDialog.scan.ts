@@ -262,11 +262,6 @@ export function useIpScanController({
                 method: "POST",
                 body: JSON.stringify({ runId: serverRunId }),
               }).catch(() => undefined);
-            } else if (legacyAccepted && activeScanKindRef.current === null) {
-              void agentFetch(agent, "/api/v1/discovery/cancel", {
-                method: "POST",
-                body: JSON.stringify({}),
-              }).catch(() => undefined);
             }
             return;
           }
@@ -541,8 +536,8 @@ export function useIpScanController({
             completedScanRunIdRef.current = ownedScanRunId;
             const persist =
               !ownedScan.legacyDevicesAreAmbiguous &&
-              (ownedScan.reachableResponses === undefined ||
-                ownedScan.reachableResponses > 0);
+              ownedScan.reachableResponses !== undefined &&
+              ownedScan.reachableResponses > 0;
             if (persist) {
               const session = createIpScanSession(
                 ownedScan.cidr,

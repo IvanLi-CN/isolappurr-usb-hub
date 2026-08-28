@@ -135,6 +135,30 @@ describe("IP scan session storage", () => {
       JSON.stringify({
         version: 1,
         cidr: "192.168.1.0/24",
+        devices: { baseUrl: "http://192.168.1.2" },
+        completedAt: 3_000,
+        expiresAt: 3_000 + IP_SCAN_SESSION_TTL_MS,
+      }),
+    );
+    expect(loadIpScanSession(false, 3_001)).toBeNull();
+
+    localValues.set(
+      key,
+      JSON.stringify({
+        version: 1,
+        cidr: "192.168.1.0/24",
+        devices: [{ device_id: "missing-base-url" }],
+        completedAt: 4_000,
+        expiresAt: 4_000 + IP_SCAN_SESSION_TTL_MS,
+      }),
+    );
+    expect(loadIpScanSession(false, 4_001)).toBeNull();
+
+    localValues.set(
+      key,
+      JSON.stringify({
+        version: 1,
+        cidr: "192.168.1.0/24",
         devices: [],
         completedAt: 2_000,
         expiresAt: 2_000 + IP_SCAN_SESSION_TTL_MS,
