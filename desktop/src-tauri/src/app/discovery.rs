@@ -426,7 +426,7 @@ impl DiscoveryController {
                 .map(|request_id| request_id == requested_request_id)
                 .unwrap_or(false);
             if !current_request_matches {
-                if snapshot.scan.is_none() && requested_run_id.is_none() {
+                if requested_run_id.is_none() {
                     drop(snapshot);
                     let mut cancelled_requests = self.ip_scan_cancelled_requests.lock().await;
                     if cancelled_requests.len() >= MAX_CANCELLED_IP_SCAN_REQUESTS {

@@ -646,6 +646,38 @@ mod tests {
         assert!(controller.snapshot().await.scan.is_none());
     }
 
+    #[tokio::test]
+    async fn cancelled_pending_request_does_not_replace_an_active_scan() {
+        init_tracing();
+        let controller = Arc::new(make_controller(200, Some("mdns unavailable".to_string())));
+        let active_run = controller
+            .start_ip_scan("127.0.0.0/30".to_string(), Some("request-a".to_string()))
+            .await
+            .expect("start active scan");
+        controller
+            .cancel_ip_scan(None, Some("request-b".to_string()))
+            .await;
+        let result = controller
+            .start_ip_scan("127.0.0.0/30".to_string(), Some("request-b".to_string()))
+            .await;
+        assert!(
+            result
+                .expect_err("cancelled request should not replace active scan")
+                .to_string()
+                .contains("request was cancelled")
+        );
+        assert_eq!(
+            controller
+                .snapshot()
+                .await
+                .scan
+                .as_ref()
+                .map(|scan| scan.run_id),
+            Some(active_run)
+        );
+        controller.cancel_ip_scan(Some(active_run), None).await;
+    }
+
     fn temp_storage_path(label: &str) -> PathBuf {
         let mut dir = env::temp_dir();
         let suffix = time::OffsetDateTime::now_utc().unix_timestamp_nanos();
