@@ -754,6 +754,7 @@ export function AddDeviceDialog({
     setUsbStatus(null);
     setUsbLog([]);
     setUsbBusy(false);
+    setManualBusy(false);
   };
 
   const startUsbRun = (runMethod: AddDeviceMethod) => {
