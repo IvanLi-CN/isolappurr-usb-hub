@@ -24,6 +24,7 @@ import {
 } from "../../domain/ipScanSession";
 import {
   isPersistableDesktopScan,
+  isTrustedDesktopScanCompletion,
   parseDesktopDiscoverySnapshot,
   parseDesktopIpScanRunId,
 } from "./AddDeviceDialog.helpers";
@@ -632,7 +633,7 @@ export function useIpScanController({
           const ownedScanRunId =
             ownedScan?.runId ?? desktopScanRunIdRef.current;
           if (
-            ownedScan?.status === "ready" &&
+            isTrustedDesktopScanCompletion(ownedScan) &&
             ownedScanRunId !== null &&
             completedScanRunIdRef.current !== ownedScanRunId
           ) {

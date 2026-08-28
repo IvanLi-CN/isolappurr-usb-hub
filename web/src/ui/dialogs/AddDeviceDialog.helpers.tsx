@@ -78,6 +78,24 @@ export function isPersistableDesktopScan(
   return scan.legacyScanComplete === true && scan.devices.length === 0;
 }
 
+export function isTrustedDesktopScanCompletion(
+  scan: DiscoverySnapshotShape["scan"],
+): boolean {
+  if (!scan || scan.status !== "ready") {
+    return false;
+  }
+  const completeProgress =
+    Number.isSafeInteger(scan.done) &&
+    scan.done >= 0 &&
+    Number.isSafeInteger(scan.total) &&
+    scan.total >= 0 &&
+    scan.done >= scan.total;
+  return (
+    completeProgress &&
+    (scan.reachableResponses !== undefined || scan.legacyScanComplete === true)
+  );
+}
+
 function extractUsbDevice(value: unknown): UsbDeviceInfo | null {
   if (!value || typeof value !== "object") {
     return null;
