@@ -29,6 +29,15 @@ import {
 
 type ScanKind = "browser" | "desktop";
 
+type PendingDesktopStart = {
+  sessionGeneration: number;
+  localRunId: number;
+  agent: DesktopAgent;
+  promise: Promise<void>;
+  serverRunId: number | null;
+  legacyAccepted: boolean;
+};
+
 export type IpScanController = {
   agentRef: MutableRefObject<DesktopAgent | null>;
   cancelActiveIpScan: () => Promise<number>;
@@ -67,6 +76,7 @@ export function useIpScanController({
     activeRunId: number;
     promise: Promise<number>;
   } | null>(null);
+  const pendingDesktopStartRef = useRef<PendingDesktopStart | null>(null);
   const lastCancelledRunIdRef = useRef<number | null>(null);
 
   const cancelActiveIpScan = useCallback((): Promise<number> => {
@@ -74,6 +84,7 @@ export function useIpScanController({
     const activeRunId = scanRunIdRef.current;
     const desktopRunId = desktopScanRunIdRef.current;
     const agent = agentRef.current;
+    const pendingStart = pendingDesktopStartRef.current;
     const pending = pendingScanCancellationRef.current;
     if (
       pending &&
@@ -86,7 +97,8 @@ export function useIpScanController({
       lastCancelledRunIdRef.current === activeRunId &&
       activeScanKindRef.current === null &&
       desktopScanRunIdRef.current === null &&
-      scanAbortRef.current === null
+      scanAbortRef.current === null &&
+      pendingStart === null
     ) {
       return Promise.resolve(activeRunId);
     }
@@ -104,16 +116,29 @@ export function useIpScanController({
     const operation = scanCancellationRef.current
       .catch(() => undefined)
       .then(async () => {
-        if (agent && desktopRunId !== null) {
+        if (pendingStart) {
+          await pendingStart.promise;
+        }
+        const cancellationAgent = agent ?? pendingStart?.agent ?? null;
+        const cancellationRunId = desktopRunId ?? pendingStart?.serverRunId;
+        const legacyCancellation =
+          pendingStart?.legacyAccepted === true &&
+          pendingStart.serverRunId === null;
+        if (
+          cancellationAgent &&
+          (cancellationRunId !== null || legacyCancellation)
+        ) {
           const cancellationController = new AbortController();
           const timeoutId = window.setTimeout(
             () => cancellationController.abort(),
             1_500,
           );
           try {
-            await agentFetch(agent, "/api/v1/discovery/cancel", {
+            await agentFetch(cancellationAgent, "/api/v1/discovery/cancel", {
               method: "POST",
-              body: JSON.stringify({ runId: desktopRunId }),
+              body: JSON.stringify(
+                cancellationRunId === null ? {} : { runId: cancellationRunId },
+              ),
               signal: cancellationController.signal,
             });
           } catch {
@@ -152,8 +177,12 @@ export function useIpScanController({
 
   const onRefresh = useCallback(async () => {
     const sessionGeneration = usbRunIdRef.current;
-    await cancelActiveIpScan();
-    if (!openRef.current || usbRunIdRef.current !== sessionGeneration) {
+    const cancelledRunId = await cancelActiveIpScan();
+    if (
+      !openRef.current ||
+      usbRunIdRef.current !== sessionGeneration ||
+      scanRunIdRef.current !== cancelledRunId
+    ) {
       return;
     }
     const agent = agentRef.current;
@@ -168,7 +197,12 @@ export function useIpScanController({
         body: JSON.stringify({}),
       });
     } catch {
-      if (agentRef.current === agent && openRef.current) {
+      if (
+        agentRef.current === agent &&
+        openRef.current &&
+        usbRunIdRef.current === sessionGeneration &&
+        scanRunIdRef.current === cancelledRunId
+      ) {
         dispatch({ type: "set_error", error: "Desktop agent unavailable." });
       }
     }
@@ -202,82 +236,98 @@ export function useIpScanController({
           total: parsed.hosts.length,
           runId,
         });
+        let resolveDesktopStart!: () => void;
+        const desktopStartSettled = new Promise<void>((resolve) => {
+          resolveDesktopStart = resolve;
+        });
+        const pendingStart: PendingDesktopStart = {
+          sessionGeneration,
+          localRunId: runId,
+          agent,
+          promise: desktopStartSettled,
+          serverRunId: null,
+          legacyAccepted: false,
+        };
+        pendingDesktopStartRef.current = pendingStart;
         void (async () => {
-          let response: Response;
           try {
-            response = await agentFetch(agent, "/api/v1/discovery/ip-scan", {
-              method: "POST",
-              body: JSON.stringify({ cidr: parsed.cidr }),
-            });
-          } catch {
-            if (
-              scanRunIdRef.current !== runId ||
-              usbRunIdRef.current !== sessionGeneration ||
-              !openRef.current
-            ) {
-              return;
-            }
-            void cancelActiveIpScan();
-            dispatch({
-              type: "set_error",
-              error: "Desktop agent unavailable.",
-            });
-            return;
-          }
-          if (!response.ok) {
-            if (
-              scanRunIdRef.current !== runId ||
-              usbRunIdRef.current !== sessionGeneration ||
-              !openRef.current
-            ) {
-              return;
-            }
-            activeScanKindRef.current = null;
-            dispatch({
-              type: "set_error",
-              error: "Desktop IP scan could not be started.",
-            });
-            dispatch({ type: "scan_cancelled", runId });
-            return;
-          }
-          const responseBody =
-            response.status === 204
-              ? null
-              : await response.json().catch(() => null);
-          const serverRunId = parseDesktopIpScanRunId(responseBody);
-          const legacyAccepted =
-            response.status === 204 ||
-            (response.status === 202 &&
-              responseBody &&
-              typeof responseBody === "object" &&
-              (responseBody as Record<string, unknown>).accepted === true);
-          if (
-            scanRunIdRef.current !== runId ||
-            usbRunIdRef.current !== sessionGeneration ||
-            !openRef.current
-          ) {
-            if (serverRunId !== null) {
-              void agentFetch(agent, "/api/v1/discovery/cancel", {
+            let response: Response;
+            try {
+              response = await agentFetch(agent, "/api/v1/discovery/ip-scan", {
                 method: "POST",
-                body: JSON.stringify({ runId: serverRunId }),
-              }).catch(() => undefined);
+                body: JSON.stringify({ cidr: parsed.cidr }),
+              });
+            } catch {
+              if (
+                scanRunIdRef.current !== runId ||
+                usbRunIdRef.current !== sessionGeneration ||
+                !openRef.current
+              ) {
+                return;
+              }
+              void cancelActiveIpScan();
+              dispatch({
+                type: "set_error",
+                error: "Desktop agent unavailable.",
+              });
+              return;
             }
-            return;
+            if (!response.ok) {
+              if (
+                scanRunIdRef.current !== runId ||
+                usbRunIdRef.current !== sessionGeneration ||
+                !openRef.current
+              ) {
+                return;
+              }
+              activeScanKindRef.current = null;
+              dispatch({
+                type: "set_error",
+                error: "Desktop IP scan could not be started.",
+              });
+              dispatch({ type: "scan_cancelled", runId });
+              return;
+            }
+            const responseBody =
+              response.status === 204
+                ? null
+                : await response.json().catch(() => null);
+            const serverRunId = parseDesktopIpScanRunId(responseBody);
+            const legacyAccepted =
+              response.status === 204 ||
+              (response.status === 202 &&
+                responseBody &&
+                typeof responseBody === "object" &&
+                (responseBody as Record<string, unknown>).accepted === true);
+            pendingStart.serverRunId = serverRunId;
+            pendingStart.legacyAccepted = legacyAccepted;
+            if (
+              scanRunIdRef.current !== runId ||
+              usbRunIdRef.current !== sessionGeneration ||
+              !openRef.current
+            ) {
+              return;
+            }
+            if (serverRunId === null && legacyAccepted) {
+              desktopScanRunIdRef.current = runId;
+              return;
+            }
+            if (serverRunId === null) {
+              activeScanKindRef.current = null;
+              dispatch({
+                type: "set_error",
+                error: "Desktop IP scan returned no run identifier.",
+              });
+              dispatch({ type: "scan_cancelled", runId });
+              return;
+            }
+            desktopScanRunIdRef.current = serverRunId;
+          } finally {
+            resolveDesktopStart();
+            if (pendingDesktopStartRef.current === pendingStart) {
+              pendingDesktopStartRef.current = null;
+            }
           }
-          if (serverRunId === null && legacyAccepted) {
-            desktopScanRunIdRef.current = runId;
-            return;
-          }
-          if (serverRunId === null) {
-            activeScanKindRef.current = null;
-            dispatch({
-              type: "set_error",
-              error: "Desktop IP scan returned no run identifier.",
-            });
-            dispatch({ type: "scan_cancelled", runId });
-            return;
-          }
-          desktopScanRunIdRef.current = serverRunId;
         })();
         return;
       }

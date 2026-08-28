@@ -349,6 +349,7 @@ export function AddDeviceDialog({
   }, [open, snapshot.ipScan, snapshot.mode, snapshot.status]);
 
   const saveManualDevice = async () => {
+    const sessionGeneration = usbRunIdRef.current;
     setManualBusy(true);
     setAddError(null);
     try {
@@ -358,6 +359,9 @@ export function AddDeviceDialog({
         id: manualId,
       };
       const saved = await onCreate(input);
+      if (!openRef.current || usbRunIdRef.current !== sessionGeneration) {
+        return;
+      }
       if (!saved.ok) {
         setAddError(
           saved.errors.baseUrl ??
@@ -374,7 +378,9 @@ export function AddDeviceDialog({
       handleClose();
       navigate(`/devices/${saved.device.id}`);
     } finally {
-      setManualBusy(false);
+      if (openRef.current && usbRunIdRef.current === sessionGeneration) {
+        setManualBusy(false);
+      }
     }
   };
 
@@ -564,6 +570,9 @@ export function AddDeviceDialog({
           });
         }
         const updated = await onUpsert(input);
+        if (run && !isActiveUsbRun(run.id, run.method)) {
+          return false;
+        }
         if (updated.ok) {
           setUsbStep(
             "Existing hub updated with the latest connection link.",
