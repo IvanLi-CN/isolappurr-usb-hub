@@ -120,6 +120,10 @@ Out of scope:
 - 同型号、同颜色的低电流 LED 可以作为一个视觉组并联、共用限流电阻；该电阻
   仅限制组总电流，不承诺各 LED 均流或亮度一致。独立状态、亮度一致性或电流
   可预测性 MUST 使用独立限流或独立恒流通道。
+- `LED_TPS` MUST 使用 GPIO47 的低端开漏驱动。GPIO47 为 Low 时吸电流并点亮
+  视觉组，为 High 时释放为 Hi-Z 并关闭；firmware MUST 禁止 GPIO47 内部上拉、
+  下拉。按当前网表的 `R8=2.7kOhm`、`R25=680Ohm`，3.3V 时总灌电流上限约
+  为 6.1mA，3.6V 时约为 6.6mA，实际电流由 LED 正向压降决定。
 
 ### MCU pins and interrupts
 
@@ -127,7 +131,8 @@ Out of scope:
   GPIO34=`VIN_EN`、GPIO35=`VIN_SEL`、
   GPIO36=`TPS_USB_C_VBUS_EN`、GPIO37=`CE_TPS`、GPIO38=`INT2`。
 - `BTNL` MUST 为低有效输入并使用内部上拉，不得继续占用 GPIO1。
-- GPIO47 MUST 驱动低有效 `LED_TPS`；firmware 接管后 MUST 先输出 High。
+- GPIO47 MUST 以开漏方式驱动低有效 `LED_TPS`；firmware 接管后 MUST 先释放
+  为 High/Hi-Z，Low 仅用于吸电流点亮。
 - `INT2` MUST 使用 3.3 V 上拉、低有效，并且只允许开漏设备共享。
 - `INT2` 触发后，固件 MUST 轮询共享设备识别中断来源。
 - GPIO39/40 MUST 分别作为 `SDA2/SCL2`，占用外部 PAD-JTAG。
