@@ -16,6 +16,8 @@ Status: 待实现
 - 按当前网表冻结 U19=`ESP32-S3FH4R2`、GPIO33=`BTNL`、GPIO34=`VIN_EN`、
   GPIO35=`VIN_SEL`、GPIO47=`LED_TPS`，以及 `SDA/SCL`、`SDA2/SCL2` 与
   `INT`/`INT2` 的设备成员。
+- 根据 `LED_TPS` 共阴极低端拓扑冻结 GPIO47 为开漏输出：Low 吸电流点亮，
+  High/Hi-Z 释放关闭；R8/R25 限制视觉组总灌电流。
 
 ## Pending Hardware Work
 

@@ -78,8 +78,11 @@ SW2303 网表与检查清单保持独立，见
 - 单颗输出 PMOS 在关断时允许 `VBUS_TPS -> VOUT_TPS` 体二极管反灌；外部
   VBUS 存在时固件不得主动启动 TPS 输出，并且反灌不得使 TPS55288 VOUT 超过
   25 V 绝对最大值。
-- `LED_TPS` 接 ESP32-S3 GPIO47，低有效。当前 LED 属性包含 EDA 封装占位料；
-  生产实装必须使用已批准的实际 LED 料号，不能以 EDA 属性替代 BOM 选型。
+- `LED_TPS` 接 ESP32-S3 GPIO47，采用低端开漏驱动，Low=吸电流点亮，
+  High/Hi-Z=释放并关闭。LED 阳极侧经 `R8=2.7kOhm`、`R25=680Ohm` 接 `3V3`；
+  按 `Vf=0` 的保守电阻上限，GPIO47 总灌电流约不超过 6.1mA（3.3V）或
+  6.6mA（3.6V）。当前 LED 属性包含 EDA 封装占位料；生产实装必须使用
+  已批准的实际 LED 料号，不能以 EDA 属性替代 BOM 选型。
 
 ## MCU 引脚合同
 
@@ -95,7 +98,7 @@ SW2303 网表与检查清单保持独立，见
 | GPIO37 | `CE_TPS` | 推挽 High，TPS 硬关闭 |
 | GPIO38 | `INT2` | 高阻开漏共享告警输入 |
 | GPIO39 / GPIO40 | `SDA2` / `SCL2` | I2C0 开漏 |
-| GPIO47 | `LED_TPS` | 推挽 High，关闭低有效 LED |
+| GPIO47 | `LED_TPS` | 开漏释放（High/Hi-Z），关闭低有效 LED；Low=吸电流点亮 |
 
 完整的资源所有权、外设初始化顺序、PD/I2C 时序约束与 bring-up 验收见
 [`tps-fusb MCU 使用规范`](../mcu-resource-allocation-tps-fusb.md)。

@@ -45,7 +45,7 @@ firmware profile 和镜像，不得运行时猜测硬件 variant。
 | `ADC1_CH0` | GPIO1，高阻、无数字上下拉 | `VIN_DC_SENSE` | 11 dB、校准、滤波和滞回 |
 | `SPI2` | GPIO10 至 GPIO14 | `DC/MOSI/SCLK/CS/RES` | GC9307，Mode 0，40 MHz |
 | `LEDC` | GPIO21 | `BUZZER` | LS timer0/channel0，启动静音 |
-| LED control | GPIO47，推挽输出 High | `LED_TPS` | 低有效；High=关，Low=同步点亮 |
+| LED control | GPIO47，开漏输出，释放态为 High/Hi-Z | `LED_TPS` | 低有效；释放=关，Low=同步点亮 |
 | `USB_DEVICE` | GPIO19/20 | `USB_D-/USB_D+` | 原生 USB，不复用 |
 | `UART0` | GPIO43/44 | `U0TX/U0RX` | 调试接口 |
 
@@ -79,7 +79,7 @@ firmware profile 和镜像，不得运行时猜测硬件 variant。
 | 25 | GPIO19 | `USB_D-` | USB peripheral | 原生 USB |
 | 26 | GPIO20 | `USB_D+` | USB peripheral | 原生 USB |
 | 27 | GPIO21 | `BUZZER` | 初始 Low，再交给 LEDC | 默认静音 |
-| 37 | GPIO47 / `SPICLK_P` | `LED_TPS` | 推挽输出，初始 High | 低有效同步 LED 视觉组 |
+| 37 | GPIO47 / `SPICLK_P` | `LED_TPS` | 开漏输出，初始释放（High/Hi-Z） | 低有效同步 LED 视觉组；Low=吸电流点亮 |
 | 38 | GPIO33 | `BTNL` | 输入，内部上拉，低有效 | 左键 |
 | 39 | GPIO34 | `VIN_EN` | 推挽输出，初始 Low | 输入总使能；Low=两路均不主动增强 |
 | 40 | GPIO35 | `VIN_SEL` | 推挽输出，初始 Low | 0=DC，1=USB；仅 `VIN_EN=0` 时改变 |
@@ -114,7 +114,8 @@ I2C1 必须各自维持 allowlist，禁止地址扫描。
 ## 6. 上电初始化顺序
 
 1. 在其他外设初始化前建立 `VIN_EN=Low`、`VIN_SEL=Low`、
-   `TPS_USB_C_VBUS_EN=Low`、`CE_TPS=High`、`LED_TPS=High`。
+   `TPS_USB_C_VBUS_EN=Low`、`CE_TPS=High`，并将 `LED_TPS` 配置为开漏释放
+   （High/Hi-Z）。
 2. 配置 GPIO1 ADC、GPIO7/38 高阻中断输入和按键输入，读取初始输入、外部
    `VBUS_TPS` 与按键状态。
 3. 初始化 I2C0/I2C1，使用静态 allowlist 确认可访问设备；不执行总线扫描。
@@ -134,10 +135,21 @@ I2C1 必须各自维持 allowlist，禁止地址扫描。
 | TPS coordinator | U14 TPS55288、GPIO37 | 接收输出设定请求 |
 | VBUS gate controller | GPIO36 | 接收 source 状态机开关请求 |
 | Interrupt coordinator | GPIO7/38 | 唤醒对应 I2C 服务，不直接切电源 |
-| Indicator controller | GPIO47 | 只控制 `LED_TPS` 视觉组 |
+| Indicator controller | GPIO47（开漏） | 只控制 `LED_TPS` 视觉组 |
 
 - PD policy、ADC sampler 和 UI 不得绕过 input-power-selector 写 GPIO34/35。
 - 不得将推挽输出并入 `INT` 或 `INT2`；每条告警线只允许一个上拉预算。
+- `LED_TPS` 是共阴极 LED 的低端节点。GPIO47=Low 时吸电流并点亮，GPIO47=High
+  时必须释放为高阻并熄灭；不得启用 GPIO47 的内部上拉或下拉，且不需要为
+  `LED_TPS` 另设逻辑上拉。
+- 当前网表的 `R8=2.7kOhm` 和 `R25=680Ohm` 从 `3V3` 向两组 LED 提供限流；
+  按 `Vf=0` 的保守电阻上限估算，3.3V 时 GPIO47 总灌电流不超过约 6.1mA，
+  3.6V 时不超过约 6.6mA。实际电流由 LED 正向压降决定，且是所有并联分支
+  电流之和，不是单颗 LED 电流。
+- [ESP32-S3 官方数据手册](https://documentation.espressif.com/esp32_s3_datasheet_en.pdf)
+  的 Table 5-4 在 3.3V、`PAD_DRIVER=3`、`VOL=0.495V` 条件下给出 `IOL`
+  典型值 28mA；这只是电气测试条件，不是 GPIO47 的内置限流值或本设计的
+  持续工作目标，禁止用它替代 LED 外部限流电阻。
 - 不得仅因 I2C 为 400 kHz 就认定 PD timing 满足。必须验证 IRQ latency、
   task scheduling、bus recovery 和最坏事务占用。
 - EDA LED 占位料不构成生产 BOM。实装前必须替换为经过批准的颜色、Vf、亮度

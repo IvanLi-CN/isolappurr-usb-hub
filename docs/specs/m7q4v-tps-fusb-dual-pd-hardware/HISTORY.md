@@ -6,6 +6,8 @@
   不覆盖或替代 `hardware/tps-sw/netlist.enet`。
 - 以归档网表更新 MCU 合同：U19 为 `ESP32-S3FH4R2`；GPIO33=`BTNL`、
   GPIO34=`VIN_EN`、GPIO35=`VIN_SEL`、GPIO47=`LED_TPS`。
+- 根据 LED 共阴极及 `R8/R25` 限流拓扑，明确 GPIO47 使用开漏低端吸电流，
+  释放态关闭 LED，并记录约 6.1mA 的 3.3V 总灌电流上限估算。
 - 冻结双 I2C 成员：输入 PHY、TPS55288 和系统设备位于 `SDA2/SCL2`，输出 PHY
   和输出 INA226 位于 `SDA/SCL`；`INT` 跨总线服务 TPS55288，`INT2` 服务
   输入 PHY/系统设备。
