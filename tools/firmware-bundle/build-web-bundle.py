@@ -287,9 +287,9 @@ def current_release_manifest_entry(
     catalog_path: Path,
     app_bin_path: Path,
     full_image_path: Path | None,
-    fusb_catalog_path: Path | None,
-    fusb_app_bin_path: Path | None,
-    fusb_full_image_path: Path | None,
+    fusb_catalog_path: Path | None = None,
+    fusb_app_bin_path: Path | None = None,
+    fusb_full_image_path: Path | None = None,
 ) -> tuple[dict[str, Any], bool]:
     catalog = read_catalog(catalog_path)
     app_artifact = artifact_by_target(catalog, "esp32s3_app")

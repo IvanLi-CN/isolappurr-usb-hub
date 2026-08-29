@@ -588,7 +588,23 @@ export function useFirmwareFlashConnection({
       const firmwareHardware = infoResult.ok
         ? hardwareFromFirmwareInfo(infoResult.value, activePort)
         : undefined;
-      let hardware = options.fallbackHardware ?? firmwareHardware;
+      const legacyProjectHardware: HardwareBoardInfo | undefined =
+        infoResult.ok &&
+        initialIdentity?.kind === "recognized" &&
+        !firmwareHardware
+          ? {
+              source: "firmware-profile",
+              chipType: "ESP32-S3",
+              mcuModel: "ESP32-S3",
+              flashSize: "4 MB",
+              ramSize: "512 KB",
+              psramSize: "8 MB",
+            }
+          : undefined;
+      // Legacy project firmware may omit the v1 hardware descriptor. Keep its
+      // resource display available without treating it as physical identity.
+      let hardware =
+        options.fallbackHardware ?? firmwareHardware ?? legacyProjectHardware;
       if (
         options.refreshHardware &&
         !hardware &&
