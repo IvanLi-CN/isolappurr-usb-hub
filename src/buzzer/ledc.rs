@@ -10,7 +10,7 @@
 use super::{BuzzerControl, BuzzerError};
 
 use esp_hal::{
-    gpio::{DriveMode, DriveStrength, Level, Output, OutputConfig, OutputPin, Pull},
+    gpio::{DriveMode, DriveStrength, Flex, Level, OutputConfig, OutputPin, Pull},
     ledc::{
         LSGlobalClkSource, Ledc, LowSpeed,
         channel::{self, ChannelIFace},
@@ -40,6 +40,16 @@ impl<'d> LedcBuzzer<'d> {
         ledc: esp_hal::peripherals::LEDC<'d>,
         buzzer_pin: impl OutputPin + 'd,
     ) -> Result<Self, BuzzerError> {
+        Self::new_with_flex(ledc, Flex::new(buzzer_pin))
+    }
+
+    /// Create a buzzer from a pin that was already placed in the common
+    /// BootSafety vector. This preserves the low output level while discovery
+    /// runs, then hands the same pin to LEDC only after profile admission.
+    pub fn new_with_flex(
+        ledc: esp_hal::peripherals::LEDC<'d>,
+        mut buzzer_pin: Flex<'d>,
+    ) -> Result<Self, BuzzerError> {
         let config = OutputConfig::default()
             .with_drive_mode(DriveMode::PushPull)
             .with_drive_strength(DriveStrength::_5mA)
@@ -47,7 +57,10 @@ impl<'d> LedcBuzzer<'d> {
 
         // Configure as GPIO output, silent by default, then freeze before LEDC
         // routing so peripherals can't override drive strength.
-        let buzzer_output = Output::new(buzzer_pin, Level::Low, config).into_peripheral_output();
+        buzzer_pin.set_level(Level::Low);
+        buzzer_pin.apply_output_config(&config);
+        buzzer_pin.set_output_enable(true);
+        let buzzer_output = buzzer_pin.into_peripheral_output();
 
         let mut ledc = Ledc::new(ledc);
         ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);

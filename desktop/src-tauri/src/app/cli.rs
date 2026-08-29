@@ -89,6 +89,10 @@ enum FirmwareCmd {
         address: String,
         #[arg(long)]
         allow_unconfirmed_port: bool,
+        #[arg(long, value_parser = ["tps-sw", "tps-fusb"])]
+        compiled_profile: Option<String>,
+        #[arg(long)]
+        compatible_profile: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -315,6 +319,17 @@ struct FirmwareFlashRequest {
     file_base64: String,
     #[serde(default)]
     expected_identity: Option<DeviceIdentityExpectation>,
+    #[serde(default)]
+    compiled_profile: Option<String>,
+    #[serde(default)]
+    compatible_hardware: Option<CompatibleHardware>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompatibleHardware {
+    discovery_schema: u8,
+    profiles: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -829,6 +844,8 @@ async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
             elf,
             address,
             allow_unconfirmed_port,
+            compiled_profile,
+            compatible_profile,
             json,
         } => {
             let address = parse_flash_address(&address)?;
@@ -873,14 +890,25 @@ async fn run_firmware_cli(cmd: FirmwareCmd) -> anyhow::Result<()> {
                 ));
             };
             let unverified_first_flash = expected_identity.is_none();
+            let compatible_hardware = compiled_profile.as_ref().map(|profile| CompatibleHardware {
+                discovery_schema: 1,
+                profiles: vec![compatible_profile.unwrap_or_else(|| profile.clone())],
+            });
             let response = if unverified_first_flash {
                 let elf = elf.as_deref().ok_or_else(|| {
                     anyhow!("unconfirmed first flash requires --elf for full bootstrap flashing")
                 })?;
                 run_firmware_full_flash_elf(&port, elf).map_err(anyhow::Error::msg)?
             } else {
-                run_firmware_flash_file(&port, &bin, address, expected_identity)
-                    .map_err(anyhow::Error::msg)?
+                run_firmware_flash_file(
+                    &port,
+                    &bin,
+                    address,
+                    expected_identity,
+                    compiled_profile,
+                    compatible_hardware,
+                )
+                .map_err(anyhow::Error::msg)?
             };
             if json {
                 print_json(&response)?;

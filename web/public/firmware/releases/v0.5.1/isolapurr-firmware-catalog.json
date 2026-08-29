@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1",
+  "schemaVersion": "2",
   "artifacts": [
     {
       "artifactId": "isolapurr-3550a0c263a8",
@@ -7,6 +7,11 @@
       "version": "0.5.1",
       "gitSha": "3550a0c263a8ba718a28053caa002e72e60f8b32",
       "buildId": "28792767922",
+      "compiledProfile": "tps-sw",
+      "compatibleHardware": {
+        "discoverySchema": 1,
+        "profiles": ["tps-sw"]
+      },
       "files": [
         {
           "kind": "app_bin",
@@ -29,6 +34,11 @@
       "version": "0.5.1",
       "gitSha": "3550a0c263a8ba718a28053caa002e72e60f8b32",
       "buildId": "28792767922",
+      "compiledProfile": "tps-sw",
+      "compatibleHardware": {
+        "discoverySchema": 1,
+        "profiles": ["tps-sw"]
+      },
       "files": [
         {
           "kind": "full_image",

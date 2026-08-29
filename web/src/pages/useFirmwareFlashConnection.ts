@@ -23,10 +23,6 @@ import {
   type SerialPortInfo,
   WebSerialJsonlTransport,
 } from "../domain/hardwareConsole";
-import {
-  cacheWebSerialHardware,
-  readCachedWebSerialHardware,
-} from "../domain/webSerialHardwareCache";
 import { readLocalUsbInfo } from "../ui/dialogs/AddDeviceDialog.helpers";
 import type { FirmwareFlashLogEntry } from "../ui/panels/FirmwareFlashLogPanel";
 import {
@@ -363,9 +359,14 @@ export function useFirmwareFlashConnection({
     [releaseChoices, selectedReleaseTag],
   );
 
+  const selectedProfileAssets = selectedRelease?.profiles
+    ? selectedRelease.profiles[probe.hardware?.detectedProfile ?? ""]
+    : undefined;
   const selectedAsset: BundledFirmwareAsset | null = recoveryFlow
-    ? (selectedRelease?.recovery ?? null)
-    : (selectedRelease?.app ?? null);
+    ? (selectedProfileAssets?.recovery ??
+      (selectedRelease?.profiles ? null : (selectedRelease?.recovery ?? null)))
+    : (selectedProfileAssets?.app ??
+      (selectedRelease?.profiles ? null : (selectedRelease?.app ?? null)));
   const selectedLocalUsbPortInfo =
     localUsbPorts.find(
       (candidate) => candidate.path === selectedLocalUsbPort,
@@ -587,10 +588,7 @@ export function useFirmwareFlashConnection({
       const firmwareHardware = infoResult.ok
         ? hardwareFromFirmwareInfo(infoResult.value, activePort)
         : undefined;
-      let hardware =
-        options.fallbackHardware ??
-        firmwareHardware ??
-        readCachedWebSerialHardware(initialIdentity?.mac);
+      let hardware = options.fallbackHardware ?? firmwareHardware;
       if (
         options.refreshHardware &&
         !hardware &&
@@ -638,9 +636,6 @@ export function useFirmwareFlashConnection({
               "Web Serial target did not expose project firmware metadata."),
         hardware,
       );
-      if (hardware && nextProbe.kind === "recognized") {
-        cacheWebSerialHardware(nextProbe.mac, hardware);
-      }
       return {
         port: activePort,
         probe: nextProbe,

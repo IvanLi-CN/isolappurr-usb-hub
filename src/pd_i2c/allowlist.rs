@@ -3,15 +3,19 @@ use embedded_hal_async::i2c::{I2c, Operation};
 
 use super::SW2303_ADDR_7BIT;
 
+pub const FUSB302_ADDR_7BIT: u8 = fusb302::DEFAULT_ADDRESS;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PdI2cAddr {
     Sw2303,
+    Fusb302,
 }
 
 impl PdI2cAddr {
     pub const fn as_7bit(self) -> u8 {
         match self {
             Self::Sw2303 => SW2303_ADDR_7BIT,
+            Self::Fusb302 => FUSB302_ADDR_7BIT,
         }
     }
 }
@@ -39,7 +43,7 @@ pub struct I2cAllowlist<I2C> {
 }
 
 fn ensure_allowed_address<E>(address: u8) -> Result<(), I2cAllowlistError<E>> {
-    if address == SW2303_ADDR_7BIT {
+    if address == SW2303_ADDR_7BIT || address == FUSB302_ADDR_7BIT {
         Ok(())
     } else {
         Err(I2cAllowlistError::NotAllowedAddress(address))

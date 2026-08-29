@@ -345,11 +345,6 @@ jobs:
       - name: Link ../sw2303-rs
         run: ln -s "$GITHUB_WORKSPACE/sw2303-rs" ../sw2303-rs
 
-      - name: Build firmware
-        env:
-          ISOLAPURR_RELEASE_VERSION: ${{ needs.intent.outputs.version }}
-        run: cargo build --release
-
       - name: Install host deps
         run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev
 
@@ -359,29 +354,17 @@ jobs:
           host="$(rustc +stable -vV | sed -n 's/^host: //p')"
           cargo +stable install espflash --locked --target "$host"
 
-      - name: Build firmware catalog
+      - name: Build both firmware profiles and catalogs
         env:
           RELEASE_VERSION: ${{ needs.intent.outputs.version }}
           TARGET_SHA: ${{ needs.intent.outputs.targetSha }}
         run: |
           set -euo pipefail
-          mkdir -p dist/firmware
-          ELF="target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub"
-          FULL_IMAGE="dist/firmware/isolapurr-usb-hub.full.bin"
-          APP_BIN="dist/firmware/isolapurr-usb-hub.app.bin"
-          cp "$ELF" dist/firmware/isolapurr-usb-hub.elf
-          espflash save-image --chip esp32s3 "$ELF" "$APP_BIN"
-          espflash save-image --chip esp32s3 --merge --skip-padding "$ELF" "$FULL_IMAGE"
-          python3 tools/firmware-catalog/build-catalog.py \
-            --out dist/firmware/isolapurr-firmware-catalog.json \
-            --artifact-id "isolapurr-${TARGET_SHA::12}" \
-            --recovery-artifact-id "isolapurr-${TARGET_SHA::12}-recovery" \
+          scripts/build-firmware-profiles.sh \
+            --output-dir dist/firmware \
             --version "$RELEASE_VERSION" \
             --git-sha "$TARGET_SHA" \
-            --build-id "$GITHUB_RUN_ID" \
-            --app-bin "$APP_BIN" \
-            --full-image "$FULL_IMAGE" \
-            --elf "dist/firmware/isolapurr-usb-hub.elf"
+            --build-id "$GITHUB_RUN_ID"
 
       - name: Upload firmware assets
         uses: actions/upload-artifact@v4
@@ -452,6 +435,9 @@ jobs:
             --current-catalog dist/current-firmware/isolapurr-firmware-catalog.json \
             --current-app-bin dist/current-firmware/isolapurr-usb-hub.app.bin \
             --current-full-image dist/current-firmware/isolapurr-usb-hub.full.bin \
+            --current-fusb-catalog dist/current-firmware/tps-fusb/isolapurr-firmware-catalog-tps-fusb.json \
+            --current-fusb-app-bin dist/current-firmware/tps-fusb/isolapurr-usb-hub-tps-fusb.app.bin \
+            --current-fusb-full-image dist/current-firmware/tps-fusb/isolapurr-usb-hub-tps-fusb.full.bin \
             "${current_prerelease_arg[@]}"
 
       - name: Build web dist

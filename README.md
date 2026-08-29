@@ -143,7 +143,9 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 
 ### 固件（ESP32‑S3 / Rust no_std / defmt）
 
-- 构建：`just build`（或直接 `cargo build --release`）
+- 构建：`just build`（默认 `board_tps_sw`；FUSB 版本使用
+  `FIRMWARE_PROFILE=board_tps_fusb just build`）。两个 profile 必须显式选择，
+  不能使用不带 profile 的裸 `cargo build`。
 - 固件本地验证：`just firmware-check`
   - 该命令会运行 ESP 固件 build、共享 firmware core host tests，以及 host tools tests。
   - 根目录 `cargo test` 不是当前仓库的固件测试入口；默认目标是 `xtensa-esp32s3-none-elf`，该目标不提供 Rust 标准 test harness。

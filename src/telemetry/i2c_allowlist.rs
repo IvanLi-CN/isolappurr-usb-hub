@@ -8,6 +8,7 @@ use super::hardware::{
 use crate::pd_i2c::TPS55288_ADDR_7BIT;
 #[cfg(feature = "net_http")]
 use crate::provisioning::WIFI_EEPROM_ADDR_7BIT;
+use fusb302::DEFAULT_ADDRESS as FUSB302_ADDR_7BIT;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TelemetryI2cError<E> {
@@ -72,6 +73,7 @@ where
             && address != INA226_U17_FALLBACK_ADDR_7BIT
             && address != TMP112_ADDR_7BIT
             && address != TPS55288_ADDR_7BIT
+            && address != FUSB302_ADDR_7BIT
             && address != WIFI_EEPROM_ADDR_7BIT
         {
             return Err(TelemetryI2cError::AddressNotAllowed(address));
@@ -83,6 +85,7 @@ where
             && address != INA226_U17_FALLBACK_ADDR_7BIT
             && address != TMP112_ADDR_7BIT
             && address != TPS55288_ADDR_7BIT
+            && address != FUSB302_ADDR_7BIT
         {
             return Err(TelemetryI2cError::AddressNotAllowed(address));
         }

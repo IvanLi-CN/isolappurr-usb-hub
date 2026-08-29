@@ -1,5 +1,6 @@
 fn main() {
     linker_be_nice();
+    configure_board_profile();
     println!("cargo:rustc-link-arg=-Tdefmt.x");
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
     println!("cargo:rustc-link-arg=-Tlinkall.x");
@@ -28,6 +29,27 @@ fn main() {
     println!("cargo:rerun-if-env-changed=PROFILE");
 
     inject_build_metadata();
+}
+
+fn configure_board_profile() {
+    let tps_sw = std::env::var_os("CARGO_FEATURE_BOARD_TPS_SW").is_some();
+    let tps_fusb = std::env::var_os("CARGO_FEATURE_BOARD_TPS_FUSB").is_some();
+    match (tps_sw, tps_fusb) {
+        (true, false) => {
+            println!("cargo:rustc-env=USB_HUB_COMPILED_PROFILE=tps-sw");
+        }
+        (false, true) => {
+            println!("cargo:rustc-env=USB_HUB_COMPILED_PROFILE=tps-fusb");
+        }
+        (false, false) => panic!(
+            "exactly one board profile is required; enable --features board_tps_sw or board_tps_fusb"
+        ),
+        (true, true) => panic!(
+            "board profiles are mutually exclusive; enable only board_tps_sw or board_tps_fusb"
+        ),
+    }
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_BOARD_TPS_SW");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_BOARD_TPS_FUSB");
 }
 
 fn linker_be_nice() {

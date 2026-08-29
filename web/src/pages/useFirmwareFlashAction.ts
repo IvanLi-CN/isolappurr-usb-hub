@@ -1,5 +1,9 @@
 import { tryBootstrapDesktopAgent } from "../domain/desktopAgent";
-import { fetchBundledFirmwareAssetFile } from "../domain/firmwareBundle";
+import {
+  fetchBundledFirmwareAssetFile,
+  fetchBundledFirmwareCatalog,
+  validateBundledArtifactCompatibility,
+} from "../domain/firmwareBundle";
 import {
   flashBundledWithLocalUsb,
   flashWithLocalUsb,
@@ -184,6 +188,14 @@ export function useFirmwareFlashAction(
           return;
         }
 
+        const selectedCatalog =
+          await fetchBundledFirmwareCatalog(selectedRelease);
+        validateBundledArtifactCompatibility(
+          selectedCatalog,
+          selectedAsset.artifactId,
+          probe.hardware,
+        );
+
         if (transportMode === "local_usb") {
           const agent = await tryBootstrapDesktopAgent();
           if (!agent || !selectedLocalUsbPort) {
@@ -316,6 +328,11 @@ export function useFirmwareFlashAction(
 
       if (!localFile) {
         throw new Error("Select a local firmware file first.");
+      }
+      if (!demoEnabled) {
+        throw new Error(
+          "Direct local firmware files have no physical compatibility metadata; choose a catalog v2 artifact.",
+        );
       }
       appendFlashLog(`Selected local file ${localFile.name}.`);
       const address = Number.parseInt(manualAddress, 16);

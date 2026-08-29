@@ -229,6 +229,94 @@ async fn local_usb_board_info(state: &AppState, port_path: &str) -> anyhow::Resu
         .context("serial board-info worker join")?
 }
 
+fn parse_ram_topology_probe_output(raw_output: &str) -> anyhow::Result<Value> {
+    for line in raw_output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+            continue;
+        };
+        if value.get("boardTopologyProbe") != Some(&Value::Bool(true)) {
+            continue;
+        }
+        let hardware = value
+            .pointer("/hardware")
+            .or_else(|| value.pointer("/result/device/hardware"))
+            .or_else(|| value.pointer("/device/hardware"));
+        if hardware
+            .and_then(|value| value.pointer("/discovery"))
+            .is_some()
+        {
+            return Ok(value);
+        }
+    }
+    Err(anyhow!(
+        "RAM topology probe did not return a physical discovery descriptor"
+    ))
+}
+
+fn run_ram_topology_probe_now(port_path: &str) -> anyhow::Result<Value> {
+    let probe_path = std::env::var_os("ISOLAPURR_BOARD_TOPOLOGY_PROBE")
+        .ok_or_else(|| anyhow!("ISOLAPURR_BOARD_TOPOLOGY_PROBE is not configured"))?;
+    let output = Command::new("espflash")
+        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
+        .arg("flash")
+        .arg("--chip")
+        .arg("esp32s3")
+        .arg("--port")
+        .arg(port_path)
+        .arg("--no-stub")
+        .arg("--ram")
+        .arg(&probe_path)
+        .output()
+        .with_context(|| format!("start RAM topology probe for {port_path}"))?;
+    let command_log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if !output.status.success() {
+        return Err(anyhow!("RAM topology probe failed: {command_log}"));
+    }
+
+    let mut port = serialport::new(port_path, SERIAL_BAUD)
+        .timeout(Duration::from_millis(100))
+        .open()
+        .with_context(|| format!("open probe output port {port_path}"))?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut raw = String::new();
+    let mut buf = [0_u8; 256];
+    use std::io::Read as _;
+    while Instant::now() < deadline {
+        match port.read(&mut buf) {
+            Ok(0) => {}
+            Ok(n) => {
+                raw.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if let Ok(value) = parse_ram_topology_probe_output(&raw) {
+                    return Ok(value);
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(err) => return Err(err).context("read RAM topology probe output"),
+        }
+    }
+    parse_ram_topology_probe_output(&raw).with_context(|| {
+        format!(
+            "RAM topology probe timed out after espflash completed; command output: {command_log}"
+        )
+    })
+}
+
+async fn local_usb_ram_topology_probe(state: &AppState, port_path: &str) -> anyhow::Result<Value> {
+    let _serial_guard = acquire_serial_port_guard(state, port_path, None).await?;
+    let port_path = port_path.to_string();
+    tokio::task::spawn_blocking(move || run_ram_topology_probe_now(&port_path))
+        .await
+        .context("RAM topology probe worker join")?
+}
+
 async fn usb_jsonl_request_with_exclusive(
     state: &AppState,
     device_id: &str,
@@ -471,6 +559,21 @@ fn serial_timeout_ms_for_method(method: &str) -> u64 {
 #[cfg(test)]
 mod device_io_tests {
     use super::*;
+
+    #[test]
+    fn ram_probe_parser_accepts_only_physical_discovery_payloads() {
+        let value = parse_ram_topology_probe_output(
+            "boot noise\n{\"boardTopologyProbe\":true,\"hardware\":{\"discovery\":{\"state\":\"verified\",\"detectedProfile\":\"tps-fusb\"}}}\n",
+        )
+        .expect("probe payload should parse");
+        assert_eq!(
+            value
+                .pointer("/hardware/discovery/detectedProfile")
+                .and_then(Value::as_str),
+            Some("tps-fusb")
+        );
+        assert!(parse_ram_topology_probe_output("{}\n").is_err());
+    }
 
     #[test]
     fn settings_reset_uses_extended_serial_timeout() {
@@ -735,6 +838,16 @@ async fn run_flash_request(
             if let Some(expected_identity) = req.expected_identity.as_ref() {
                 validate_device_identity(&identity, expected_identity)?;
             }
+            if catalog.schema_version != "2" {
+                return Err(anyhow!(
+                    "firmware catalog schema v2 with physical compatibility is required"
+                ));
+            }
+            validate_artifact_hardware_compatibility(artifact, &identity)?;
+        } else {
+            let probe = local_usb_ram_topology_probe(state, &port_path).await?;
+            validate_artifact_hardware_compatibility(artifact, &probe)
+                .context("RAM-only topology probe did not match the selected artifact")?;
         }
     } else {
         let expected_identity = req
@@ -743,6 +856,12 @@ async fn run_flash_request(
             .ok_or_else(|| anyhow!("normal flash requires expectedIdentity"))?;
         let identity = require_project_firmware_for_upgrade(state, device_id).await?;
         validate_device_identity(&identity, expected_identity)?;
+        if catalog.schema_version != "2" {
+            return Err(anyhow!(
+                "firmware catalog schema v2 with physical compatibility is required"
+            ));
+        }
+        validate_artifact_hardware_compatibility(artifact, &identity)?;
     }
 
     let mut guard = acquire_flash_guard(state, &port_path).await?;
@@ -789,11 +908,8 @@ async fn run_flash_request(
         return Err(anyhow!("espflash failed: {log}"));
     }
     guard.release_serial_lock();
-    let captured_identity = if req.first_time {
-        Some(capture_first_time_identity_after_flash(state, device_id).await?)
-    } else {
-        None
-    };
+    let captured_identity =
+        Some(capture_and_validate_post_flash_identity(state, device_id, artifact).await?);
     drop(guard);
     Ok(json!({
         "ok": true,
@@ -878,6 +994,16 @@ async fn run_bundled_flash_request(
             if let Some(expected_identity) = req.expected_identity.as_ref() {
                 validate_device_identity(&identity, expected_identity)?;
             }
+            if req.catalog.schema_version != "2" {
+                return Err(anyhow!(
+                    "firmware catalog schema v2 with physical compatibility is required"
+                ));
+            }
+            validate_artifact_hardware_compatibility(artifact, &identity)?;
+        } else {
+            let probe = local_usb_ram_topology_probe(state, &port_path).await?;
+            validate_artifact_hardware_compatibility(artifact, &probe)
+                .context("RAM-only topology probe did not match the selected artifact")?;
         }
     } else {
         let expected_identity = req
@@ -886,6 +1012,12 @@ async fn run_bundled_flash_request(
             .ok_or_else(|| anyhow!("normal flash requires expectedIdentity"))?;
         let identity = require_project_firmware_for_upgrade(state, device_id).await?;
         validate_device_identity(&identity, expected_identity)?;
+        if req.catalog.schema_version != "2" {
+            return Err(anyhow!(
+                "firmware catalog schema v2 with physical compatibility is required"
+            ));
+        }
+        validate_artifact_hardware_compatibility(artifact, &identity)?;
     }
 
     let temp_file = write_temp_firmware_file(&req.file_name, bytes)?;
@@ -929,11 +1061,8 @@ async fn run_bundled_flash_request(
         return Err(anyhow!("espflash failed: {log}"));
     }
     guard.release_serial_lock();
-    let captured_identity = if req.first_time {
-        Some(capture_first_time_identity_after_flash(state, device_id).await?)
-    } else {
-        None
-    };
+    let captured_identity =
+        Some(capture_and_validate_post_flash_identity(state, device_id, artifact).await?);
     drop(guard);
     Ok(json!({
         "ok": true,
@@ -969,10 +1098,40 @@ async fn run_uploaded_flash_request(
     };
     let identity = require_project_firmware_for_upgrade(state, device_id).await?;
     validate_device_identity(&identity, &req.expected_identity)?;
+    let compiled_profile = req
+        .compiled_profile
+        .as_deref()
+        .ok_or_else(|| anyhow!("uploaded firmware requires compiledProfile"))?;
+    let compatible_hardware = req
+        .compatible_hardware
+        .as_ref()
+        .ok_or_else(|| anyhow!("uploaded firmware requires compatibleHardware"))?;
+    if compatible_hardware.discovery_schema != 1 {
+        return Err(anyhow!("uploaded firmware requires discoverySchema=1"));
+    }
+    let hardware = identity
+        .pointer("/result/device/hardware")
+        .or_else(|| identity.pointer("/device/hardware"))
+        .ok_or_else(|| anyhow!("device info has no hardware discovery descriptor"))?;
+    let detected_profile = hardware
+        .pointer("/discovery/detectedProfile")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("device hardware profile is not verified"))?;
+    if hardware.pointer("/discovery/state").and_then(Value::as_str) != Some("verified")
+        || compiled_profile != detected_profile
+        || !compatible_hardware
+            .profiles
+            .iter()
+            .any(|profile| profile == detected_profile)
+    {
+        return Err(anyhow!(
+            "uploaded firmware is incompatible with detected hardware {detected_profile}"
+        ));
+    }
 
     let bytes = decode_flash_payload(&req.file_base64)?;
     let temp_file = write_temp_firmware_file(&req.file_name, bytes)?;
-    let guard = acquire_flash_guard(state, &port_path).await?;
+    let mut guard = acquire_flash_guard(state, &port_path).await?;
     let output = Command::new("espflash")
         .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
         .arg("write-bin")
@@ -984,18 +1143,36 @@ async fn run_uploaded_flash_request(
         .arg(&temp_file.0)
         .output()
         .context("start espflash write-bin")?;
-    drop(guard);
     let log = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     if !output.status.success() {
+        drop(guard);
         return Err(anyhow!("espflash failed: {log}"));
     }
+    guard.release_serial_lock();
+    let post_flash_identity = capture_and_validate_post_flash_identity(
+        state,
+        device_id,
+        &FirmwareArtifact {
+            artifact_id: format!("uploaded-{}", req.file_name),
+            target: "esp32s3_app".to_string(),
+            version: String::new(),
+            git_sha: Some(String::new()),
+            build_id: Some(String::new()),
+            files: Vec::new(),
+            compiled_profile: Some(compiled_profile.to_string()),
+            compatible_hardware: Some(compatible_hardware.clone()),
+        },
+    )
+    .await?;
+    drop(guard);
     Ok(json!({
         "ok": true,
         "exit_code": output.status.code(),
+        "identity": post_flash_identity,
         "log": log,
     }))
 }

@@ -439,16 +439,64 @@ fn local_project_file(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn validate_flash_identity(
-    port_path: &str,
-    expected: &DeviceIdentityExpectation,
-) -> Result<PortIdentityCache, String> {
-    if expected.device_id.is_none() && expected.mac.is_none() {
-        return Err("firmware flash requires an expected device_id or mac".to_string());
+fn read_project_info_for_flash(port_path: &str) -> Result<serde_json::Value, String> {
+    let response = run_serial_jsonl_request(SerialJsonlRequest {
+        port_path: port_path.to_string(),
+        baud_rate: default_serial_baud_rate(),
+        timeout_ms: 2_500,
+        request: serde_json::json!({
+            "id": 1,
+            "method": "info",
+            "params": {},
+        }),
+    })?;
+    if response
+        .response
+        .pointer("/result/device/firmware/name")
+        .or_else(|| response.response.pointer("/device/firmware/name"))
+        .and_then(|value| value.as_str())
+        != Some("isolapurr-usb-hub")
+    {
+        return Err("selected port is not running IsolaPurr firmware".to_string());
     }
-    let actual = identify_port_for_confirmed_flash(port_path)?;
-    ensure_identity_matches(&actual, expected)?;
-    Ok(actual)
+    Ok(response.response)
+}
+
+fn validate_hardware_compatibility(
+    info: &serde_json::Value,
+    compiled_profile: Option<&str>,
+    compatible_hardware: Option<&CompatibleHardware>,
+) -> Result<(), String> {
+    let compiled_profile = compiled_profile
+        .filter(|profile| *profile == "tps-sw" || *profile == "tps-fusb")
+        .ok_or_else(|| "firmware artifact must declare compiledProfile".to_string())?;
+    let compatible_hardware = compatible_hardware
+        .ok_or_else(|| "firmware artifact must declare compatibleHardware".to_string())?;
+    if compatible_hardware.discovery_schema != 1
+        || !compatible_hardware
+            .profiles
+            .iter()
+            .any(|profile| profile == compiled_profile)
+    {
+        return Err("firmware artifact has invalid compatibleHardware".to_string());
+    }
+    let hardware = info
+        .pointer("/result/device/hardware")
+        .or_else(|| info.pointer("/device/hardware"))
+        .ok_or_else(|| "info response has no hardware discovery descriptor".to_string())?;
+    let state = hardware
+        .pointer("/discovery/state")
+        .and_then(|value| value.as_str());
+    let detected = hardware
+        .pointer("/discovery/detectedProfile")
+        .and_then(|value| value.as_str());
+    if state != Some("verified") || detected != Some(compiled_profile) {
+        return Err(format!(
+            "firmware artifact is incompatible with detected hardware {}",
+            detected.unwrap_or("unknown")
+        ));
+    }
+    Ok(())
 }
 
 fn identify_port_for_confirmed_flash(port_path: &str) -> Result<PortIdentityCache, String> {
@@ -505,6 +553,9 @@ async fn api_firmware_flash(
     if req.expected_identity.is_none() {
         return bad_request("firmware flash requires expectedIdentity");
     }
+    if req.compiled_profile.is_none() || req.compatible_hardware.is_none() {
+        return bad_request("firmware flash requires compiledProfile and compatibleHardware");
+    }
 
     let _guard = state.serial_lock.lock().await;
 
@@ -520,9 +571,27 @@ fn run_firmware_flash(req: FirmwareFlashRequest) -> Result<FirmwareFlashResponse
     if req.address != DEFAULT_FLASH_ADDRESS {
         return Err("only the ESP32-S3 app partition address 0x10000 is supported".to_string());
     }
-    if let Some(expected_identity) = req.expected_identity.as_ref() {
-        validate_flash_identity(&req.port_path, expected_identity)?;
-    }
+    let expected_identity = req
+        .expected_identity
+        .as_ref()
+        .ok_or_else(|| "firmware flash requires expectedIdentity".to_string())?;
+    let compiled_profile = req.compiled_profile.as_deref();
+    let compatible_hardware = req.compatible_hardware.as_ref();
+    let info = read_project_info_for_flash(&req.port_path)?;
+    let identity = extract_device_identity(&info)
+        .ok_or_else(|| "info response did not include device_id or mac".to_string())?;
+    ensure_identity_matches(
+        &PortIdentityCache {
+            port: req.port_path.clone(),
+            identity: None,
+            device_id: identity.device_id,
+            mac: identity.mac,
+            confirmed_at: String::new(),
+            source: String::new(),
+        },
+        expected_identity,
+    )?;
+    validate_hardware_compatibility(&info, compiled_profile, compatible_hardware)?;
 
     let firmware = base64::engine::general_purpose::STANDARD
         .decode(req.file_base64.trim())
@@ -575,6 +644,8 @@ fn run_firmware_flash_file(
     bin_path: &Path,
     address: u32,
     expected_identity: Option<DeviceIdentityExpectation>,
+    compiled_profile: Option<String>,
+    compatible_hardware: Option<CompatibleHardware>,
 ) -> Result<FirmwareFlashResponse, String> {
     if bin_path.extension().and_then(|value| value.to_str()) != Some("bin") {
         return Err("firmware flash only accepts app .bin images".to_string());
@@ -595,34 +666,16 @@ fn run_firmware_flash_file(
             .to_string(),
         file_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
         expected_identity,
+        compiled_profile,
+        compatible_hardware,
     })
 }
 
 fn run_firmware_full_flash_elf(
-    port_path: &str,
-    elf_path: &Path,
+    _port_path: &str,
+    _elf_path: &Path,
 ) -> Result<FirmwareFlashResponse, String> {
-    if !elf_path.exists() {
-        return Err(format!("ELF does not exist: {}", elf_path.display()));
-    }
-    let output = Command::new("espflash")
-        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
-        .arg("flash")
-        .arg("--chip")
-        .arg("esp32s3")
-        .arg("--port")
-        .arg(port_path)
-        .arg(elf_path)
-        .output()
-        .map_err(|err| format!("failed to start espflash: {err}"))?;
-    let mut log = String::new();
-    log.push_str(&String::from_utf8_lossy(&output.stdout));
-    log.push_str(&String::from_utf8_lossy(&output.stderr));
-    Ok(FirmwareFlashResponse {
-        ok: output.status.success(),
-        exit_code: output.status.code(),
-        log,
-    })
+    Err("direct recovery flashing is disabled; use DEVD physical discovery preflight".to_string())
 }
 
 fn wait_for_serial_port(port_path: &str, timeout: StdDuration) -> bool {

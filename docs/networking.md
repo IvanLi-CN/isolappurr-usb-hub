@@ -35,7 +35,7 @@ Networking is behind a Cargo feature gate. Wi-Fi credentials are not supplied at
 Build with networking enabled:
 
 ```sh
-cargo build --release --features net_http
+cargo build --release --no-default-features --features net_http,board_tps_sw
 ```
 
 For firmware maintenance in a developer checkout, use the repo's owner-confirmed flashing workflow. Do not treat developer flashing commands as the product connection, provisioning, or update flow.

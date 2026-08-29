@@ -177,12 +177,41 @@ pub fn validate_catalog_shape(catalog: &FirmwareCatalog) -> Vec<String> {
     if catalog.artifacts.is_empty() {
         errors.push("at least one artifact is required".to_string());
     }
+    let schema_v2 = catalog.schema_version.trim() == "2";
+    if catalog.schema_version.trim() != "1" && !schema_v2 {
+        errors.push(format!(
+            "unsupported catalog schema {}",
+            catalog.schema_version
+        ));
+    }
     for artifact in &catalog.artifacts {
         if artifact.artifact_id.trim().is_empty() {
             errors.push("artifactId is required".to_string());
         }
         if artifact.target != "esp32s3_app" && artifact.target != "esp32s3_full" {
             errors.push(format!("unsupported target {}", artifact.target));
+        }
+        if schema_v2 {
+            match artifact.compiled_profile.as_deref() {
+                Some("tps-sw") | Some("tps-fusb") => {}
+                _ => errors.push(format!(
+                    "artifact {} must declare compiledProfile tps-sw or tps-fusb",
+                    artifact.artifact_id
+                )),
+            }
+            match artifact.compatible_hardware.as_ref() {
+                Some(compatible)
+                    if compatible.discovery_schema == 1
+                        && !compatible.profiles.is_empty()
+                        && compatible
+                            .profiles
+                            .iter()
+                            .all(|profile| profile == "tps-sw" || profile == "tps-fusb") => {}
+                _ => errors.push(format!(
+                    "artifact {} must declare compatibleHardware discoverySchema=1",
+                    artifact.artifact_id
+                )),
+            }
         }
         for file in &artifact.files {
             if file.kind == "app_bin" && file.flash_address != Some(DEFAULT_FLASH_ADDRESS) {
@@ -203,6 +232,55 @@ pub fn validate_catalog_shape(catalog: &FirmwareCatalog) -> Vec<String> {
         }
     }
     errors
+}
+
+/// Require a verified physical topology before allowing an artifact write.
+/// This intentionally ignores chip model, MAC, flash size, and negative I2C
+/// observations: only the positive discovery vector is accepted.
+pub fn validate_artifact_hardware_compatibility(
+    artifact: &FirmwareArtifact,
+    info: &Value,
+) -> anyhow::Result<()> {
+    let hardware = info
+        .pointer("/result/device/hardware")
+        .or_else(|| info.pointer("/device/hardware"))
+        .or_else(|| info.pointer("/hardware"))
+        .ok_or_else(|| anyhow!("device info has no hardware discovery descriptor"))?;
+    let state = hardware
+        .pointer("/discovery/state")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("device info has no discovery state"))?;
+    if state != "verified" {
+        return Err(anyhow!(
+            "hardware discovery is {state}; refusing to flash without a verified topology"
+        ));
+    }
+    let detected = hardware
+        .pointer("/discovery/detectedProfile")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("verified discovery has no detectedProfile"))?;
+    let compatibility = artifact
+        .compatible_hardware
+        .as_ref()
+        .ok_or_else(|| anyhow!("artifact has no compatibleHardware declaration"))?;
+    if compatibility.discovery_schema != 1
+        || !compatibility
+            .profiles
+            .iter()
+            .any(|profile| profile == detected)
+    {
+        return Err(anyhow!(
+            "artifact {} is not compatible with detected hardware {detected}",
+            artifact.artifact_id
+        ));
+    }
+    if artifact.compiled_profile.as_deref() != Some(detected) {
+        return Err(anyhow!(
+            "artifact {} compiledProfile does not match detected hardware {detected}",
+            artifact.artifact_id
+        ));
+    }
+    Ok(())
 }
 
 fn verify_artifact_file(catalog_path: &FsPath, file: &FirmwareFile) -> anyhow::Result<()> {
@@ -367,9 +445,10 @@ fn validate_device_identity(info: &Value, expected: &DeviceIdentity) -> anyhow::
     Ok(())
 }
 
-async fn capture_first_time_identity_after_flash(
+pub(crate) async fn capture_and_validate_post_flash_identity(
     state: &AppState,
     device_id: &str,
+    artifact: &FirmwareArtifact,
 ) -> anyhow::Result<DeviceIdentity> {
     let mut last_error: Option<anyhow::Error> = None;
     for _ in 0..15 {
@@ -384,6 +463,8 @@ async fn capture_first_time_identity_after_flash(
         .await
         {
             Ok(info) => {
+                validate_artifact_hardware_compatibility(artifact, &info)
+                    .context("post-flash hardware compatibility verification failed")?;
                 let identity = extract_device_identity(&info)?;
                 persist_captured_identity(state, device_id, &identity).await?;
                 return Ok(identity);

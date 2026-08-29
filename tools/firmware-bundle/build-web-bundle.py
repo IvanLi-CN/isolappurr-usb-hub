@@ -20,6 +20,9 @@ from urllib.request import Request, urlopen
 
 CATALOG_ASSET_NAME = "isolapurr-firmware-catalog.json"
 APP_BIN_ASSET_NAME = "isolapurr-usb-hub.app.bin"
+FUSB_CATALOG_ASSET_NAME = "isolapurr-firmware-catalog-tps-fusb.json"
+FUSB_APP_BIN_ASSET_NAME = "isolapurr-usb-hub-tps-fusb.app.bin"
+FUSB_FULL_IMAGE_ASSET_NAME = "isolapurr-usb-hub-tps-fusb.full.bin"
 
 
 @dataclass
@@ -114,6 +117,19 @@ def write_catalog(path: Path, payload: dict[str, Any]) -> None:
 def artifact_by_target(catalog: dict[str, Any], target: str) -> dict[str, Any] | None:
     for artifact in catalog.get("artifacts", []):
         if isinstance(artifact, dict) and artifact.get("target") == target:
+            return artifact
+    return None
+
+
+def artifact_by_profile(
+    catalog: dict[str, Any], target: str, profile: str
+) -> dict[str, Any] | None:
+    for artifact in catalog.get("artifacts", []):
+        if (
+            isinstance(artifact, dict)
+            and artifact.get("target") == target
+            and artifact.get("compiledProfile") == profile
+        ):
             return artifact
     return None
 
@@ -271,6 +287,9 @@ def current_release_manifest_entry(
     catalog_path: Path,
     app_bin_path: Path,
     full_image_path: Path | None,
+    fusb_catalog_path: Path | None,
+    fusb_app_bin_path: Path | None,
+    fusb_full_image_path: Path | None,
 ) -> tuple[dict[str, Any], bool]:
     catalog = read_catalog(catalog_path)
     app_artifact = artifact_by_target(catalog, "esp32s3_app")
@@ -313,26 +332,90 @@ def current_release_manifest_entry(
         }
         bundled_recovery = True
 
-    return (
-        {
-            "tagName": tag_name,
-            "version": version,
-            "publishedAt": published_at,
-            "prerelease": prerelease,
-            "catalogPath": f"firmware/{catalog_rel_path}",
-            "app": {
-                "artifactId": app_artifact["artifactId"],
-                "assetPath": f"firmware/{app_rel_path}",
-                "fileName": app_asset_name,
-                "fileKind": "app_bin",
-                "flashAddress": app_file.get("flashAddress", 0x10000),
-                "sha256": app_file.get("sha256") or sha256_file(app_out_path),
-                "size": app_file.get("size") or app_out_path.stat().st_size,
-            },
-            "recovery": recovery_entry,
+    entry = {
+        "tagName": tag_name,
+        "version": version,
+        "publishedAt": published_at,
+        "prerelease": prerelease,
+        "catalogPath": f"firmware/{catalog_rel_path}",
+        "app": {
+            "artifactId": app_artifact["artifactId"],
+            "assetPath": f"firmware/{app_rel_path}",
+            "fileName": app_asset_name,
+            "fileKind": "app_bin",
+            "flashAddress": app_file.get("flashAddress", 0x10000),
+            "sha256": app_file.get("sha256") or sha256_file(app_out_path),
+            "size": app_file.get("size") or app_out_path.stat().st_size,
         },
-        bundled_recovery,
-    )
+        "recovery": recovery_entry,
+    }
+
+    if fusb_catalog_path and fusb_app_bin_path:
+        fusb_catalog = read_catalog(fusb_catalog_path)
+        fusb_app_artifact = artifact_by_profile(
+            fusb_catalog, "esp32s3_app", "tps-fusb"
+        )
+        fusb_app_file = first_file_by_kind(fusb_app_artifact, "app_bin")
+        if fusb_app_artifact and fusb_app_file:
+            catalog.setdefault("artifacts", []).extend(
+                artifact
+                for artifact in fusb_catalog.get("artifacts", [])
+                if isinstance(artifact, dict)
+                and not any(
+                    isinstance(existing, dict)
+                    and existing.get("artifactId") == artifact.get("artifactId")
+                    for existing in catalog.get("artifacts", [])
+                )
+            )
+            fusb_catalog_rel = output_path_for(
+                tag_name, FUSB_CATALOG_ASSET_NAME
+            )
+            fusb_app_rel = output_path_for(tag_name, FUSB_APP_BIN_ASSET_NAME)
+            write_catalog(output_dir / fusb_catalog_rel, fusb_catalog)
+            copy_file(fusb_app_bin_path, output_dir / fusb_app_rel)
+            fusb_recovery_entry = None
+            fusb_recovery_artifact = artifact_by_profile(
+                fusb_catalog, "esp32s3_full", "tps-fusb"
+            )
+            fusb_recovery_file = first_file_by_kind(
+                fusb_recovery_artifact, "full_image"
+            )
+            if fusb_full_image_path and fusb_recovery_artifact and fusb_recovery_file:
+                fusb_recovery_rel = output_path_for(
+                    tag_name, FUSB_FULL_IMAGE_ASSET_NAME
+                )
+                copy_file(fusb_full_image_path, output_dir / fusb_recovery_rel)
+                fusb_recovery_entry = {
+                    "artifactId": fusb_recovery_artifact["artifactId"],
+                    "assetPath": f"firmware/{fusb_recovery_rel}",
+                    "fileName": FUSB_FULL_IMAGE_ASSET_NAME,
+                    "fileKind": "full_image",
+                    "flashAddress": fusb_recovery_file.get("flashAddress", 0),
+                    "sha256": fusb_recovery_file.get("sha256")
+                    or sha256_file(output_dir / fusb_recovery_rel),
+                    "size": fusb_recovery_file.get("size")
+                    or (output_dir / fusb_recovery_rel).stat().st_size,
+                }
+            entry["profiles"] = {
+                "tps-sw": {"app": entry["app"], "recovery": entry["recovery"]},
+                "tps-fusb": {
+                    "app": {
+                        "artifactId": fusb_app_artifact["artifactId"],
+                        "assetPath": f"firmware/{fusb_app_rel}",
+                        "fileName": FUSB_APP_BIN_ASSET_NAME,
+                        "fileKind": "app_bin",
+                        "flashAddress": fusb_app_file.get("flashAddress", 0x10000),
+                        "sha256": fusb_app_file.get("sha256")
+                        or sha256_file(output_dir / fusb_app_rel),
+                        "size": fusb_app_file.get("size")
+                        or (output_dir / fusb_app_rel).stat().st_size,
+                    },
+                    "recovery": fusb_recovery_entry,
+                },
+            }
+            write_catalog(catalog_out_path, catalog)
+
+    return entry, bundled_recovery
 
 
 def current_release_args_present(args: argparse.Namespace) -> bool:
@@ -367,6 +450,9 @@ def main() -> int:
     parser.add_argument("--current-catalog", type=Path)
     parser.add_argument("--current-app-bin", type=Path)
     parser.add_argument("--current-full-image", type=Path)
+    parser.add_argument("--current-fusb-catalog", type=Path)
+    parser.add_argument("--current-fusb-app-bin", type=Path)
+    parser.add_argument("--current-fusb-full-image", type=Path)
     args = parser.parse_args()
 
     token = os.getenv(args.github_token_env)
@@ -422,6 +508,9 @@ def main() -> int:
             catalog_path=args.current_catalog,
             app_bin_path=args.current_app_bin,
             full_image_path=args.current_full_image,
+            fusb_catalog_path=args.current_fusb_catalog,
+            fusb_app_bin_path=args.current_fusb_app_bin,
+            fusb_full_image_path=args.current_fusb_full_image,
         )
         manifest_entries.append(current_entry)
         if bundled_recovery:
@@ -495,8 +584,89 @@ def main() -> int:
             }
             bundled_recovery_tags.add(tag_name)
 
-        manifest_entries.append(
-            {
+        profile_assets: dict[str, Any] | None = None
+        fusb_catalog_asset = assets.get(FUSB_CATALOG_ASSET_NAME)
+        fusb_app_asset = assets.get(FUSB_APP_BIN_ASSET_NAME)
+        if fusb_catalog_asset and fusb_app_asset:
+            fusb_catalog_path = args.output_dir / output_path_for(
+                tag_name, FUSB_CATALOG_ASSET_NAME
+            )
+            fusb_app_path = args.output_dir / output_path_for(
+                tag_name, FUSB_APP_BIN_ASSET_NAME
+            )
+            download(fusb_catalog_asset.url, fusb_catalog_path, token)
+            download(fusb_app_asset.url, fusb_app_path, token)
+            fusb_catalog = read_catalog(fusb_catalog_path)
+            fusb_app_artifact = artifact_by_profile(
+                fusb_catalog, "esp32s3_app", "tps-fusb"
+            )
+            fusb_app_file = first_file_by_kind(fusb_app_artifact, "app_bin")
+            if fusb_app_artifact and fusb_app_file:
+                catalog.setdefault("artifacts", []).extend(
+                    artifact
+                    for artifact in fusb_catalog.get("artifacts", [])
+                    if isinstance(artifact, dict)
+                    and not any(
+                        isinstance(existing, dict)
+                        and existing.get("artifactId") == artifact.get("artifactId")
+                        for existing in catalog.get("artifacts", [])
+                    )
+                )
+                write_catalog(args.output_dir / catalog_rel_path, catalog)
+                fusb_app_rel = output_path_for(tag_name, FUSB_APP_BIN_ASSET_NAME)
+                fusb_profile_recovery = None
+                fusb_full_asset = assets.get(FUSB_FULL_IMAGE_ASSET_NAME)
+                fusb_recovery_artifact = artifact_by_profile(
+                    fusb_catalog, "esp32s3_full", "tps-fusb"
+                )
+                fusb_recovery_file = first_file_by_kind(
+                    fusb_recovery_artifact, "full_image"
+                )
+                if (
+                    tag_name in recovery_tags
+                    and fusb_full_asset
+                    and fusb_recovery_artifact
+                    and fusb_recovery_file
+                ):
+                    fusb_recovery_rel = output_path_for(
+                        tag_name, FUSB_FULL_IMAGE_ASSET_NAME
+                    )
+                    fusb_recovery_path = args.output_dir / fusb_recovery_rel
+                    download(fusb_full_asset.url, fusb_recovery_path, token)
+                    fusb_profile_recovery = {
+                        "artifactId": fusb_recovery_artifact["artifactId"],
+                        "assetPath": f"firmware/{fusb_recovery_rel}",
+                        "fileName": FUSB_FULL_IMAGE_ASSET_NAME,
+                        "fileKind": "full_image",
+                        "flashAddress": fusb_recovery_file.get("flashAddress", 0),
+                        "sha256": fusb_recovery_file.get("sha256")
+                        or sha256_file(fusb_recovery_path),
+                        "size": fusb_recovery_file.get("size")
+                        or fusb_recovery_path.stat().st_size,
+                    }
+                    bundled_recovery_tags.add(tag_name)
+                profile_assets = {
+                    "tps-sw": {"app": {
+                        "artifactId": app_artifact["artifactId"],
+                        "assetPath": f"firmware/{app_rel_path}",
+                        "fileName": APP_BIN_ASSET_NAME,
+                        "fileKind": "app_bin",
+                        "flashAddress": app_file.get("flashAddress", 0x10000),
+                        "sha256": app_file.get("sha256"),
+                        "size": app_file.get("size"),
+                    }, "recovery": recovery_entry},
+                    "tps-fusb": {"app": {
+                        "artifactId": fusb_app_artifact["artifactId"],
+                        "assetPath": f"firmware/{fusb_app_rel}",
+                        "fileName": FUSB_APP_BIN_ASSET_NAME,
+                        "fileKind": "app_bin",
+                        "flashAddress": fusb_app_file.get("flashAddress", 0x10000),
+                        "sha256": fusb_app_file.get("sha256"),
+                        "size": fusb_app_file.get("size"),
+                    }, "recovery": fusb_profile_recovery},
+                }
+
+        manifest_entry = {
                 "tagName": tag_name,
                 "version": app_artifact.get("version", tag_name),
                 "publishedAt": release["published_at"],
@@ -513,7 +683,9 @@ def main() -> int:
                 },
                 "recovery": recovery_entry,
             }
-        )
+        if profile_assets:
+            manifest_entry["profiles"] = profile_assets
+        manifest_entries.append(manifest_entry)
 
     payload = {
         "schemaVersion": "1",

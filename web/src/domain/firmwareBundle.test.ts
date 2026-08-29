@@ -4,7 +4,19 @@ import {
   emptyBundledFirmwareManifest,
   loadBundledFirmwareManifest,
   parseBundledFirmwareManifest,
+  validateBundledArtifactCompatibility,
 } from "./firmwareBundle";
+
+const catalogV2 = {
+  schemaVersion: "2",
+  artifacts: [
+    {
+      artifactId: "fusb-app",
+      compiledProfile: "tps-fusb",
+      compatibleHardware: { discoverySchema: 1, profiles: ["tps-fusb"] },
+    },
+  ],
+};
 
 describe("parseBundledFirmwareManifest", () => {
   test("falls back to an empty manifest for invalid payloads", () => {
@@ -57,6 +69,41 @@ describe("parseBundledFirmwareManifest", () => {
     expect(parsed.releases[0]?.recovery?.flashAddress).toBe(0);
     expect(parsed.releases[0]?.recovery?.fileKind).toBe("full_image");
   });
+
+  test("keeps profile-specific assets for multi-board releases", () => {
+    const parsed = parseBundledFirmwareManifest({
+      schemaVersion: "1",
+      releases: [
+        {
+          tagName: "v-next",
+          version: "v-next",
+          publishedAt: "2026-08-29T00:00:00Z",
+          catalogPath: "/firmware/releases/v-next/catalog.json",
+          app: {
+            artifactId: "sw-app",
+            assetPath: "/firmware/releases/v-next/sw.app.bin",
+            fileName: "sw.app.bin",
+            fileKind: "app_bin",
+            flashAddress: 0x10000,
+          },
+          profiles: {
+            "tps-fusb": {
+              app: {
+                artifactId: "fusb-app",
+                assetPath: "/firmware/releases/v-next/fusb.app.bin",
+                fileName: "fusb.app.bin",
+                fileKind: "app_bin",
+                flashAddress: 0x10000,
+              },
+            },
+          },
+        },
+      ],
+    });
+    expect(parsed.releases[0]?.profiles?.["tps-fusb"]?.app.artifactId).toBe(
+      "fusb-app",
+    );
+  });
 });
 
 describe("loadBundledFirmwareManifest", () => {
@@ -107,5 +154,35 @@ describe("loadBundledFirmwareManifest", () => {
       "/firmware/releases-manifest.json?refresh=5678",
       "/firmware/releases-manifest.json",
     ]);
+  });
+});
+
+describe("validateBundledArtifactCompatibility", () => {
+  test("accepts only a verified matching physical profile", () => {
+    expect(() =>
+      validateBundledArtifactCompatibility(catalogV2, "fusb-app", {
+        discoveryState: "verified",
+        detectedProfile: "tps-fusb",
+      }),
+    ).not.toThrow();
+  });
+
+  test("blocks unknown, conflicting, legacy, and mismatched artifacts", () => {
+    for (const hardware of [
+      { discoveryState: "unknown", detectedProfile: undefined },
+      { discoveryState: "conflicting", detectedProfile: undefined },
+      { discoveryState: "verified", detectedProfile: "tps-sw" },
+    ]) {
+      expect(() =>
+        validateBundledArtifactCompatibility(catalogV2, "fusb-app", hardware),
+      ).toThrow();
+    }
+    expect(() =>
+      validateBundledArtifactCompatibility(
+        { schemaVersion: "1", artifacts: [] },
+        "fusb-app",
+        { discoveryState: "verified", detectedProfile: "tps-fusb" },
+      ),
+    ).toThrow();
   });
 });

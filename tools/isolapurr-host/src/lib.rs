@@ -376,6 +376,17 @@ pub struct FirmwareArtifact {
     pub build_id: Option<String>,
     #[serde(default)]
     pub files: Vec<FirmwareFile>,
+    #[serde(default)]
+    pub compiled_profile: Option<String>,
+    #[serde(default)]
+    pub compatible_hardware: Option<CompatibleHardware>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CompatibleHardware {
+    pub discovery_schema: u8,
+    pub profiles: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -447,6 +458,10 @@ struct FirmwareUploadFlashRequest {
     file_name: String,
     file_base64: String,
     expected_identity: DeviceIdentity,
+    #[serde(default)]
+    compiled_profile: Option<String>,
+    #[serde(default)]
+    compatible_hardware: Option<CompatibleHardware>,
     lease_id: String,
 }
 
@@ -775,6 +790,8 @@ mod tests {
                     size: 1,
                     flash_address: Some(DEFAULT_FLASH_ADDRESS),
                 }],
+                compiled_profile: None,
+                compatible_hardware: None,
             }],
         };
         assert!(validate_catalog_shape(&catalog).is_empty());
@@ -797,6 +814,8 @@ mod tests {
                     size: 1,
                     flash_address: Some(0),
                 }],
+                compiled_profile: None,
+                compatible_hardware: None,
             }],
         };
         assert!(!validate_catalog_shape(&catalog).is_empty());
@@ -819,9 +838,58 @@ mod tests {
                     size: 1,
                     flash_address: Some(DEFAULT_FLASH_ADDRESS),
                 }],
+                compiled_profile: None,
+                compatible_hardware: None,
             }],
         };
         assert!(!validate_catalog_shape(&catalog).is_empty());
+    }
+
+    #[test]
+    fn validates_catalog_v2_physical_compatibility() {
+        let catalog = FirmwareCatalog {
+            schema_version: "2".to_string(),
+            artifacts: vec![FirmwareArtifact {
+                artifact_id: "fusb".to_string(),
+                target: "esp32s3_app".to_string(),
+                version: "v1".to_string(),
+                git_sha: None,
+                build_id: None,
+                files: vec![FirmwareFile {
+                    kind: "app_bin".to_string(),
+                    path: "app.bin".to_string(),
+                    sha256: "a".repeat(64),
+                    size: 1,
+                    flash_address: Some(DEFAULT_FLASH_ADDRESS),
+                }],
+                compiled_profile: Some("tps-fusb".to_string()),
+                compatible_hardware: Some(CompatibleHardware {
+                    discovery_schema: 1,
+                    profiles: vec!["tps-fusb".to_string()],
+                }),
+            }],
+        };
+        assert!(validate_catalog_shape(&catalog).is_empty());
+        let info = json!({
+            "result": {"device": {"hardware": {
+                "schema": 1,
+                "compiledProfile": "tps-sw",
+                "discovery": {"state": "verified", "detectedProfile": "tps-fusb"},
+                "compatibility": "mismatch"
+            }}}
+        });
+        assert!(validate_artifact_hardware_compatibility(&catalog.artifacts[0], &info).is_ok());
+        let mismatch = json!({
+            "result": {"device": {"hardware": {
+                "schema": 1,
+                "compiledProfile": "tps-sw",
+                "discovery": {"state": "verified", "detectedProfile": "tps-sw"},
+                "compatibility": "match"
+            }}}
+        });
+        assert!(
+            validate_artifact_hardware_compatibility(&catalog.artifacts[0], &mismatch).is_err()
+        );
     }
 
     #[test]
