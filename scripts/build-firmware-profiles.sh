@@ -26,7 +26,7 @@ cargo build --release \
     --target-dir "$probe_target_dir" \
     --bin board-topology-probe \
     --no-default-features \
-    --features "net_http,board_tps_fusb"
+    --features "board_tps_fusb,board_topology_probe"
 cp "$probe_target_dir/xtensa-esp32s3-none-elf/release/board-topology-probe" \
     "$output_dir/board-topology-probe.elf"
 

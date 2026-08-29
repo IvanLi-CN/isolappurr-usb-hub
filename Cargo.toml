@@ -79,6 +79,7 @@ static_cell = { version = "2.1", optional = true }
 default = ["net_http"]
 board_tps_sw = []
 board_tps_fusb = []
+board_topology_probe = ["dep:heapless"]
 net_http = [
     "dep:embassy-net",
     "dep:embassy-sync",

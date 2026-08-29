@@ -3,15 +3,12 @@
 
 use core::fmt::Write as _;
 
-use embassy_executor::Spawner;
-use embassy_time::Timer;
 use embedded_hal_async::i2c::I2c as AsyncI2c;
-use embedded_io_async::Write;
 use esp_hal::clock::CpuClock;
+use esp_hal::delay::Delay;
 use esp_hal::gpio::{Flex, Level, Output, OutputConfig};
 use esp_hal::i2c::master::{Config as I2cConfig, I2c, SoftwareTimeout};
 use esp_hal::time::{Duration, Rate};
-use esp_hal::timer::timg::TimerGroup;
 use esp_hal::usb_serial_jtag::UsbSerialJtag;
 use fusb302::Fusb302;
 use ina226::INA226;
@@ -22,13 +19,42 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 const INA226_ADDR: u8 = 0x41;
 
-#[esp_rtos::main]
-async fn main(_spawner: Spawner) -> ! {
-    let config = esp_hal::Config::default()
-        .with_cpu_clock(CpuClock::max())
-        .with_psram(esp_hal::psram::PsramConfig::default());
+/// Adapt the blocking I2C peripheral to the async driver traits used by the
+/// typed FUSB302 and INA226 crates. Each operation completes synchronously;
+/// this avoids requiring an RTOS scheduler in the RAM-only probe image.
+struct BlockingAsyncI2c<I2C>(I2C);
+
+impl<I2C> embedded_hal_async::i2c::ErrorType for BlockingAsyncI2c<I2C>
+where
+    I2C: embedded_hal::i2c::ErrorType,
+{
+    type Error = I2C::Error;
+}
+
+impl<I2C> AsyncI2c for BlockingAsyncI2c<I2C>
+where
+    I2C: embedded_hal::i2c::I2c,
+{
+    async fn transaction(
+        &mut self,
+        address: u8,
+        operations: &mut [embedded_hal_async::i2c::Operation<'_>],
+    ) -> Result<(), Self::Error> {
+        self.0.transaction(address, operations)
+    }
+}
+
+#[esp_hal::main]
+fn main() -> ! {
+    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
-    esp_rtos::start(TimerGroup::new(peripherals.TIMG0).timer0);
+    let delay = Delay::new();
+    let mut usb = UsbSerialJtag::new(peripherals.USB_DEVICE);
+    // Keep the first observable event before I2C so a host can distinguish a
+    // loader/startup failure from a topology transaction failure.
+    esp_println::println!("PROBE_START");
+    let _ = usb.write(b"PROBE_START\n");
+    let _ = usb.flush_tx();
 
     // This image is a recovery probe, so it owns only the common restrictive
     // GPIO vector and never instantiates a profile-specific controller.
@@ -55,8 +81,7 @@ async fn main(_spawner: Spawner) -> ! {
     )
     .unwrap()
     .with_sda(peripherals.GPIO39)
-    .with_scl(peripherals.GPIO40)
-    .into_async();
+    .with_scl(peripherals.GPIO40);
     let i2c1 = I2c::new(
         peripherals.I2C1,
         I2cConfig::default()
@@ -65,13 +90,16 @@ async fn main(_spawner: Spawner) -> ! {
     )
     .unwrap()
     .with_sda(peripherals.GPIO8)
-    .with_scl(peripherals.GPIO9)
-    .into_async();
-    let mut i2c0 = i2c0;
-    let mut i2c1 = i2c1;
-    let u10 = fusb_id(&mut i2c0).await;
-    let u11 = fusb_id(&mut i2c1).await;
-    let u17 = ina_id(&mut i2c1).await;
+    .with_scl(peripherals.GPIO9);
+    let mut i2c0 = BlockingAsyncI2c(i2c0);
+    let mut i2c1 = BlockingAsyncI2c(i2c1);
+    let (u10, u11, u17) = embassy_futures::block_on(async {
+        let u10 = fusb_id(&mut i2c0).await;
+        let u11 = fusb_id(&mut i2c1).await;
+        let u17 = ina_id(&mut i2c1).await;
+        (u10, u11, u17)
+    });
+    esp_println::println!("PROBE_I2C_DONE {} {} {}", u10, u11, u17);
     let fusb_positive = u10 && u11;
     let ina_positive = u17;
     let (state, profile) = match (fusb_positive, ina_positive) {
@@ -94,12 +122,11 @@ async fn main(_spawner: Spawner) -> ! {
             }
         },
     );
-    let mut usb = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
     loop {
-        let _ = usb.write_all(body.as_bytes()).await;
-        let _ = usb.write_all(b"\n").await;
-        let _ = usb.flush().await;
-        Timer::after_millis(100).await;
+        let _ = usb.write(body.as_bytes());
+        let _ = usb.write(b"\n");
+        let _ = usb.flush_tx();
+        delay.delay_millis(100);
     }
 }
 

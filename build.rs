@@ -2,8 +2,16 @@ fn main() {
     linker_be_nice();
     configure_board_profile();
     println!("cargo:rustc-link-arg=-Tdefmt.x");
-    // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
-    println!("cargo:rustc-link-arg=-Tlinkall.x");
+    // Build scripts run once per package, not once per binary. Use target-
+    // scoped directives so the recovery probe gets its all-RAM linker script
+    // while the application keeps the standard script ordering.
+    println!("cargo:rustc-link-arg-bin=isolapurr-usb-hub=-Tlinkall.x");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    println!(
+        "cargo:rustc-link-arg-bin=board-topology-probe=-T{}/ld/ram_probe.x",
+        std::path::Path::new(&manifest_dir).display()
+    );
+    println!("cargo:rerun-if-changed=ld/ram_probe.x");
 
     // Re-run when local metadata changes.
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
