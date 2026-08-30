@@ -94,3 +94,39 @@ async fn fusb_diagnostics_console(
 ) -> ! {
     safe_mismatch_console(usb, discovery, compatibility, Some(device_names)).await
 }
+
+/// Run U10 independently of boot diagnostics. A protocol or I2C fault must
+/// end this task with VIN_USB disabled, never take down the boot task that
+/// exposes the physical board identity.
+#[cfg(feature = "board_tps_fusb")]
+#[embassy_executor::task]
+async fn fusb_input_runtime_task(
+    i2c: I2cAllowlist<I2c<'static, esp_hal::Async>>,
+    vin_en: Output<'static>,
+    vin_sel: Output<'static>,
+) {
+    let mut phy = fusb302::Fusb302::new(i2c);
+    let active_cc = match isolapurr_usb_hub::pd_i2c::fusb302::configure_sink(&mut phy).await {
+        Ok(pin) => pin,
+        Err(error) => {
+            defmt::warn!(
+                "tps-fusb U10 sink PHY setup failed: {:?}",
+                defmt::Debug2Format(&error)
+            );
+            return;
+        }
+    };
+    let driver = isolapurr_usb_hub::pd_i2c::usbpd_adapter::Fusb302UsbpdDriver::new(phy, active_cc);
+    let dpm = isolapurr_usb_hub::pd_i2c::usbpd_adapter::FixedNineVoltSinkDpm::new(vin_en, vin_sel);
+    let mut sink: usbpd::sink::policy_engine::Sink<
+        _,
+        isolapurr_usb_hub::pd_i2c::usbpd_adapter::EmbassyUsbPdTimer,
+        _,
+    > = usbpd::sink::policy_engine::Sink::new(driver, dpm);
+    if let Err(error) = sink.run().await {
+        defmt::warn!(
+            "tps-fusb U10 sink policy stopped: {:?}",
+            defmt::Debug2Format(&error)
+        );
+    }
+}

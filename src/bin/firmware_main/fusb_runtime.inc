@@ -80,24 +80,10 @@
         }
     }
 
-    // Keep the power path disabled until the source/sink HIL gate proves the
-    // TPS/VBUS ownership and fault sequencing. PHY setup is still typed and
-    // harmless with VBUS gate held low.
-    let mut input_phy = fusb302::Fusb302::new(i2c0);
-    let mut output_phy = fusb302::Fusb302::new(i2c1);
-    let input_cc = match isolapurr_usb_hub::pd_i2c::fusb302::configure_sink(&mut input_phy).await {
-        Ok(pin) => pin,
-        Err(err) => {
-            defmt::warn!("tps-fusb U10 sink PHY setup failed: {:?}", defmt::Debug2Format(&err));
-            loop { Timer::after_millis(1_000).await; }
-        }
-    };
-    if let Err(err) = isolapurr_usb_hub::pd_i2c::fusb302::configure_source(&mut output_phy).await {
-        defmt::warn!("tps-fusb U11 source PHY setup failed: {:?}", defmt::Debug2Format(&err));
-        loop { Timer::after_millis(1_000).await; }
-    }
-    info!("tps-fusb: source PHY ready; source VBUS gate remains disabled until output policy is attached");
-
+    // Bring up the read-only USB diagnostics channel before any controller
+    // setup can wait for a physical partner. A detached or faulty PD port
+    // must remain observable as a safe state instead of disappearing from
+    // the host while startup is blocked in CC detection.
     #[cfg(feature = "net_http")]
     {
         let usb = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
@@ -108,23 +94,18 @@
             device_names,
         ));
     }
-    // The input policy owns U10 and the USB PMOS pins. It requests only a
-    // fixed 9 V / 1 A PDO and enables VIN_USB after PS_RDY plus comparator
-    // confirmation. All failures leave VIN_EN low.
-    let sink_driver = isolapurr_usb_hub::pd_i2c::usbpd_adapter::Fusb302UsbpdDriver::new(input_phy, input_cc);
-    let sink_dpm = isolapurr_usb_hub::pd_i2c::usbpd_adapter::FixedNineVoltSinkDpm::new(
-        _vin_en,
-        _vin_sel,
-    );
-    let mut sink: usbpd::sink::policy_engine::Sink<
-        _,
-        isolapurr_usb_hub::pd_i2c::usbpd_adapter::EmbassyUsbPdTimer,
-        _,
-    > = usbpd::sink::policy_engine::Sink::new(sink_driver, sink_dpm);
-    if let Err(error) = sink.run().await {
-        defmt::error!("tps-fusb U10 sink policy stopped: {:?}", defmt::Debug2Format(&error));
-        loop {
-            Timer::after_millis(1_000).await;
-        }
+
+    // U11 remains electrically inert until the output-source task owns the
+    // complete TPS/VBUS-gate sequence. Dropping this bus releases it without
+    // writing either FUSB302 or the output power controller.
+    drop(i2c1);
+    if _spawner
+        .spawn(fusb_input_runtime_task(i2c0, _vin_en, _vin_sel))
+        .is_err()
+    {
+        defmt::warn!("tps-fusb: U10 sink task did not start");
+    }
+    loop {
+        Timer::after_millis(1_000).await;
     }
 }
