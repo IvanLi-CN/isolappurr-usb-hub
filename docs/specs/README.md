@@ -6,18 +6,19 @@
 
 ## 新工作项入口
 
-- 新开工作项统一落在 `docs/specs/**/SPEC.md`。
+- 新开主题统一落在 `docs/specs/<topic>/SPEC.md`，其中 `<topic>` 为稳定 kebab-case slug。
 - 已迁移到 `docs/specs/**` 的工作项，后续维护继续在对应 `SPEC.md` 中完成。
 - 仍需引用 legacy 内容时，应在新 spec 中显式标注“承接自哪个 `docs/plan/**`”，避免双来源口径。
 - 尚未迁移的既有计划可以暂时继续保留在 `docs/plan/**`，直到单独完成迁移。
 
 ## 目录与命名规则
 
-- 每个 spec 使用目录 `docs/specs/<id>-<title>/SPEC.md`。
-- `<id>` 使用 5 字符 nanoId 风格的小写标识。
+- 每个新 spec 使用目录 `docs/specs/<topic>/SPEC.md`。
+- 既有带 ID 的目录是兼容性输入，保留其原始路径与索引规则。
+- 对既有 `<id>-<title>` 目录，`<id>` 使用 5 字符 nanoId 风格的小写标识。
   - 推荐字符集（小写 + 避免易混淆字符）：`23456789abcdefghjkmnpqrstuvwxyz`
   - 正则：`[23456789abcdefghjkmnpqrstuvwxyz]{5}`
-- `<title>` 使用稳定的 kebab-case slug；若标题文案变化，优先改 `Title`，不强制改目录名。
+- 对既有目录，`<title>` 使用稳定的 kebab-case slug；若标题文案变化，优先改 `Title`，不强制改目录名。
 
 ## 状态（Status）说明
 
@@ -51,7 +52,13 @@
 - 里程碑（Milestones）
 - 风险与开放问题
 
-## Index
+## Current Topic Specs
+
+| Topic | Lifecycle | Implementation | Spec | Successor | Notes |
+|-------|-----------|----------------|------|-----------|-------|
+| Brand marketing asset themes | active | implemented | `brand-marketing-asset-themes/SPEC.md` | - | Reproducible light and dark poster/social marketing exports |
+
+## Legacy Index
 
 | ID   | Title | Status | Spec | Last | Notes |
 |-----:|-------|--------|------|------|-------|

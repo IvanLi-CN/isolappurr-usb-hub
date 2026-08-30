@@ -13,19 +13,26 @@ PUBLIC_BRAND = ROOT / "public" / "brand"
 GH_DIR = ROOT.parent / ".github"
 
 POSTER_SOURCE = BRAND_SRC / "product-poster-source.png"
+POSTER_DARK_SOURCE = BRAND_SRC / "product-poster-dark-source.png"
 PRODUCT_RENDER_SOURCE = BRAND_SRC / "product-render-source.png"
 FULL_PRODUCT_RENDER_SOURCE = BRAND_SRC / "product-render-full-source.png"
 PRODUCT_RENDER_CUTOUT_SOURCE = BRAND_SRC / "product-render-cutout-source.png"
 SOCIAL_SOURCE = BRAND_SRC / "github-social-preview-source.png"
+SOCIAL_DARK_SOURCE = BRAND_SRC / "github-social-preview-dark-source.png"
 LOGO_SVG = BRAND_SRC / "isolapurr-logo.svg"
 PUBLIC_LOGO_SVG = PUBLIC_BRAND / "isolapurr-logo.svg"
 LOGO_PNG = PUBLIC_BRAND / "isolapurr-logo.png"
 POSTER = PUBLIC_BRAND / "isolapurr-product-poster.png"
+POSTER_DARK = PUBLIC_BRAND / "isolapurr-product-poster-dark.png"
 PRODUCT_RENDER = PUBLIC_BRAND / "isolapurr-product-render.png"
 FULL_PRODUCT_RENDER = PUBLIC_BRAND / "isolapurr-product-render-full.png"
 PRODUCT_RENDER_CUTOUT = PUBLIC_BRAND / "isolapurr-product-render-cutout.png"
 SOCIAL = GH_DIR / "social-preview.png"
 PUBLIC_SOCIAL = PUBLIC_BRAND / "github-social-preview.png"
+PUBLIC_SOCIAL_DARK = PUBLIC_BRAND / "github-social-preview-dark.png"
+
+POSTER_SIZE = (3072, 3840)
+SOCIAL_SIZE = (1280, 640)
 
 
 def cover_crop(
@@ -65,7 +72,9 @@ def generate_logo_png() -> None:
     )
 
 
-def export_fixed_image(source_path: Path, output_paths: tuple[Path, ...], size: tuple[int, int]) -> None:
+def export_fixed_image(
+    source_path: Path, output_paths: tuple[Path, ...], size: tuple[int, int]
+) -> None:
     if not source_path.exists():
         raise SystemExit(f"missing marketing source: {source_path}")
     image = Image.open(source_path).convert("RGB")
@@ -86,11 +95,19 @@ def export_exact_copy(source_path: Path, output_paths: tuple[Path, ...]) -> None
 
 def generate_social() -> None:
     GH_DIR.mkdir(parents=True, exist_ok=True)
-    export_fixed_image(SOCIAL_SOURCE, (SOCIAL, PUBLIC_SOCIAL), (1280, 640))
+    export_fixed_image(SOCIAL_SOURCE, (SOCIAL, PUBLIC_SOCIAL), SOCIAL_SIZE)
+
+
+def generate_dark_social() -> None:
+    export_fixed_image(SOCIAL_DARK_SOURCE, (PUBLIC_SOCIAL_DARK,), SOCIAL_SIZE)
 
 
 def generate_poster() -> None:
-    export_fixed_image(POSTER_SOURCE, (POSTER,), (1440, 1920))
+    export_fixed_image(POSTER_SOURCE, (POSTER,), POSTER_SIZE)
+
+
+def generate_dark_poster() -> None:
+    export_exact_copy(POSTER_DARK_SOURCE, (POSTER_DARK,))
 
 
 def generate_product_render() -> None:
@@ -108,16 +125,20 @@ def generate_product_render_cutout() -> None:
 def main() -> None:
     generate_logo_png()
     generate_social()
+    generate_dark_social()
     generate_poster()
+    generate_dark_poster()
     generate_product_render()
     generate_full_product_render()
     generate_product_render_cutout()
     print(LOGO_PNG)
     print(POSTER)
+    print(POSTER_DARK)
     print(PRODUCT_RENDER)
     print(FULL_PRODUCT_RENDER)
     print(PRODUCT_RENDER_CUTOUT)
     print(SOCIAL)
+    print(PUBLIC_SOCIAL_DARK)
 
 
 if __name__ == "__main__":

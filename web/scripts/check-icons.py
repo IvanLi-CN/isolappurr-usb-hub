@@ -37,9 +37,11 @@ DESKTOP_PNGS: Final = [
 
 MARKETING_ASSETS: Final = {
     BRAND_ASSETS / "isolapurr-logo.png": (1520, 480),
-    BRAND_ASSETS / "isolapurr-product-poster.png": (1440, 1920),
+    BRAND_ASSETS / "isolapurr-product-poster.png": (3072, 3840),
+    BRAND_ASSETS / "isolapurr-product-poster-dark.png": (1122, 1402),
     BRAND_ASSETS / "isolapurr-product-render.png": (1774, 887),
     BRAND_ASSETS / "github-social-preview.png": (1280, 640),
+    BRAND_ASSETS / "github-social-preview-dark.png": (1280, 640),
     GITHUB_ASSETS / "social-preview.png": (1280, 640),
 }
 
@@ -47,6 +49,8 @@ FULL_RENDER_SOURCE: Final = BRAND_SOURCES / "product-render-full-source.png"
 FULL_RENDER_EXPORT: Final = BRAND_ASSETS / "isolapurr-product-render-full.png"
 CUTOUT_SOURCE: Final = BRAND_SOURCES / "product-render-cutout-source.png"
 CUTOUT_EXPORT: Final = BRAND_ASSETS / "isolapurr-product-render-cutout.png"
+POSTER_DARK_SOURCE: Final = BRAND_SOURCES / "product-poster-dark-source.png"
+POSTER_DARK_EXPORT: Final = BRAND_ASSETS / "isolapurr-product-poster-dark.png"
 
 
 def visible_bounds(path: Path) -> tuple[int, int, int, int] | None:
@@ -141,6 +145,21 @@ def main() -> None:
     if sha256(CUTOUT_EXPORT) != sha256(CUTOUT_SOURCE):
         raise SystemExit(
             "product render cutout export must be an exact copy of the approved source image"
+        )
+
+    ensure_exists(POSTER_DARK_SOURCE)
+    ensure_exists(POSTER_DARK_EXPORT)
+    dark_poster_source = Image.open(POSTER_DARK_SOURCE)
+    dark_poster_export = Image.open(POSTER_DARK_EXPORT)
+    if dark_poster_export.size != dark_poster_source.size:
+        raise SystemExit(
+            "dark poster export must preserve source dimensions, "
+            f"got {dark_poster_export.size} from {POSTER_DARK_SOURCE.name} "
+            f"{dark_poster_source.size}"
+        )
+    if sha256(POSTER_DARK_EXPORT) != sha256(POSTER_DARK_SOURCE):
+        raise SystemExit(
+            "dark poster export must be an exact copy of the approved generated image"
         )
 
     print("icon geometry checks passed")

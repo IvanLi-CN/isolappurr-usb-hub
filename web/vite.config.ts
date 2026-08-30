@@ -197,6 +197,7 @@ export default defineConfig(() => {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest,json}"],
           globIgnores: [
             "**/brand/isolapurr-product-poster.png",
+            "**/brand/isolapurr-product-poster-dark.png",
             "**/brand/isolapurr-product-render.png",
             "**/brand/isolapurr-product-render-full.png",
             "**/brand/isolapurr-product-render-cutout.png",
