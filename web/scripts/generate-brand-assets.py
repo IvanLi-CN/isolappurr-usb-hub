@@ -107,7 +107,7 @@ def generate_poster() -> None:
 
 
 def generate_dark_poster() -> None:
-    export_fixed_image(POSTER_DARK_SOURCE, (POSTER_DARK,), POSTER_SIZE)
+    export_exact_copy(POSTER_DARK_SOURCE, (POSTER_DARK,))
 
 
 def generate_product_render() -> None:

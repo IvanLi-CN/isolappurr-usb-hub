@@ -28,13 +28,17 @@ social preview.
 - Dark poster source: `web/src/assets/brand/product-poster-dark-source.png`.
 - Bright social source: `web/src/assets/brand/github-social-preview-source.png`.
 - Dark social source: `web/src/assets/brand/github-social-preview-dark-source.png`.
-- Public poster exports: `web/public/brand/isolapurr-product-poster.png` and
-  `web/public/brand/isolapurr-product-poster-dark.png`, both `3072x3840`.
+- Public bright poster export: `web/public/brand/isolapurr-product-poster.png`,
+  `3072x3840`.
+- Public dark poster export: `web/public/brand/isolapurr-product-poster-dark.png`,
+  `1122x1402` (native 4:5 `gpt-image-2` output).
 - Public social exports: `web/public/brand/github-social-preview.png` and
   `web/public/brand/github-social-preview-dark.png`, both `1280x640`.
 - `.github/social-preview.png` remains the bright Open Graph preview.
-- `bun run brand-assets` is the single export command. `bun run test:icons`
-  verifies all four public marketing output dimensions.
+- `bun run brand-assets` is the single export command. The approved dark poster
+  is copied byte-for-byte from its generated source; it is never resized,
+  cropped, recolored, or locally composited. `bun run test:icons` verifies all
+  four public marketing output dimensions and this exact-copy constraint.
 - Both 4:5 posters are excluded from the PWA precache because they are large,
   non-core marketing assets; the dark poster follows the existing bright-poster
   cache policy.
@@ -48,11 +52,15 @@ social preview.
   composited above it.
 - The assets must not introduce cyan rim lighting, blue strips, neon halos,
   colored light pools, or self-illuminated hardware.
+- The dark poster is a single full-image `gpt-image-2` generation that uses the
+  approved product render as reference; no local product replacement or image
+  post-processing is allowed.
 
 ## Acceptance Criteria
 
 - Given the four source images, when `bun run brand-assets` runs, then the four
-  public output paths exist at their required dimensions.
+  public output paths exist at their required dimensions and the dark poster is
+  byte-identical to its approved generated source.
 - Given the generated assets, when `bun run test:icons` runs, then the
   marketing dimension contract passes.
 - Given the dark assets are reviewed beside the approved bright assets, then the
