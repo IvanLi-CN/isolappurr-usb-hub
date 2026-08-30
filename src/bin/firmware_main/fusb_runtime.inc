@@ -10,9 +10,6 @@
     }
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64 * 1024);
     esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
-    #[cfg(feature = "net_http")]
-    let device_names = net::init_device_names();
-
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
     info!(
@@ -36,6 +33,9 @@
     _gpio47.set_level(Level::High);
     _gpio47.set_output_enable(false);
     _gpio47.set_input_enable(true);
+
+    #[cfg(feature = "net_http")]
+    let device_names = net::init_device_names();
 
     let i2c0 = I2c::new(
         peripherals.I2C0,
@@ -83,17 +83,20 @@
     // Keep the power path disabled until the source/sink HIL gate proves the
     // TPS/VBUS ownership and fault sequencing. PHY setup is still typed and
     // harmless with VBUS gate held low.
-    let mut input_phy = fusb302::Fusb302::new(&mut i2c0);
-    let mut output_phy = fusb302::Fusb302::new(&mut i2c1);
-    if let Err(err) = isolapurr_usb_hub::pd_i2c::fusb302::configure_sink(&mut input_phy).await {
-        defmt::warn!("tps-fusb U10 sink PHY setup failed: {:?}", defmt::Debug2Format(&err));
-    }
+    let mut input_phy = fusb302::Fusb302::new(i2c0);
+    let mut output_phy = fusb302::Fusb302::new(i2c1);
+    let input_cc = match isolapurr_usb_hub::pd_i2c::fusb302::configure_sink(&mut input_phy).await {
+        Ok(pin) => pin,
+        Err(err) => {
+            defmt::warn!("tps-fusb U10 sink PHY setup failed: {:?}", defmt::Debug2Format(&err));
+            loop { Timer::after_millis(1_000).await; }
+        }
+    };
     if let Err(err) = isolapurr_usb_hub::pd_i2c::fusb302::configure_source(&mut output_phy).await {
         defmt::warn!("tps-fusb U11 source PHY setup failed: {:?}", defmt::Debug2Format(&err));
+        loop { Timer::after_millis(1_000).await; }
     }
-    info!(
-        "tps-fusb: source contract fixed to PD2 5V/1A RpDefault; VBUS gate remains disabled until HIL approval"
-    );
+    info!("tps-fusb: source PHY ready; source VBUS gate remains disabled until output policy is attached");
 
     #[cfg(feature = "net_http")]
     {
@@ -105,9 +108,23 @@
             device_names,
         ));
     }
-    loop {
-        // No task may enable VBUS or TPS output until the future power-owner
-        // coordinator reports VbusValid and external-VBUS absence.
-        Timer::after_millis(250).await;
+    // The input policy owns U10 and the USB PMOS pins. It requests only a
+    // fixed 9 V / 1 A PDO and enables VIN_USB after PS_RDY plus comparator
+    // confirmation. All failures leave VIN_EN low.
+    let sink_driver = isolapurr_usb_hub::pd_i2c::usbpd_adapter::Fusb302UsbpdDriver::new(input_phy, input_cc);
+    let sink_dpm = isolapurr_usb_hub::pd_i2c::usbpd_adapter::FixedNineVoltSinkDpm::new(
+        _vin_en,
+        _vin_sel,
+    );
+    let mut sink: usbpd::sink::policy_engine::Sink<
+        _,
+        isolapurr_usb_hub::pd_i2c::usbpd_adapter::EmbassyUsbPdTimer,
+        _,
+    > = usbpd::sink::policy_engine::Sink::new(sink_driver, sink_dpm);
+    if let Err(error) = sink.run().await {
+        defmt::error!("tps-fusb U10 sink policy stopped: {:?}", defmt::Debug2Format(&error));
+        loop {
+            Timer::after_millis(1_000).await;
+        }
     }
 }

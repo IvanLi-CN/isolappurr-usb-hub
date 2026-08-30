@@ -996,9 +996,9 @@ dependencies = [
 
 [[package]]
 name = "fusb302"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "368deb1b8a1ef43bb4fcdc9c811cb2a2ed25564d8dac48159235e6c1a805df7e"
+checksum = "f74d798cf375cf31aeaa990a380b09babe98d15370ec66f4f3aba6ed75f8b0e8"
 dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-async",
@@ -1205,6 +1205,7 @@ dependencies = [
  "static_cell",
  "sw2303",
  "tps55288-rs",
+ "uom",
  "usbpd",
  "usbpd-traits",
 ]

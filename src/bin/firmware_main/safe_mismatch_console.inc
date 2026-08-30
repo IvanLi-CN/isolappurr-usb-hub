@@ -64,6 +64,11 @@ async fn safe_mismatch_console(
                     discovery,
                     compatibility,
                 );
+                let _ = write!(
+                    response,
+                    ",\"pd\":{{\"inputSink\":\"{}\"}}",
+                    isolapurr_usb_hub::pd_i2c::usbpd_adapter::sink_status().as_str(),
+                );
                 response.push_str("}}}");
                 let _ = usb.write_all(response.as_bytes()).await;
                 let _ = usb.write_all(b"\n").await;
