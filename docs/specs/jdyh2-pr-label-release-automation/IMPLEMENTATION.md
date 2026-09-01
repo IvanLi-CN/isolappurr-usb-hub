@@ -27,6 +27,7 @@
 - `.github/workflows/release.yml` 现在让 `web-dist` 等待 `firmware` job 成功并下载同一次 `release-firmware` artifact，再把当前 release 的 catalog、app image、recovery image 注入 `web/public/firmware/releases-manifest.json`；同源固件列表不再滞后一版。
 - `.github/workflows/desktop.yml` 现在会始终展开三个 required matrix checks，并在无桌面/Web 变更时用 no-op 成功保留精确检查名，避免 branch protection 只看到 `Desktop / ${{ matrix.name }}` 占位 check 而阻塞合并。
 - GitHub `main` branch protection 现在已经按同一份 required-check contract 启用，并要求 PR 合并、signed commits、strict status checks、禁用 force-push 与 branch deletion。
+- `.github/workflows/notify-release-failure.yml` 现在把 Release failure 与手动 smoke 通知迁移到 `IvanLi-CN/oidrune/.github/workflows/notify.yml@e48822f99c6402a753ed86557ea029754cbab20b`，两个 caller job 都授予 `id-token: write`，由调用方生成完整 summary，并移除旧 Telegram secret、gateway override 与旧 reusable workflow 引用。
 
 ## Remaining Gaps
 
@@ -50,6 +51,7 @@
 - `.github/scripts/test_release_workflow.py`
 - `.github/scripts/test_quality_gates_contract.py`
 - `.github/scripts/test_release_pages_contracts.py`
+- `.github/scripts/test_notify_release_failure_contract.py`
 
 ## References
 
