@@ -74,7 +74,9 @@
   - `Pages / PR build`
   - `Repo Contracts / Python contract tests`
 - Required PR workflows must trigger on both `pull_request` and `merge_group`; they must not rely on top-level `paths` / `paths-ignore` filters to decide whether the required check exists.
-- Failure notification must call `IvanLi-CN/github-workflows/.github/workflows/release-failure-telegram.yml@main`.
+- Failure notification must call `IvanLi-CN/oidrune/.github/workflows/notify.yml@e48822f99c6402a753ed86557ea029754cbab20b`.
+- Failure notification caller jobs must grant `id-token: write`, must use Oidrune's default gateway by omitting `gateway_url` and `oidc_audience`, and must not pass the legacy Telegram secret.
+- The caller must provide a complete notification `summary` containing the project name, status, result, target SHA, run URL, and a failure or smoke title.
 
 ### SHOULD
 
@@ -109,6 +111,12 @@
 - `.github/quality-gates.json` is the canonical required-check declaration.
 - Workflow names, job names, and repository protection must align to the same required check list.
 - Required workflows may internally skip heavy work when the PR surface is irrelevant, but they must still produce the required check contexts on `pull_request` and `merge_group`.
+
+### Failure notification path
+
+- `notify-release-failure.yml` keeps the `Release` `workflow_run` completed trigger and notifies only when the completed run concludes with `failure`.
+- `workflow_dispatch` remains a manual smoke path and is never invoked as part of repository validation.
+- Both caller jobs use the trusted Oidrune `notify.yml` release SHA and pass only the supported `outcome` and complete `summary` inputs; no gateway override or legacy Telegram secret is passed.
 
 ## 验收标准（Acceptance Criteria）
 
@@ -148,13 +156,20 @@
   When the release workflow runs
   Then it publishes a prerelease with assets but does not change the default Pages site.
 
+- Given the `Release` workflow completes with `failure`
+  When `notify-release-failure.yml` receives the `workflow_run` event
+  Then it calls the trusted Oidrune workflow with `outcome: failure` and a caller-generated summary containing the failed run title, result, target SHA, and run URL.
+
+- Given a maintainer manually dispatches `notify-release-failure.yml`
+  When the smoke path runs
+  Then it calls the trusted Oidrune workflow with a smoke title and summary containing the project, status, result, target SHA, and run URL.
+
 - Given a PR or merge queue run
   When required checks are listed
   Then the stable required-check set appears with the exact names declared in `.github/quality-gates.json`.
 
 ## Visual Evidence
 
-PR: none
 
 This spec governs release automation, GitHub Pages deployment, workflow checks, and release artifact contracts; it has no owner-facing UI rendering surface.
 
@@ -166,6 +181,7 @@ This spec governs release automation, GitHub Pages deployment, workflow checks, 
 - [x] Stable release and default Pages deploy unified onto one single-build contract.
 - [x] Pages PR build and stable backfill paths split into dedicated contracts.
 - [x] Required checks, merge_group visibility, and quality-gates truth source aligned.
+- [x] Release failure notification caller migrated to the trusted Oidrune workflow contract.
 
 ## 非功能性验收 / 质量门槛（Quality Gates）
 
@@ -178,6 +194,7 @@ This spec governs release automation, GitHub Pages deployment, workflow checks, 
 - `.github/workflows/release.yml`
 - `.github/workflows/pages.yml`
 - `.github/workflows/repo-contracts.yml`
+- `.github/workflows/notify-release-failure.yml`
 - `.github/quality-gates.json`
 
 ## 风险 / 开放问题 / 假设（Risks, Open Questions, Assumptions）
@@ -197,5 +214,6 @@ This spec governs release automation, GitHub Pages deployment, workflow checks, 
 - `.github/scripts/test_release_intent.py`
 - `.github/scripts/test_quality_gates_contract.py`
 - `.github/scripts/test_release_pages_contracts.py`
+- `.github/scripts/test_notify_release_failure_contract.py`
 - `README.md`
 - `docs/maintainer-workflow.md`

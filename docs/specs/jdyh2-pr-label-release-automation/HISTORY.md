@@ -18,6 +18,7 @@
 - 2026-07-21: 让发布收尾的 `gh release edit` 也显式传 `--repo "$GITHUB_REPOSITORY"`，修复 release 已发布但 workflow 因无根 `.git` checkout 标红的问题。
 - 2026-07-22: 让 stable retention 使用 GitHub Release web-dist 资产作为旧 hash 历史源，修复 live Pages manifest 已截断时无法恢复仍在 retention 窗口内的旧入口资源的问题。
 - 2026-07-22: 让 release Web 包等待同一次 firmware artifact 并把当前 release 固件注入同源 manifest，修复 Web/PWA 固件列表只能看到上一版或更旧版本的问题。
+- 2026-09-01: 将 release failure 与手动 smoke caller 从 `github-workflows` 的 Telegram reusable workflow 迁移到 Oidrune `notify.yml` trusted release SHA；调用方改为 OIDC、默认网关和完整 summary，移除旧 Telegram secret 传递。
 
 ## Key Reasons / Replacements
 
