@@ -161,6 +161,46 @@ export function classifyProbe(
     typeof record.fqdn === "string" ? (record.fqdn as string) : undefined;
   const variant =
     typeof record.variant === "string" ? (record.variant as string) : undefined;
+  const hardwareDescriptor =
+    record.hardware && typeof record.hardware === "object"
+      ? (record.hardware as Record<string, unknown>)
+      : undefined;
+  const discoveryDescriptor =
+    hardwareDescriptor?.discovery &&
+    typeof hardwareDescriptor.discovery === "object"
+      ? (hardwareDescriptor.discovery as Record<string, unknown>)
+      : undefined;
+  const hardwareFromFirmware: HardwareBoardInfo | undefined = hardwareDescriptor
+    ? {
+        source: "firmware",
+        discoverySchema:
+          typeof hardwareDescriptor.schema === "number"
+            ? hardwareDescriptor.schema
+            : undefined,
+        compiledProfile:
+          typeof hardwareDescriptor.compiledProfile === "string"
+            ? hardwareDescriptor.compiledProfile
+            : undefined,
+        detectedProfile:
+          typeof discoveryDescriptor?.detectedProfile === "string"
+            ? discoveryDescriptor.detectedProfile
+            : undefined,
+        discoveryState:
+          typeof discoveryDescriptor?.state === "string"
+            ? discoveryDescriptor.state
+            : undefined,
+        compatibility:
+          typeof hardwareDescriptor.compatibility === "string"
+            ? hardwareDescriptor.compatibility
+            : undefined,
+        hardwareCapabilities: booleanRecord(
+          hardwareDescriptor.hardwareCapabilities,
+        ),
+        firmwareCapabilities: booleanRecord(
+          hardwareDescriptor.firmwareCapabilities,
+        ),
+      }
+    : undefined;
   const wifi =
     record.wifi && typeof record.wifi === "object"
       ? (record.wifi as Record<string, unknown>)
@@ -195,7 +235,7 @@ export function classifyProbe(
       wifiIpv4,
       customHardwareName,
       capabilities: identifyCapability,
-      hardware,
+      hardware: hardwareFromFirmware ?? hardware,
     };
   }
   if (firmwareName) {
@@ -213,7 +253,7 @@ export function classifyProbe(
       wifiIpv4,
       customHardwareName,
       capabilities: identifyCapability,
-      hardware,
+      hardware: hardwareFromFirmware ?? hardware,
     };
   }
   return {
@@ -230,7 +270,7 @@ export function classifyProbe(
     wifiIpv4,
     customHardwareName,
     capabilities: identifyCapability,
-    hardware,
+    hardware: hardwareFromFirmware ?? hardware,
   };
 }
 
@@ -263,6 +303,16 @@ function capacityFromBytes(value: unknown): string | undefined {
   return Number.isInteger(kib) ? `${kib} KB` : `${value} bytes`;
 }
 
+function booleanRecord(value: unknown): Record<string, boolean> | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
 export function hardwareFromFirmwareInfo(
   value: unknown,
   port?: SerialLikePort | null,
@@ -286,6 +336,10 @@ export function hardwareFromFirmwareInfo(
   if (reported) {
     const mcuModel =
       typeof reported.mcu === "string" ? reported.mcu : undefined;
+    const descriptor =
+      reported.discovery && typeof reported.discovery === "object"
+        ? (reported.discovery as Record<string, unknown>)
+        : undefined;
     return {
       source: "firmware",
       chipType: mcuModel,
@@ -294,25 +348,31 @@ export function hardwareFromFirmwareInfo(
       ramSize: capacityFromBytes(reported.ram_bytes),
       psramSize: capacityFromBytes(reported.psram_bytes),
       macAddress,
+      ...(typeof reported.schema === "number"
+        ? { discoverySchema: reported.schema }
+        : {}),
+      ...(typeof reported.compiledProfile === "string"
+        ? { compiledProfile: reported.compiledProfile }
+        : {}),
+      ...(typeof descriptor?.detectedProfile === "string"
+        ? { detectedProfile: descriptor.detectedProfile }
+        : {}),
+      ...(typeof descriptor?.state === "string"
+        ? { discoveryState: descriptor.state }
+        : {}),
+      ...(typeof reported.compatibility === "string"
+        ? { compatibility: reported.compatibility }
+        : {}),
+      ...(booleanRecord(reported.hardwareCapabilities)
+        ? { hardwareCapabilities: booleanRecord(reported.hardwareCapabilities) }
+        : {}),
+      ...(booleanRecord(reported.firmwareCapabilities)
+        ? { firmwareCapabilities: booleanRecord(reported.firmwareCapabilities) }
+        : {}),
     };
   }
-
-  const portInfo = port?.getInfo?.();
-  if (
-    device.variant === "tps-sw" &&
-    portInfo?.usbVendorId === 0x303a &&
-    portInfo.usbProductId === 0x1001
-  ) {
-    return {
-      source: "firmware-profile",
-      chipType: "ESP32-S3",
-      mcuModel: "ESP32-S3",
-      flashSize: "4 MB",
-      ramSize: "512 KB",
-      psramSize: "8 MB",
-      macAddress,
-    };
-  }
+  // USB VID/PID and legacy software fields are not physical board evidence.
+  void port;
   return undefined;
 }
 

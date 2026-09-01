@@ -313,18 +313,20 @@ mod tests {
     }
 
     #[test]
-    fn cli_flash_request_can_omit_expected_identity_for_first_flash() {
+    fn direct_flash_request_requires_verified_identity_metadata() {
         let req = FirmwareFlashRequest {
             port_path: "/dev/cu.usbmodem1".to_string(),
             address: DEFAULT_FLASH_ADDRESS,
             file_name: "firmware.bin".to_string(),
             file_base64: "not-base64".to_string(),
             expected_identity: None,
+            compiled_profile: None,
+            compatible_hardware: None,
         };
         let err = run_firmware_flash(req).expect_err("invalid payload should fail");
 
         assert!(
-            err.contains("firmware payload was not valid base64"),
+            err.contains("firmware flash requires expectedIdentity"),
             "unexpected error: {err}"
         );
     }
@@ -336,7 +338,7 @@ mod tests {
             .expect_err("missing ELF should fail before espflash");
 
         assert!(
-            err.contains("ELF does not exist"),
+            err.contains("direct recovery flashing is disabled"),
             "unexpected error: {err}"
         );
     }

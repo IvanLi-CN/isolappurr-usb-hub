@@ -376,6 +376,10 @@ pub struct FirmwareArtifact {
     pub build_id: Option<String>,
     #[serde(default)]
     pub files: Vec<FirmwareFile>,
+    #[serde(default)]
+    pub compiled_profile: Option<String>,
+    #[serde(default)]
+    pub compatible_hardware: Option<CompatibleHardware>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -447,6 +451,10 @@ struct FirmwareUploadFlashRequest {
     file_name: String,
     file_base64: String,
     expected_identity: DeviceIdentity,
+    #[serde(default)]
+    compiled_profile: Option<String>,
+    #[serde(default)]
+    compatible_hardware: Option<CompatibleHardware>,
     lease_id: String,
 }
 
@@ -495,10 +503,13 @@ struct ErrorInfo {
 }
 
 include!("lib/ipc.rs");
+#[path = "lib/board_info.rs"]
+mod board_info;
 include!("lib/http_bridge.rs");
 
+#[path = "lib/ram_probe.rs"]
+mod ram_probe;
 include!("lib/device_io.rs");
-
 include!("lib/storage_catalog.rs");
 
 #[cfg(test)]
@@ -775,6 +786,8 @@ mod tests {
                     size: 1,
                     flash_address: Some(DEFAULT_FLASH_ADDRESS),
                 }],
+                compiled_profile: None,
+                compatible_hardware: None,
             }],
         };
         assert!(validate_catalog_shape(&catalog).is_empty());
@@ -797,6 +810,8 @@ mod tests {
                     size: 1,
                     flash_address: Some(0),
                 }],
+                compiled_profile: None,
+                compatible_hardware: None,
             }],
         };
         assert!(!validate_catalog_shape(&catalog).is_empty());
@@ -819,6 +834,8 @@ mod tests {
                     size: 1,
                     flash_address: Some(DEFAULT_FLASH_ADDRESS),
                 }],
+                compiled_profile: None,
+                compatible_hardware: None,
             }],
         };
         assert!(!validate_catalog_shape(&catalog).is_empty());

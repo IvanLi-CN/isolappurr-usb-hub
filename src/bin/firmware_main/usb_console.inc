@@ -1011,15 +1011,26 @@ fn write_usb_info_json(
 
     let _ = write!(
         body,
-        "\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
+        "\"variant\":\"{}\",\"hardware\":",
+        crate::board_profile::COMPILED_PROFILE_NAME,
+    );
+    let _ = isolapurr_firmware_core::hardware_discovery::write_hardware_descriptor_json_with_runtime(
+        body,
+        crate::board_profile::COMPILED_PROFILE,
+        crate::hardware_discovery_state(),
+        crate::hardware_profile_compatibility(),
+        Some(PSRAM_SIZE_BYTES.load(Ordering::Acquire)),
+    );
+    let _ = write!(
+        body,
+        ",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
         env!("CARGO_PKG_NAME"),
         release_version(),
     );
     let _ = write_firmware_build_json(body, BUILD_GIT_SHA_FULL, BUILD_GIT_DIRTY == "true");
     let _ = write!(
         body,
-        "}},\"hardware\":{{\"mcu\":\"ESP32-S3\",\"flash_bytes\":4194304,\"ram_bytes\":524288,\"psram_bytes\":{}}},\"uptime_ms\":{},",
-        PSRAM_SIZE_BYTES.load(Ordering::Acquire),
+        "}},\"uptime_ms\":{},",
         firmware_uptime_ms()
     );
     write_usb_wifi_object(body, wifi);

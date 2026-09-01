@@ -94,10 +94,6 @@ jobs:
           host="$(rustc +stable -vV | sed -n 's/^host: //p')"
           cargo +stable test --manifest-path crates/isolapurr-firmware-core/Cargo.toml --target "$host"
 
-      - name: cargo build
-        if: steps.gate.outputs.run_build == 'true'
-        run: cargo build
-
       - name: Install host deps
         if: steps.gate.outputs.run_build == 'true'
         run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev
@@ -109,27 +105,15 @@ jobs:
           host="$(rustc +stable -vV | sed -n 's/^host: //p')"
           cargo +stable install espflash --locked --target "$host"
 
-      - name: Build firmware catalog
+      - name: Build both firmware profiles and catalogs
         if: steps.gate.outputs.run_build == 'true'
         run: |
           set -euo pipefail
-          mkdir -p dist/firmware
-          ELF="target/xtensa-esp32s3-none-elf/debug/isolapurr-usb-hub"
-          FULL_IMAGE="dist/firmware/isolapurr-usb-hub.full.bin"
-          APP_BIN="dist/firmware/isolapurr-usb-hub.app.bin"
-          cp "$ELF" dist/firmware/isolapurr-usb-hub.elf
-          espflash save-image --chip esp32s3 "$ELF" "$APP_BIN"
-          espflash save-image --chip esp32s3 --merge --skip-padding "$ELF" "$FULL_IMAGE"
-          python3 tools/firmware-catalog/build-catalog.py \
-            --out dist/firmware/isolapurr-firmware-catalog.json \
-            --artifact-id "isolapurr-${GITHUB_SHA::12}-debug" \
-            --recovery-artifact-id "isolapurr-${GITHUB_SHA::12}-debug-recovery" \
+          scripts/build-firmware-profiles.sh \
+            --output-dir dist/firmware \
             --version "${GITHUB_REF_NAME:-dev}" \
             --git-sha "$GITHUB_SHA" \
-            --build-id "$GITHUB_RUN_ID" \
-            --app-bin "$APP_BIN" \
-            --full-image "$FULL_IMAGE" \
-            --elf "dist/firmware/isolapurr-usb-hub.elf"
+            --build-id "$GITHUB_RUN_ID"
 
       - name: Upload firmware catalog and payloads
         if: steps.gate.outputs.run_build == 'true'

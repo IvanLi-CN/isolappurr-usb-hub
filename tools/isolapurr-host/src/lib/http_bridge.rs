@@ -284,7 +284,7 @@ async fn serial_board_info(
     if let Err(err) = register_requested_usb_device(&state, &req.port_path).await {
         return error_from_anyhow(err);
     }
-    match local_usb_board_info(&state, &req.port_path).await {
+    match board_info::read(&state, &req.port_path).await {
         Ok(result) => Json(json!({ "ok": true, "result": result })).into_response(),
         Err(err) => error_from_anyhow(err),
     }

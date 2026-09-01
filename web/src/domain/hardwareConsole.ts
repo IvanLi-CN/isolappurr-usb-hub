@@ -88,6 +88,13 @@ export type HardwareBoardInfo = {
   crystalFrequency?: string;
   features?: string[];
   rawOutput?: string;
+  discoverySchema?: number;
+  compiledProfile?: "tps-sw" | "tps-fusb" | string;
+  detectedProfile?: "tps-sw" | "tps-fusb" | string;
+  discoveryState?: "verified" | "unknown" | "conflicting" | string;
+  compatibility?: "match" | "mismatch" | "not_verified" | string;
+  hardwareCapabilities?: Record<string, boolean>;
+  firmwareCapabilities?: Record<string, boolean>;
 };
 
 export type SerialLikePort = SerialPort & {
@@ -851,16 +858,6 @@ export async function flashWithLocalUsb(
       error?: { code?: string; message?: string; retryable?: boolean };
     };
     if (!res.ok || !json.ok) {
-      if (res.status === 404) {
-        return legacyFlashWithLocalUsb(
-          agent,
-          portPath,
-          file.name,
-          address,
-          firmware,
-          expectedIdentity,
-        );
-      }
       throw new LocalUsbAgentHttpError(
         json.error?.message ||
           json.log ||
@@ -871,18 +868,6 @@ export async function flashWithLocalUsb(
       );
     }
     return json.log ?? "";
-  } catch (err) {
-    if (err instanceof LocalUsbAgentHttpError && err.status === 404) {
-      return legacyFlashWithLocalUsb(
-        agent,
-        portPath,
-        file.name,
-        address,
-        firmware,
-        expectedIdentity,
-      );
-    }
-    throw err;
   } finally {
     if (lease) {
       await releaseLocalUsbLease(agent, lease.lease_id);
@@ -966,45 +951,6 @@ export async function flashBundledWithLocalUsb(
       await releaseLocalUsbLease(agent, lease.lease_id);
     }
   }
-}
-
-async function legacyFlashWithLocalUsb(
-  agent: DesktopAgent,
-  portPath: string,
-  fileName: string,
-  address: number,
-  fileBase64: string,
-  expectedIdentity: DeviceIdentityExpectation,
-): Promise<string> {
-  const res = await agentFetch(agent, "/api/v1/firmware/flash", {
-    method: "POST",
-    body: JSON.stringify({
-      portPath,
-      address,
-      fileName,
-      fileBase64,
-      expectedIdentity: {
-        deviceId: expectedIdentity.deviceId ?? undefined,
-        mac: expectedIdentity.mac ?? undefined,
-      },
-    }),
-  });
-  const json = (await res.json()) as {
-    ok?: boolean;
-    log?: string;
-    error?: { code?: string; message?: string; retryable?: boolean };
-  };
-  if (!res.ok || !json.ok) {
-    throw new LocalUsbAgentHttpError(
-      json.error?.message ||
-        json.log ||
-        `Local USB flash failed (${res.status})`,
-      res.status,
-      json.error?.code,
-      json.error?.retryable,
-    );
-  }
-  return json.log ?? "";
 }
 
 export async function requestWebSerialPort(

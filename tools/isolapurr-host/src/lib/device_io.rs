@@ -57,178 +57,6 @@ async fn acquire_serial_port_guard(
     Ok(guard)
 }
 
-fn parse_board_info_features(value: &str) -> Vec<String> {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(ToString::to_string)
-        .collect()
-}
-
-fn extract_capacity_from_features(features: &[String], needle: &str) -> Option<String> {
-    features.iter().find_map(|feature| {
-        let lower = feature.to_lowercase();
-        if !lower.contains(needle) {
-            return None;
-        }
-        feature.split_whitespace().find_map(|token| {
-            let upper = token.to_uppercase();
-            if upper.ends_with("MB") || upper.ends_with("KB") {
-                Some(upper.replace("MB", " MB").replace("KB", " KB"))
-            } else {
-                None
-            }
-        })
-    })
-}
-
-fn canonical_chip_label(value: &str) -> String {
-    let compact = value
-        .trim()
-        .to_ascii_uppercase()
-        .replace([' ', '_'], "")
-        .replace("ESP32-", "ESP32");
-    match compact.as_str() {
-        value if value.starts_with("ESP32S3") => "ESP32-S3".to_string(),
-        value if value.starts_with("ESP32S2") => "ESP32-S2".to_string(),
-        value if value.starts_with("ESP32C3") => "ESP32-C3".to_string(),
-        value if value.starts_with("ESP32C6") => "ESP32-C6".to_string(),
-        value if value.starts_with("ESP32H2") => "ESP32-H2".to_string(),
-        value if value.starts_with("ESP32P4") => "ESP32-P4".to_string(),
-        _ => value.trim().to_ascii_uppercase(),
-    }
-}
-
-fn infer_ram_size(chip_type: Option<&str>) -> Option<&'static str> {
-    let chip_type = canonical_chip_label(chip_type?).replace('-', "");
-    if chip_type.contains("ESP32S3") {
-        return Some("512 KB");
-    }
-    if chip_type.contains("ESP32S2") {
-        return Some("320 KB");
-    }
-    None
-}
-
-fn normalize_chip_description(value: &str) -> (String, Option<String>, Option<String>) {
-    let trimmed = value.trim();
-    let mut parts = trimmed.splitn(2, " (revision ");
-    let chip_type = parts.next().unwrap_or(trimmed).trim().to_string();
-    let chip_revision = parts
-        .next()
-        .map(|part| part.trim_end_matches(')').trim().to_string())
-        .filter(|part| !part.is_empty());
-    let mcu_model = chip_type
-        .split(|ch: char| ch == ' ' || ch == '(')
-        .find(|part| part.to_ascii_uppercase().starts_with("ESP32"))
-        .map(canonical_chip_label)
-        .or_else(|| (!chip_type.is_empty()).then(|| canonical_chip_label(&chip_type)));
-    let chip_type = canonical_chip_label(&chip_type);
-    (chip_type, mcu_model, chip_revision)
-}
-
-fn parse_espflash_board_info(raw_output: &str) -> Value {
-    let mut chip_type: Option<String> = None;
-    let mut mcu_model: Option<String> = None;
-    let mut chip_revision: Option<String> = None;
-    let mut flash_size: Option<String> = None;
-    let mut mac_address: Option<String> = None;
-    let mut crystal_frequency: Option<String> = None;
-    let mut features = Vec::new();
-
-    for line in raw_output.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let Some((key, value)) = trimmed.split_once(':') else {
-            continue;
-        };
-        let value = value.trim();
-        match key.trim().to_ascii_lowercase().as_str() {
-            "chip type" => {
-                let (next_chip_type, next_mcu_model, next_chip_revision) =
-                    normalize_chip_description(value);
-                chip_type = Some(next_chip_type);
-                mcu_model = next_mcu_model;
-                chip_revision = next_chip_revision;
-            }
-            "features" => {
-                features = parse_board_info_features(value);
-            }
-            "crystal frequency" => {
-                crystal_frequency = Some(value.to_string());
-            }
-            "flash size" => {
-                flash_size = Some(value.to_uppercase().replace("MB", " MB"));
-            }
-            "mac address" => {
-                mac_address = Some(value.to_string());
-            }
-            _ => {}
-        }
-    }
-
-    let psram_size = extract_capacity_from_features(&features, "psram");
-    if flash_size.is_none() {
-        flash_size = extract_capacity_from_features(&features, "flash");
-    }
-
-    json!({
-        "source": "espflash",
-        "chipType": chip_type,
-        "mcuModel": mcu_model,
-        "chipRevision": chip_revision,
-        "flashSize": flash_size,
-        "ramSize": infer_ram_size(chip_type.as_deref()),
-        "psramSize": psram_size,
-        "macAddress": mac_address,
-        "crystalFrequency": crystal_frequency,
-        "features": features,
-        "rawOutput": raw_output,
-    })
-}
-
-fn run_espflash_board_info(port_path: &str, args: &[&str]) -> anyhow::Result<std::process::Output> {
-    Command::new("espflash")
-        .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
-        .args(args)
-        .output()
-        .with_context(|| format!("start espflash board-info for {port_path}"))
-}
-
-fn local_usb_board_info_now(port_path: &str) -> anyhow::Result<Value> {
-    let candidates = [
-        ["board-info", "--port", port_path],
-        ["board-info", "-p", port_path],
-        ["--port", port_path, "board-info"],
-        ["-p", port_path, "board-info"],
-    ];
-    let mut last_error = String::new();
-    for args in candidates {
-        let output = run_espflash_board_info(port_path, &args)?;
-        let log = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        if output.status.success() {
-            return Ok(parse_espflash_board_info(&log));
-        }
-        last_error = log;
-    }
-    Err(anyhow!("espflash board-info failed: {last_error}"))
-}
-
-async fn local_usb_board_info(state: &AppState, port_path: &str) -> anyhow::Result<Value> {
-    let _serial_guard = acquire_serial_port_guard(state, port_path, None).await?;
-    let port_path = port_path.to_string();
-    tokio::task::spawn_blocking(move || local_usb_board_info_now(&port_path))
-        .await
-        .context("serial board-info worker join")?
-}
-
 async fn usb_jsonl_request_with_exclusive(
     state: &AppState,
     device_id: &str,
@@ -735,6 +563,16 @@ async fn run_flash_request(
             if let Some(expected_identity) = req.expected_identity.as_ref() {
                 validate_device_identity(&identity, expected_identity)?;
             }
+            if catalog.schema_version != "2" {
+                return Err(anyhow!(
+                    "firmware catalog schema v2 with physical compatibility is required"
+                ));
+            }
+            validate_artifact_hardware_compatibility(artifact, &identity)?;
+        } else {
+            let probe = ram_probe::run(state, &port_path).await?;
+            validate_artifact_hardware_compatibility(artifact, &probe)
+                .context("RAM-only topology probe did not match the selected artifact")?;
         }
     } else {
         let expected_identity = req
@@ -743,6 +581,12 @@ async fn run_flash_request(
             .ok_or_else(|| anyhow!("normal flash requires expectedIdentity"))?;
         let identity = require_project_firmware_for_upgrade(state, device_id).await?;
         validate_device_identity(&identity, expected_identity)?;
+        if catalog.schema_version != "2" {
+            return Err(anyhow!(
+                "firmware catalog schema v2 with physical compatibility is required"
+            ));
+        }
+        validate_artifact_hardware_compatibility(artifact, &identity)?;
     }
 
     let mut guard = acquire_flash_guard(state, &port_path).await?;
@@ -789,11 +633,8 @@ async fn run_flash_request(
         return Err(anyhow!("espflash failed: {log}"));
     }
     guard.release_serial_lock();
-    let captured_identity = if req.first_time {
-        Some(capture_first_time_identity_after_flash(state, device_id).await?)
-    } else {
-        None
-    };
+    let captured_identity =
+        Some(capture_and_validate_post_flash_identity(state, device_id, artifact).await?);
     drop(guard);
     Ok(json!({
         "ok": true,
@@ -878,6 +719,16 @@ async fn run_bundled_flash_request(
             if let Some(expected_identity) = req.expected_identity.as_ref() {
                 validate_device_identity(&identity, expected_identity)?;
             }
+            if req.catalog.schema_version != "2" {
+                return Err(anyhow!(
+                    "firmware catalog schema v2 with physical compatibility is required"
+                ));
+            }
+            validate_artifact_hardware_compatibility(artifact, &identity)?;
+        } else {
+            let probe = ram_probe::run(state, &port_path).await?;
+            validate_artifact_hardware_compatibility(artifact, &probe)
+                .context("RAM-only topology probe did not match the selected artifact")?;
         }
     } else {
         let expected_identity = req
@@ -886,6 +737,12 @@ async fn run_bundled_flash_request(
             .ok_or_else(|| anyhow!("normal flash requires expectedIdentity"))?;
         let identity = require_project_firmware_for_upgrade(state, device_id).await?;
         validate_device_identity(&identity, expected_identity)?;
+        if req.catalog.schema_version != "2" {
+            return Err(anyhow!(
+                "firmware catalog schema v2 with physical compatibility is required"
+            ));
+        }
+        validate_artifact_hardware_compatibility(artifact, &identity)?;
     }
 
     let temp_file = write_temp_firmware_file(&req.file_name, bytes)?;
@@ -929,11 +786,8 @@ async fn run_bundled_flash_request(
         return Err(anyhow!("espflash failed: {log}"));
     }
     guard.release_serial_lock();
-    let captured_identity = if req.first_time {
-        Some(capture_first_time_identity_after_flash(state, device_id).await?)
-    } else {
-        None
-    };
+    let captured_identity =
+        Some(capture_and_validate_post_flash_identity(state, device_id, artifact).await?);
     drop(guard);
     Ok(json!({
         "ok": true,
@@ -969,10 +823,40 @@ async fn run_uploaded_flash_request(
     };
     let identity = require_project_firmware_for_upgrade(state, device_id).await?;
     validate_device_identity(&identity, &req.expected_identity)?;
+    let compiled_profile = req
+        .compiled_profile
+        .as_deref()
+        .ok_or_else(|| anyhow!("uploaded firmware requires compiledProfile"))?;
+    let compatible_hardware = req
+        .compatible_hardware
+        .as_ref()
+        .ok_or_else(|| anyhow!("uploaded firmware requires compatibleHardware"))?;
+    if compatible_hardware.discovery_schema != 1 {
+        return Err(anyhow!("uploaded firmware requires discoverySchema=1"));
+    }
+    let hardware = identity
+        .pointer("/result/device/hardware")
+        .or_else(|| identity.pointer("/device/hardware"))
+        .ok_or_else(|| anyhow!("device info has no hardware discovery descriptor"))?;
+    let detected_profile = hardware
+        .pointer("/discovery/detectedProfile")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("device hardware profile is not verified"))?;
+    if hardware.pointer("/discovery/state").and_then(Value::as_str) != Some("verified")
+        || compiled_profile != detected_profile
+        || !compatible_hardware
+            .profiles
+            .iter()
+            .any(|profile| profile == detected_profile)
+    {
+        return Err(anyhow!(
+            "uploaded firmware is incompatible with detected hardware {detected_profile}"
+        ));
+    }
 
     let bytes = decode_flash_payload(&req.file_base64)?;
     let temp_file = write_temp_firmware_file(&req.file_name, bytes)?;
-    let guard = acquire_flash_guard(state, &port_path).await?;
+    let mut guard = acquire_flash_guard(state, &port_path).await?;
     let output = Command::new("espflash")
         .env("ESPFLASH_SKIP_UPDATE_CHECK", "true")
         .arg("write-bin")
@@ -984,18 +868,36 @@ async fn run_uploaded_flash_request(
         .arg(&temp_file.0)
         .output()
         .context("start espflash write-bin")?;
-    drop(guard);
     let log = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     if !output.status.success() {
+        drop(guard);
         return Err(anyhow!("espflash failed: {log}"));
     }
+    guard.release_serial_lock();
+    let post_flash_identity = capture_and_validate_post_flash_identity(
+        state,
+        device_id,
+        &FirmwareArtifact {
+            artifact_id: format!("uploaded-{}", req.file_name),
+            target: "esp32s3_app".to_string(),
+            version: String::new(),
+            git_sha: Some(String::new()),
+            build_id: Some(String::new()),
+            files: Vec::new(),
+            compiled_profile: Some(compiled_profile.to_string()),
+            compatible_hardware: Some(compatible_hardware.clone()),
+        },
+    )
+    .await?;
+    drop(guard);
     Ok(json!({
         "ok": true,
         "exit_code": output.status.code(),
+        "identity": post_flash_identity,
         "log": log,
     }))
 }

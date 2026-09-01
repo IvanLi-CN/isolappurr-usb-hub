@@ -284,7 +284,10 @@ export function FirmwareFlashPage() {
       (transportMode === "web_serial" && !webSerialSupported) ||
       (sourceMode === "local_file" &&
         recoveryFlow &&
-        transportMode === "local_usb")
+        transportMode === "local_usb") ||
+      (!demoEnabled &&
+        (probe.hardware?.discoveryState !== "verified" ||
+          !probe.hardware.detectedProfile))
     );
   const idleProbeSummary =
     probe.kind === "idle" && webSerialReadyForManualRead
@@ -344,6 +347,25 @@ export function FirmwareFlashPage() {
       </ActionButton>
     ) : null;
   const targetRows = [
+    {
+      label: "Board profile",
+      value: probe.hardware?.detectedProfile,
+      mono: true,
+    },
+    {
+      label: "Discovery",
+      value: probe.hardware?.discoveryState,
+      mono: true,
+    },
+    {
+      label: "Capabilities",
+      value: probe.hardware?.hardwareCapabilities
+        ? Object.entries(probe.hardware.hardwareCapabilities)
+            .filter(([, enabled]) => enabled)
+            .map(([name]) => name)
+            .join(", ") || "None verified"
+        : undefined,
+    },
     {
       label: "MCU",
       value: probe.hardware

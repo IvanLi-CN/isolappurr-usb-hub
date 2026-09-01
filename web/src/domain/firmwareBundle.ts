@@ -16,6 +16,13 @@ export type BundledFirmwareRelease = {
   catalogPath: string;
   app: BundledFirmwareAsset;
   recovery?: BundledFirmwareAsset | null;
+  profiles?: Record<
+    string,
+    {
+      app: BundledFirmwareAsset;
+      recovery?: BundledFirmwareAsset | null;
+    }
+  >;
 };
 
 export type BundledFirmwareManifest = {
@@ -104,6 +111,29 @@ function parseAsset(value: unknown): BundledFirmwareAsset | null {
   };
 }
 
+function parseProfileAssets(
+  value: unknown,
+): BundledFirmwareRelease["profiles"] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const profiles: NonNullable<BundledFirmwareRelease["profiles"]> = {};
+  for (const [profile, entry] of Object.entries(value)) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const app = parseAsset(entry.app);
+    if (!app) {
+      continue;
+    }
+    profiles[profile] = {
+      app,
+      recovery: parseAsset(entry.recovery),
+    };
+  }
+  return Object.keys(profiles).length > 0 ? profiles : undefined;
+}
+
 export function parseBundledFirmwareManifest(
   value: unknown,
 ): BundledFirmwareManifest {
@@ -139,6 +169,7 @@ export function parseBundledFirmwareManifest(
             catalogPath,
             app,
             recovery: parseAsset(entry.recovery),
+            profiles: parseProfileAssets(entry.profiles),
           },
         ];
       })
@@ -224,6 +255,51 @@ export async function fetchBundledFirmwareCatalog(
     throw new Error(`Firmware catalog request failed (${res.status})`);
   }
   return (await res.json()) as Record<string, unknown>;
+}
+
+/** Validate the selected artifact against the firmware-reported physical board. */
+export function validateBundledArtifactCompatibility(
+  catalog: Record<string, unknown>,
+  artifactId: string,
+  hardware:
+    | {
+        discoveryState?: string;
+        detectedProfile?: string;
+      }
+    | undefined,
+): void {
+  if (catalog.schemaVersion !== "2") {
+    throw new Error(
+      "Firmware catalog schema v2 is required for hardware-safe flashing.",
+    );
+  }
+  if (hardware?.discoveryState !== "verified" || !hardware.detectedProfile) {
+    throw new Error(
+      "Physical hardware discovery is not verified; flashing is blocked.",
+    );
+  }
+  const artifacts = Array.isArray(catalog.artifacts) ? catalog.artifacts : [];
+  const artifact = artifacts.find(
+    (entry) => isRecord(entry) && entry.artifactId === artifactId,
+  );
+  if (!artifact || !isRecord(artifact)) {
+    throw new Error(
+      `Firmware artifact ${artifactId} is missing from the catalog.`,
+    );
+  }
+  const compiledProfile = artifact.compiledProfile;
+  const compatible = artifact.compatibleHardware;
+  if (
+    compiledProfile !== hardware.detectedProfile ||
+    !isRecord(compatible) ||
+    compatible.discoverySchema !== 1 ||
+    !Array.isArray(compatible.profiles) ||
+    !compatible.profiles.includes(hardware.detectedProfile)
+  ) {
+    throw new Error(
+      `Selected firmware is incompatible with detected hardware ${hardware.detectedProfile}.`,
+    );
+  }
 }
 
 export const DEMO_BUNDLED_FIRMWARE_MANIFEST: BundledFirmwareManifest = {

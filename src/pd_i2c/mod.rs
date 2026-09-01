@@ -1,7 +1,9 @@
 pub mod allowlist;
+pub mod fusb302;
 pub mod sw2303;
 pub mod tps55288;
 pub mod types;
+pub mod usbpd_adapter;
 
 pub use allowlist::{I2cAllowlist, PdI2cAddr};
 pub use types::{PowerRequest, PowerSetpoint};

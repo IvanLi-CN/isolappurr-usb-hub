@@ -1,6 +1,7 @@
 use isolapurr_firmware_core::api_contract::{
     PORT_CAPABILITY_SCHEMA_V1, write_firmware_build_json, write_port_capabilities_json,
 };
+use isolapurr_firmware_core::hardware_discovery::write_hardware_descriptor_json;
 
 fn write_info_json(body: &mut String, device_names: &DeviceNames, wifi: WifiState) {
     let mac = format_mac_lower(device_names.mac);
@@ -8,11 +9,22 @@ fn write_info_json(body: &mut String, device_names: &DeviceNames, wifi: WifiStat
     let wifi_state_s = wifi_state_str(wifi.state);
     let _ = core::write!(
         body,
-        "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
+        "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"{}\",\"hardware\":",
         device_names.device_id.as_str(),
         device_names.hostname.as_str(),
         device_names.hostname_fqdn.as_str(),
         mac.as_str(),
+        crate::board_profile::COMPILED_PROFILE_NAME,
+    );
+    let _ = write_hardware_descriptor_json(
+        body,
+        crate::board_profile::COMPILED_PROFILE,
+        crate::hardware_discovery_state(),
+        crate::hardware_profile_compatibility(),
+    );
+    let _ = core::write!(
+        body,
+        ",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
         env!("CARGO_PKG_NAME"),
         release_version(),
     );

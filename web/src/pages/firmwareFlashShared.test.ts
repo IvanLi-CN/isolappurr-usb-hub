@@ -59,17 +59,32 @@ describe("hardwareFromFirmwareInfo", () => {
     });
   });
 
-  test("uses the legacy tps-sw profile only with matching ESP32-S3 USB ids", () => {
-    expect(hardwareFromFirmwareInfo(projectInfo(), esp32S3Port)).toEqual({
-      source: "firmware-profile",
-      chipType: "ESP32-S3",
-      mcuModel: "ESP32-S3",
-      flashSize: "4 MB",
-      ramSize: "512 KB",
-      psramSize: "8 MB",
-      macAddress: "9c:13:9e:f2:93:cc",
-    });
+  test("does not infer a physical profile from legacy software or USB ids", () => {
+    expect(
+      hardwareFromFirmwareInfo(projectInfo(), esp32S3Port),
+    ).toBeUndefined();
     expect(hardwareFromFirmwareInfo(projectInfo(), null)).toBeUndefined();
+  });
+
+  test("keeps the firmware physical discovery descriptor", () => {
+    expect(
+      hardwareFromFirmwareInfo(
+        projectInfo({
+          mcu: "ESP32-S3",
+          discoverySchema: 1,
+          compiledProfile: "tps-fusb",
+          discovery: { state: "verified", detectedProfile: "tps-fusb" },
+          compatibility: "match",
+        }),
+        esp32S3Port,
+      ),
+    ).toMatchObject({
+      source: "firmware",
+      compiledProfile: "tps-fusb",
+      detectedProfile: "tps-fusb",
+      discoveryState: "verified",
+      compatibility: "match",
+    });
   });
 
   test("does not infer hardware for non-project firmware", () => {

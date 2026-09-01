@@ -3,8 +3,11 @@ set shell := ["/bin/sh", "-c"]
 ROOT := justfile_directory()
 DESKTOP_DIR := ROOT + "/desktop/src-tauri"
 HOST_TOOLS_MANIFEST := ROOT + "/tools/isolapurr-host/Cargo.toml"
-FIRMWARE_ELF := ROOT + "/target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub"
-FIRMWARE_BIN := ROOT + "/target/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub.app.bin"
+FIRMWARE_PROFILE := env_var_or_default("FIRMWARE_PROFILE", "board_tps_sw")
+FIRMWARE_TARGET_DIR := ROOT + "/target/" + FIRMWARE_PROFILE
+FIRMWARE_HARDWARE_PROFILE := if FIRMWARE_PROFILE == "board_tps_fusb" { "tps-fusb" } else { "tps-sw" }
+FIRMWARE_ELF := FIRMWARE_TARGET_DIR + "/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub"
+FIRMWARE_BIN := FIRMWARE_TARGET_DIR + "/xtensa-esp32s3-none-elf/release/isolapurr-usb-hub.app.bin"
 
 # Default: list available recipes
 default:
@@ -12,16 +15,26 @@ default:
 
 # Firmware (ESP32-S3 / Rust no_std)
 build:
-	cargo build --release
+	cargo build --release --target-dir {{FIRMWARE_TARGET_DIR}} --no-default-features --features net_http,{{FIRMWARE_PROFILE}}
+
+build-profile profile:
+	cargo build --release --target-dir target/{{profile}} --no-default-features --features net_http,{{profile}}
 
 firmware-core-test:
 	@host="$(rustc +stable -vV | sed -n 's/^host: //p')"; \
 	cargo +stable test --manifest-path {{ROOT}}/crates/isolapurr-firmware-core/Cargo.toml --target "$host"
 
 firmware-check:
-	just build
+	just build-profile board_tps_sw
+	just build-profile board_tps_fusb
 	just firmware-core-test
 	just host-tools-test
+
+firmware-artifacts:
+	./scripts/build-firmware-profiles.sh --output-dir {{ROOT}}/dist/firmware --version dev --git-sha local --build-id local
+
+test-feature-exclusivity:
+	sh scripts/test-feature-exclusivity.sh
 
 fmt:
 	cargo +stable fmt
@@ -114,7 +127,7 @@ identify:
 	@just desktop-agent serial identify --port "$PORT" --write-cache
 
 firmware-bin:
-	cargo build --release
+	cargo build --release --target-dir {{FIRMWARE_TARGET_DIR}} --no-default-features --features net_http,{{FIRMWARE_PROFILE}}
 	@just desktop-agent firmware make-bin --elf {{FIRMWARE_ELF}} --out {{FIRMWARE_BIN}}
 
 _local-selected-port:
@@ -165,7 +178,7 @@ flash:
 		exit 2; \
 	fi; \
 	just firmware-bin && \
-	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --elf {{FIRMWARE_ELF}} --address 0x10000 --allow-unconfirmed-port
+	just desktop-agent firmware flash --port "$port" --bin {{FIRMWARE_BIN}} --elf {{FIRMWARE_ELF}} --address 0x10000 --compiled-profile {{FIRMWARE_HARDWARE_PROFILE}} --compatible-profile {{FIRMWARE_HARDWARE_PROFILE}} --allow-unconfirmed-port
 
 reset:
 	@port="$(just _local-confirmed-port)" || exit $?; \

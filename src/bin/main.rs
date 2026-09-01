@@ -6,6 +6,10 @@
     holding buffers for the duration of a data transfer."
 )]
 
+#[path = "../board_profile.rs"]
+mod board_profile;
+#[path = "../hardware_discovery.rs"]
+mod hardware_discovery;
 #[path = "firmware_main/mcu_temperature.rs"]
 mod mcu_temperature;
 #[path = "../spi_device.rs"]
@@ -29,11 +33,12 @@ const BUILD_GIT_SHA_FULL: &str = env!("USB_HUB_BUILD_GIT_SHA_FULL");
 const BUILD_GIT_REF: &str = env!("USB_HUB_BUILD_GIT_REF");
 const BUILD_GIT_DIRTY: &str = env!("USB_HUB_BUILD_GIT_DIRTY");
 const BUILD_PROFILE: &str = env!("USB_HUB_BUILD_PROFILE");
+const COMPILED_HARDWARE_PROFILE: &str = env!("USB_HUB_COMPILED_PROFILE");
 
 use core::cell::RefCell;
 #[cfg(feature = "net_http")]
 use core::fmt::Write as _;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use critical_section::Mutex;
 #[cfg(feature = "net_http")]
 use defmt::debug;
@@ -60,6 +65,7 @@ use esp_hal::{dma_buffers, handler, ram};
 use isolapurr_firmware_core::api_contract::{
     PORT_CAPABILITY_SCHEMA_V1, write_firmware_build_json, write_port_capabilities_json,
 };
+use isolapurr_firmware_core::hardware_discovery::{DiscoveryState, ProfileCompatibility};
 #[cfg(feature = "net_http")]
 use isolapurr_firmware_core::identify::IdentifyState;
 use isolapurr_firmware_core::sw2303_power_gate::Sw2303PowerGate;
@@ -120,8 +126,46 @@ static mut DISPLAY_WORKBUF: [u8; WORKBUF_SIZE] = [0; WORKBUF_SIZE];
 
 static TPS_INT: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
 static TPS_INT_DIRTY: AtomicBool = AtomicBool::new(false);
+static HARDWARE_DISCOVERY_CODE: AtomicU8 = AtomicU8::new(0);
 #[cfg(feature = "net_http")]
 static PSRAM_SIZE_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) fn set_hardware_discovery_state(state: DiscoveryState) {
+    let code = match state {
+        DiscoveryState::Unknown => 0,
+        DiscoveryState::Verified(
+            isolapurr_firmware_core::hardware_discovery::HardwareProfile::TpsSw,
+        ) => 1,
+        DiscoveryState::Verified(
+            isolapurr_firmware_core::hardware_discovery::HardwareProfile::TpsFusb,
+        ) => 2,
+        DiscoveryState::Conflicting => 3,
+    };
+    HARDWARE_DISCOVERY_CODE.store(code, Ordering::Release);
+}
+
+pub(crate) fn hardware_discovery_state() -> DiscoveryState {
+    match HARDWARE_DISCOVERY_CODE.load(Ordering::Acquire) {
+        1 => DiscoveryState::Verified(
+            isolapurr_firmware_core::hardware_discovery::HardwareProfile::TpsSw,
+        ),
+        2 => DiscoveryState::Verified(
+            isolapurr_firmware_core::hardware_discovery::HardwareProfile::TpsFusb,
+        ),
+        3 => DiscoveryState::Conflicting,
+        _ => DiscoveryState::Unknown,
+    }
+}
+
+pub(crate) fn hardware_profile_compatibility() -> ProfileCompatibility {
+    match hardware_discovery_state() {
+        DiscoveryState::Verified(profile) if board_profile::is_profile_match(profile) => {
+            ProfileCompatibility::Match
+        }
+        DiscoveryState::Verified(_) => ProfileCompatibility::Mismatch,
+        DiscoveryState::Unknown | DiscoveryState::Conflicting => ProfileCompatibility::NotVerified,
+    }
+}
 
 #[cfg(feature = "net_http")]
 #[derive(Clone, Copy)]
@@ -168,11 +212,19 @@ static WIFI_CREDENTIALS_CACHE: Mutex<RefCell<Option<provisioning::WifiCredential
 static REBOOT_PENDING: AtomicBool = AtomicBool::new(false);
 
 include!("firmware_main/usb_console.inc");
+include!("firmware_main/safe_mismatch_console.inc");
 include!("firmware_main/usb_console_port_action.inc");
 
 include!("firmware_main/ui_runtime.inc");
 
 #[esp_rtos::main]
 async fn main(_spawner: Spawner) {
-    include!("firmware_main/main_runtime.inc")
+    #[cfg(feature = "board_tps_sw")]
+    {
+        include!("firmware_main/main_runtime.inc")
+    }
+    #[cfg(feature = "board_tps_fusb")]
+    {
+        include!("firmware_main/fusb_runtime.inc")
+    }
 }

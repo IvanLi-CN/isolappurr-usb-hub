@@ -25,6 +25,12 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--git-sha", required=True)
     parser.add_argument("--build-id", required=True)
+    parser.add_argument(
+        "--compiled-profile",
+        required=True,
+        choices=("tps-sw", "tps-fusb"),
+        help="hardware profile compiled into this image",
+    )
     parser.add_argument("--app-bin", type=Path)
     parser.add_argument("--elf", type=Path)
     parser.add_argument("--full-image", type=Path)
@@ -82,6 +88,11 @@ def main() -> int:
             "version": args.version,
             "gitSha": args.git_sha,
             "buildId": args.build_id,
+            "compiledProfile": args.compiled_profile,
+            "compatibleHardware": {
+                "discoverySchema": 1,
+                "profiles": [args.compiled_profile],
+            },
             "files": app_files,
         }
     ]
@@ -94,12 +105,17 @@ def main() -> int:
                 "version": args.version,
                 "gitSha": args.git_sha,
                 "buildId": args.build_id,
+                "compiledProfile": args.compiled_profile,
+                "compatibleHardware": {
+                    "discoverySchema": 1,
+                    "profiles": [args.compiled_profile],
+                },
                 "files": recovery_files,
             }
         )
 
     catalog = {
-        "schemaVersion": "1",
+        "schemaVersion": "2",
         "artifacts": artifacts,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)

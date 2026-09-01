@@ -14,6 +14,26 @@
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64 * 1024);
     esp_alloc::psram_allocator!(peripherals.PSRAM, esp_hal::psram);
 
+    // Establish the complete shared power/data safety vector before any
+    // profile work. These handles remain alive for the matching runtime; the
+    // mismatch path returns to the diagnostic console before any controller
+    // or route can be constructed.
+    let _vin_en = Output::new(peripherals.GPIO34, Level::Low, OutputConfig::default());
+    let _vin_sel = Output::new(peripherals.GPIO35, Level::Low, OutputConfig::default());
+    let _vbus_gate = Output::new(peripherals.GPIO36, Level::Low, OutputConfig::default());
+    let mut p2_ced = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
+    let mut p1_ced = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
+    #[allow(unused_mut, unused_variables)]
+    let mut p1_esp = Output::new(peripherals.GPIO5, Level::Low, OutputConfig::default());
+    let mut p1_en_n = Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
+    let mut ce_tps = Output::new(peripherals.GPIO37, Level::High, OutputConfig::default());
+    let mut blk = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
+    let buzzer_pin = Output::new(peripherals.GPIO21, Level::Low, OutputConfig::default());
+    let mut _gpio47 = Flex::new(peripherals.GPIO47);
+    _gpio47.set_level(Level::High);
+    _gpio47.set_output_enable(false);
+    _gpio47.set_input_enable(true);
+
     // Initialize the preemptive scheduler used by esp-radio (+ embassy integrations).
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
@@ -31,6 +51,79 @@
         DASHBOARD_BG_RGB8.2
     );
 
+    // Device identity is derived from the MCU's factory identity, but it is
+    // never used as board evidence or an artifact selector.
+    #[cfg(feature = "net_http")]
+    let device_names = net::init_device_names();
+
+    let tps_i2c = I2c::new(
+        peripherals.I2C1,
+        I2cConfig::default()
+            .with_frequency(Rate::from_khz(400))
+            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(20))),
+    )
+    .unwrap()
+    .with_sda(peripherals.GPIO8)
+    .with_scl(peripherals.GPIO9)
+    .into_async();
+    let mut telemetry_i2c = TelemetryI2cAllowlist::new(tps_i2c);
+    info!(
+        "tps i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 allowlist=[0x40/0x44,0x41/0x45,0x48,0x50,0x74,0x22]"
+    );
+
+    let sw2303_i2c = I2c::new(
+        peripherals.I2C0,
+        I2cConfig::default()
+            .with_frequency(Rate::from_khz(PD_I2C_KHZ))
+            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
+                PD_I2C_TIMEOUT_MS,
+            ))),
+    )
+    .unwrap()
+    .with_sda(peripherals.GPIO39)
+    .with_scl(peripherals.GPIO40)
+    .into_async();
+    let mut sw2303_i2c = I2cAllowlist::new(sw2303_i2c);
+    info!(
+        "profile-neutral discovery i2c: I2C0@{}kHz SDA=GPIO39 SCL=GPIO40 allowlist=[0x22]",
+        PD_I2C_KHZ
+    );
+
+    // Read only fixed-location topology discovery. No profile controller,
+    // route, EEPROM, or power transaction is allowed before this gate.
+    let hardware_discovery =
+        hardware_discovery::probe_topology(&mut sw2303_i2c, &mut telemetry_i2c).await;
+    let discovery_state = hardware_discovery.classify();
+    let profile_compatibility =
+        hardware_discovery.compatibility(board_profile::COMPILED_PROFILE);
+    crate::set_hardware_discovery_state(discovery_state);
+    info!(
+        "hardware discovery: state={} compiled_profile={} compatibility={}",
+        discovery_state.as_str(),
+        board_profile::COMPILED_PROFILE_NAME,
+        profile_compatibility.as_str()
+    );
+    if !matches!(
+        profile_compatibility,
+        isolapurr_firmware_core::hardware_discovery::ProfileCompatibility::Match
+    ) {
+        #[cfg(feature = "net_http")]
+        {
+            let usb_serial = UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
+            safe_mismatch_console(
+                usb_serial,
+                discovery_state,
+                profile_compatibility,
+                Some(device_names),
+            )
+            .await;
+        }
+        #[cfg(not(feature = "net_http"))]
+        loop {
+            Timer::after_millis(1_000).await;
+        }
+    }
+
     let mcu_temperature_sensor =
         Esp32S3TemperatureSensor::new(peripherals.SYSTEM, peripherals.SENS);
     Timer::after_micros(250).await;
@@ -38,10 +131,9 @@
     // Optional HTTP API state is shared by Wi-Fi and USB/native transports.
     #[cfg(feature = "net_http")]
     let api_state = net::init_http_api_state();
-    #[cfg(feature = "net_http")]
-    let device_names = net::init_device_names();
 
-    let buzzer = LedcBuzzer::new(peripherals.LEDC, peripherals.GPIO21).expect("buzzer LEDC init");
+    let buzzer = LedcBuzzer::new_with_flex(peripherals.LEDC, buzzer_pin.into_flex())
+        .expect("buzzer LEDC init");
     let mut prompt_tone = PromptToneManager::new(buzzer);
     info!(
         "buzzer: prompt_tone default freq={}Hz duty={}%",
@@ -113,22 +205,8 @@
     let mut settings_menu_view = SettingsMenuView::Main;
     let mut settings_menu_until: Option<Instant> = None;
 
-    // Port controls (tps-sw netlist):
-    // - P1_CED/P2_CED drive CH442E EN#: low=enable/connect, high=disable/disconnect.
-    // - U8 IN is P1_ESP: low=MCU D+/D-, high=USB-C/TPS D+/D-.
-    // - P1_EN# drives CH217K enable: low=enable (power on), high=disable (power off).
-    // - CE_TPS drives Q9, pulling TPS EN/UVLO low when CE_TPS is high (power off).
-    //
-    // Keep data paths connected at boot, but hold TPS output off before the
-    // SW2303 POR window is explicitly controlled below.
-    let mut p2_ced = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
-    let mut p1_ced = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
-    #[allow(unused_mut, unused_variables)]
-    let mut p1_esp = Output::new(peripherals.GPIO5, Level::High, OutputConfig::default());
-    let mut p1_en_n = Output::new(peripherals.GPIO16, Level::Low, OutputConfig::default());
-    let mut ce_tps = Output::new(peripherals.GPIO37, Level::High, OutputConfig::default());
     info!(
-        "ports: boot state p1_en#=low(on) p1_ced=low(connect) p2_ced=low(connect) p1_esp=high(route=usb_c) ce_tps=high(off)"
+        "bootsafety: p1_en#=high(off) p1_ced=high(disabled) p2_ced=high(disabled) p1_esp=low(route=mcu) ce_tps=high(off)"
     );
 
     let mut port_usb_a = PortState::new(PowerState::On);
@@ -155,38 +233,6 @@
         TPS_INT_DIRTY.store(true, Ordering::Release);
     }
 
-    let tps_i2c = I2c::new(
-        peripherals.I2C1,
-        I2cConfig::default()
-            .with_frequency(Rate::from_khz(400))
-            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(20))),
-    )
-    .unwrap()
-    .with_sda(peripherals.GPIO8)
-    .with_scl(peripherals.GPIO9)
-    .into_async();
-    let mut telemetry_i2c = TelemetryI2cAllowlist::new(tps_i2c);
-    info!(
-        "tps i2c: I2C1@400kHz async SDA=GPIO8 SCL=GPIO9 allowlist=[0x40/0x44,0x41/0x45,0x48,0x50,0x74]"
-    );
-
-    let sw2303_i2c = I2c::new(
-        peripherals.I2C0,
-        I2cConfig::default()
-            .with_frequency(Rate::from_khz(PD_I2C_KHZ))
-            .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(
-                PD_I2C_TIMEOUT_MS,
-            ))),
-    )
-    .unwrap()
-    .with_sda(peripherals.GPIO39)
-    .with_scl(peripherals.GPIO40)
-    .into_async();
-    let mut sw2303_i2c = I2cAllowlist::new(sw2303_i2c);
-    info!(
-        "sw2303 i2c: I2C0@{}kHz async SDA=GPIO39 SCL=GPIO40 allowlist=[0x3C]",
-        PD_I2C_KHZ
-    );
     let sw2303_i2c_park_input_cfg = InputConfig::default().with_pull(Pull::None);
     let sw2303_i2c_park_output_cfg = OutputConfig::default()
         .with_drive_mode(DriveMode::OpenDrain)
@@ -510,7 +556,7 @@
     let cs = Output::new(peripherals.GPIO13, Level::High, OutputConfig::default());
     // Backlight gate BLK is active-low. Force it ON immediately so backlight is not
     // coupled to display init success.
-    let blk = Output::new(peripherals.GPIO15, Level::Low, OutputConfig::default());
+    blk.set_low();
 
     let spi_bus = Spi::new(
         peripherals.SPI2,
