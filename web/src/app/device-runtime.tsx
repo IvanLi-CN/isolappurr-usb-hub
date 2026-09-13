@@ -47,9 +47,18 @@ import { useDemoMode } from "./demo-mode";
 import { createDeviceRuntimeActions } from "./device-runtime-actions";
 import { createSharedMutationController } from "./device-runtime-command-state";
 import { DeviceRuntimeContext } from "./device-runtime-context";
+import {
+  createRuntimeRpcRequestId,
+  useObservedPowerLockSync,
+} from "./device-runtime-helpers";
 import { useDeviceRuntimePowerLock } from "./device-runtime-power-lock";
 import {
-  clearPowerLockResume,
+  markDeviceRuntimeChannel,
+  syncDeviceRuntimeIdleBias,
+  syncDeviceRuntimePdDiagnostics,
+  syncDeviceRuntimePowerConfig,
+} from "./device-runtime-snapshots";
+import {
   createEmptyChannels,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
@@ -62,7 +71,6 @@ import {
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
-  markPowerLockHeld,
   recoverWifiClearLikeTimeout,
   resetLocalUsbRuntimeState,
   resetLocalUsbRuntimeStateForDevice,
@@ -250,15 +258,7 @@ export function DeviceRuntimeProvider({
       return next;
     });
   }, [devices]);
-  const createRpcRequestId = useCallback(() => {
-    if (
-      typeof crypto !== "undefined" &&
-      typeof crypto.randomUUID === "function"
-    ) {
-      return crypto.randomUUID();
-    }
-    return `rpc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }, []);
+  const createRpcRequestId = createRuntimeRpcRequestId;
 
   const runtimeRpcTimeoutMs = useCallback(
     (method: RuntimeRpcMethod): number => {
@@ -329,23 +329,7 @@ export function DeviceRuntimeProvider({
     deviceMutationQueues,
     setRuntimeById,
   });
-  const syncObservedPowerLock = useCallback(
-    (
-      deviceId: string,
-      lock: PowerConfigResponse["lock"] | null | undefined,
-      owner = getStablePowerLockOwner(deviceId),
-    ) => {
-      if (!lock) {
-        return;
-      }
-      if (lock.owner === owner) {
-        markPowerLockHeld(deviceId);
-        return;
-      }
-      clearPowerLockResume(deviceId);
-    },
-    [],
-  );
+  const syncObservedPowerLock = useObservedPowerLockSync();
   const getLocalUsbAgent =
     useCallback(async (): Promise<DesktopAgent | null> => {
       if (
@@ -561,84 +545,32 @@ export function DeviceRuntimeProvider({
 
   const markChannelResult = useCallback(
     (deviceId: string, transport: DeviceTransport, res: Result<unknown>) => {
-      setRuntimeById((prev) => {
-        const current = prev[deviceId];
-        if (!current) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [deviceId]: {
-            ...current,
-            channels: {
-              ...current.channels,
-              [transport]: {
-                lastOkAt: res.ok
-                  ? Date.now()
-                  : current.channels[transport].lastOkAt,
-                lastError: res.ok ? null : res.error,
-              },
-            },
-          },
-        };
-      });
+      markDeviceRuntimeChannel(setRuntimeById, deviceId, transport, res);
     },
     [],
   );
 
   const syncPowerConfigSnapshot = useCallback(
     (deviceId: string, nextConfig: PowerConfigResponse) => {
-      setRuntimeById((prev) => {
-        const current = prev[deviceId];
-        if (!current) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [deviceId]: {
-            ...current,
-            powerConfig: nextConfig,
-          },
-        };
-      });
+      syncDeviceRuntimePowerConfig(setRuntimeById, deviceId, nextConfig);
     },
     [],
   );
 
   const syncIdleBiasSnapshot = useCallback(
     (deviceId: string, nextIdleBias: IdleBiasResponse) => {
-      setRuntimeById((prev) => {
-        const current = prev[deviceId];
-        if (!current) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [deviceId]: {
-            ...current,
-            idleBias: nextIdleBias,
-          },
-        };
-      });
+      syncDeviceRuntimeIdleBias(setRuntimeById, deviceId, nextIdleBias);
     },
     [],
   );
 
   const syncPdDiagnosticsSnapshot = useCallback(
     (deviceId: string, nextPdDiagnostics: PdDiagnosticsResponse) => {
-      setRuntimeById((prev) => {
-        const current = prev[deviceId];
-        if (!current) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [deviceId]: {
-            ...current,
-            pdDiagnostics: nextPdDiagnostics,
-          },
-        };
-      });
+      syncDeviceRuntimePdDiagnostics(
+        setRuntimeById,
+        deviceId,
+        nextPdDiagnostics,
+      );
     },
     [],
   );

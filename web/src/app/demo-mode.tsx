@@ -1,12 +1,3 @@
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useState,
-} from "react";
 import { DEMO_AGENT_BASE_URL, DEMO_AGENT_TOKEN } from "../domain/desktopAgent";
 import type {
   DeviceInfoResponse,
@@ -15,14 +6,11 @@ import type {
   PowerConfigResponse,
   WifiConfigResponse,
 } from "../domain/deviceApi";
-import {
-  normalizeDeviceDisplayName,
-  validateDeviceDisplayName,
-} from "../domain/deviceName";
 import type { AddDeviceInput, StoredDevice } from "../domain/devices";
 import type { DiscoverySnapshot } from "../domain/discovery";
 import { clearIpScanSession } from "../domain/ipScanSession";
 import type { PortsResponse } from "../domain/ports";
+import { handleDemoDeviceNameRequest } from "./demo-mode-device-name";
 import { applyDemoIpScan, cancelDemoIpScan } from "./demo-mode-discovery";
 import { handleDemoPortAction } from "./demo-mode-port-actions";
 import {
@@ -46,9 +34,13 @@ import {
 } from "./demo-mode-world";
 import type { ThemeId } from "./theme";
 
+export {
+  DemoModeProvider,
+  useDemoMode,
+} from "./demo-mode-provider";
+
 let demoFetchRestore: (() => void) | null = null;
 let demoIpScanRunId = 0;
-
 const DEMO_ENABLED_STORAGE_KEY = "isolapurr.demo.enabled";
 export const DEMO_ENTER_QUERY = "?demo=true";
 export const DEMO_EXIT_QUERY = "?demo=false";
@@ -56,44 +48,31 @@ void DEMO_ENABLED_STORAGE_KEY;
 
 export {
   DEMO_RESET_EVENT,
+  readDemoEnabled,
   readDemoWorldSummary,
   resetDemoModeSession,
 } from "./demo-mode-world";
-
-type DemoModeContextValue = {
-  enabled: boolean;
-  query: string;
-  withDemoSearch: (to: string) => string;
-  exitHref: string;
-  bootstrap: (pathname: string, search: string) => void;
-  clear: () => void;
-};
 
 type DemoAgentResponse = {
   token: string;
   agentBaseUrl: string;
   app: { name: string; version: string; mode: string };
 };
-
 type DemoStorageDevicesResponse = {
   devices: StoredDevice[];
 };
-
 type DemoStorageDeviceResponse = {
   device: StoredDevice;
 };
-
 type DemoStorageSettingsResponse = {
   settings: { theme: ThemeId };
 };
-
 type DemoStorageExportResponse = {
   schema_version: number;
   devices: StoredDevice[];
   settings: { theme?: ThemeId };
   meta: Record<string, never>;
 };
-
 type DemoDiscoverySnapshotResponse = DiscoverySnapshot;
 
 type DemoApiResponse =
@@ -124,18 +103,7 @@ type DemoApiResponse =
   | { display_name: string | null }
   | { migrated: boolean; imported?: { devices: number; settings: boolean } };
 
-const DEMO_MODE_DISABLED: DemoModeContextValue = {
-  enabled: false,
-  query: "",
-  withDemoSearch: (to) => to,
-  exitHref: `/${DEMO_EXIT_QUERY}`,
-  bootstrap: () => {},
-  clear: () => {},
-};
-
-const DemoModeContext = createContext<DemoModeContextValue>(DEMO_MODE_DISABLED);
-
-function jsonResponse(body: DemoApiResponse, init?: ResponseInit): Response {
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     status: init?.status ?? 200,
     headers: {
@@ -467,36 +435,17 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
       response: { accepted: true, duration_ms: 5000 },
     } as unknown as DemoApiResponse);
   }
-  if (suffix === "settings/name" && method === "PUT") {
-    const body = readJsonBody(init) as { name?: unknown } | null;
-    const value = typeof body?.name === "string" ? body.name : "";
-    const name = normalizeDeviceDisplayName(value);
-    const error = validateDeviceDisplayName(name);
-    if (error) {
-      return apiError(400, "invalid_name", error);
-    }
-    updateWorld((current) => {
-      const mutated = cloneWorld(current);
-      const target = findByDeviceId(mutated, record.stored.id);
-      if (target) {
-        target.info.device.display_name = name;
-        target.stored.deviceNameCache = { state: "value", value: name };
-      }
-      return mutated;
-    });
-    return jsonResponse({ display_name: name });
-  }
-  if (suffix === "settings/name" && method === "DELETE") {
-    updateWorld((current) => {
-      const mutated = cloneWorld(current);
-      const target = findByDeviceId(mutated, record.stored.id);
-      if (target) {
-        target.info.device.display_name = null;
-        target.stored.deviceNameCache = { state: "unset" };
-      }
-      return mutated;
-    });
-    return jsonResponse({ display_name: null });
+  if (suffix === "settings/name") {
+    const response = handleDemoDeviceNameRequest(
+      method,
+      init,
+      record.stored.id,
+      readJsonBody,
+      updateWorld,
+      jsonResponse,
+      apiError,
+    );
+    if (response) return response;
   }
   if (suffix === "wifi" && method === "GET") {
     return jsonResponse({
@@ -797,36 +746,17 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
   if (url.pathname === "/api/v1/info" && method === "GET") {
     return jsonResponse(record.info);
   }
-  if (url.pathname === "/api/v1/settings/name" && method === "PUT") {
-    const body = readJsonBody(init) as { name?: unknown } | null;
-    const value = typeof body?.name === "string" ? body.name : "";
-    const name = normalizeDeviceDisplayName(value);
-    const error = validateDeviceDisplayName(name);
-    if (error) {
-      return apiError(400, "invalid_name", error);
-    }
-    updateWorld((current) => {
-      const mutated = cloneWorld(current);
-      const target = findByDeviceId(mutated, record.stored.id);
-      if (target) {
-        target.info.device.display_name = name;
-        target.stored.deviceNameCache = { state: "value", value: name };
-      }
-      return mutated;
-    });
-    return jsonResponse({ display_name: name });
-  }
-  if (url.pathname === "/api/v1/settings/name" && method === "DELETE") {
-    updateWorld((current) => {
-      const mutated = cloneWorld(current);
-      const target = findByDeviceId(mutated, record.stored.id);
-      if (target) {
-        target.info.device.display_name = null;
-        target.stored.deviceNameCache = { state: "unset" };
-      }
-      return mutated;
-    });
-    return jsonResponse({ display_name: null });
+  if (url.pathname === "/api/v1/settings/name") {
+    const response = handleDemoDeviceNameRequest(
+      method,
+      init,
+      record.stored.id,
+      readJsonBody,
+      updateWorld,
+      jsonResponse,
+      apiError,
+    );
+    if (response) return response;
   }
   if (url.pathname === "/api/v1/ports" && method === "GET") {
     return jsonResponse(record.ports);
@@ -1207,60 +1137,4 @@ export function ensureDemoFetchInterceptor(): void {
     return;
   }
   demoFetchRestore = installDemoFetchInterceptor();
-}
-
-function resolveInitialDemoEnabled(): boolean {
-  const enabled = initDemoMode(
-    typeof window !== "undefined" ? window.location.pathname : "/",
-    typeof window !== "undefined" ? window.location.search : "",
-  );
-  if (enabled) {
-    ensureDemoFetchInterceptor();
-  }
-  return enabled;
-}
-
-export function DemoModeProvider({ children }: { children: ReactNode }) {
-  const [enabled, setEnabled] = useState(resolveInitialDemoEnabled);
-
-  useEffect(() => {
-    setEnabled(readDemoEnabled());
-  }, []);
-
-  useLayoutEffect(() => {
-    ensureDemoFetchInterceptor();
-    return () => undefined;
-  }, []);
-
-  const value = useMemo<DemoModeContextValue>(() => {
-    const query = enabled ? DEMO_ENTER_QUERY : "";
-    return {
-      enabled,
-      query,
-      withDemoSearch: (to) => withDemoSearch(to, enabled),
-      exitHref: `/${DEMO_EXIT_QUERY}`,
-      bootstrap: (pathname, search) => {
-        const nextEnabled = initDemoMode("/", search);
-        if (nextEnabled) {
-          ensureDemoFetchInterceptor();
-        }
-        setEnabled(nextEnabled);
-        void pathname;
-      },
-      clear: () => {
-        clearDemoMode();
-        setEnabled(false);
-      },
-    };
-  }, [enabled]);
-
-  return (
-    <DemoModeContext.Provider value={value}>
-      {children}
-    </DemoModeContext.Provider>
-  );
-}
-
-export function useDemoMode(): DemoModeContextValue {
-  return useContext(DemoModeContext);
 }

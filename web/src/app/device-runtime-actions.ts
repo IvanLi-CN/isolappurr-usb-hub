@@ -16,10 +16,7 @@ import type {
   WifiConfigResponse,
   WifiMutationResponse,
 } from "../domain/deviceApi";
-import {
-  type DeviceNameCache,
-  resolveStoredDeviceDisplayName,
-} from "../domain/deviceName";
+import type { DeviceNameCache } from "../domain/deviceName";
 import type { StoredDevice } from "../domain/devices";
 import type {
   PortId,
@@ -33,6 +30,7 @@ import type {
   RuntimeRpcMethod,
   RuntimeRpcResultMap,
 } from "./cross-tab-runtime";
+import { createDeviceNameActions } from "./device-runtime-name-actions";
 import {
   applyOptimisticPowerConfig,
   clearPowerLockResume,
@@ -215,54 +213,21 @@ export function createDeviceRuntimeActions({
   const shouldRequestLeader = () =>
     shouldRequestLeaderRpc(isLeaderRef.current, coordinationRoleRef.current);
 
-  const applyDeviceNameMutationSnapshot = (
-    deviceId: string,
-    response: DeviceNameMutationResponse,
-  ) => {
-    const cache: DeviceNameCache =
-      response.display_name === null
-        ? { state: "unset" }
-        : { state: "value", value: response.display_name };
-    const current = runtimeByIdRef.current[deviceId];
-    setRuntimeById((prev) => {
-      const runtime = prev[deviceId];
-      if (!runtime?.deviceInfo) {
-        return prev;
-      }
-      return {
-        ...prev,
-        [deviceId]: {
-          ...runtime,
-          deviceInfo: {
-            ...runtime.deviceInfo,
-            device: {
-              ...runtime.deviceInfo.device,
-              display_name: response.display_name,
-            },
-          },
-        },
-      };
+  const { displayNameFor, setDeviceName, clearDeviceName } =
+    createDeviceNameActions({
+      coordinator,
+      devices,
+      runtimeByIdRef,
+      setRuntimeById,
+      isLeader,
+      coordinationRole,
+      requestLeaderRpc,
+      runDeviceCommand,
+      runSharedMutation,
+      refreshDevice,
+      invalidateDevicePoll,
+      updateDeviceNameCache,
     });
-    if (updateDeviceNameCache) {
-      void updateDeviceNameCache(
-        deviceId,
-        cache,
-        current?.deviceInfo?.device.hostname,
-      );
-    }
-  };
-
-  const displayNameFor = (deviceId: string): string => {
-    const device = devices.find((candidate) => candidate.id === deviceId);
-    if (!device) {
-      return deviceId;
-    }
-    const runtime = runtimeByIdRef.current[deviceId];
-    return resolveStoredDeviceDisplayName(
-      device,
-      runtime?.identityVerified ? (runtime.deviceInfo ?? null) : null,
-    );
-  };
 
   const wifiConfig = async (
     deviceId: string,
@@ -346,62 +311,6 @@ export function createDeviceRuntimeActions({
           ["web_serial", "local_usb"],
         );
         if (res.ok) {
-          await refreshDevice(deviceId);
-        }
-        return res;
-      },
-    });
-  };
-
-  const setDeviceName = async (
-    deviceId: string,
-    name: string,
-    options?: SharedMutationInvocationOptions,
-  ): Promise<Result<DeviceNameMutationResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
-      return requestLeaderRpc("setDeviceName", [deviceId, name]);
-    }
-    invalidateDevicePoll?.(deviceId);
-    return runSharedMutation({
-      deviceId,
-      method: "setDeviceName",
-      requestId: options?.requestId,
-      sourceTabId: options?.sourceTabId,
-      invoke: async () => {
-        const res = await runDeviceCommand<DeviceNameMutationResponse>(
-          deviceId,
-          "settings.name.set",
-          { name: name.trim() },
-        );
-        if (res.ok) {
-          applyDeviceNameMutationSnapshot(deviceId, res.value);
-          await refreshDevice(deviceId);
-        }
-        return res;
-      },
-    });
-  };
-
-  const clearDeviceName = async (
-    deviceId: string,
-    options?: SharedMutationInvocationOptions,
-  ): Promise<Result<DeviceNameMutationResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
-      return requestLeaderRpc("clearDeviceName", [deviceId]);
-    }
-    invalidateDevicePoll?.(deviceId);
-    return runSharedMutation({
-      deviceId,
-      method: "clearDeviceName",
-      requestId: options?.requestId,
-      sourceTabId: options?.sourceTabId,
-      invoke: async () => {
-        const res = await runDeviceCommand<DeviceNameMutationResponse>(
-          deviceId,
-          "settings.name.clear",
-        );
-        if (res.ok) {
-          applyDeviceNameMutationSnapshot(deviceId, res.value);
           await refreshDevice(deviceId);
         }
         return res;
