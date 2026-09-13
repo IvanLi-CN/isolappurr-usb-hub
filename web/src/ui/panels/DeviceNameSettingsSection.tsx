@@ -164,6 +164,7 @@ export function DeviceNameSettingsSection({
       <section
         className="iso-card rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]"
         aria-labelledby="device-name-heading"
+        aria-busy={busy || saving || clearing}
         data-testid="device-name-settings"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -185,6 +186,16 @@ export function DeviceNameSettingsSection({
               : "Unsupported by this firmware"}
           </div>
         </div>
+        {busy ? (
+          <output
+            className="mt-3 text-[12px] font-semibold text-[var(--muted)]"
+            aria-live="polite"
+            data-testid="device-name-busy-status"
+          >
+            Another device operation is in progress. Device name controls are
+            temporarily unavailable.
+          </output>
+        ) : null}
         <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-end">
           <label className="form-control min-w-0 flex-1">
             <span className="label px-0 pb-1 pt-0">

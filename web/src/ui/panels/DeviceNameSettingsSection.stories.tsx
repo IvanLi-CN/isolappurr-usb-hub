@@ -81,6 +81,14 @@ export const UnsupportedFirmware: Story = {
 
 export const Busy: Story = {
   args: { busy: true, transport: "web_serial" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("device-name-settings")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    await expect(canvas.getByTestId("device-name-busy-status")).toBeVisible();
+  },
 };
 
 export const EepromError: Story = {

@@ -408,12 +408,14 @@ pub(super) fn parse_import_profiles(
 fn migrate_localstorage_payload(value: Value) -> anyhow::Result<(usize, bool)> {
     let mut imported_devices = 0;
     if let Some(devices) = value.get("devices").and_then(Value::as_array) {
+        let _lock = storage_registry_lock();
         let mut registry = read_hardware_registry()?;
-        if registry.devices.is_empty() {
-            for device in devices {
-                upsert_profile(&mut registry, parse_web_storage_device(device)?);
-                imported_devices += 1;
-            }
+        for device in devices {
+            let profile = parse_web_storage_device(device)?;
+            super::merge_migrated_profile(&mut registry, profile);
+            imported_devices += 1;
+        }
+        if imported_devices > 0 {
             write_hardware_registry(&registry)?;
         }
     }

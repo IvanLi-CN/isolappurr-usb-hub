@@ -246,7 +246,7 @@ export function DevicesProvider({
     migrationAttemptedRef.current = true;
     void (async () => {
       const existing = await fetchStoredDevices(agent);
-      if (!existing.ok || existing.value.length > 0) {
+      if (!existing.ok) {
         return;
       }
       const payload = readMigrationPayload();
@@ -465,11 +465,23 @@ export function DevicesProvider({
           broadcastProfileSync();
           return;
         }
-        await persistDevice({
-          ...latest,
-          hostname: nextHostname,
+        const latestDevices = loadStoredDevices();
+        const latestFromStorage =
+          latestDevices.find((device) => device.id === deviceId) ?? latest;
+        const next = {
+          ...latestFromStorage,
+          hostname: hostname?.trim() || latestFromStorage.hostname,
           deviceNameCache: cache,
-        });
+        };
+        const nextDevices = latestDevices.some(
+          (device) => device.id === deviceId,
+        )
+          ? latestDevices.map((device) =>
+              device.id === deviceId ? next : device,
+            )
+          : [...latestDevices, next];
+        saveStoredDevices(nextDevices);
+        setDevices(nextDevices);
       },
       rebindHttpBaseUrl: async (deviceId, httpBaseUrl) => {
         const existing = devices.find((device) => device.id === deviceId);
