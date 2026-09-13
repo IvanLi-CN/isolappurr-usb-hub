@@ -427,16 +427,20 @@ export function DevicesProvider({
       },
       updateDeviceNameCache: async (deviceId, cache, hostname) => {
         const existing = devices.find((device) => device.id === deviceId);
-        if (!existing) {
+        const latest = agent
+          ? existing
+          : (loadStoredDevices().find((device) => device.id === deviceId) ??
+            existing);
+        if (!latest) {
           return;
         }
-        const current = existing.deviceNameCache;
-        const nextHostname = hostname?.trim() || existing.hostname;
+        const current = latest.deviceNameCache;
+        const nextHostname = hostname?.trim() || latest.hostname;
         if (
           current?.state === cache.state &&
           (cache.state !== "value" ||
             (current.state === "value" && current.value === cache.value)) &&
-          nextHostname === existing.hostname
+          nextHostname === latest.hostname
         ) {
           return;
         }
@@ -461,12 +465,8 @@ export function DevicesProvider({
           broadcastProfileSync();
           return;
         }
-        const latest = loadStoredDevices().find(
-          (device) => device.id === deviceId,
-        );
-        const next = latest ?? existing;
         await persistDevice({
-          ...next,
+          ...latest,
           hostname: nextHostname,
           deviceNameCache: cache,
         });
