@@ -15,6 +15,8 @@
 ## Coverage / rollout summary
 
 - Firmware-core record, endpoint, host-tools, Web, Storybook, and Desktop checks pass.
+- Desktop cache refreshes use a field-level devd storage endpoint so a stale browser tab cannot overwrite a newer local profile name or transport binding.
+- USB clear responses without a returned hostname no longer synthesize an owner-facing name from the internal devd target id; the existing display state is left unchanged until a later info response supplies a stable hostname.
 - The production demo Settings surface was checked at desktop, `393x852`, and dark-theme viewports; the confirmed screenshots are linked from `SPEC.md`.
 - Owner-authorized HIL on `/dev/cu.usbmodem21141401` completed with the source-built ESP32-S3 app image after updating the confirmed port cache to the device actually connected. Post-flash USB JSONL `info` returned `device_id=856a141cdbd4`, `display_name=null`, and `capabilities.device_name=true`; hostname/FQDN remained `isolapurr-usb-hub-856a141cdbd4[.local]` and MAC remained `1c:db:d4:85:6a:14`.
 - The source target does not provide a Rust test harness for `cargo test --features net_http --lib`; shared firmware-core tests and the supported firmware build/check commands are the applicable evidence.

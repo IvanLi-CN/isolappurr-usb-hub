@@ -24,6 +24,11 @@ type StorageDeviceResponse = {
   device: StoredDevice;
 };
 
+type StorageNameCacheInput = {
+  deviceNameCache: StoredDevice["deviceNameCache"];
+  hostname?: string;
+};
+
 type StorageSettingsResponse = {
   settings: { theme: ThemeId };
 };
@@ -177,6 +182,31 @@ export async function deleteStoredDevice(
     return { ok: false, error: await readStorageError(res) };
   }
   return { ok: true, value: true };
+}
+
+export async function updateStoredDeviceNameCache(
+  agent: DesktopAgent,
+  deviceId: string,
+  input: StorageNameCacheInput,
+): Promise<StorageResult<StoredDevice>> {
+  const res = await agentFetch(
+    agent,
+    `/api/v1/storage/devices/${deviceId}/name-cache`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await readStorageError(res) };
+  }
+  const json = (await res.json()) as unknown;
+  const obj = json as StorageDeviceResponse | undefined;
+  const device = obj?.device ? parseStoredDevice(obj.device) : null;
+  if (!device) {
+    return { ok: false, error: { message: "invalid response" } };
+  }
+  return { ok: true, value: device };
 }
 
 export async function fetchStoredTheme(

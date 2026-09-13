@@ -212,6 +212,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `GET /api/v1/devices/{id}/diagnostics`
 - `GET|POST /api/v1/storage/devices`
 - `DELETE /api/v1/storage/devices/{id}`
+- `PUT /api/v1/storage/devices/{id}/name-cache` for field-level display-name cache and confirmed hostname updates; it does not mutate the local profile name or transports.
 - `GET|PUT /api/v1/storage/settings`
 - `POST /api/v1/storage/migrate/localstorage`
 - `GET /api/v1/storage/export`

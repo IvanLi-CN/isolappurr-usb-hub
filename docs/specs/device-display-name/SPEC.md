@@ -14,6 +14,7 @@
 - `display_name`: The additive `info.device` field. New firmware returns a string when set and `null` when the record is valid but unset; legacy firmware omits the field.
 - `device_name` capability: The additive boolean capability that enables name mutation on new firmware.
 - Name mutation: HTTP `PUT`/`DELETE /api/v1/settings/name`, JSONL `settings.name.set`/`settings.name.clear`, corresponding devd IPC/bridge methods, and `isolapurr settings name show|set|clear --device-id <device_id>`.
+- Desktop profile cache synchronization: `PUT /api/v1/storage/devices/{id}/name-cache` accepts only `deviceNameCache` and the optional confirmed `hostname`; it MUST NOT overwrite the local profile `name` or transport bindings.
 
 ## Requirements
 

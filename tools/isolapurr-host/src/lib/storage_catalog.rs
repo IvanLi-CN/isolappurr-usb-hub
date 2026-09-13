@@ -108,6 +108,14 @@ pub fn save_hardware(input: SavedHardwareInput) -> anyhow::Result<DeviceProfile>
 }
 
 pub fn update_device_name_cache(device_id: &str, cache: DeviceNameCache) -> anyhow::Result<bool> {
+    update_device_name_cache_fields(device_id, cache, None)
+}
+
+pub fn update_device_name_cache_fields(
+    device_id: &str,
+    cache: DeviceNameCache,
+    hostname: Option<String>,
+) -> anyhow::Result<bool> {
     let Some(device_id) = normalize_canonical_device_id(device_id) else {
         return Ok(false);
     };
@@ -119,10 +127,22 @@ pub fn update_device_name_cache(device_id: &str, cache: DeviceNameCache) -> anyh
     else {
         return Ok(false);
     };
-    profile.device_name_cache = Some(cache);
+    apply_device_name_cache_fields(profile, cache, hostname);
     profile.last_seen_at = Some(now_unix_seconds());
     write_hardware_registry(&registry)?;
     Ok(true)
+}
+
+pub(crate) fn apply_device_name_cache_fields(
+    profile: &mut DeviceProfile,
+    cache: DeviceNameCache,
+    hostname: Option<String>,
+) {
+    profile.device_name_cache = Some(cache);
+    if let Some(hostname) = hostname {
+        let hostname = hostname.trim().to_string();
+        profile.hostname = (!hostname.is_empty()).then_some(hostname);
+    }
 }
 
 fn delete_hardware(id: &str) -> anyhow::Result<bool> {

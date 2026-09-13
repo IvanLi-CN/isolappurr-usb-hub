@@ -4,7 +4,7 @@ use axum::{
     extract::{DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
 };
 use directories::ProjectDirs;
 use rand::{Rng as _, distributions::Alphanumeric};
@@ -607,6 +607,41 @@ mod tests {
         assert_eq!(
             registry.devices[0].device_name_cache,
             Some(DeviceNameCache::Value("Studio 猫".to_string()))
+        );
+    }
+
+    #[test]
+    fn name_cache_update_does_not_change_local_profile_name_or_transports() {
+        let mut profile = DeviceProfile {
+            id: "aabbcc001122".to_string(),
+            name: "Local alias".to_string(),
+            hostname: None,
+            device_name_cache: None,
+            transports: Some(DeviceProfileTransports {
+                http_base_url: Some("http://192.168.1.42".to_string()),
+                local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),
+                web_serial_label: None,
+            }),
+            legacy_transport: None,
+            identity: None,
+            last_seen_at: None,
+        };
+        apply_device_name_cache_fields(
+            &mut profile,
+            DeviceNameCache::Unset,
+            Some("isolapurr-usb-hub-aabbcc001122".to_string()),
+        );
+        assert_eq!(profile.name, "Local alias");
+        assert_eq!(
+            profile.hostname.as_deref(),
+            Some("isolapurr-usb-hub-aabbcc001122")
+        );
+        assert_eq!(
+            profile
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem101")
         );
     }
 

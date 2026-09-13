@@ -129,6 +129,38 @@ pub(super) async fn storage_delete(
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct StorageNameCacheRequest {
+    device_name_cache: DeviceNameCache,
+    #[serde(default)]
+    hostname: Option<String>,
+}
+
+pub(super) async fn storage_name_cache_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<StorageNameCacheRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match update_device_name_cache_fields(&id, req.device_name_cache, req.hostname) {
+        Ok(true) => match read_hardware_registry() {
+            Ok(registry) => match registry.devices.iter().find(|device| device.id == id) {
+                Some(profile) => {
+                    Json(json!({"device": web_storage_device(profile)})).into_response()
+                }
+                None => not_found("device not found"),
+            },
+            Err(err) => internal_error(&format!("read storage failed: {err}")),
+        },
+        Ok(false) => not_found("device not found"),
+        Err(err) => bad_request(&format!("update name cache failed: {err}")),
+    }
+}
+
 pub(super) async fn storage_settings_get(
     State(state): State<AppState>,
     headers: HeaderMap,

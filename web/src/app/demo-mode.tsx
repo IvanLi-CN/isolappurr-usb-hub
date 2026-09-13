@@ -262,6 +262,34 @@ function handleDemoStorageRequest(url: URL, init?: RequestInit): Response {
   }
   if (
     url.pathname.startsWith("/api/v1/storage/devices/") &&
+    url.pathname.endsWith("/name-cache") &&
+    method === "PUT"
+  ) {
+    const deviceId = decodeURIComponent(
+      url.pathname
+        .replace("/api/v1/storage/devices/", "")
+        .replace("/name-cache", ""),
+    );
+    const body = readJsonBody(init) as {
+      deviceNameCache?: StoredDevice["deviceNameCache"];
+      hostname?: string;
+    } | null;
+    const next = updateWorld((world) => {
+      const mutated = cloneWorld(world);
+      const target = findByDeviceId(mutated, deviceId);
+      if (target) {
+        target.stored.deviceNameCache = body?.deviceNameCache;
+        target.stored.hostname = body?.hostname?.trim() || undefined;
+      }
+      return mutated;
+    });
+    const device = findByDeviceId(next, deviceId);
+    return device
+      ? jsonResponse({ device: device.stored })
+      : apiError(404, "not_found", "device not found");
+  }
+  if (
+    url.pathname.startsWith("/api/v1/storage/devices/") &&
     method === "DELETE"
   ) {
     const deviceId = decodeURIComponent(

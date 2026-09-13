@@ -16,6 +16,7 @@ import {
   exportStorage,
   fetchStoredDevices,
   migrateFromLocalStorage,
+  updateStoredDeviceNameCache,
   upsertStoredDevice,
 } from "../domain/desktopStorage";
 import type { DeviceNameCache } from "../domain/deviceName";
@@ -437,6 +438,27 @@ export function DevicesProvider({
             (current.state === "value" && current.value === cache.value)) &&
           nextHostname === existing.hostname
         ) {
+          return;
+        }
+        if (agent) {
+          const res = await updateStoredDeviceNameCache(agent, deviceId, {
+            hostname: nextHostname,
+            deviceNameCache: cache,
+          });
+          if (!res.ok) {
+            pushToast({
+              variant: "error",
+              message: `Desktop storage error: ${res.error.message}`,
+            });
+            return;
+          }
+          setDevices((prev) => {
+            const next = prev.filter(
+              (d) => d.id !== res.value.id && d.baseUrl !== res.value.baseUrl,
+            );
+            return [...next, res.value];
+          });
+          broadcastProfileSync();
           return;
         }
         await persistDevice({

@@ -133,6 +133,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             delete(http_bridge_storage::storage_delete),
         )
         .route(
+            "/api/v1/storage/devices/{id}/name-cache",
+            put(http_bridge_storage::storage_name_cache_update),
+        )
+        .route(
             "/api/v1/storage/settings",
             get(http_bridge_storage::storage_settings_get)
                 .put(http_bridge_storage::storage_settings_put),
