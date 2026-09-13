@@ -1,12 +1,39 @@
-use std::sync::{Mutex as StdMutex, OnceLock};
+use fs2::FileExt as _;
+use std::fs::File;
+use std::sync::{Mutex as StdMutex, MutexGuard, OnceLock};
 
 static STORAGE_REGISTRY_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 
-fn storage_registry_lock() -> std::sync::MutexGuard<'static, ()> {
-    STORAGE_REGISTRY_LOCK
+struct StorageRegistryLock {
+    _process: MutexGuard<'static, ()>,
+    file: File,
+}
+
+impl Drop for StorageRegistryLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
+fn storage_registry_lock() -> anyhow::Result<StorageRegistryLock> {
+    let process = STORAGE_REGISTRY_LOCK
         .get_or_init(|| StdMutex::new(()))
         .lock()
-        .expect("storage registry lock poisoned")
+        .expect("storage registry lock poisoned");
+    let lock_path = registry_path()?.with_extension("json.lock");
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)?;
+    file.lock_exclusive().context("lock hardware registry")?;
+    Ok(StorageRegistryLock {
+        _process: process,
+        file,
+    })
 }
 
 pub fn registry_path() -> anyhow::Result<PathBuf> {
@@ -137,6 +164,89 @@ mod storage_catalog_tests {
             Some("ESP32-S3")
         );
     }
+
+    #[test]
+    fn migrated_profile_preserves_existing_confirmed_fields() {
+        let mut registry = HardwareRegistry {
+            schema_version: STORAGE_SCHEMA_VERSION,
+            devices: vec![DeviceProfile {
+                id: "aabbcc001122".to_string(),
+                name: "Local alias".to_string(),
+                hostname: Some("isolapurr-usb-hub-aabbcc001122".to_string()),
+                device_name_cache: Some(DeviceNameCache::Value("Hardware name".to_string())),
+                transports: Some(DeviceProfileTransports {
+                    http_base_url: Some("http://192.168.1.42".to_string()),
+                    local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),
+                    web_serial_label: None,
+                }),
+                legacy_transport: None,
+                identity: Some(DeviceIdentity {
+                    device_id: Some("aabbcc001122".to_string()),
+                    mac: Some("1c:db:d4:85:6a:14".to_string()),
+                }),
+                last_seen_at: Some(3),
+            }],
+        };
+
+        merge_migrated_profile(
+            &mut registry,
+            DeviceProfile {
+                id: "aabbcc001122".to_string(),
+                name: "Stale browser name".to_string(),
+                hostname: Some("stale.example".to_string()),
+                device_name_cache: Some(DeviceNameCache::Value("Stale browser name".to_string())),
+                transports: Some(DeviceProfileTransports {
+                    http_base_url: Some("http://192.168.1.99".to_string()),
+                    local_usb_port_path: Some("/dev/cu.usbmodem999".to_string()),
+                    web_serial_label: Some("Stale browser transport".to_string()),
+                }),
+                legacy_transport: None,
+                identity: Some(DeviceIdentity {
+                    device_id: Some("aabbcc001122".to_string()),
+                    mac: Some("00:00:00:00:00:00".to_string()),
+                }),
+                last_seen_at: Some(4),
+            },
+        );
+
+        let profile = &registry.devices[0];
+        assert_eq!(
+            profile.hostname.as_deref(),
+            Some("isolapurr-usb-hub-aabbcc001122")
+        );
+        assert_eq!(
+            profile.device_name_cache,
+            Some(DeviceNameCache::Value("Hardware name".to_string()))
+        );
+        assert_eq!(
+            profile
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.http_base_url.as_deref()),
+            Some("http://192.168.1.42")
+        );
+        assert_eq!(
+            profile
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.local_usb_port_path.as_deref()),
+            Some("/dev/cu.usbmodem101")
+        );
+        assert_eq!(
+            profile
+                .transports
+                .as_ref()
+                .and_then(|transports| transports.web_serial_label.as_deref()),
+            Some("Stale browser transport")
+        );
+        assert_eq!(
+            profile
+                .identity
+                .as_ref()
+                .and_then(|identity| identity.mac.as_deref()),
+            Some("1c:db:d4:85:6a:14")
+        );
+    }
 }
 
 pub fn write_hardware_registry(registry: &HardwareRegistry) -> anyhow::Result<()> {
@@ -186,7 +296,7 @@ fn write_storage_settings(settings: &StorageSettings) -> anyhow::Result<()> {
 }
 
 pub fn save_hardware(input: SavedHardwareInput) -> anyhow::Result<DeviceProfile> {
-    let _lock = storage_registry_lock();
+    let _lock = storage_registry_lock()?;
     let mut registry = read_hardware_registry()?;
     let device_id = normalize_canonical_device_id(&input.device_id)
         .ok_or_else(|| anyhow!("device_id must be a 12-character lowercase hex value"))?;
@@ -228,7 +338,7 @@ pub fn update_device_name_cache_fields(
     cache: DeviceNameCache,
     hostname: Option<String>,
 ) -> anyhow::Result<bool> {
-    let _lock = storage_registry_lock();
+    let _lock = storage_registry_lock()?;
     let Some(device_id) = normalize_canonical_device_id(device_id) else {
         return Ok(false);
     };
@@ -258,8 +368,8 @@ pub(crate) fn apply_device_name_cache_fields(
     }
 }
 
-fn delete_hardware(id: &str) -> anyhow::Result<bool> {
-    let _lock = storage_registry_lock();
+pub fn delete_hardware(id: &str) -> anyhow::Result<bool> {
+    let _lock = storage_registry_lock()?;
     let mut registry = read_hardware_registry()?;
     let Some(id) = normalize_canonical_device_id(id) else {
         return Ok(false);
@@ -271,7 +381,7 @@ fn delete_hardware(id: &str) -> anyhow::Result<bool> {
 }
 
 fn import_profiles(profiles: Vec<DeviceProfile>) -> anyhow::Result<usize> {
-    let _lock = storage_registry_lock();
+    let _lock = storage_registry_lock()?;
     let mut registry = read_hardware_registry()?;
     let mut count = 0;
     for profile in profiles {
@@ -294,14 +404,14 @@ pub(crate) fn merge_migrated_profile(registry: &mut HardwareRegistry, profile: D
         .iter_mut()
         .find(|device| device.id == profile.id)
     {
-        if profile.device_name_cache.is_some() {
+        if existing.device_name_cache.is_none() {
             existing.device_name_cache = profile.device_name_cache;
         }
-        if profile.hostname.is_some() {
+        if existing.hostname.is_none() {
             existing.hostname = profile.hostname;
         }
-        existing.identity = merge_identity(existing.identity.take(), profile.identity);
-        existing.transports = merge_transports(existing.transports.take(), profile.transports);
+        existing.identity = merge_identity(profile.identity, existing.identity.take());
+        existing.transports = merge_transports(profile.transports, existing.transports.take());
         existing.last_seen_at = existing.last_seen_at.max(profile.last_seen_at);
     } else {
         registry.devices.push(profile);
@@ -613,6 +723,7 @@ async fn persist_captured_identity(
         }
     }
 
+    let _lock = storage_registry_lock()?;
     let mut registry = read_hardware_registry()?;
     let mut changed = false;
     let canonical_device_id = identity

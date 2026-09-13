@@ -232,6 +232,10 @@ pub(super) async fn storage_reset(State(state): State<AppState>, headers: Header
     if let Err(response) = require_auth(&headers, &state) {
         return *response;
     }
+    let _lock = match storage_registry_lock() {
+        Ok(lock) => lock,
+        Err(err) => return bad_request(&format!("lock storage failed: {err}")),
+    };
     let registry = HardwareRegistry::default();
     if let Err(err) = write_hardware_registry(&registry) {
         return bad_request(&format!("reset storage failed: {err}"));
@@ -408,7 +412,7 @@ pub(super) fn parse_import_profiles(
 fn migrate_localstorage_payload(value: Value) -> anyhow::Result<(usize, bool)> {
     let mut imported_devices = 0;
     if let Some(devices) = value.get("devices").and_then(Value::as_array) {
-        let _lock = storage_registry_lock();
+        let _lock = storage_registry_lock()?;
         let mut registry = read_hardware_registry()?;
         for device in devices {
             let profile = parse_web_storage_device(device)?;

@@ -678,14 +678,11 @@ async fn handle_hardware(
             Ok(json!({"path": path, "device": saved}))
         }
         HardwareCommand::Forget { device_id } => {
-            let mut registry = read_hardware_registry()?;
-            let before = registry.devices.len();
-            registry.devices.retain(|device| device.id != device_id);
-            isolapurr_host::write_hardware_registry(&registry)?;
+            let removed = delete_hardware(&device_id)?;
             Ok(json!({
                 "path": path,
                 "device_id": device_id,
-                "removed": before != registry.devices.len()
+                "removed": removed
             }))
         }
     }

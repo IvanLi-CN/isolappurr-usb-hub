@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { DEVICES_STORAGE_KEY } from "../domain/devices";
-import { readMigrationPayload } from "./storage-migration";
+import {
+  DESKTOP_MIGRATION_MARKER_KEY,
+  hasCompletedDesktopMigration,
+  markDesktopMigrationComplete,
+  readMigrationPayload,
+} from "./storage-migration";
 
 describe("readMigrationPayload", () => {
   const store = new Map<string, string>();
@@ -48,5 +53,28 @@ describe("readMigrationPayload", () => {
         webSerialLabel: "ESP32-S3 USB JTAG",
       },
     });
+  });
+
+  test("tracks the exact payload that was migrated", () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        localStorage: {
+          getItem: (key: string) => store.get(key) ?? null,
+          setItem: (key: string, value: string) => void store.set(key, value),
+        },
+      },
+    });
+
+    const payload = { settings: { theme: "isolapurr" as const } };
+    expect(hasCompletedDesktopMigration(payload)).toBe(false);
+    markDesktopMigrationComplete(payload);
+    expect(store.get(DESKTOP_MIGRATION_MARKER_KEY)).toBe(
+      JSON.stringify(payload),
+    );
+    expect(hasCompletedDesktopMigration(payload)).toBe(true);
+    expect(
+      hasCompletedDesktopMigration({ settings: { theme: "system" } }),
+    ).toBe(false);
   });
 });

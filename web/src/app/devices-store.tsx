@@ -40,7 +40,11 @@ import { forgetWebSerialDeviceTransport } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
 import { DEMO_RESET_EVENT, useDemoMode } from "./demo-mode";
 import { useDesktopAgent } from "./desktop-agent-ui";
-import { readMigrationPayload } from "./storage-migration";
+import {
+  hasCompletedDesktopMigration,
+  markDesktopMigrationComplete,
+  readMigrationPayload,
+} from "./storage-migration";
 
 type DevicesContextValue = {
   devices: StoredDevice[];
@@ -250,13 +254,14 @@ export function DevicesProvider({
         return;
       }
       const payload = readMigrationPayload();
-      if (!payload) {
+      if (!payload || hasCompletedDesktopMigration(payload)) {
         return;
       }
       const res = await migrateFromLocalStorage(agent, payload);
       if (!res.ok) {
         return;
       }
+      markDesktopMigrationComplete(payload);
       if (res.value.migrated) {
         pushToast({
           variant: "success",
