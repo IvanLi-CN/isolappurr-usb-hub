@@ -410,9 +410,9 @@ pub(super) fn parse_import_profiles(
 }
 
 fn migrate_localstorage_payload(value: Value) -> anyhow::Result<(usize, bool)> {
+    let _lock = storage_registry_lock()?;
     let mut imported_devices = 0;
     if let Some(devices) = value.get("devices").and_then(Value::as_array) {
-        let _lock = storage_registry_lock()?;
         let mut registry = read_hardware_registry()?;
         for device in devices {
             let profile = parse_web_storage_device(device)?;
