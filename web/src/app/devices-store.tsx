@@ -106,6 +106,9 @@ export function DevicesProvider({
     },
     [],
   );
+  const invalidateDesktopFetches = useCallback(() => {
+    desktopFetchSequenceRef.current += 1;
+  }, []);
 
   useEffect(() => {
     if (!ready || status !== "ready" || source !== "browser") {
@@ -322,7 +325,9 @@ export function DevicesProvider({
         });
         return { ok: true, device };
       }
+      invalidateDesktopFetches();
       const res = await upsertStoredDevice(agent, device);
+      invalidateDesktopFetches();
       if (!res.ok) {
         if (res.error.code === "conflict") {
           return {
@@ -362,10 +367,12 @@ export function DevicesProvider({
           if (!prepared.ok) {
             return prepared;
           }
+          invalidateDesktopFetches();
           const res = await upsertStoredDevice(
             createDemoDesktopAgent(),
             prepared.input,
           );
+          invalidateDesktopFetches();
           if (!res.ok) {
             if (res.error.code === "conflict") {
               return {
@@ -453,10 +460,12 @@ export function DevicesProvider({
           return;
         }
         if (agent) {
+          invalidateDesktopFetches();
           const res = await updateStoredDeviceNameCache(agent, deviceId, {
             hostname: nextHostname,
             deviceNameCache: cache,
           });
+          invalidateDesktopFetches();
           if (!res.ok) {
             pushToast({
               variant: "error",
@@ -507,7 +516,9 @@ export function DevicesProvider({
       },
       removeDevice: async (deviceId) => {
         if (agent) {
+          invalidateDesktopFetches();
           const res = await deleteStoredDevice(agent, deviceId);
+          invalidateDesktopFetches();
           if (!res.ok) {
             pushToast({
               variant: "error",
@@ -523,7 +534,14 @@ export function DevicesProvider({
       },
       getDevice: (deviceId) => devices.find((d) => d.id === deviceId),
     };
-  }, [devices, agent, demoEnabled, pushToast, broadcastProfileSync]);
+  }, [
+    devices,
+    agent,
+    demoEnabled,
+    pushToast,
+    broadcastProfileSync,
+    invalidateDesktopFetches,
+  ]);
 
   return (
     <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>
