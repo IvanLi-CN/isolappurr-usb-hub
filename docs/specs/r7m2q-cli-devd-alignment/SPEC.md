@@ -108,6 +108,11 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
   reset wifi|other`. Human mode must require explicit confirmation unless a
   confirmation bypass flag is supplied; `--json` must return structured
   success/error output.
+- MUST expose the hardware-owned UTF-8 display name through
+  `isolapurr settings name show|set|clear --device-id <device_id>`. The set
+  and clear operations MUST use the same additive device info, IPC, bridge,
+  and USB JSONL contract, while leaving `device_id`, hostname, mDNS, URL, and
+  `hardware save --name` local profile semantics unchanged.
 - MUST keep the reset safety boundary consistent across transports:
   `settings reset wifi` is allowed only through Web Serial or Local USB,
   while `settings reset other` may use any currently available device
@@ -150,6 +155,8 @@ IsolaPurr already has a Tauri desktop agent, Web Serial support, Wi-Fi/HTTP devi
 - `isolapurr power source-capability set [--power-watts <1..100>] [--pd <true|false>] [--pps <true|false>] [--qc20 <true|false>] [--qc30 <true|false>] [--fcp <true|false>] [--afc <true|false>] [--scp <true|false>] [--pe20 <true|false>] [--bc12 <true|false>] [--sfcp <true|false>] [--fixed-pd-voltages <9000,12000,15000,20000|none>] [--pps3-limit-ma <3000|5000>] [--pd-pps-5a <true|false>] [--type-c-broadcast-ma <500|1500>] [--scp-limit-ma <2000|4000|5000>] [--fcp-afc-sfcp-limit-ma <2250|3250>]`
 - `isolapurr flash [--confirm-non-project-firmware]`, `isolapurr reset`, `isolapurr monitor`
 - `isolapurr settings reset wifi|other [--yes]`
+- `isolapurr settings name show|set --device-id <device_id> --name <utf8-name>`
+- `isolapurr settings name clear --device-id <device_id>`
 - `isolapurr diagnostics export`
 - `install-isolapurr-host.sh [--version <tag>] [--install-dir <dir>] [--force] [--dry-run]`
 - `install-isolapurr-host.ps1 [-Version <tag>] [-InstallDir <dir>] [-Force] [-DryRun]`
@@ -169,6 +176,7 @@ The IPC daemon protocol is newline-delimited JSON request/response. Requests inc
 - `device.status`, `device.identify`, `device.session`, `device.wifi.get|set|clear`
 - `device.ports.get`, `device.port.power`, `device.port.data_set`, `device.port.replug`, `device.hub.route_set`
 - `device.power.config.get|set|defaults|lock|release`
+- `device.settings.name.show|set|clear`
 - `device.settings.reset`
 - `serial.lease.create`, `serial.lease.release`
 - `device.flash`, `device.reset`, `device.diagnostics`
@@ -192,6 +200,7 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `POST /api/v1/devices/{id}/ports/{port_id}/replug`
 - `POST /api/v1/devices/{id}/hub/route`
 - `POST /api/v1/devices/{id}/settings/reset`
+- `GET|PUT|DELETE /api/v1/devices/{id}/settings/name`
 - `GET|PUT /api/v1/devices/{id}/power/config`
 - `POST /api/v1/devices/{id}/power/config/defaults`
 - `POST /api/v1/devices/{id}/power/config/lock`
@@ -203,6 +212,8 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - `GET /api/v1/devices/{id}/diagnostics`
 - `GET|POST /api/v1/storage/devices`
 - `DELETE /api/v1/storage/devices/{id}`
+- `PUT /api/v1/storage/devices/{id}/name-cache` for field-level display-name cache and confirmed hostname updates; it does not mutate the local profile name or transports.
+- Browser-only profile refreshes must merge cache fields against the latest local snapshot before persistence, preserving concurrent local profile metadata.
 - `GET|PUT /api/v1/storage/settings`
 - `POST /api/v1/storage/migrate/localstorage`
 - `GET /api/v1/storage/export`
@@ -296,6 +307,10 @@ The explicit HTTP bridge API remains device-centric for browser/debug clients:
 - Given the user runs `isolapurr settings reset other --json`, when the selected
   device accepts the reset, then the CLI returns structured success with
   `scope=other` and `wifi_preserved=true`.
+- Given the user runs `isolapurr settings name set --device-id <id> --name
+  <value>`, when the hardware EEPROM write succeeds, then the CLI returns the
+  confirmed UTF-8 display name without changing the selected device identity or
+  URL; `settings name clear` returns a confirmed null name.
 - Given the user runs `isolapurr settings reset wifi` from human mode without
   `--yes`, when stdin is interactive, then the CLI requires a typed
   confirmation before clearing Wi-Fi credentials.
@@ -443,13 +458,10 @@ focuses the input on open, enables the dangerous action only for an exact
 - sensitive_exclusion: `No real device, desktop, or unrelated application data`
 - submission_gate: `approved`
 
-PR: include
 ![Recovery strong confirmation resting](./assets/recovery-strong-confirmation-resting.png)
 
-PR: include
 ![Recovery strong confirmation matched](./assets/recovery-strong-confirmation-matched.png)
 
-PR: include
 ![Recovery strong confirmation mobile](./assets/recovery-strong-confirmation-mobile393.png)
 
 Bundled release list Storybook surface:

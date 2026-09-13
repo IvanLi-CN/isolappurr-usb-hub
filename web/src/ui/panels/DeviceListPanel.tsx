@@ -37,6 +37,7 @@ export function DeviceListPanel({
   const { openAddDevice } = useAddDeviceUi();
   const {
     connectionState,
+    displayName,
     transport,
     channelState,
     hub,
@@ -170,6 +171,7 @@ export function DeviceListPanel({
                 <DeviceCard
                   key={d.id}
                   device={d}
+                  displayName={displayName(d.id)}
                   selected={d.id === selectedDeviceId}
                   status={connectionState(d.id)}
                   transportBadges={transportBadges(d.id)}

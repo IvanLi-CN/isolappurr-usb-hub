@@ -29,6 +29,9 @@ test -d desktop
 - Run IPC devd from source: `just devd-serve`; use `just devd-serve --idle-timeout-secs 0` only for a deliberately persistent development session.
 - Run the explicit localhost HTTP bridge for browser/debug UI only: `just devd-http-bridge --bind 127.0.0.1:<port>`
 - Run CLI from source over IPC: `just isolapurr <args>`
+- Exercise the EEPROM-backed display-name contract with
+  `just isolapurr settings name show|set|clear --device-id <device-id>`;
+  clients trim before sending, while firmware validates without trimming.
 - Web checks: `cd web && bun run check && bun run build && bun run test:unit`
 - Storybook checks when UI changes: `cd web && bun run build-storybook && bun run test:storybook`
 - Desktop checks: `cd desktop/src-tauri && cargo test`

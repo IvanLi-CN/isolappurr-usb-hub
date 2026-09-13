@@ -172,6 +172,10 @@ describe("WebSerialJsonlTransport probe deadlines", () => {
     let finishOpen: (() => void) | null = null;
     let opened = false;
     let closeCalls = 0;
+    let resolveLateClose: (() => void) | null = null;
+    const lateClose = new Promise<void>((resolve) => {
+      resolveLateClose = resolve;
+    });
     const port = {
       readable: null,
       writable: null,
@@ -188,6 +192,7 @@ describe("WebSerialJsonlTransport probe deadlines", () => {
           throw new Error("Port is still opening");
         }
         opened = false;
+        resolveLateClose?.();
       },
     };
     const transport = new WebSerialJsonlTransport();
@@ -200,7 +205,12 @@ describe("WebSerialJsonlTransport probe deadlines", () => {
     expect(closeCalls).toBe(1);
 
     finishOpen?.();
-    await Bun.sleep(0);
+    await Promise.race([
+      lateClose,
+      Bun.sleep(250).then(() => {
+        throw new Error("Timed out waiting for late-opening port cleanup");
+      }),
+    ]);
 
     expect(closeCalls).toBe(2);
     expect(opened).toBe(false);

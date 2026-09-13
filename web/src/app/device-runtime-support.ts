@@ -2,6 +2,7 @@ import { type DesktopAgent, isDemoDesktopAgent } from "../domain/desktopAgent";
 import type {
   DeviceApiError,
   DeviceInfoResponse,
+  DeviceNameMutationResponse,
   IdentifyResponse,
   IdleBiasResponse,
   PdDiagnosticsResponse,
@@ -67,6 +68,7 @@ export type DeviceRuntime = {
   identityVerified: boolean;
   channels: Record<DeviceTransport, ChannelRuntime>;
   hub: HubState | null;
+  deviceInfo?: DeviceInfoResponse;
   ports: Record<PortId, Port> | null;
   pending: Record<PortId, boolean>;
   powerConfig: PowerConfigResponse | null;
@@ -124,6 +126,8 @@ export type DeviceRuntimeContextValue = {
   hub: (deviceId: string) => HubState | null;
   port: (deviceId: string, portId: PortId) => Port | null;
   pending: (deviceId: string, portId: PortId) => boolean;
+  displayName: (deviceId: string) => string;
+  displayNameInfo: (deviceId: string) => DeviceInfoResponse | null;
   powerLockOwner: (deviceId: string) => number;
   requestControlTakeover: () => void;
   refreshDevice: (deviceId: string) => Promise<void>;
@@ -191,6 +195,13 @@ export type DeviceRuntimeContextValue = {
     deviceId: string,
     route: UsbCDownstreamRoute,
   ) => Promise<void>;
+  setDeviceName: (
+    deviceId: string,
+    name: string,
+  ) => Promise<Result<DeviceNameMutationResponse>>;
+  clearDeviceName: (
+    deviceId: string,
+  ) => Promise<Result<DeviceNameMutationResponse>>;
 };
 
 const TRANSPORTS: DeviceTransport[] = ["http", "web_serial", "local_usb"];

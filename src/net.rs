@@ -17,6 +17,7 @@ use esp_radio::{
     wifi::{self, ClientConfig, ModeConfig, WifiController, WifiDevice, WifiEvent},
 };
 use heapless::{String as HString, Vec};
+use isolapurr_firmware_core::device_name::DeviceDisplayName;
 use isolapurr_usb_hub::display_ui::{NormalUiPortBadge, NormalUiPortMode};
 use isolapurr_usb_hub::idle_bias::{IDLE_BIAS_POINT_COUNT, IdleBiasMetadata};
 use isolapurr_usb_hub::power_config::{
@@ -477,6 +478,12 @@ pub enum ApiSettingsResetScope {
     Other,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApiDeviceNameCommand {
+    Set(DeviceDisplayName),
+    Clear,
+}
+
 impl ApiSettingsResetScope {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -494,6 +501,7 @@ pub struct ApiPendingActions {
     pub power_runtime: Option<ApiPowerRuntimeCommand>,
     pub idle_bias: Option<ApiIdleBiasCommand>,
     pub settings_reset: Option<ApiSettingsResetScope>,
+    pub device_name: Option<ApiDeviceNameCommand>,
 }
 
 impl ApiPendingActions {
@@ -506,6 +514,7 @@ impl ApiPendingActions {
             power_runtime: None,
             idle_bias: None,
             settings_reset: None,
+            device_name: None,
         }
     }
 }
@@ -517,6 +526,10 @@ pub struct ApiSharedState {
     pub pd: ApiPdSnapshot,
     pub power: ApiPowerSnapshot,
     pub idle_bias: ApiIdleBiasSnapshot,
+    pub device_display_name: Option<DeviceDisplayName>,
+    /// A device-name EEPROM write remains busy until its waiter consumes the
+    /// result signal, preventing a second request from reusing that signal.
+    pub device_name_inflight: bool,
     /// Monotonically increments for each accepted identify request. The runtime
     /// consumes this edge and restarts its fixed-duration local presentation.
     pub identify_sequence: u32,
@@ -541,6 +554,8 @@ impl ApiSharedState {
             pd: ApiPdSnapshot::unknown(),
             power: ApiPowerSnapshot::unknown(),
             idle_bias: ApiIdleBiasSnapshot::unknown(),
+            device_display_name: None,
+            device_name_inflight: false,
             identify_sequence: 0,
             identify_requested_at_ms: 0,
             identify_rendered_sequence: 0,
@@ -943,6 +958,19 @@ include!("net/names_config.rs");
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn http_json_string_parser_accepts_unicode_escapes_and_surrogate_pairs() {
+        assert_eq!(
+            extract_body_string(r#"{"name":"\u732b"}"#, "name"),
+            Some(String::from("猫")),
+        );
+        assert_eq!(
+            extract_body_string(r#"{"name":"\uD83D\uDE00"}"#, "name"),
+            Some(String::from("😀")),
+        );
+        assert_eq!(extract_body_string(r#"{"name":"\uD83D"}"#, "name"), None,);
+    }
 
     #[test]
     fn unknown_hub_snapshot_defaults_to_upgrade_route() {

@@ -34,7 +34,7 @@ export function DevicePowerPage() {
       <DevicePowerPanel
         key={deviceId}
         deviceKey={deviceId}
-        deviceName={device.name}
+        deviceName={runtime.displayName(device.id)}
         coordination={runtime.coordination}
         canControlHardware={runtime.canControlHardware}
         powerLockOwner={runtime.powerLockOwner(deviceId)}

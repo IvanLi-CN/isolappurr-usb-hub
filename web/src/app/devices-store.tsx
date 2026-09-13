@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -8,6 +9,7 @@ import {
 } from "react";
 import {
   createDemoDesktopAgent,
+  type DesktopAgent,
   isDemoDesktopAgent,
 } from "../domain/desktopAgent";
 import {
@@ -15,8 +17,10 @@ import {
   exportStorage,
   fetchStoredDevices,
   migrateFromLocalStorage,
+  updateStoredDeviceNameCache,
   upsertStoredDevice,
 } from "../domain/desktopStorage";
+import type { DeviceNameCache } from "../domain/deviceName";
 import type {
   AddDeviceInput,
   AddDeviceValidationResult,
@@ -37,13 +41,22 @@ import { forgetWebSerialDeviceTransport } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
 import { DEMO_RESET_EVENT, useDemoMode } from "./demo-mode";
 import { useDesktopAgent } from "./desktop-agent-ui";
-import { readMigrationPayload } from "./storage-migration";
+import {
+  hasCompletedDesktopMigration,
+  markDesktopMigrationComplete,
+  readMigrationPayload,
+} from "./storage-migration";
 
 type DevicesContextValue = {
   devices: StoredDevice[];
   addDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   upsertDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   rebindHttpBaseUrl: (deviceId: string, httpBaseUrl: string) => Promise<void>;
+  updateDeviceNameCache: (
+    deviceId: string,
+    cache: DeviceNameCache,
+    hostname?: string,
+  ) => Promise<void>;
   removeDevice: (deviceId: string) => Promise<void>;
   getDevice: (deviceId: string) => StoredDevice | undefined;
 };
@@ -51,6 +64,9 @@ type DevicesContextValue = {
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
 type DeviceStateSource = "provided" | "browser" | "desktop" | "demo";
+
+const DEVICE_PROFILE_SYNC_CHANNEL = "isolapurr-device-profiles.v1";
+const DEVICE_PROFILE_SYNC_STORAGE_KEY = "isolapurr-device-profiles.sync.v1";
 
 export function DevicesProvider({
   children,
@@ -70,6 +86,29 @@ export function DevicesProvider({
     initialDevices ? "provided" : "browser",
   );
   const [ready, setReady] = useState(false);
+  const profileSyncTabId = useRef(
+    `profile-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const profileSyncChannelRef = useRef<BroadcastChannel | null>(null);
+  const migrationAttemptedRef = useRef(false);
+  const desktopFetchSequenceRef = useRef(0);
+
+  const fetchAndApplyDesktopDevices = useCallback(
+    async (requestAgent: DesktopAgent) => {
+      const sequence = ++desktopFetchSequenceRef.current;
+      const res = await fetchStoredDevices(requestAgent);
+      if (sequence !== desktopFetchSequenceRef.current || !res.ok) {
+        return res;
+      }
+      setDevices(res.value);
+      setSource(isDemoDesktopAgent(requestAgent) ? "demo" : "desktop");
+      return res;
+    },
+    [],
+  );
+  const invalidateDesktopFetches = useCallback(() => {
+    desktopFetchSequenceRef.current += 1;
+  }, []);
 
   useEffect(() => {
     if (!ready || status !== "ready" || source !== "browser") {
@@ -103,13 +142,66 @@ export function DevicesProvider({
   }, [agent, source, status]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || status !== "ready" || !agent) {
+      return;
+    }
+    const refreshFromDesktop = () => {
+      void fetchAndApplyDesktopDevices(agent);
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== DEVICE_PROFILE_SYNC_STORAGE_KEY) {
+        return;
+      }
+      refreshFromDesktop();
+    };
+    window.addEventListener("storage", handleStorage);
+    const channel =
+      typeof BroadcastChannel === "undefined"
+        ? null
+        : new BroadcastChannel(DEVICE_PROFILE_SYNC_CHANNEL);
+    if (channel) {
+      profileSyncChannelRef.current = channel;
+      channel.onmessage = (event: MessageEvent<unknown>) => {
+        const message = event.data as { sourceTabId?: unknown };
+        if (message?.sourceTabId === profileSyncTabId.current) {
+          return;
+        }
+        refreshFromDesktop();
+      };
+    }
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      channel?.close();
+      if (profileSyncChannelRef.current === channel) {
+        profileSyncChannelRef.current = null;
+      }
+    };
+  }, [agent, fetchAndApplyDesktopDevices, status]);
+
+  const broadcastProfileSync = useCallback(() => {
+    const message = { sourceTabId: profileSyncTabId.current };
+    profileSyncChannelRef.current?.postMessage(message);
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        DEVICE_PROFILE_SYNC_STORAGE_KEY,
+        JSON.stringify({ ...message, at: Date.now() }),
+      );
+    } catch {
+      // Desktop storage remains authoritative when localStorage is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
     if (status !== "ready") {
       return;
     }
     let cancelled = false;
     void (async () => {
       if (agent) {
-        const res = await fetchStoredDevices(agent);
+        const res = await fetchAndApplyDesktopDevices(agent);
         if (cancelled) {
           return;
         }
@@ -118,9 +210,6 @@ export function DevicesProvider({
             variant: "error",
             message: `Desktop storage unavailable: ${res.error.message}`,
           });
-        } else {
-          setDevices(res.value);
-          setSource(isDemoDesktopAgent(agent) ? "demo" : "desktop");
         }
       } else if (!initialDevices) {
         setDevices(loadStoredDevices());
@@ -133,7 +222,7 @@ export function DevicesProvider({
     return () => {
       cancelled = true;
     };
-  }, [agent, status, pushToast, initialDevices]);
+  }, [agent, fetchAndApplyDesktopDevices, status, pushToast, initialDevices]);
 
   useEffect(() => {
     if (!demoEnabled) {
@@ -144,12 +233,7 @@ export function DevicesProvider({
       const demoAgent =
         agent && isDemoDesktopAgent(agent) ? agent : createDemoDesktopAgent();
       void (async () => {
-        const res = await fetchStoredDevices(demoAgent);
-        if (!res.ok) {
-          return;
-        }
-        setDevices(res.value);
-        setSource("demo");
+        await fetchAndApplyDesktopDevices(demoAgent);
       })();
     };
 
@@ -157,34 +241,48 @@ export function DevicesProvider({
     return () => {
       window.removeEventListener(DEMO_RESET_EVENT, syncDemoDevices);
     };
-  }, [agent, demoEnabled]);
+  }, [agent, demoEnabled, fetchAndApplyDesktopDevices]);
 
   useEffect(() => {
-    if (status !== "ready" || !agent || isDemoDesktopAgent(agent)) {
+    if (
+      status !== "ready" ||
+      !agent ||
+      isDemoDesktopAgent(agent) ||
+      migrationAttemptedRef.current
+    ) {
       return;
     }
+    migrationAttemptedRef.current = true;
     void (async () => {
+      const existing = await fetchAndApplyDesktopDevices(agent);
+      if (!existing.ok) {
+        return;
+      }
       const payload = readMigrationPayload();
       if (!payload) {
+        return;
+      }
+      if (hasCompletedDesktopMigration(payload)) {
+        await fetchAndApplyDesktopDevices(agent);
         return;
       }
       const res = await migrateFromLocalStorage(agent, payload);
       if (!res.ok) {
         return;
       }
+      markDesktopMigrationComplete(payload);
       if (res.value.migrated) {
         pushToast({
           variant: "success",
           message: "Imported devices/settings from browser storage.",
         });
         window.dispatchEvent(new CustomEvent("isolapurr-storage-migrated"));
-        const refreshed = await fetchStoredDevices(agent);
-        if (refreshed.ok) {
-          setDevices(refreshed.value);
-        }
       }
+      // Another tab may have won the one-shot migration while this tab was
+      // reading the empty registry; refresh in either response case.
+      await fetchAndApplyDesktopDevices(agent);
     })();
-  }, [agent, status, pushToast]);
+  }, [agent, fetchAndApplyDesktopDevices, status, pushToast]);
 
   useEffect(() => {
     if (
@@ -227,7 +325,9 @@ export function DevicesProvider({
         });
         return { ok: true, device };
       }
+      invalidateDesktopFetches();
       const res = await upsertStoredDevice(agent, device);
+      invalidateDesktopFetches();
       if (!res.ok) {
         if (res.error.code === "conflict") {
           return {
@@ -250,6 +350,7 @@ export function DevicesProvider({
         );
         return [...next, res.value];
       });
+      broadcastProfileSync();
       return { ok: true, device: res.value };
     };
 
@@ -266,10 +367,12 @@ export function DevicesProvider({
           if (!prepared.ok) {
             return prepared;
           }
+          invalidateDesktopFetches();
           const res = await upsertStoredDevice(
             createDemoDesktopAgent(),
             prepared.input,
           );
+          invalidateDesktopFetches();
           if (!res.ok) {
             if (res.error.code === "conflict") {
               return {
@@ -294,6 +397,7 @@ export function DevicesProvider({
             );
             return [...next, res.value];
           });
+          broadcastProfileSync();
           return { ok: true, device: res.value };
         }
 
@@ -329,11 +433,72 @@ export function DevicesProvider({
           id,
           name,
           baseUrl: baseUrl.baseUrl,
+          deviceNameCache: existing?.deviceNameCache,
           transports: mergeStoredDeviceTransports(
             existing?.transports,
             input.transports,
           ),
         });
+      },
+      updateDeviceNameCache: async (deviceId, cache, hostname) => {
+        const existing = devices.find((device) => device.id === deviceId);
+        const latest = agent
+          ? existing
+          : (loadStoredDevices().find((device) => device.id === deviceId) ??
+            existing);
+        if (!latest) {
+          return;
+        }
+        const current = latest.deviceNameCache;
+        const nextHostname = hostname?.trim() || latest.hostname;
+        if (
+          current?.state === cache.state &&
+          (cache.state !== "value" ||
+            (current.state === "value" && current.value === cache.value)) &&
+          nextHostname === latest.hostname
+        ) {
+          return;
+        }
+        if (agent) {
+          invalidateDesktopFetches();
+          const res = await updateStoredDeviceNameCache(agent, deviceId, {
+            hostname: nextHostname,
+            deviceNameCache: cache,
+          });
+          invalidateDesktopFetches();
+          if (!res.ok) {
+            pushToast({
+              variant: "error",
+              message: `Desktop storage error: ${res.error.message}`,
+            });
+            return;
+          }
+          setDevices((prev) => {
+            const next = prev.filter(
+              (d) => d.id !== res.value.id && d.baseUrl !== res.value.baseUrl,
+            );
+            return [...next, res.value];
+          });
+          broadcastProfileSync();
+          return;
+        }
+        const latestDevices = loadStoredDevices();
+        const latestFromStorage =
+          latestDevices.find((device) => device.id === deviceId) ?? latest;
+        const next = {
+          ...latestFromStorage,
+          hostname: hostname?.trim() || latestFromStorage.hostname,
+          deviceNameCache: cache,
+        };
+        const nextDevices = latestDevices.some(
+          (device) => device.id === deviceId,
+        )
+          ? latestDevices.map((device) =>
+              device.id === deviceId ? next : device,
+            )
+          : [...latestDevices, next];
+        saveStoredDevices(nextDevices);
+        setDevices(nextDevices);
       },
       rebindHttpBaseUrl: async (deviceId, httpBaseUrl) => {
         const existing = devices.find((device) => device.id === deviceId);
@@ -351,7 +516,9 @@ export function DevicesProvider({
       },
       removeDevice: async (deviceId) => {
         if (agent) {
+          invalidateDesktopFetches();
           const res = await deleteStoredDevice(agent, deviceId);
+          invalidateDesktopFetches();
           if (!res.ok) {
             pushToast({
               variant: "error",
@@ -363,10 +530,18 @@ export function DevicesProvider({
         forgetLocalUsbDeviceLink(deviceId);
         forgetWebSerialDeviceTransport(deviceId);
         setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+        broadcastProfileSync();
       },
       getDevice: (deviceId) => devices.find((d) => d.id === deviceId),
     };
-  }, [devices, agent, demoEnabled, pushToast]);
+  }, [
+    devices,
+    agent,
+    demoEnabled,
+    pushToast,
+    broadcastProfileSync,
+    invalidateDesktopFetches,
+  ]);
 
   return (
     <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>

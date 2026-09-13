@@ -131,6 +131,7 @@ export function DashboardPage() {
           <DeviceSummaryCard
             key={item.device.id}
             device={item.device}
+            displayName={runtime.displayName(item.device.id)}
             connection={item.connection}
             hostConnected={item.hostConnected}
             ports={item.ports}

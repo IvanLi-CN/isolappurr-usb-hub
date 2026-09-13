@@ -1,3 +1,4 @@
+import { parseDeviceNameCache } from "../domain/deviceName";
 import {
   DEVICES_STORAGE_KEY,
   normalizeBaseUrl,
@@ -7,6 +8,8 @@ import {
 import { THEME_STORAGE_KEY, type ThemeId } from "./theme";
 
 const VALID_THEMES: ThemeId[] = ["isolapurr", "isolapurr-dark", "system"];
+export const DESKTOP_MIGRATION_MARKER_KEY =
+  "isolapurr-desktop-storage-migration.v1";
 
 function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && VALID_THEMES.includes(value as ThemeId);
@@ -42,6 +45,14 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
   return {
     id,
     name: record.name,
+    hostname:
+      typeof record.hostname === "string" && record.hostname.trim().length > 0
+        ? record.hostname.trim()
+        : undefined,
+    deviceNameCache:
+      record.deviceNameCache === undefined
+        ? undefined
+        : parseDeviceNameCache(record.deviceNameCache),
     baseUrl: normalized.ok ? normalized.baseUrl : record.baseUrl,
     transports: transports
       ? {
@@ -121,4 +132,45 @@ export function readMigrationPayload(): {
     payload.settings = { theme };
   }
   return Object.keys(payload).length > 0 ? payload : null;
+}
+
+function migrationFingerprint(payload: {
+  devices?: StoredDevice[];
+  settings?: { theme?: ThemeId };
+}): string {
+  return JSON.stringify(payload);
+}
+
+export function hasCompletedDesktopMigration(payload: {
+  devices?: StoredDevice[];
+  settings?: { theme?: ThemeId };
+}): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return (
+      window.localStorage.getItem(DESKTOP_MIGRATION_MARKER_KEY) ===
+      migrationFingerprint(payload)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function markDesktopMigrationComplete(payload: {
+  devices?: StoredDevice[];
+  settings?: { theme?: ThemeId };
+}): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(
+      DESKTOP_MIGRATION_MARKER_KEY,
+      migrationFingerprint(payload),
+    );
+  } catch {
+    // Desktop storage remains authoritative when localStorage is unavailable.
+  }
 }

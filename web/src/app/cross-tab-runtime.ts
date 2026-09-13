@@ -1,6 +1,7 @@
 import type {
   DeviceApiError,
   DeviceInfoResponse,
+  DeviceNameMutationResponse,
   IdentifyResponse,
   IdleBiasResponse,
   PdDiagnosticsResponse,
@@ -44,6 +45,8 @@ export type RuntimeRpcMethod =
   | "wifiConfig"
   | "saveWifiConfig"
   | "clearWifiConfig"
+  | "setDeviceName"
+  | "clearDeviceName"
   | "resetSettings"
   | "rebootDevice"
   | "powerConfig"
@@ -70,6 +73,8 @@ export type RuntimeRpcResultMap = {
   wifiConfig: Result<WifiConfigResponse>;
   saveWifiConfig: Result<WifiMutationResponse>;
   clearWifiConfig: Result<WifiMutationResponse>;
+  setDeviceName: Result<DeviceNameMutationResponse>;
+  clearDeviceName: Result<DeviceNameMutationResponse>;
   resetSettings: Result<SettingsResetResponse>;
   rebootDevice: Result<RebootResponse>;
   powerConfig: Result<PowerConfigResponse>;
@@ -133,6 +138,8 @@ const HEARTBEAT_INTERVAL_MS = 5_000;
 const MUTATION_METHODS = new Set<RuntimeRpcMethod>([
   "saveWifiConfig",
   "clearWifiConfig",
+  "setDeviceName",
+  "clearDeviceName",
   "resetSettings",
   "rebootDevice",
   "savePowerConfig",

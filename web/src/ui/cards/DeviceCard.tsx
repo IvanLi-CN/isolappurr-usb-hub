@@ -43,6 +43,7 @@ function badgeStyles(state: ConnectionState): {
 
 export type DeviceCardProps = {
   device: StoredDevice;
+  displayName?: string;
   selected?: boolean;
   status: ConnectionState;
   transportBadges: DeviceTransportBadge[];
@@ -216,6 +217,7 @@ function transportIcon(transport: DeviceTransport): ReactNode {
 
 export function DeviceCard({
   device,
+  displayName,
   selected,
   status,
   transportBadges,
@@ -226,6 +228,7 @@ export function DeviceCard({
   identifying = false,
   onIdentify,
 }: DeviceCardProps) {
+  const primaryName = displayName ?? device.name;
   const restingFill =
     unselectedFill === "panel" ? "bg-[var(--panel)]" : "bg-[var(--panel-2)]";
   const badge = badgeStyles(status);
@@ -272,7 +275,7 @@ export function DeviceCard({
     >
       <button
         aria-current={selected ? "page" : undefined}
-        aria-label={`Select ${device.name}`}
+        aria-label={`Select ${primaryName}`}
         className="absolute inset-0 z-0 rounded-[14px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
         type="button"
         onClick={() => onSelect(device.id)}
@@ -281,7 +284,7 @@ export function DeviceCard({
         <div className="min-w-0 flex-1 text-left">
           <div className="flex min-w-0 items-center gap-1.5">
             <div className="min-w-0 truncate text-[14px] font-medium">
-              {device.name}
+              {primaryName}
             </div>
             {selected ? (
               <span

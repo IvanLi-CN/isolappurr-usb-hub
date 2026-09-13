@@ -73,9 +73,12 @@ async fn handle_usb_jsonl_request(
             Some(state) => Some(*state.lock().await),
             None => None,
         };
-        write_usb_info_json(&mut body, id.as_str(), device_names, wifi);
+        let display_name = { *api_state.lock().await }.device_display_name;
+        write_usb_info_json(&mut body, id.as_str(), device_names, wifi, display_name);
         return body;
     }
+
+    include!("usb_console_device_name.inc");
 
     if request.contains("\"method\":\"identify\"")
         || request.contains("\"method\": \"identify\"")
@@ -816,6 +819,8 @@ pub(crate) async fn wait_settings_reset_result() -> SettingsResetResult {
     SETTINGS_RESET_RESULT.wait().await
 }
 
+include!("usb_console_device_name_helpers.inc");
+
 #[cfg(feature = "net_http")]
 pub(crate) fn reset_settings_reset_result() {
     SETTINGS_RESET_RESULT.reset();
@@ -906,6 +911,26 @@ fn parse_json_string_value(rest: &str) -> Option<(alloc::string::String, usize)>
                             let (_, hex) = chars.next()?;
                             code = (code << 4) | hex.to_digit(16)?;
                         }
+                        let code = if (0xD800..=0xDBFF).contains(&code) {
+                            let (_, slash) = chars.next()?;
+                            let (_, marker) = chars.next()?;
+                            if slash != '\\' || marker != 'u' {
+                                return None;
+                            }
+                            let mut low = 0u32;
+                            for _ in 0..4 {
+                                let (_, hex) = chars.next()?;
+                                low = (low << 4) | hex.to_digit(16)?;
+                            }
+                            if !(0xDC00..=0xDFFF).contains(&low) {
+                                return None;
+                            }
+                            0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                        } else if (0xDC00..=0xDFFF).contains(&code) {
+                            return None;
+                        } else {
+                            code
+                        };
                         let decoded = char::from_u32(code)?;
                         let _ = out.push(decoded);
                     }
@@ -989,6 +1014,7 @@ fn write_usb_info_json(
     id: &str,
     device_names: Option<&net::DeviceNames>,
     wifi: Option<net::WifiState>,
+    display_name: Option<isolapurr_firmware_core::device_name::DeviceDisplayName>,
 ) {
     let _ = write!(
         body,
@@ -1006,6 +1032,11 @@ fn write_usb_info_json(
         write_json_string(body, names.hostname_fqdn.as_str());
         let _ = write!(body, ",\"mac\":");
         write_json_string(body, mac.as_str());
+        let _ = body.push_str(",\"display_name\":");
+        match display_name {
+            Some(value) => write_json_string(body, value.as_str()),
+            None => body.push_str("null"),
+        }
         let _ = body.push(',');
     }
 
@@ -1023,7 +1054,7 @@ fn write_usb_info_json(
         firmware_uptime_ms()
     );
     write_usb_wifi_object(body, wifi);
-    let _ = body.push_str("},\"capabilities\":{\"identify\":true}}}");
+    let _ = body.push_str("},\"capabilities\":{\"identify\":true,\"device_name\":true}}}");
 }
 
 include!(concat!(

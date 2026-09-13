@@ -420,6 +420,31 @@ body {
   --action-disabled-text: var(--btn-disabled-text);
 }
 
+/* Keep dark warning actions on the same warm hue as their warning badges. */
+[data-theme="isolapurr-dark"] {
+  --action-warning-bg: var(--badge-warning-bg);
+  --action-warning-hover: color-mix(
+    in srgb,
+    var(--warning) 18%,
+    var(--badge-warning-bg)
+  );
+  --action-warning-border: var(--badge-warning-border);
+  --action-warning-text: var(--badge-warning-text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --action-warning-bg: var(--badge-warning-bg);
+    --action-warning-hover: color-mix(
+      in srgb,
+      var(--warning) 18%,
+      var(--badge-warning-bg)
+    );
+    --action-warning-border: var(--badge-warning-border);
+    --action-warning-text: var(--badge-warning-text);
+  }
+}
+
 .iso-action,
 .iso-icon-action {
   position: relative;

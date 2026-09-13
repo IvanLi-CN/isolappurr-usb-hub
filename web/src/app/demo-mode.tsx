@@ -1,12 +1,3 @@
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useState,
-} from "react";
 import { DEMO_AGENT_BASE_URL, DEMO_AGENT_TOKEN } from "../domain/desktopAgent";
 import type {
   DeviceInfoResponse,
@@ -19,6 +10,7 @@ import type { AddDeviceInput, StoredDevice } from "../domain/devices";
 import type { DiscoverySnapshot } from "../domain/discovery";
 import { clearIpScanSession } from "../domain/ipScanSession";
 import type { PortsResponse } from "../domain/ports";
+import { handleDemoDeviceNameRequest } from "./demo-mode-device-name";
 import { applyDemoIpScan, cancelDemoIpScan } from "./demo-mode-discovery";
 import { handleDemoPortAction } from "./demo-mode-port-actions";
 import {
@@ -42,9 +34,13 @@ import {
 } from "./demo-mode-world";
 import type { ThemeId } from "./theme";
 
+export {
+  DemoModeProvider,
+  useDemoMode,
+} from "./demo-mode-provider";
+
 let demoFetchRestore: (() => void) | null = null;
 let demoIpScanRunId = 0;
-
 const DEMO_ENABLED_STORAGE_KEY = "isolapurr.demo.enabled";
 export const DEMO_ENTER_QUERY = "?demo=true";
 export const DEMO_EXIT_QUERY = "?demo=false";
@@ -52,44 +48,31 @@ void DEMO_ENABLED_STORAGE_KEY;
 
 export {
   DEMO_RESET_EVENT,
+  readDemoEnabled,
   readDemoWorldSummary,
   resetDemoModeSession,
 } from "./demo-mode-world";
-
-type DemoModeContextValue = {
-  enabled: boolean;
-  query: string;
-  withDemoSearch: (to: string) => string;
-  exitHref: string;
-  bootstrap: (pathname: string, search: string) => void;
-  clear: () => void;
-};
 
 type DemoAgentResponse = {
   token: string;
   agentBaseUrl: string;
   app: { name: string; version: string; mode: string };
 };
-
 type DemoStorageDevicesResponse = {
   devices: StoredDevice[];
 };
-
 type DemoStorageDeviceResponse = {
   device: StoredDevice;
 };
-
 type DemoStorageSettingsResponse = {
   settings: { theme: ThemeId };
 };
-
 type DemoStorageExportResponse = {
   schema_version: number;
   devices: StoredDevice[];
   settings: { theme?: ThemeId };
   meta: Record<string, never>;
 };
-
 type DemoDiscoverySnapshotResponse = DiscoverySnapshot;
 
 type DemoApiResponse =
@@ -117,20 +100,10 @@ type DemoApiResponse =
       wifi_preserved?: boolean;
       runId?: number;
     }
+  | { display_name: string | null }
   | { migrated: boolean; imported?: { devices: number; settings: boolean } };
 
-const DEMO_MODE_DISABLED: DemoModeContextValue = {
-  enabled: false,
-  query: "",
-  withDemoSearch: (to) => to,
-  exitHref: `/${DEMO_EXIT_QUERY}`,
-  bootstrap: () => {},
-  clear: () => {},
-};
-
-const DemoModeContext = createContext<DemoModeContextValue>(DEMO_MODE_DISABLED);
-
-function jsonResponse(body: DemoApiResponse, init?: ResponseInit): Response {
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     status: init?.status ?? 200,
     headers: {
@@ -289,6 +262,34 @@ function handleDemoStorageRequest(url: URL, init?: RequestInit): Response {
   }
   if (
     url.pathname.startsWith("/api/v1/storage/devices/") &&
+    url.pathname.endsWith("/name-cache") &&
+    method === "PUT"
+  ) {
+    const deviceId = decodeURIComponent(
+      url.pathname
+        .replace("/api/v1/storage/devices/", "")
+        .replace("/name-cache", ""),
+    );
+    const body = readJsonBody(init) as {
+      deviceNameCache?: StoredDevice["deviceNameCache"];
+      hostname?: string;
+    } | null;
+    const next = updateWorld((world) => {
+      const mutated = cloneWorld(world);
+      const target = findByDeviceId(mutated, deviceId);
+      if (target) {
+        target.stored.deviceNameCache = body?.deviceNameCache;
+        target.stored.hostname = body?.hostname?.trim() || undefined;
+      }
+      return mutated;
+    });
+    const device = findByDeviceId(next, deviceId);
+    return device
+      ? jsonResponse({ device: device.stored })
+      : apiError(404, "not_found", "device not found");
+  }
+  if (
+    url.pathname.startsWith("/api/v1/storage/devices/") &&
     method === "DELETE"
   ) {
     const deviceId = decodeURIComponent(
@@ -426,6 +427,7 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
               hostname: device.info.device.hostname,
               fqdn: device.info.device.fqdn,
               mac: device.info.device.mac,
+              display_name: device.info.device.display_name,
               firmware: device.info.device.firmware,
               wifi: { ipv4: device.info.device.wifi.ipv4 },
             },
@@ -460,6 +462,18 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
     return jsonResponse({
       response: { accepted: true, duration_ms: 5000 },
     } as unknown as DemoApiResponse);
+  }
+  if (suffix === "settings/name") {
+    const response = handleDemoDeviceNameRequest(
+      method,
+      init,
+      record.stored.id,
+      readJsonBody,
+      updateWorld,
+      jsonResponse,
+      apiError,
+    );
+    if (response) return response;
   }
   if (suffix === "wifi" && method === "GET") {
     return jsonResponse({
@@ -759,6 +773,18 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
 
   if (url.pathname === "/api/v1/info" && method === "GET") {
     return jsonResponse(record.info);
+  }
+  if (url.pathname === "/api/v1/settings/name") {
+    const response = handleDemoDeviceNameRequest(
+      method,
+      init,
+      record.stored.id,
+      readJsonBody,
+      updateWorld,
+      jsonResponse,
+      apiError,
+    );
+    if (response) return response;
   }
   if (url.pathname === "/api/v1/ports" && method === "GET") {
     return jsonResponse(record.ports);
@@ -1139,60 +1165,4 @@ export function ensureDemoFetchInterceptor(): void {
     return;
   }
   demoFetchRestore = installDemoFetchInterceptor();
-}
-
-function resolveInitialDemoEnabled(): boolean {
-  const enabled = initDemoMode(
-    typeof window !== "undefined" ? window.location.pathname : "/",
-    typeof window !== "undefined" ? window.location.search : "",
-  );
-  if (enabled) {
-    ensureDemoFetchInterceptor();
-  }
-  return enabled;
-}
-
-export function DemoModeProvider({ children }: { children: ReactNode }) {
-  const [enabled, setEnabled] = useState(resolveInitialDemoEnabled);
-
-  useEffect(() => {
-    setEnabled(readDemoEnabled());
-  }, []);
-
-  useLayoutEffect(() => {
-    ensureDemoFetchInterceptor();
-    return () => undefined;
-  }, []);
-
-  const value = useMemo<DemoModeContextValue>(() => {
-    const query = enabled ? DEMO_ENTER_QUERY : "";
-    return {
-      enabled,
-      query,
-      withDemoSearch: (to) => withDemoSearch(to, enabled),
-      exitHref: `/${DEMO_EXIT_QUERY}`,
-      bootstrap: (pathname, search) => {
-        const nextEnabled = initDemoMode("/", search);
-        if (nextEnabled) {
-          ensureDemoFetchInterceptor();
-        }
-        setEnabled(nextEnabled);
-        void pathname;
-      },
-      clear: () => {
-        clearDemoMode();
-        setEnabled(false);
-      },
-    };
-  }, [enabled]);
-
-  return (
-    <DemoModeContext.Provider value={value}>
-      {children}
-    </DemoModeContext.Provider>
-  );
-}
-
-export function useDemoMode(): DemoModeContextValue {
-  return useContext(DemoModeContext);
 }

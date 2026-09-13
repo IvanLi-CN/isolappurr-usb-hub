@@ -278,11 +278,16 @@ async fn handle_api_request(
         }
         ("GET", "/api/v1/info") => {
             let wifi = { *wifi_state.lock().await };
+            let display_name = { *api_state.lock().await }.device_display_name;
             let mut body = String::new();
-            write_info_json(&mut body, device_names, wifi);
+            write_info_json(&mut body, device_names, wifi, display_name);
 
             write_json_response(socket, "200 OK", allow_origin, body.as_str()).await?;
             return Ok(());
+        }
+        ("PUT", "/api/v1/settings/name") | ("DELETE", "/api/v1/settings/name") => {
+            return handle_device_name_api_request(socket, method, body, allow_origin, api_state)
+                .await;
         }
         ("GET", "/api/v1/ports") => {
             let state = { *api_state.lock().await };
@@ -1182,3 +1187,4 @@ pub fn parse_power_runtime_body(body: &str) -> Option<ApiPowerRuntimeCommand> {
 
 include!("http_body_parse.inc");
 include!("http_response.rs");
+include!("http_device_name.inc");

@@ -261,8 +261,14 @@ async fn usb_jsonl_request_with_exclusive(
         .await
         .context("serial worker join")??;
     push_trace(state, device_id, "rx", method, &response).await;
+    if response.get("ok").and_then(Value::as_bool) != Some(false)
+        && matches!(method, "info" | "settings.name.set" | "settings.name.clear")
+    {
+        update_usb_device_display_name(state, device_id, &response).await;
+    }
     Ok(response)
 }
+include!("device_io_display_name.rs");
 
 async fn usb_wifi_clear_request(state: &AppState, device_id: &str) -> anyhow::Result<Value> {
     let success = json!({
@@ -488,6 +494,8 @@ mod device_io_tests {
         );
         assert_eq!(serial_timeout_ms_for_method("power.idle_bias_run"), 178_000);
     }
+
+    include!("device_io_display_name_tests.rs");
 
     #[test]
     fn wifi_clear_verification_detects_cleared_credentials() {

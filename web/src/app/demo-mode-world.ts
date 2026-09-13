@@ -74,6 +74,7 @@ function buildDemoDevice({
   const stored: DemoStoredDevice = {
     id,
     name,
+    deviceNameCache: { state: "value", value: name },
     baseUrl,
     transports: localUsb
       ? {
@@ -91,6 +92,7 @@ function buildDemoDevice({
       hostname: fqdn.replace(".local", ""),
       fqdn,
       mac: `02:de:mo:${id.slice(0, 2)}:${id.slice(2, 4)}:${id.slice(4, 6)}`,
+      display_name: name,
       variant: "isolapurr-usb-hub",
       firmware: {
         name: "isolapurr-usb-hub",
@@ -107,7 +109,7 @@ function buildDemoDevice({
         is_static: false,
       },
     },
-    capabilities: { identify: true },
+    capabilities: { identify: true, device_name: true },
   };
 
   const hub: HubState = {
@@ -117,7 +119,7 @@ function buildDemoDevice({
     isolated_usb_ready: true,
     usb_c_downstream_route: "usb_c",
     usb_c_downstream_persisted: true,
-    capabilities: { identify: true },
+    capabilities: { identify: true, device_name: true },
   };
 
   const port = (
@@ -164,7 +166,7 @@ function buildDemoDevice({
     ports: {
       hub,
       capability_schema: 1,
-      capabilities: { identify: true },
+      capabilities: { identify: true, device_name: true },
       ports: [
         port("port_a", "USB-A", {
           voltage_mv: 5050,

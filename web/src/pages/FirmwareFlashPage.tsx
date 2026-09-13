@@ -35,7 +35,8 @@ export function FirmwareFlashPage() {
   const navigate = useDemoNavigate();
   const { enabled: demoEnabled } = useDemoMode();
   const { getDevice } = useDevices();
-  const { connectionState, hub, identify, runtimeById } = useDeviceRuntime();
+  const { connectionState, displayName, hub, identify, runtimeById } =
+    useDeviceRuntime();
   const { pushToast } = useToast();
   const [identifyBusy, setIdentifyBusy] = useState<Set<string>>(
     () => new Set(),
@@ -413,7 +414,7 @@ export function FirmwareFlashPage() {
           <div className="mt-1.5 text-[12px] font-semibold leading-6 text-[var(--muted)]">
             Device context:{" "}
             <span className="text-[var(--text)]">
-              {currentDevice.name} • {currentDevice.id}
+              {displayName(currentDevice.id)} • {currentDevice.id}
             </span>
           </div>
         ) : null}

@@ -42,6 +42,12 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             get(wifi_get).post(wifi_set).delete(wifi_clear),
         )
         .route(
+            "/api/v1/devices/{id}/settings/name",
+            get(device_name_show)
+                .put(device_name_set)
+                .delete(device_name_clear),
+        )
+        .route(
             "/api/v1/devices/{id}/settings/reset",
             post(settings_reset_bridge::settings_reset),
         )
@@ -125,6 +131,10 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
         .route(
             "/api/v1/storage/devices/{id}",
             delete(http_bridge_storage::storage_delete),
+        )
+        .route(
+            "/api/v1/storage/devices/{id}/name-cache",
+            put(http_bridge_storage::storage_name_cache_update),
         )
         .route(
             "/api/v1/storage/settings",
@@ -217,8 +227,18 @@ async fn scan_devices(State(state): State<AppState>, headers: HeaderMap) -> Resp
         Ok(ports) => ports,
         Err(err) => return internal_error(&format!("serial enumeration failed: {err}")),
     };
-    let mut inner = state.inner.lock().await;
-    reconcile_scanned_usb_devices(&mut inner, ports);
+    let scanned_ids = ports
+        .iter()
+        .map(|port| stable_usb_device_id(&port.port_path))
+        .collect::<Vec<_>>();
+    {
+        let mut inner = state.inner.lock().await;
+        reconcile_scanned_usb_devices(&mut inner, ports);
+    }
+    for device_id in scanned_ids {
+        let _ = usb_jsonl_request_with_exclusive(&state, &device_id, "info", None, None).await;
+    }
+    let inner = state.inner.lock().await;
     let devices = inner.devices.values().cloned().collect::<Vec<_>>();
     Json(json!({"devices": devices})).into_response()
 }
@@ -363,7 +383,12 @@ fn upsert_usb_device(inner: &mut DevdState, port: UsbTarget) -> DeviceRecord {
         .devices
         .entry(id.clone())
         .and_modify(|device| {
-            device.display_name = port.label.clone();
+            let previous_label = device.usb.as_ref().map(|usb| usb.label.as_str());
+            if device.display_name.is_empty()
+                || previous_label == Some(device.display_name.as_str())
+            {
+                device.display_name = port.label.clone();
+            }
             device.connection = "available".to_string();
             device.usb = Some(port.clone());
         })
@@ -485,6 +510,8 @@ async fn wifi_clear(
         Err(err) => error_from_anyhow(err),
     }
 }
+
+include!("http_bridge_device_name.rs");
 
 async fn device_ports(
     State(state): State<AppState>,

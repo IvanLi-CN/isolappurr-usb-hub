@@ -78,7 +78,8 @@ Default selection is only defined after more than one path is immediately usable
 ## Requirements
 
 - Firmware MUST expose a JSONL protocol over ESP32-S3 USB Serial/JTAG CDC-ACM.
-- Firmware MUST accept at least these commands: `info`, `ports.get`, `port.power_set`, `port.data_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `settings.reset`, `reboot`.
+- Firmware MUST accept at least these commands: `info`, `ports.get`, `port.power_set`, `port.data_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `settings.name.set`, `settings.name.clear`, `settings.reset`, `reboot`.
+- `info` MUST add `device.display_name` (`string` or `null`) and `capabilities.device_name` without removing existing identity fields. Legacy firmware that omits either additive field remains readable and name mutation is disabled by clients.
 - `port.data_set` MUST set the selected port's runtime data-path state with `{"port":"port_a|port_c","connected":true|false}`. The state is not persisted: power-off forces data disconnected, power-on restores data connected, and a request to connect data while power is off MUST return `port_power_off` without enabling power.
 - HTTP MUST expose the equivalent `POST /api/v1/ports/{port_id}/data?connected=0|1` action and report `data_set: true` in the port capabilities when the firmware supports it. `port.replug` remains the separate fixed-duration compatibility pulse.
 - Web runtime mutations for port power and data links MUST commit the exact confirming `ports.get` snapshot before completing, so an overlapping periodic poll cannot defer the visible confirmed state.
@@ -111,6 +112,7 @@ Default selection is only defined after more than one path is immediately usable
 - The saved-device Hardware page MUST provide a delete action with an in-app confirmation. Confirmed deletion MUST remove the saved profile, clear runtime USB/channel records, and leave the user on a valid device list route.
 - USB-only operations, including firmware update, MUST require a USB channel even when Wi-Fi / LAN is online.
 - Web UI MUST provide clear states for unsupported Web Serial, no device, connected, flashing/updating, update failed, Wi-Fi empty/configured/error, telemetry online/offline, busy action, and disruptive action confirmation.
+- Browser-only device-name cache refreshes MUST merge against the latest local profile before persistence so concurrent tabs cannot restore stale profile metadata.
 - Web UI command controls MUST use one shared action system: `primary` for normal task completion, `secondary` for cancellation or safe alternatives, `quiet` for low-emphasis disclosure, `warning` for reset/clear or disruptive actions, and `danger` for saved-device deletion and irreversible final confirmation.
 - Shared action and form surfaces MUST use theme tokens for resting, hover, focus-visible, disabled, and loading states in `isolapurr`, `isolapurr-dark`, and `system` themes. The `system` choice MUST remove the explicit theme attribute and follow the host color-scheme preference.
 - Saved-device detail routes (`Overview`, `Settings`, `Power`) MUST promote the selected device identity into the shared app-shell header on `lg` and wider viewports. The header MUST show the saved device name plus a compact subtitle `id: <short-id> • <baseUrl>`, aligned to the main content column, and the route body MUST NOT duplicate that same identity block above the tabs.
@@ -171,6 +173,15 @@ requirement, and is only valid over Web Serial or Local USB. Firmware HTTP MUST
 reject `scope=wifi` with `unsafe_transport` so a Wi-Fi / LAN client cannot erase
 the credentials carrying its own connection.
 
+`settings.name.set` accepts `{"name":"<utf8-name>"}` and `settings.name.clear`
+has no payload. Firmware validates but never trims: the canonical value is
+1-48 UTF-8 bytes with no Unicode control characters or outer whitespace. The
+same operations are exposed by `PUT`/`DELETE /api/v1/settings/name`; a
+successful response means the EEPROM write completed, and a write failure is
+reported as an error rather than success. The display-name record lives at
+U21 `0x0200..0x023f` and is independent from Wi-Fi, reset scopes, hostname,
+mDNS, and URL identity.
+
 ## UI Design Brief
 
 This is a product control console for people using IsolaPurr USB Hub in bench or desk workflows.
@@ -214,6 +225,10 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given Wi-Fi credentials are cleared through Web Serial or Local USB, when EEPROM clear succeeds, then firmware immediately stops the Wi-Fi station and reports no reboot requirement.
 - Given `settings.reset` is called with `scope=wifi` through Web Serial or Local USB, when EEPROM clear succeeds, then `wifi.get` reports no stored credentials and Wi-Fi station runtime is stopped.
 - Given `settings.reset` is called with `scope=wifi` through Wi-Fi / LAN HTTP, when the request is handled, then firmware returns `unsafe_transport` and leaves the Wi-Fi EEPROM record unchanged.
+- Given a UTF-8 display name is set over USB JSONL or HTTP, when the EEPROM
+  write succeeds, then the next `info` response reports the same value and
+  immutable identity fields remain unchanged. Clearing reports `null` and
+  does not alter Wi-Fi or other settings.
 - Given Web Serial is unsupported, when the user opens Add device, then the UI offers Local USB or Wi-Fi/HTTP alternatives.
 - Given the Desktop agent is running, when the user lists serial ports or proxies a command, then requests require the existing bearer token and origin policy.
 - Given `mcu-agentd` is not installed, when a developer runs `just desktop-agent-build` once and then the Local USB Justfile flow, then they can list ports, identify a hub, generate an app `.bin`, flash `0x10000`, reset, and monitor using `isolapurr-desktop`.
@@ -265,7 +280,6 @@ tests assert full labels, icon-only feedback, stable layout and reduced-motion b
   scenario: complete two-stage hold state matrix
   evidence_note: verifies every state preserves a full action label and one actual-state icon without visible status text.
 
-PR: include
 ![Desktop two-stage hold state matrix in Storybook canvas](./assets/two-stage-hold-feedback-state-matrix-desktop.png)
 
 - source_type: storybook_canvas
@@ -281,7 +295,6 @@ PR: include
   scenario: complete two-stage hold state matrix at mobile width
   evidence_note: verifies all state labels, actual-state icons, and button feedback remain legible at the approved mobile viewport.
 
-PR: include
 ![Mobile two-stage hold state matrix in Storybook canvas](./assets/two-stage-hold-feedback-state-matrix-mobile.png)
 
 - source_type: ui_demo
@@ -296,7 +309,6 @@ PR: include
   state: `?demo=true` Dashboard
   evidence_note: verifies four compact Dashboard actions keep complete names, single icons, and stable horizontal geometry.
 
-PR: include
 ![Desktop two-stage port hold in Demo mode](./assets/two-stage-hold-desktop.png)
 
 - source_type: ui_demo
@@ -311,7 +323,6 @@ PR: include
   state: `?demo=true` Dashboard mobile
   evidence_note: verifies the same compact actions have no overlap or truncation at the approved mobile viewport.
 
-PR: include
 ![Mobile two-stage port hold in Demo mode](./assets/two-stage-hold-mobile.png)
 
 Add device discovery canonical device IDs:
@@ -333,7 +344,6 @@ Add device cached IP scan restoration:
   state: restored ten-minute IP scan session
   evidence_note: verifies the cached scan summary, discovered devices, and normalized CIDR are restored together without warning overlap or clipping.
 
-PR: none
 ![Add device cached IP scan restoration](./assets/add-device-cached-scan-restored.png)
 
 Device info canonical device ID:

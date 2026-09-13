@@ -69,6 +69,14 @@ const meta: Meta<typeof DeviceInfoPanel> = {
       ok: true,
       value: { accepted: true, reboot_required: false },
     }),
+    setDeviceName: async (name) => ({
+      ok: true,
+      value: { display_name: name },
+    }),
+    clearDeviceName: async () => ({
+      ok: true,
+      value: { display_name: null },
+    }),
     resetSettings: async (scope) => ({
       ok: true,
       value:

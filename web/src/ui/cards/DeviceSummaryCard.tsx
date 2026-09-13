@@ -13,6 +13,7 @@ import { PortMiniCard } from "./PortMiniCard";
 
 export type DeviceSummaryCardProps = {
   device: StoredDevice;
+  displayName?: string;
   connection: {
     state: ConnectionState;
     lastOkAt?: number;
@@ -74,6 +75,7 @@ function connectionBadge(state: ConnectionState): {
 
 export function DeviceSummaryCard({
   device,
+  displayName,
   connection,
   hostConnected,
   ports,
@@ -82,6 +84,7 @@ export function DeviceSummaryCard({
   onSetData,
   actionsDisabled = false,
 }: DeviceSummaryCardProps) {
+  const primaryName = displayName ?? device.name;
   const shortId = device.id.length > 8 ? device.id.slice(0, 8) : device.id;
   const lastOkLabel = connection.lastOkAt
     ? formatTimeHms(connection.lastOkAt)
@@ -99,10 +102,12 @@ export function DeviceSummaryCard({
       <div className="flex h-auto flex-col pb-[18px] pl-6 pr-6 pt-[14px] sm:h-full">
         <div className="min-h-[62px]">
           <div className="flex items-start justify-between gap-4">
-            <div className="text-[16px] font-bold leading-5">{device.name}</div>
+            <div className="min-w-0 flex-1 break-words text-[16px] font-bold leading-5">
+              {primaryName}
+            </div>
             <div
               className={[
-                "flex h-6 items-center justify-center rounded-full",
+                "flex h-6 shrink-0 items-center justify-center rounded-full",
                 "border",
                 badge.width,
                 badge.bg,

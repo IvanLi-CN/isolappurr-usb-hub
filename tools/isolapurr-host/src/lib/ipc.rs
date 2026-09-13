@@ -243,6 +243,38 @@ async fn dispatch_ipc_request(
                 &usb_wifi_clear_request(state, &req.device_id).await?,
             ))
         }
+        "device.settings.name.show" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            let info = require_compatible_project_firmware(state, &req.device_id).await?;
+            // Keep the JSONL success envelope intact so Web/bridge consumers
+            // handle name show exactly like the other device queries.
+            Ok(redact_sensitive(&info))
+        }
+        "device.settings.name.set" => {
+            let req: DeviceNameSetRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            let name = normalize_device_display_name(&req.name)?;
+            Ok(redact_sensitive(
+                &usb_jsonl_request(
+                    state,
+                    &req.device_id,
+                    "settings.name.set",
+                    Some(json!({"name": name})),
+                )
+                .await?,
+            ))
+        }
+        "device.settings.name.clear" => {
+            let req: DeviceIdRequest = serde_json::from_value(params)?;
+            require_compatible_project_firmware(state, &req.device_id).await?;
+            let value =
+                usb_jsonl_request(state, &req.device_id, "settings.name.clear", None).await?;
+            // The clear response intentionally contains only display_name=null.
+            // Refresh info so the in-memory inventory immediately receives the
+            // stable hostname instead of falling back to the internal USB id.
+            let _ = usb_jsonl_request(state, &req.device_id, "info", None).await;
+            Ok(redact_sensitive(&value))
+        }
         "device.settings.reset" => {
             let req: DeviceSettingsResetRequest = serde_json::from_value(params)?;
             require_compatible_project_firmware(state, &req.device_id).await?;
@@ -484,6 +516,12 @@ struct DeviceWifiSetRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct DeviceNameSetRequest {
+    device_id: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct DeviceSettingsResetRequest {
     device_id: String,
     scope: String,
@@ -584,8 +622,18 @@ async fn ipc_list_devices(state: &AppState) -> anyhow::Result<Value> {
 
 async fn ipc_scan_devices(state: &AppState) -> anyhow::Result<Value> {
     let ports = list_serial_ports().context("serial enumeration failed")?;
-    let mut inner = state.inner.lock().await;
-    reconcile_scanned_usb_devices(&mut inner, ports);
+    let scanned_ids = ports
+        .iter()
+        .map(|port| stable_usb_device_id(&port.port_path))
+        .collect::<Vec<_>>();
+    {
+        let mut inner = state.inner.lock().await;
+        reconcile_scanned_usb_devices(&mut inner, ports);
+    }
+    for device_id in scanned_ids {
+        let _ = usb_jsonl_request_with_exclusive(state, &device_id, "info", None, None).await;
+    }
+    let inner = state.inner.lock().await;
     let devices = inner.devices.values().cloned().collect::<Vec<_>>();
     Ok(json!({"devices": devices}))
 }

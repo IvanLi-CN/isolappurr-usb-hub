@@ -64,6 +64,8 @@ The current user-facing truth source is the released CLI surface, not stale docs
 - `isolapurr ports`, `ports power`, `ports data`, `ports replug`, `ports route`
 - `isolapurr power show|config show|config set|output manual|output auto|source-capability set|defaults`
 - `isolapurr diagnostics export`
+- `isolapurr settings name show|set|clear --device-id <device-id>` for the
+  hardware-owned UTF-8 display name
 - `isolapurr settings reset wifi|other`
 - `isolapurr flash`, `reset`, `monitor`
 

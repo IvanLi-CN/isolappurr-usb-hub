@@ -2,6 +2,15 @@
 
 ## Device identity
 
+- `device display name`
+  An optional UTF-8 label assigned by the owner and persistently owned by one
+  hub. When set, it is the primary owner-facing designation, but it is not a
+  device identifier or network address.
+
+- `local device profile name`
+  A client-stored cached fallback for presenting a hub when its hardware
+  display name cannot be read. It never overrides a hardware display name.
+
 - `device_id`
   The only owner-facing device identity for an IsolaPurr USB Hub.
   It is a 12-character lowercase hex string derived from the base eFuse MAC with byte order `mac[3..6] + mac[0..3]`.

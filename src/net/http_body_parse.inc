@@ -124,6 +124,12 @@ fn parse_json_string_value_body(rest: &str) -> Option<(String, usize)> {
                     '"' | '\\' | '/' => {
                         let _ = out.push(escaped);
                     }
+                    'b' => {
+                        let _ = out.push('\u{0008}');
+                    }
+                    'f' => {
+                        let _ = out.push('\u{000c}');
+                    }
                     'n' => {
                         let _ = out.push('\n');
                     }
@@ -132,6 +138,35 @@ fn parse_json_string_value_body(rest: &str) -> Option<(String, usize)> {
                     }
                     't' => {
                         let _ = out.push('\t');
+                    }
+                    'u' => {
+                        let mut code = 0u32;
+                        for _ in 0..4 {
+                            let (_, hex) = chars.next()?;
+                            code = (code << 4) | hex.to_digit(16)?;
+                        }
+                        let code = if (0xD800..=0xDBFF).contains(&code) {
+                            let (_, slash) = chars.next()?;
+                            let (_, marker) = chars.next()?;
+                            if slash != '\\' || marker != 'u' {
+                                return None;
+                            }
+                            let mut low = 0u32;
+                            for _ in 0..4 {
+                                let (_, hex) = chars.next()?;
+                                low = (low << 4) | hex.to_digit(16)?;
+                            }
+                            if !(0xDC00..=0xDFFF).contains(&low) {
+                                return None;
+                            }
+                            0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                        } else if (0xDC00..=0xDFFF).contains(&code) {
+                            return None;
+                        } else {
+                            code
+                        };
+                        let decoded = char::from_u32(code)?;
+                        let _ = out.push(decoded);
                     }
                     _ => return None,
                 }

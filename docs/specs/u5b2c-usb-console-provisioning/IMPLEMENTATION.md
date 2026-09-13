@@ -13,6 +13,9 @@
 ## Coverage
 
 - Firmware USB JSONL: implemented for `info`, `ports.get`, `port.power_set`, `port.data_set`, `port.replug`, `wifi.get`, `wifi.set`, `wifi.clear`, `settings.reset`, and `reboot`.
+- Firmware USB JSONL and HTTP now also implement `settings.name.set|clear` over the EEPROM-backed `IPNAME01` record, with additive `info.device.display_name` and `capabilities.device_name` fields and explicit write-failure responses.
+- Host-side Desktop profile refreshes use `PUT /api/v1/storage/devices/{id}/name-cache` so runtime name observations update only the cache/hostname fields and cannot overwrite a stale local profile name.
+- Browser-only profile refreshes likewise merge against the latest localStorage snapshot before writing the cache update.
 - Runtime data-link control: `port.data_set` and the aligned HTTP route hold `data_connected` until the next power cycle or reboot; power-off rejects connect requests with `port_power_off` and never implicitly re-enables the port.
 - Firmware USB JSONL rejects malformed port actions instead of defaulting to a port or power state.
 - Local USB ESP32 port filtering accepts ESP32-S3 USB Serial/JTAG by VID/PID across macOS, Windows, and Linux path naming, while still excluding Bluetooth/debug-console noise.

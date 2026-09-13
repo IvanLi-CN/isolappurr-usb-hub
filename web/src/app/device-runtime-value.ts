@@ -1,3 +1,5 @@
+import { resolveStoredDeviceDisplayName } from "../domain/deviceName";
+import type { StoredDevice } from "../domain/devices";
 import type { PortId } from "../domain/ports";
 import {
   type ConnectionState,
@@ -9,6 +11,7 @@ import {
 
 type DeviceRuntimeValueParams = {
   now: number;
+  devices: StoredDevice[];
   runtimeById: Record<string, DeviceRuntime>;
 } & Pick<
   DeviceRuntimeContextValue,
@@ -38,12 +41,15 @@ type DeviceRuntimeValueParams = {
   | "setData"
   | "replug"
   | "setUsbCDownstreamRoute"
+  | "setDeviceName"
+  | "clearDeviceName"
 >;
 
 const OFFLINE_THRESHOLD_MS = 10_000;
 
 export function buildDeviceRuntimeContextValue({
   now,
+  devices,
   runtimeById,
   coordination,
   canControlHardware,
@@ -71,6 +77,8 @@ export function buildDeviceRuntimeContextValue({
   setData,
   replug,
   setUsbCDownstreamRoute,
+  setDeviceName,
+  clearDeviceName,
 }: DeviceRuntimeValueParams): DeviceRuntimeContextValue {
   const connectionState = (deviceId: string): ConnectionState => {
     const runtime = runtimeById[deviceId];
@@ -134,6 +142,17 @@ export function buildDeviceRuntimeContextValue({
   const pending = (deviceId: string, portId: PortId): boolean =>
     runtimeById[deviceId]?.pending?.[portId] ?? false;
 
+  const displayNameInfo = (deviceId: string) => {
+    const runtime = runtimeById[deviceId];
+    return runtime?.identityVerified ? (runtime.deviceInfo ?? null) : null;
+  };
+  const displayName = (deviceId: string) => {
+    const device = devices.find((candidate) => candidate.id === deviceId);
+    return device
+      ? resolveStoredDeviceDisplayName(device, displayNameInfo(deviceId))
+      : deviceId;
+  };
+
   return {
     now,
     runtimeById,
@@ -148,6 +167,8 @@ export function buildDeviceRuntimeContextValue({
     hub,
     port,
     pending,
+    displayName,
+    displayNameInfo,
     powerLockOwner,
     requestControlTakeover,
     refreshDevice,
@@ -172,5 +193,7 @@ export function buildDeviceRuntimeContextValue({
     setData,
     replug,
     setUsbCDownstreamRoute,
+    setDeviceName,
+    clearDeviceName,
   };
 }

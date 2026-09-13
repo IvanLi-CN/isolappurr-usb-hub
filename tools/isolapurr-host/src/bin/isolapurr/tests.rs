@@ -3,6 +3,50 @@ mod power_output_tests {
     use super::*;
 
     #[test]
+    fn device_name_mutation_response_maps_value_and_unset_cache_states() {
+        assert_eq!(
+            device_name_cache_from_mutation(&json!({
+                "result": { "display_name": "Bench 猫" }
+            })),
+            Some(DeviceNameCache::Value("Bench 猫".to_string()))
+        );
+        assert_eq!(
+            device_name_cache_from_mutation(&json!({
+                "display_name": null
+            })),
+            Some(DeviceNameCache::Unset)
+        );
+        assert_eq!(
+            device_name_cache_from_mutation(&json!({
+                "device": { "display_name": "Read from info" }
+            })),
+            Some(DeviceNameCache::Value("Read from info".to_string()))
+        );
+        assert_eq!(
+            device_name_cache_from_mutation(&json!({
+                "device": { "display_name": null }
+            })),
+            Some(DeviceNameCache::Unset)
+        );
+    }
+
+    #[test]
+    fn device_name_selector_can_extract_canonical_id_from_info() {
+        assert_eq!(
+            device_id_from_info(&json!({
+                "device": {"device_id": "aabbccddeeff"}
+            })),
+            Some("aabbccddeeff".to_string())
+        );
+        assert_eq!(
+            device_id_from_info(&json!({
+                "result": {"device": {"device_id": "001122334455"}}
+            })),
+            Some("001122334455".to_string())
+        );
+    }
+
+    #[test]
     fn ensure_success_envelope_rejects_jsonl_ok_false() {
         let value = json!({
             "ok": false,
@@ -129,6 +173,25 @@ mod power_output_tests {
         .expect("runtime put endpoint should map");
         assert_eq!(path, "/api/v1/power/runtime?owner=9");
         assert_eq!(body, Some(json!({"action": "discharge", "enabled": true})));
+
+        let (_, path, body) = map_http_endpoint(Method::GET, "/settings/name", None)
+            .expect("device name show endpoint should map to info");
+        assert_eq!(path, "/api/v1/info");
+        assert!(body.is_none());
+
+        let (_, path, body) = map_http_endpoint(
+            Method::PUT,
+            "/settings/name",
+            Some(json!({"name": "Studio 猫"})),
+        )
+        .expect("device name set endpoint should map");
+        assert_eq!(path, "/api/v1/settings/name");
+        assert_eq!(body, Some(json!({"name": "Studio 猫"})));
+
+        let (_, path, body) = map_http_endpoint(Method::DELETE, "/settings/name", None)
+            .expect("device name clear endpoint should map");
+        assert_eq!(path, "/api/v1/settings/name");
+        assert!(body.is_none());
     }
 
     #[test]
@@ -216,6 +279,25 @@ mod power_output_tests {
         assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
         assert_eq!(params["scope"], "wifi");
         assert_eq!(params["owner"], 9);
+
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::PUT,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/settings/name",
+            Some(json!({"name": "Studio 猫"})),
+        )
+        .expect("device name set endpoint should map");
+        assert_eq!(method, "device.settings.name.set");
+        assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
+        assert_eq!(params["name"], "Studio 猫");
+
+        let (method, params) = map_devd_ipc_endpoint(
+            Method::DELETE,
+            "/api/v1/devices/usb--dev-cu-usbmodem21221401/settings/name",
+            None,
+        )
+        .expect("device name clear endpoint should map");
+        assert_eq!(method, "device.settings.name.clear");
+        assert_eq!(params["device_id"], "usb--dev-cu-usbmodem21221401");
     }
 
     #[test]
@@ -285,6 +367,29 @@ mod power_output_tests {
         let err = Cli::try_parse_from(["isolapurr", "status", "--device", "abc"])
             .expect_err("legacy status --device must fail");
         assert!(err.to_string().contains("unexpected argument"));
+    }
+
+    #[test]
+    fn settings_name_cli_parses_canonical_device_id_selector() {
+        let cli = Cli::try_parse_from([
+            "isolapurr",
+            "settings",
+            "name",
+            "set",
+            "--device-id",
+            "aabbccddeeff",
+            "--name",
+            "Studio 猫",
+        ])
+        .expect("settings name set should parse");
+        assert!(matches!(
+            cli.command,
+            Command::Settings {
+                command: SettingsCommand::Name {
+                    command: SettingsNameCommand::Set { selector, name }
+                }
+            } if selector.device_id.as_deref() == Some("aabbccddeeff") && name == "Studio 猫"
+        ));
     }
 
     #[test]

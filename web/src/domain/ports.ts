@@ -11,7 +11,7 @@ export type HubState = {
   isolated_usb_ready?: boolean;
   usb_c_downstream_route?: UsbCDownstreamRoute;
   usb_c_downstream_persisted?: boolean;
-  capabilities?: { identify?: boolean };
+  capabilities?: { identify?: boolean; device_name?: boolean };
 };
 
 export type PortTelemetry = {
@@ -80,7 +80,7 @@ export type PortsResponse = {
   // Backward-compat: older firmware may omit `hub` entirely.
   hub?: HubState;
   capability_schema?: number;
-  capabilities?: { identify?: boolean };
+  capabilities?: { identify?: boolean; device_name?: boolean };
   ports: Port[];
 };
 

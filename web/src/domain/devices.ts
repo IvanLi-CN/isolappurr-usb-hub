@@ -1,8 +1,12 @@
+import { type DeviceNameCache, parseDeviceNameCache } from "./deviceName";
+
 export const DEVICES_STORAGE_KEY = "isolapurr_usb_hub.devices";
 
 export type StoredDevice = {
   id: string;
   name: string;
+  hostname?: string;
+  deviceNameCache?: DeviceNameCache;
   baseUrl: string;
   lastSeenAt?: string;
   transports?: {
@@ -346,6 +350,10 @@ export function loadStoredDevices(): StoredDevice[] {
         ...d,
         id: normalizeStoredDeviceId(d.id) ?? d.id,
         baseUrl: normalized.ok ? normalized.baseUrl : d.baseUrl,
+        deviceNameCache:
+          d.deviceNameCache === undefined
+            ? undefined
+            : parseDeviceNameCache(d.deviceNameCache),
         transports: parseStoredDeviceTransports(d.transports),
       };
     });

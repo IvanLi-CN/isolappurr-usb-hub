@@ -6,6 +6,7 @@ export type DeviceInfoResponse = {
     hostname: string;
     fqdn: string;
     mac: string;
+    display_name?: string | null;
     variant: string;
     firmware: {
       name: string;
@@ -21,7 +22,12 @@ export type DeviceInfoResponse = {
   };
   capabilities?: {
     identify?: boolean;
+    device_name?: boolean;
   };
+};
+
+export type DeviceNameMutationResponse = {
+  display_name: string | null;
 };
 
 export type IdentifyResponse = {
@@ -878,6 +884,42 @@ export async function getDeviceInfo(
     method: "GET",
     signal: options?.signal,
   });
+}
+
+export function deviceDisplayNameState(
+  info: DeviceInfoResponse,
+): "unknown" | "unset" | "value" {
+  if (!Object.hasOwn(info.device, "display_name")) {
+    return "unknown";
+  }
+  return info.device.display_name === null ? "unset" : "value";
+}
+
+export async function setDeviceName(
+  baseUrl: string,
+  name: string,
+): Promise<Result<DeviceNameMutationResponse>> {
+  return fetchJson<DeviceNameMutationResponse>(
+    baseUrl,
+    "/api/v1/settings/name",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    },
+  );
+}
+
+export async function clearDeviceName(
+  baseUrl: string,
+): Promise<Result<DeviceNameMutationResponse>> {
+  return fetchJson<DeviceNameMutationResponse>(
+    baseUrl,
+    "/api/v1/settings/name",
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export async function identifyDevice(

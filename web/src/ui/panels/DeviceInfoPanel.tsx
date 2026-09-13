@@ -3,6 +3,7 @@ import type { DeviceTransport } from "../../app/device-runtime";
 import type { SharedRuntimeCommandState } from "../../app/device-runtime-support";
 import type {
   DeviceInfoResponse,
+  DeviceNameMutationResponse,
   RebootResponse,
   Result,
   SettingsResetResponse,
@@ -15,6 +16,7 @@ import type { StoredDevice } from "../../domain/devices";
 import type { UsbCDownstreamRoute } from "../../domain/ports";
 import { ActionButton } from "../actions/ActionButton";
 import { ConfirmDialog } from "../actions/ConfirmDialog";
+import { DeviceNameSettingsSection } from "./DeviceNameSettingsSection";
 import { DeviceSettingsResetPanel } from "./DeviceSettingsResetPanel";
 
 function unknown(value: string | null | undefined): string {
@@ -66,6 +68,7 @@ function InfoFieldRow({
 
 export function DeviceInfoPanel({
   device,
+  displayName,
   transport,
   wifiManagementTransport,
   sharedCommand,
@@ -74,6 +77,8 @@ export function DeviceInfoPanel({
   loadWifiConfig,
   saveWifiConfig,
   clearWifiConfig,
+  setDeviceName,
+  clearDeviceName,
   resetSettings,
   rebootDevice,
   usbCDownstreamRoute,
@@ -84,6 +89,7 @@ export function DeviceInfoPanel({
   deleteDevice,
 }: {
   device: StoredDevice;
+  displayName?: string;
   transport: DeviceTransport | null;
   wifiManagementTransport: DeviceTransport | null;
   sharedCommand: SharedRuntimeCommandState | null;
@@ -94,6 +100,8 @@ export function DeviceInfoPanel({
     input: WifiConfigInput,
   ) => Promise<Result<WifiMutationResponse>>;
   clearWifiConfig: () => Promise<Result<WifiMutationResponse>>;
+  setDeviceName: (name: string) => Promise<Result<DeviceNameMutationResponse>>;
+  clearDeviceName: () => Promise<Result<DeviceNameMutationResponse>>;
   resetSettings: (
     scope: SettingsResetScope,
   ) => Promise<Result<SettingsResetResponse>>;
@@ -129,6 +137,7 @@ export function DeviceInfoPanel({
   const loadWifiConfigRef = useRef(loadWifiConfig);
   const wifiFormDirtyRef = useRef(false);
   const syncedRevisionRef = useRef(sharedRevision);
+  const infoRevisionRef = useRef(sharedRevision);
 
   useEffect(() => {
     loadInfoRef.current = loadInfo;
@@ -155,9 +164,36 @@ export function DeviceInfoPanel({
     setDeleteConfirmOpen(false);
     setDeleteError(null);
     wifiFormDirtyRef.current = false;
-    syncedRevisionRef.current = sharedRevision;
+    syncedRevisionRef.current = 0;
+    infoRevisionRef.current = 0;
     setWifiStaleDraft(false);
-  }, [device.id, sharedRevision]);
+  }, [device.id]);
+
+  useEffect(() => {
+    if (
+      infoRevisionRef.current === sharedRevision ||
+      !transport ||
+      device.id.length === 0
+    ) {
+      return;
+    }
+    infoRevisionRef.current = sharedRevision;
+    let cancelled = false;
+    void loadInfoRef.current().then((res) => {
+      if (cancelled) {
+        return;
+      }
+      if (res.ok) {
+        setInfo(res.value);
+        setInfoError(null);
+      } else {
+        setInfoError(res.error.message);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [device.id, sharedRevision, transport]);
 
   useEffect(() => {
     if (!wifiFormDirtyRef.current) {
@@ -546,6 +582,25 @@ export function DeviceInfoPanel({
         ) : null}
       </div>
 
+      <DeviceNameSettingsSection
+        key={device.id}
+        deviceId={device.id}
+        info={info}
+        sharedRevision={sharedRevision}
+        transport={transport}
+        busy={sharedCommandBusy}
+        reloadInfo={async () => {
+          const result = await loadInfoRef.current();
+          if (result.ok) {
+            setInfo(result.value);
+            setInfoError(null);
+          }
+          return result;
+        }}
+        setName={setDeviceName}
+        clearName={clearDeviceName}
+      />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="iso-card h-[152px] rounded-[18px] bg-[var(--panel)] px-6 py-6 shadow-[inset_0_0_0_1px_var(--border)]">
           <div className="text-[16px] font-bold leading-5">Firmware</div>
@@ -793,7 +848,7 @@ export function DeviceInfoPanel({
       <ConfirmDialog
         busy={deleteBusy}
         confirmLabel="Delete device"
-        description={`This only removes the local saved profile for ${device.name}. It does not change hardware settings on the hub.`}
+        description={`This only removes the local saved profile for ${displayName ?? device.name}. It does not change hardware settings on the hub.`}
         open={deleteConfirmOpen}
         title="Delete this saved device?"
         tone="danger"

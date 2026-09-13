@@ -44,6 +44,7 @@
                 }
             }
         }
+        include!("main_loop_device_name.inc");
         #[cfg(feature = "net_http")]
         {
             if settings_reset_inflight.is_none() {

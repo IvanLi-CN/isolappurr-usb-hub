@@ -11,7 +11,7 @@ import { AddDeviceUiProvider } from "./app/add-device-ui";
 import { DemoModeProvider, useDemoMode } from "./app/demo-mode";
 import { DemoLink, useDemoNavigate } from "./app/demo-navigation";
 import { DesktopAgentProvider } from "./app/desktop-agent-ui";
-import { DeviceRuntimeProvider } from "./app/device-runtime";
+import { DeviceRuntimeProvider, useDeviceRuntime } from "./app/device-runtime";
 import { DevicesProvider, useDevices } from "./app/devices-store";
 import { ThemeProvider } from "./app/theme-ui";
 import type { AddDeviceInput } from "./domain/devices";
@@ -32,6 +32,7 @@ function RootLayout() {
   const location = useLocation();
   const { enabled: demoEnabled } = useDemoMode();
   const { devices, addDevice, getDevice, upsertDevice } = useDevices();
+  const runtime = useDeviceRuntime();
   const navigate = useDemoNavigate();
   const forceEmptySidebar =
     demoEnabled && location.pathname.replace(/\/$/, "") === "/flash";
@@ -54,9 +55,14 @@ function RootLayout() {
   const headerInfo =
     isDeviceDetailRoute && selectedDevice
       ? {
-          mobileTitle: selectedDevice.name,
+          mobileTitle: runtime.displayName(selectedDevice.id),
+          nameEditable:
+            runtime.displayNameInfo(selectedDevice.id)?.capabilities
+              ?.device_name === true,
+          onSaveName: (value: string) =>
+            runtime.setDeviceName(selectedDevice.id, value),
           subtitle: `id: ${shortId} • ${selectedDevice.baseUrl}`,
-          title: selectedDevice.name,
+          title: runtime.displayName(selectedDevice.id),
         }
       : null;
 

@@ -1,5 +1,6 @@
 import type { ThemeId } from "../app/theme";
 import { agentFetch, type DesktopAgent } from "./desktopAgent";
+import { parseDeviceNameCache } from "./deviceName";
 import {
   type AddDeviceInput,
   normalizeBaseUrl,
@@ -21,6 +22,11 @@ type StorageDevicesResponse = {
 
 type StorageDeviceResponse = {
   device: StoredDevice;
+};
+
+type StorageNameCacheInput = {
+  deviceNameCache: StoredDevice["deviceNameCache"];
+  hostname?: string;
 };
 
 type StorageSettingsResponse = {
@@ -78,6 +84,14 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
   return {
     id,
     name: record.name,
+    hostname:
+      typeof record.hostname === "string" && record.hostname.trim().length > 0
+        ? record.hostname.trim()
+        : undefined,
+    deviceNameCache:
+      record.deviceNameCache === undefined
+        ? undefined
+        : parseDeviceNameCache(record.deviceNameCache),
     baseUrl: normalized.ok ? normalized.baseUrl : record.baseUrl,
     transports: transports
       ? {
@@ -168,6 +182,31 @@ export async function deleteStoredDevice(
     return { ok: false, error: await readStorageError(res) };
   }
   return { ok: true, value: true };
+}
+
+export async function updateStoredDeviceNameCache(
+  agent: DesktopAgent,
+  deviceId: string,
+  input: StorageNameCacheInput,
+): Promise<StorageResult<StoredDevice>> {
+  const res = await agentFetch(
+    agent,
+    `/api/v1/storage/devices/${deviceId}/name-cache`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await readStorageError(res) };
+  }
+  const json = (await res.json()) as unknown;
+  const obj = json as StorageDeviceResponse | undefined;
+  const device = obj?.device ? parseStoredDevice(obj.device) : null;
+  if (!device) {
+    return { ok: false, error: { message: "invalid response" } };
+  }
+  return { ok: true, value: device };
 }
 
 export async function fetchStoredTheme(
