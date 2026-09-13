@@ -377,8 +377,7 @@ pub fn delete_hardware(id: &str) -> anyhow::Result<bool> {
     Ok(before != registry.devices.len())
 }
 
-fn import_profiles(profiles: Vec<DeviceProfile>) -> anyhow::Result<usize> {
-    let _lock = storage_registry_lock()?;
+pub(crate) fn import_profiles_locked(profiles: Vec<DeviceProfile>) -> anyhow::Result<usize> {
     let mut registry = read_hardware_registry()?;
     let mut count = 0;
     for profile in profiles {

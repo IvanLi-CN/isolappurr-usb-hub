@@ -522,13 +522,13 @@ pub(super) async fn storage_import(
         Err(err) => return bad_request(&format!("import failed: {err}")),
     };
     let settings = req.settings;
-    match import_profiles(profiles) {
+    let _lock = match storage_registry_lock() {
+        Ok(lock) => lock,
+        Err(err) => return bad_request(&format!("lock storage failed: {err}")),
+    };
+    match import_profiles_locked(profiles) {
         Ok(count) => {
             let settings_written = if let Some(settings) = settings {
-                let _lock = match storage_registry_lock() {
-                    Ok(lock) => lock,
-                    Err(err) => return bad_request(&format!("lock storage failed: {err}")),
-                };
                 if let Err(err) = write_storage_settings(&settings) {
                     return bad_request(&format!("import settings failed: {err}"));
                 }
