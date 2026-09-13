@@ -59,10 +59,7 @@ pub fn read_hardware_registry() -> anyhow::Result<HardwareRegistry> {
     if registry.schema_version == 0 {
         registry.schema_version = STORAGE_SCHEMA_VERSION;
     }
-    let changed = sanitize_registry(&mut registry);
-    if changed {
-        let _ = write_hardware_registry(&registry);
-    }
+    sanitize_registry(&mut registry);
     Ok(registry)
 }
 

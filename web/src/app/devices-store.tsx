@@ -254,7 +254,14 @@ export function DevicesProvider({
         return;
       }
       const payload = readMigrationPayload();
-      if (!payload || hasCompletedDesktopMigration(payload)) {
+      if (!payload) {
+        return;
+      }
+      if (hasCompletedDesktopMigration(payload)) {
+        const refreshed = await fetchStoredDevices(agent);
+        if (refreshed.ok) {
+          setDevices(refreshed.value);
+        }
         return;
       }
       const res = await migrateFromLocalStorage(agent, payload);
