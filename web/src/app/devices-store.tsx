@@ -461,8 +461,12 @@ export function DevicesProvider({
           broadcastProfileSync();
           return;
         }
+        const latest = loadStoredDevices().find(
+          (device) => device.id === deviceId,
+        );
+        const next = latest ?? existing;
         await persistDevice({
-          ...existing,
+          ...next,
           hostname: nextHostname,
           deviceNameCache: cache,
         });
