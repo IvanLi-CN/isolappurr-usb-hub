@@ -140,6 +140,20 @@ isolapurr settings reset wifi --device-id <device-id> --yes
 isolapurr diagnostics export --device-id <device-id>
 ```
 
+- Hardware display name is a separate EEPROM-backed setting. The CLI trims the
+  value before sending it; it does not change the device selector, hostname,
+  mDNS address, URL, or the local `hardware save --name` profile label:
+
+```bash
+isolapurr settings name show --device-id <device-id>
+isolapurr settings name set --device-id <device-id> --name "Bench 猫"
+isolapurr settings name clear --device-id <device-id>
+```
+
+Older firmware that does not advertise `capabilities.device_name` remains
+readable, but the hardware name controls are unavailable and the UI/CLI uses
+the documented local fallback.
+
 - Firmware update must use release firmware catalog/assets. Run a dry-run or validation first when available, then flash only after target, artifact, hash, and identity evidence are clear.
 - First-time full flash is user-supported only through the released CLI's explicit gate: exact port selection, artifact evidence, typed confirmation, and post-flash identity capture.
 - Never echo PSKs or other secrets in chat, logs, screenshots, traces, or PR text.

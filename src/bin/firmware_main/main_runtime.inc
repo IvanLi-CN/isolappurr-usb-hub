@@ -437,6 +437,24 @@
             None
         }
     };
+    #[cfg(feature = "net_http")]
+    let device_display_name = match provisioning::load_device_display_name(&mut telemetry_i2c).await {
+        Ok(name) => {
+            if name.is_some() {
+                info!("provisioning: device display name loaded from EEPROM U21");
+            } else {
+                info!("provisioning: device display name is unset");
+            }
+            name
+        }
+        Err(err) => {
+            defmt::warn!(
+                "provisioning: failed to load device display name from EEPROM U21; treating as unset: {:?}",
+                defmt::Debug2Format(&err)
+            );
+            None
+        }
+    };
     #[cfg(not(feature = "net_http"))]
     let mut power_config = PowerConfig::defaults();
     let mut last_sw2303_path_control: Option<Sw2303PathControl> = None;
@@ -459,6 +477,7 @@
         );
         guard.power.runtime_output_enabled = runtime_tps_output_enabled_reported;
         guard.power.runtime_discharge_enabled = runtime_tps_discharge_enabled_reported;
+        guard.device_display_name = device_display_name;
     }
     #[cfg(feature = "net_http")]
     let net_handles =

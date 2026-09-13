@@ -228,11 +228,20 @@ fn parse_storage_save_input(value: Value) -> anyhow::Result<SavedHardwareInput> 
             .ok_or_else(|| anyhow!("device.id is required"))
             .and_then(normalize_canonical_device_id)?;
         let transports = parse_storage_transports(device, &base_url);
+        let device_name_cache = device
+            .get("deviceNameCache")
+            .and_then(|value| serde_json::from_value(value.clone()).ok());
+        let hostname = device
+            .get("hostname")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
         return Ok(SavedHardwareInput {
             device_id,
             name,
+            hostname,
             transports,
             identity: None,
+            device_name_cache,
         });
     }
     #[derive(Deserialize)]
@@ -244,13 +253,19 @@ fn parse_storage_save_input(value: Value) -> anyhow::Result<SavedHardwareInput> 
         transports: Option<DeviceProfileTransports>,
         #[serde(default)]
         identity: Option<DeviceIdentity>,
+        #[serde(default, rename = "deviceNameCache")]
+        device_name_cache: Option<DeviceNameCache>,
+        #[serde(default)]
+        hostname: Option<String>,
     }
     let wire: Wire = serde_json::from_value(value)?;
     Ok(SavedHardwareInput {
         device_id: normalize_canonical_device_id(&wire.device_id)?,
         name: wire.name,
+        hostname: wire.hostname,
         transports: wire.transports.unwrap_or_default(),
         identity: wire.identity,
+        device_name_cache: wire.device_name_cache,
     })
 }
 
@@ -296,6 +311,8 @@ fn web_storage_group_device(profiles: &[&DeviceProfile]) -> Value {
     json!({
         "id": primary.id,
         "name": primary.name,
+        "hostname": primary.hostname,
+        "deviceNameCache": primary.device_name_cache,
         "baseUrl": base_url,
         "lastSeenAt": primary.last_seen_at.map(|ts| ts.to_string()),
         "transports": Value::Object(transports),
@@ -323,9 +340,16 @@ fn parse_web_storage_device(value: &Value) -> anyhow::Result<DeviceProfile> {
     sanitize_profile(DeviceProfile {
         id,
         name,
+        hostname: device
+            .get("hostname")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
         transports: Some(parse_storage_transports(device, base_url)),
         legacy_transport: None,
         identity: None,
+        device_name_cache: device
+            .get("deviceNameCache")
+            .and_then(|value| serde_json::from_value(value.clone()).ok()),
         last_seen_at: Some(now_unix_seconds()),
     })
     .ok_or_else(|| anyhow!("device could not be normalized"))
@@ -353,11 +377,13 @@ fn migrate_localstorage_payload(value: Value) -> anyhow::Result<(usize, bool)> {
     let mut imported_devices = 0;
     if let Some(devices) = value.get("devices").and_then(Value::as_array) {
         let mut registry = read_hardware_registry()?;
-        for device in devices {
-            upsert_profile(&mut registry, parse_web_storage_device(device)?);
-            imported_devices += 1;
+        if registry.devices.is_empty() {
+            for device in devices {
+                upsert_profile(&mut registry, parse_web_storage_device(device)?);
+                imported_devices += 1;
+            }
+            write_hardware_registry(&registry)?;
         }
-        write_hardware_registry(&registry)?;
     }
 
     let mut settings_written = false;

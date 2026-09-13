@@ -1,4 +1,5 @@
 import {
+  clearDeviceName,
   clearIdleBiasCalibration,
   clearWifiConfig,
   getDeviceInfo,
@@ -16,6 +17,7 @@ import {
   restorePowerDefaults,
   runIdleBiasCalibration,
   type SettingsResetScope,
+  setDeviceName,
   setIdleBiasCorrection,
   setPortData,
   setPortPower,
@@ -38,6 +40,14 @@ export async function requestHttpTransport<T>(
   }
   if (method === "info") {
     return getDeviceInfo(baseUrl) as Promise<Result<T>>;
+  }
+  if (method === "settings.name.set") {
+    return setDeviceName(baseUrl, String(params?.name ?? "").trim()) as Promise<
+      Result<T>
+    >;
+  }
+  if (method === "settings.name.clear") {
+    return clearDeviceName(baseUrl) as Promise<Result<T>>;
   }
   if (method === "identify") {
     return identifyDevice(baseUrl) as Promise<Result<T>>;

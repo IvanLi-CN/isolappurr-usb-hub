@@ -6,6 +6,9 @@ use embedded_hal_async::i2c::{I2c, Operation};
 
 use crate::idle_bias::IdleBiasCalibration;
 use crate::power_config::PowerConfig;
+use isolapurr_firmware_core::device_name::{
+    DEVICE_NAME_RECORD_LEN, DeviceDisplayName, decode_device_name_record, encode_device_name_record,
+};
 use isolapurr_firmware_core::provisioning::{
     IDLE_BIAS_MAGIC, IDLE_BIAS_RECORD_LEN, IDLE_BIAS_VERSION, POWER_SETTINGS_MAGIC,
     POWER_SETTINGS_RECORD_LEN, POWER_SETTINGS_VERSION, checksum, decode_idle_bias_calibration,
@@ -32,6 +35,7 @@ const DEVICE_SETTINGS_ROUTE_MCU: u8 = 0;
 const DEVICE_SETTINGS_ROUTE_USB_C: u8 = 1;
 const POWER_SETTINGS_RECORD_OFFSET: u16 = 320;
 const IDLE_BIAS_RECORD_OFFSET: u16 = 416;
+pub const DEVICE_NAME_RECORD_OFFSET: u16 = 0x0200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UsbCDownstreamRoute {
@@ -416,6 +420,40 @@ where
     I2C: I2c<SevenBitAddress>,
 {
     eeprom_write(i2c, IDLE_BIAS_RECORD_OFFSET, &[0u8; IDLE_BIAS_RECORD_LEN]).await
+}
+
+pub async fn load_device_display_name<I2C>(
+    i2c: &mut I2C,
+) -> Result<Option<DeviceDisplayName>, ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let mut record = [0u8; DEVICE_NAME_RECORD_LEN];
+    eeprom_read(i2c, DEVICE_NAME_RECORD_OFFSET, &mut record).await?;
+    decode_device_name_record(&record).ok_or(ProvisioningError::InvalidRecord)
+}
+
+pub async fn store_device_display_name<I2C>(
+    i2c: &mut I2C,
+    name: &DeviceDisplayName,
+) -> Result<(), ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let mut record = [0u8; DEVICE_NAME_RECORD_LEN];
+    encode_device_name_record(&mut record, Some(name));
+    eeprom_write(i2c, DEVICE_NAME_RECORD_OFFSET, &record).await
+}
+
+pub async fn clear_device_display_name<I2C>(
+    i2c: &mut I2C,
+) -> Result<(), ProvisioningError<I2C::Error>>
+where
+    I2C: I2c<SevenBitAddress>,
+{
+    let mut record = [0u8; DEVICE_NAME_RECORD_LEN];
+    encode_device_name_record(&mut record, None);
+    eeprom_write(i2c, DEVICE_NAME_RECORD_OFFSET, &record).await
 }
 
 async fn eeprom_read<I2C>(

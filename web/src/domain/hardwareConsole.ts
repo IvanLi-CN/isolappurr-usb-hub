@@ -679,6 +679,17 @@ function localUsbMethodEndpoint(
       };
     case "wifi.clear":
       return { method: "DELETE", path: `/api/v1/devices/${deviceId}/wifi` };
+    case "settings.name.set":
+      return {
+        method: "PUT",
+        path: `/api/v1/devices/${deviceId}/settings/name`,
+        body: { name: String(params.name ?? "").trim() },
+      };
+    case "settings.name.clear":
+      return {
+        method: "DELETE",
+        path: `/api/v1/devices/${deviceId}/settings/name`,
+      };
     case "settings.reset":
       return {
         method: "POST",

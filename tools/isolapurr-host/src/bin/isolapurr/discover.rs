@@ -54,6 +54,7 @@ struct DiscoverApiInfoEnvelope {
 #[derive(Debug, Deserialize)]
 struct DiscoverApiInfoDevice {
     device_id: Option<String>,
+    display_name: Option<String>,
     hostname: Option<String>,
     fqdn: Option<String>,
     mac: Option<String>,
@@ -75,6 +76,7 @@ struct DiscoverApiInfoWifi {
 #[derive(Debug, Clone)]
 struct ParsedDiscoverHttpInfo {
     base_url: String,
+    display_name: Option<String>,
     hostname: Option<String>,
     fqdn: Option<String>,
     ipv4: Option<String>,
@@ -111,19 +113,29 @@ async fn discover_usb_devices(
         )
         .await
         .ok();
-        let identity = info.as_ref().and_then(parse_device_identity_from_info);
-        let firmware = info
+        let parsed_info = info
             .as_ref()
-            .and_then(parse_discovered_http_info_from_value)
-            .map(|parsed| parsed.firmware);
+            .and_then(parse_discovered_http_info_from_value);
+        let identity = info.as_ref().and_then(parse_device_identity_from_info);
+        let firmware = parsed_info.as_ref().map(|parsed| parsed.firmware.clone());
         let mut keys = discover_usb_match_keys(&device.id, &usb.port_path);
         if let Some(identity) = &identity {
             extend_unique(&mut keys, discover_identity_match_keys(identity));
         }
         let saved_hardware = saved_hardware_match_for_transport(saved, &keys, Some("usb"));
-        let display_name = identity
+        let display_name = parsed_info
             .as_ref()
-            .and_then(|identity| identity.device_id.clone())
+            .and_then(|parsed| parsed.display_name.clone())
+            .or_else(|| {
+                parsed_info
+                    .as_ref()
+                    .and_then(|parsed| parsed.hostname.clone())
+            })
+            .or_else(|| {
+                identity
+                    .as_ref()
+                    .and_then(|identity| identity.device_id.clone())
+            })
             .unwrap_or_else(|| usb.label.clone());
         discovered.push(DiscoverDevice {
             id: device.id.clone(),
@@ -134,9 +146,11 @@ async fn discover_usb_devices(
                 port_path: usb.port_path,
             },
             device_id: identity.and_then(|identity| identity.device_id),
-            hostname: None,
-            fqdn: None,
-            ipv4: None,
+            hostname: parsed_info
+                .as_ref()
+                .and_then(|parsed| parsed.hostname.clone()),
+            fqdn: parsed_info.as_ref().and_then(|parsed| parsed.fqdn.clone()),
+            ipv4: parsed_info.as_ref().and_then(|parsed| parsed.ipv4.clone()),
             firmware,
             saved_hardware: (!saved_hardware.is_empty()).then_some(saved_hardware),
         });
@@ -223,8 +237,9 @@ async fn discover_lan_devices(
                     .and_then(|identity| identity.device_id.clone())
                     .unwrap_or_else(|| parsed.base_url.clone()),
                 display_name: parsed
-                    .hostname
+                    .display_name
                     .clone()
+                    .or_else(|| parsed.hostname.clone())
                     .or_else(|| {
                         parsed
                             .identity
@@ -264,6 +279,7 @@ fn parse_discovered_http_info(
     value: Value,
     scanned_ipv4: Option<std::net::Ipv4Addr>,
 ) -> Option<ParsedDiscoverHttpInfo> {
+    let value = value.get("result").cloned().unwrap_or(value);
     let env: DiscoverApiInfoEnvelope = serde_json::from_value(value).ok()?;
     let firmware_name = env.device.firmware.as_ref()?.name.as_deref()?.trim();
     if firmware_name != "isolapurr-usb-hub" {
@@ -289,6 +305,7 @@ fn parse_discovered_http_info(
     };
     Some(ParsedDiscoverHttpInfo {
         base_url,
+        display_name: env.device.display_name.and_then(non_empty_string),
         hostname: env.device.hostname.and_then(non_empty_string),
         fqdn,
         ipv4: env

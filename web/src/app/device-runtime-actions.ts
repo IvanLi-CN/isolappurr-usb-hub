@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type {
   DeviceApiError,
   DeviceInfoResponse,
+  DeviceNameMutationResponse,
   IdentifyResponse,
   IdleBiasResponse,
   PdDiagnosticsResponse,
@@ -15,6 +16,10 @@ import type {
   WifiConfigResponse,
   WifiMutationResponse,
 } from "../domain/deviceApi";
+import {
+  type DeviceNameCache,
+  resolveStoredDeviceDisplayName,
+} from "../domain/deviceName";
 import type { StoredDevice } from "../domain/devices";
 import type {
   PortId,
@@ -89,8 +94,14 @@ type CreateDeviceRuntimeActionsParams = {
     fallback?: PowerConfigResponse,
   ) => Promise<Result<PowerConfigResponse>>;
   refreshDevice: (deviceId: string) => Promise<void>;
+  invalidateDevicePoll?: (deviceId: string) => void;
   runDeviceCommand: RunDeviceCommand;
   runSharedMutation: RunSharedMutation;
+  updateDeviceNameCache?: (
+    deviceId: string,
+    cache: DeviceNameCache,
+    hostname?: string,
+  ) => Promise<void>;
   runtimeByIdRef: MutableRefObject<Record<string, DeviceRuntime>>;
   setRuntimeById: UpdateRuntimeState;
   syncIdleBiasSnapshot: (
@@ -190,8 +201,10 @@ export function createDeviceRuntimeActions({
   requestLeaderRpc,
   refreshCanonicalPowerConfig,
   refreshDevice,
+  invalidateDevicePoll,
   runDeviceCommand,
   runSharedMutation,
+  updateDeviceNameCache,
   runtimeByIdRef,
   setRuntimeById,
   syncIdleBiasSnapshot,
@@ -201,6 +214,55 @@ export function createDeviceRuntimeActions({
 }: CreateDeviceRuntimeActionsParams) {
   const shouldRequestLeader = () =>
     shouldRequestLeaderRpc(isLeaderRef.current, coordinationRoleRef.current);
+
+  const applyDeviceNameMutationSnapshot = (
+    deviceId: string,
+    response: DeviceNameMutationResponse,
+  ) => {
+    const cache: DeviceNameCache =
+      response.display_name === null
+        ? { state: "unset" }
+        : { state: "value", value: response.display_name };
+    const current = runtimeByIdRef.current[deviceId];
+    setRuntimeById((prev) => {
+      const runtime = prev[deviceId];
+      if (!runtime?.deviceInfo) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [deviceId]: {
+          ...runtime,
+          deviceInfo: {
+            ...runtime.deviceInfo,
+            device: {
+              ...runtime.deviceInfo.device,
+              display_name: response.display_name,
+            },
+          },
+        },
+      };
+    });
+    if (updateDeviceNameCache) {
+      void updateDeviceNameCache(
+        deviceId,
+        cache,
+        current?.deviceInfo?.device.hostname,
+      );
+    }
+  };
+
+  const displayNameFor = (deviceId: string): string => {
+    const device = devices.find((candidate) => candidate.id === deviceId);
+    if (!device) {
+      return deviceId;
+    }
+    const runtime = runtimeByIdRef.current[deviceId];
+    return resolveStoredDeviceDisplayName(
+      device,
+      runtime?.identityVerified ? (runtime.deviceInfo ?? null) : null,
+    );
+  };
 
   const wifiConfig = async (
     deviceId: string,
@@ -284,6 +346,62 @@ export function createDeviceRuntimeActions({
           ["web_serial", "local_usb"],
         );
         if (res.ok) {
+          await refreshDevice(deviceId);
+        }
+        return res;
+      },
+    });
+  };
+
+  const setDeviceName = async (
+    deviceId: string,
+    name: string,
+    options?: SharedMutationInvocationOptions,
+  ): Promise<Result<DeviceNameMutationResponse>> => {
+    if (!isLeader && coordinationRole !== "unsupported") {
+      return requestLeaderRpc("setDeviceName", [deviceId, name]);
+    }
+    invalidateDevicePoll?.(deviceId);
+    return runSharedMutation({
+      deviceId,
+      method: "setDeviceName",
+      requestId: options?.requestId,
+      sourceTabId: options?.sourceTabId,
+      invoke: async () => {
+        const res = await runDeviceCommand<DeviceNameMutationResponse>(
+          deviceId,
+          "settings.name.set",
+          { name: name.trim() },
+        );
+        if (res.ok) {
+          applyDeviceNameMutationSnapshot(deviceId, res.value);
+          await refreshDevice(deviceId);
+        }
+        return res;
+      },
+    });
+  };
+
+  const clearDeviceName = async (
+    deviceId: string,
+    options?: SharedMutationInvocationOptions,
+  ): Promise<Result<DeviceNameMutationResponse>> => {
+    if (!isLeader && coordinationRole !== "unsupported") {
+      return requestLeaderRpc("clearDeviceName", [deviceId]);
+    }
+    invalidateDevicePoll?.(deviceId);
+    return runSharedMutation({
+      deviceId,
+      method: "clearDeviceName",
+      requestId: options?.requestId,
+      sourceTabId: options?.sourceTabId,
+      invoke: async () => {
+        const res = await runDeviceCommand<DeviceNameMutationResponse>(
+          deviceId,
+          "settings.name.clear",
+        );
+        if (res.ok) {
+          applyDeviceNameMutationSnapshot(deviceId, res.value);
           await refreshDevice(deviceId);
         }
         return res;
@@ -690,8 +808,7 @@ export function createDeviceRuntimeActions({
   ): Promise<Result<{ accepted: true }>> => {
     const result = await setPowerResult(deviceId, portId, enabled);
     const label = portId === "port_a" ? "USB-A" : "USB-C";
-    const deviceName =
-      devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+    const deviceName = displayNameFor(deviceId);
     if (result.ok) {
       pushToast({
         message: `${deviceName}: ${label} power set`,
@@ -739,8 +856,7 @@ export function createDeviceRuntimeActions({
   ): Promise<Result<{ accepted: true }>> => {
     const result = await setDataResult(deviceId, portId, connected);
     const label = portId === "port_a" ? "USB-A" : "USB-C";
-    const deviceName =
-      devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+    const deviceName = displayNameFor(deviceId);
     if (result.ok) {
       pushToast({
         message: `${deviceName}: ${label} data link ${connected ? "enabled" : "disabled"}`,
@@ -784,8 +900,7 @@ export function createDeviceRuntimeActions({
   const replug = async (deviceId: string, portId: PortId) => {
     const result = await replugResult(deviceId, portId);
     const label = portId === "port_a" ? "USB-A" : "USB-C";
-    const deviceName =
-      devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+    const deviceName = displayNameFor(deviceId);
     if (result.ok) {
       pushToast({
         message: `${deviceName}: ${label} replug accepted`,
@@ -827,8 +942,7 @@ export function createDeviceRuntimeActions({
     enabled: boolean,
   ): Promise<Result<PowerConfigResponse>> => {
     const label = action === "output" ? "Power" : "TPS discharge";
-    const deviceName =
-      devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+    const deviceName = displayNameFor(deviceId);
     const result: Result<PowerConfigResponse> = shouldRequestLeader()
       ? await requestLeaderRpc("setPowerRuntime", [
           deviceId,
@@ -871,8 +985,7 @@ export function createDeviceRuntimeActions({
 
   const setRoute = async (deviceId: string, route: UsbCDownstreamRoute) => {
     const result = await setRouteResult(deviceId, route);
-    const deviceName =
-      devices.find((device) => device.id === deviceId)?.name ?? deviceId;
+    const deviceName = displayNameFor(deviceId);
     if (result.ok) {
       const label =
         result.value.usb_c_downstream_route === "mcu" ? "Upgrade" : "Normal";
@@ -925,6 +1038,7 @@ export function createDeviceRuntimeActions({
       let result:
         | Result<{ ok: true }>
         | Result<DeviceInfoResponse>
+        | Result<DeviceNameMutationResponse>
         | Result<WifiConfigResponse>
         | Result<WifiMutationResponse>
         | Result<SettingsResetResponse>
@@ -967,6 +1081,22 @@ export function createDeviceRuntimeActions({
           break;
         case "clearWifiConfig":
           result = await clearWifi(deviceId, {
+            requestId: message.requestId,
+            sourceTabId: message.originTabId,
+          });
+          break;
+        case "setDeviceName":
+          result = await setDeviceName(
+            deviceId,
+            String(message.args[1] ?? ""),
+            {
+              requestId: message.requestId,
+              sourceTabId: message.originTabId,
+            },
+          );
+          break;
+        case "clearDeviceName":
+          result = await clearDeviceName(deviceId, {
             requestId: message.requestId,
             sourceTabId: message.originTabId,
           });
@@ -1112,6 +1242,7 @@ export function createDeviceRuntimeActions({
   return {
     clearIdleBias,
     clearWifi,
+    clearDeviceName,
     deviceInfo,
     identify,
     handleRuntimeRpcRequest,
@@ -1126,6 +1257,7 @@ export function createDeviceRuntimeActions({
     savePowerConfig,
     saveWifiConfig,
     setData,
+    setDeviceName,
     setIdleBias,
     setLock,
     setPower,

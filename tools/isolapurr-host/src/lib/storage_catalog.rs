@@ -81,6 +81,11 @@ pub fn save_hardware(input: SavedHardwareInput) -> anyhow::Result<DeviceProfile>
     let profile = DeviceProfile {
         id: device_id.clone(),
         name: input.name.trim().to_string(),
+        hostname: input.hostname.and_then(|value| {
+            let value = value.trim().to_string();
+            (!value.is_empty()).then_some(value)
+        }),
+        device_name_cache: input.device_name_cache,
         transports: normalize_transports(Some(input.transports), &device_id),
         legacy_transport: None,
         identity: Some(DeviceIdentity {
@@ -100,6 +105,24 @@ pub fn save_hardware(input: SavedHardwareInput) -> anyhow::Result<DeviceProfile>
     upsert_profile(&mut registry, profile.clone());
     write_hardware_registry(&registry)?;
     Ok(profile)
+}
+
+pub fn update_device_name_cache(device_id: &str, cache: DeviceNameCache) -> anyhow::Result<bool> {
+    let Some(device_id) = normalize_canonical_device_id(device_id) else {
+        return Ok(false);
+    };
+    let mut registry = read_hardware_registry()?;
+    let Some(profile) = registry
+        .devices
+        .iter_mut()
+        .find(|profile| profile.id == device_id)
+    else {
+        return Ok(false);
+    };
+    profile.device_name_cache = Some(cache);
+    profile.last_seen_at = Some(now_unix_seconds());
+    write_hardware_registry(&registry)?;
+    Ok(true)
 }
 
 fn delete_hardware(id: &str) -> anyhow::Result<bool> {
@@ -137,6 +160,12 @@ fn upsert_profile(registry: &mut HardwareRegistry, profile: DeviceProfile) {
         .find(|device| device.id == profile.id)
     {
         existing.name = profile.name;
+        if profile.device_name_cache.is_some() {
+            existing.device_name_cache = profile.device_name_cache;
+        }
+        if profile.hostname.is_some() {
+            existing.hostname = profile.hostname;
+        }
         existing.identity = merge_identity(existing.identity.take(), profile.identity);
         existing.transports = merge_transports(existing.transports.take(), profile.transports);
         existing.last_seen_at = existing.last_seen_at.max(profile.last_seen_at);
@@ -464,6 +493,12 @@ fn sanitize_registry(registry: &mut HardwareRegistry) -> bool {
         {
             changed = true;
             existing.name = profile.name;
+            if profile.device_name_cache.is_some() {
+                existing.device_name_cache = profile.device_name_cache;
+            }
+            if profile.hostname.is_some() {
+                existing.hostname = profile.hostname;
+            }
             existing.identity = merge_identity(existing.identity.take(), profile.identity);
             existing.transports = merge_transports(existing.transports.take(), profile.transports);
             existing.last_seen_at = existing.last_seen_at.max(profile.last_seen_at);
@@ -504,9 +539,21 @@ fn sanitize_profile(mut profile: DeviceProfile) -> Option<DeviceProfile> {
         &id,
     )?;
     let mac = profile.identity.take().and_then(|identity| identity.mac);
+    let device_name_cache = profile.device_name_cache.and_then(|cache| match cache {
+        DeviceNameCache::Unknown => None,
+        DeviceNameCache::Unset => Some(DeviceNameCache::Unset),
+        DeviceNameCache::Value(value) => normalize_device_display_name(&value)
+            .ok()
+            .map(DeviceNameCache::Value),
+    });
     Some(DeviceProfile {
         id: id.clone(),
         name,
+        hostname: profile.hostname.and_then(|value| {
+            let value = value.trim().to_string();
+            (!value.is_empty()).then_some(value)
+        }),
+        device_name_cache,
         transports: Some(transports),
         legacy_transport: None,
         identity: Some(DeviceIdentity {
@@ -763,7 +810,9 @@ fn is_loopback_origin(origin: &HeaderValue) -> bool {
 
 fn error_from_anyhow(err: anyhow::Error) -> Response {
     let message = err.to_string();
-    if message.contains("busy") {
+    if message.starts_with("device name must ") {
+        invalid_name(&message)
+    } else if message.contains("busy") {
         conflict(&err.to_string())
     } else if message.contains("non-IsolaPurr")
         || message.contains("not include firmware")
@@ -784,6 +833,10 @@ fn unauthorized(message: &str) -> Response {
 
 fn bad_request(message: &str) -> Response {
     error_response(StatusCode::BAD_REQUEST, "bad_request", message, false)
+}
+
+fn invalid_name(message: &str) -> Response {
+    error_response(StatusCode::BAD_REQUEST, "invalid_name", message, false)
 }
 
 fn not_found(message: &str) -> Response {

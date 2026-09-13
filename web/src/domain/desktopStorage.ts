@@ -1,5 +1,6 @@
 import type { ThemeId } from "../app/theme";
 import { agentFetch, type DesktopAgent } from "./desktopAgent";
+import { parseDeviceNameCache } from "./deviceName";
 import {
   type AddDeviceInput,
   normalizeBaseUrl,
@@ -78,6 +79,14 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
   return {
     id,
     name: record.name,
+    hostname:
+      typeof record.hostname === "string" && record.hostname.trim().length > 0
+        ? record.hostname.trim()
+        : undefined,
+    deviceNameCache:
+      record.deviceNameCache === undefined
+        ? undefined
+        : parseDeviceNameCache(record.deviceNameCache),
     baseUrl: normalized.ok ? normalized.baseUrl : record.baseUrl,
     transports: transports
       ? {

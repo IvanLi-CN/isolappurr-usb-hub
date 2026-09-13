@@ -161,6 +161,9 @@ enum SettingsResetResult {
 static SETTINGS_RESET_RESULT: Signal<CriticalSectionRawMutex, SettingsResetResult> = Signal::new();
 
 #[cfg(feature = "net_http")]
+static DEVICE_NAME_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+
+#[cfg(feature = "net_http")]
 static WIFI_CREDENTIALS_CACHE: Mutex<RefCell<Option<provisioning::WifiCredentials>>> =
     Mutex::new(RefCell::new(None));
 

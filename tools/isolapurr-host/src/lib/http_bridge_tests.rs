@@ -91,6 +91,19 @@ async fn web_root_keeps_existing_asset_responses() {
     assert_eq!(String::from_utf8_lossy(&body), "asset-body");
 }
 
+#[tokio::test]
+async fn invalid_device_name_errors_are_structured_bad_requests() {
+    let response = error_from_anyhow(anyhow::anyhow!("device name must be 1-48 UTF-8 bytes"));
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("error body");
+    let envelope: Value = serde_json::from_slice(&body).expect("JSON error envelope");
+    assert_eq!(envelope["error"]["code"], "invalid_name");
+    assert_eq!(envelope["error"]["retryable"], false);
+}
+
 #[test]
 fn power_config_verify_matches_requested_payload_without_runtime_only_fields() {
     let observed = json!({

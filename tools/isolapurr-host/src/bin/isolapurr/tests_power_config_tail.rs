@@ -71,6 +71,7 @@ fn parse_discover_http_info_prefers_verified_ipv4_base_url() {
         json!({
             "device": {
                 "device_id": "aabbcc001122",
+                "display_name": "Bench 猫",
                 "hostname": "isolapurr-usb-hub-aabbcc001122",
                 "fqdn": "isolapurr-usb-hub-aabbcc001122.local",
                 "mac": "AA:BB:CC:DD:EE:FF",
@@ -88,6 +89,7 @@ fn parse_discover_http_info_prefers_verified_ipv4_base_url() {
     .expect("discover info should parse");
 
     assert_eq!(parsed.base_url, "http://192.168.1.42");
+    assert_eq!(parsed.display_name.as_deref(), Some("Bench 猫"));
     assert_eq!(parsed.ipv4.as_deref(), Some("192.168.1.42"));
     let identity = parsed.identity.expect("identity should exist");
     assert_eq!(identity.device_id.as_deref(), Some("aabbcc001122"));
@@ -98,6 +100,34 @@ fn parse_discover_http_info_prefers_verified_ipv4_base_url() {
             name: "isolapurr-usb-hub".to_string(),
             version: "0.1.0".to_string(),
         }
+    );
+}
+
+#[test]
+fn parse_discover_http_info_accepts_jsonl_result_envelope_and_missing_name() {
+    let parsed = parse_discovered_http_info(
+        "http://192.168.1.42",
+        json!({
+            "ok": true,
+            "result": {
+                "device": {
+                    "device_id": "aabbcc001122",
+                    "hostname": "isolapurr-usb-hub-aabbcc001122",
+                    "firmware": {
+                        "name": "isolapurr-usb-hub",
+                        "version": "0.1.0"
+                    }
+                }
+            }
+        }),
+        None,
+    )
+    .expect("JSONL info envelope should parse");
+
+    assert_eq!(parsed.display_name, None);
+    assert_eq!(
+        parsed.hostname.as_deref(),
+        Some("isolapurr-usb-hub-aabbcc001122")
     );
 }
 

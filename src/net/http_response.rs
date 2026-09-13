@@ -2,17 +2,30 @@ use isolapurr_firmware_core::api_contract::{
     PORT_CAPABILITY_SCHEMA_V1, write_firmware_build_json, write_port_capabilities_json,
 };
 
-fn write_info_json(body: &mut String, device_names: &DeviceNames, wifi: WifiState) {
+fn write_info_json(
+    body: &mut String,
+    device_names: &DeviceNames,
+    wifi: WifiState,
+    display_name: Option<DeviceDisplayName>,
+) {
     let mac = format_mac_lower(device_names.mac);
     let ipv4 = wifi.ipv4.map(format_ipv4);
     let wifi_state_s = wifi_state_str(wifi.state);
     let _ = core::write!(
         body,
-        "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
+        "{{\"device\":{{\"device_id\":\"{}\",\"hostname\":\"{}\",\"fqdn\":\"{}\",\"mac\":\"{}\",\"display_name\":",
         device_names.device_id.as_str(),
         device_names.hostname.as_str(),
         device_names.hostname_fqdn.as_str(),
         mac.as_str(),
+    );
+    match display_name {
+        Some(name) => write_json_string(body, name.as_str()),
+        None => body.push_str("null"),
+    }
+    let _ = core::write!(
+        body,
+        ",\"variant\":\"tps-sw\",\"firmware\":{{\"name\":\"{}\",\"version\":\"{}\",\"build\":",
         env!("CARGO_PKG_NAME"),
         release_version(),
     );
@@ -34,7 +47,7 @@ fn write_info_json(body: &mut String, device_names: &DeviceNames, wifi: WifiStat
         }
     }
     let _ = core::write!(body, ",\"is_static\":{}", wifi.is_static);
-    let _ = body.push_str("}},\"capabilities\":{\"identify\":true}}");
+    let _ = body.push_str("}},\"capabilities\":{\"identify\":true,\"device_name\":true}}");
 }
 
 fn write_port_telemetry_json(body: &mut String, telemetry: &ApiPortTelemetry) {
@@ -611,6 +624,8 @@ pub async fn try_request_identify(
         || !guard.identify_ui_ready
         || guard.ui_error_latched
         || guard.pending.settings_reset.is_some()
+        || guard.pending.device_name.is_some()
+        || guard.device_name_inflight
     {
         return Err(ApiActionError::Busy);
     }
@@ -698,6 +713,8 @@ pub async fn try_set_power_config(
         || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
+        || guard.pending.device_name.is_some()
+        || guard.device_name_inflight
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
     {
         return Err(ApiActionError::Busy);
@@ -728,6 +745,8 @@ pub async fn try_set_power_runtime(
         || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
+        || guard.pending.device_name.is_some()
+        || guard.device_name_inflight
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
     {
         return Err(ApiActionError::Busy);
@@ -758,6 +777,8 @@ pub async fn try_reset_settings(
         || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
+        || guard.pending.device_name.is_some()
+        || guard.device_name_inflight
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
     {
         return Err(ApiActionError::Busy);
@@ -783,6 +804,8 @@ pub async fn try_set_action(
             && (guard.pending.usb_c_downstream_route.is_some()
                 || guard.pending.power_runtime.is_some()
                 || guard.pending.settings_reset.is_some()
+                || guard.pending.device_name.is_some()
+                || guard.device_name_inflight
                 || guard.pending.idle_bias.is_some()
                 || guard.idle_bias.run.state == ApiIdleBiasRunState::Running))
     {
@@ -821,6 +844,27 @@ pub async fn try_set_data_action(
         .map_err(|_| ApiPortDataActionError::Busy)
 }
 
+pub async fn try_set_device_name(
+    api_state: &'static ApiSharedMutex,
+    command: ApiDeviceNameCommand,
+) -> Result<(), ApiActionError> {
+    let mut guard = api_state.lock().await;
+    if guard.pending.device_name.is_some()
+        || guard.device_name_inflight
+        || guard.pending.settings_reset.is_some()
+        || guard.pending.power_config.is_some()
+        || guard.pending.power_runtime.is_some()
+        || guard.pending.usb_c_downstream_route.is_some()
+        || guard.pending.idle_bias.is_some()
+        || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
+    {
+        return Err(ApiActionError::Busy);
+    }
+    crate::reset_device_name_result();
+    guard.pending.device_name = Some(command);
+    Ok(())
+}
+
 fn can_set_data(port: ApiPortSnapshot, connected: bool) -> bool {
     !connected || port.state.power_enabled
 }
@@ -835,6 +879,8 @@ pub async fn try_set_usb_c_downstream_route(
         || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
+        || guard.pending.device_name.is_some()
+        || guard.device_name_inflight
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
     {
         return Err(ApiActionError::Busy);
@@ -870,6 +916,8 @@ pub async fn try_set_idle_bias(
         || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
+        || guard.pending.device_name.is_some()
+        || guard.device_name_inflight
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
     {
         return Err(ApiIdleBiasActionError::Busy);
@@ -899,6 +947,8 @@ pub async fn try_run_idle_bias(
         || guard.pending.power_runtime.is_some()
         || guard.pending.idle_bias.is_some()
         || guard.pending.settings_reset.is_some()
+        || guard.pending.device_name.is_some()
+        || guard.device_name_inflight
         || guard.idle_bias.run.state == ApiIdleBiasRunState::Running
     {
         return Err(ApiActionError::Busy);
@@ -934,7 +984,7 @@ async fn write_preflight_response(
         );
     }
 
-    let _ = headers.push_str("Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n");
+    let _ = headers.push_str("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n");
     let _ = core::write!(
         headers,
         "Access-Control-Allow-Headers: {}\r\n",

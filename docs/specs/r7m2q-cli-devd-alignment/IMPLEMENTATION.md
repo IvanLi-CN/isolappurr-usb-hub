@@ -12,6 +12,7 @@
   left-column/right-rail flashing layout, a bundled release picker, and entry
   points from both the Dashboard add-device area and device Settings.
 - `isolapurr settings reset wifi|other`, IPC `device.settings.reset`, and `POST /api/v1/devices/{id}/settings/reset` are implemented with the same transport guardrails as the device firmware contract. Local USB `scope=other` now tolerates a brief serial drop during runtime default re-apply by re-reading route and power state after reconnect before returning success.
+- Hardware-owned UTF-8 display names now use `isolapurr settings name show|set|clear`, IPC `device.settings.name.*`, bridge `GET|PUT|DELETE /api/v1/devices/{id}/settings/name`, and additive firmware info/capability fields. Host clients trim before sending, enforce the 1-48 byte/no-control contract, and retain the name independently from `hardware save --name`.
 - `isolapurr discover` now performs actual mixed discovery: LAN candidates come
   from mDNS/DNS-SD `_http._tcp.local` browsing plus verified `GET /api/v1/info`
   responses, Local USB candidates come from the current devd scan, and saved

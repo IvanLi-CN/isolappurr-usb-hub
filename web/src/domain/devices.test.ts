@@ -254,4 +254,40 @@ describe("loadStoredDevices", () => {
       value: originalWindow,
     });
   });
+
+  test("normalizes invalid device-name caches to unknown", () => {
+    const store = new Map<string, string>();
+    installWindowWithLocalStorage(store);
+    store.set(
+      DEVICES_STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: "aabbcc001122",
+          name: "Legacy alias",
+          hostname: "bench-hub",
+          deviceNameCache: {
+            state: "value",
+            value: "x".repeat(49),
+          },
+          baseUrl: "http://bench-hub.local",
+        },
+      ]),
+    );
+
+    expect(loadStoredDevices()).toEqual([
+      {
+        id: "aabbcc001122",
+        name: "Legacy alias",
+        hostname: "bench-hub",
+        deviceNameCache: { state: "unknown" },
+        baseUrl: "http://bench-hub.local",
+        transports: undefined,
+      },
+    ]);
+
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: originalWindow,
+    });
+  });
 });

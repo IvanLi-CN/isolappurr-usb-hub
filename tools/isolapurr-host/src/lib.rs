@@ -52,6 +52,18 @@ pub fn release_version() -> &'static str {
     option_env!("ISOLAPURR_RELEASE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
+pub fn normalize_device_display_name(value: &str) -> anyhow::Result<String> {
+    let trimmed = value.trim();
+    let bytes = trimmed.as_bytes();
+    if bytes.is_empty() || bytes.len() > 48 {
+        return Err(anyhow!("device name must be 1-48 UTF-8 bytes"));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(anyhow!("device name must not contain control characters"));
+    }
+    Ok(trimmed.to_string())
+}
+
 #[derive(Debug, Clone)]
 pub struct DevdConfig {
     pub bind: SocketAddr,
@@ -276,6 +288,10 @@ pub struct DeviceProfile {
     pub id: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_name_cache: Option<DeviceNameCache>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transports: Option<DeviceProfileTransports>,
     #[serde(
         default,
@@ -288,6 +304,14 @@ pub struct DeviceProfile {
     pub identity: Option<DeviceIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_seen_at: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(tag = "state", content = "value", rename_all = "lowercase")]
+pub enum DeviceNameCache {
+    Unknown,
+    Unset,
+    Value(String),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -352,8 +376,10 @@ pub struct DeviceIdentity {
 pub struct SavedHardwareInput {
     pub device_id: String,
     pub name: String,
+    pub hostname: Option<String>,
     pub transports: DeviceProfileTransports,
     pub identity: Option<DeviceIdentity>,
+    pub device_name_cache: Option<DeviceNameCache>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -506,6 +532,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn display_name_normalization_trims_only_at_the_client_boundary() {
+        assert_eq!(
+            normalize_device_display_name("  Studio 猫  ").unwrap(),
+            "Studio 猫"
+        );
+        assert!(normalize_device_display_name("猫".repeat(17).as_str()).is_err());
+        assert!(normalize_device_display_name("line\nname").is_err());
+    }
+
+    #[test]
     fn redacts_nested_sensitive_fields() {
         let value = json!({
             "ssid": "bench",
@@ -597,6 +633,8 @@ mod tests {
             devices: vec![DeviceProfile {
                 id: "aabbcc001122".to_string(),
                 name: "Bench".to_string(),
+                hostname: None,
+                device_name_cache: None,
                 transports: Some(DeviceProfileTransports {
                     http_base_url: None,
                     local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),
@@ -616,6 +654,8 @@ mod tests {
             DeviceProfile {
                 id: "aabbcc001122".to_string(),
                 name: "Bench renamed".to_string(),
+                hostname: None,
+                device_name_cache: None,
                 transports: Some(DeviceProfileTransports {
                     http_base_url: None,
                     local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),
@@ -638,12 +678,52 @@ mod tests {
     }
 
     #[test]
+    fn upsert_profile_preserves_name_cache_when_incoming_profile_omits_it() {
+        let mut registry = HardwareRegistry {
+            schema_version: STORAGE_SCHEMA_VERSION,
+            devices: vec![DeviceProfile {
+                id: "aabbcc001122".to_string(),
+                name: "Bench".to_string(),
+                hostname: None,
+                device_name_cache: Some(DeviceNameCache::Value("Studio 猫".to_string())),
+                transports: Some(DeviceProfileTransports {
+                    http_base_url: None,
+                    local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),
+                    web_serial_label: None,
+                }),
+                legacy_transport: None,
+                identity: None,
+                last_seen_at: Some(1),
+            }],
+        };
+        upsert_profile(
+            &mut registry,
+            DeviceProfile {
+                id: "aabbcc001122".to_string(),
+                name: "Bench renamed".to_string(),
+                hostname: None,
+                device_name_cache: None,
+                transports: None,
+                legacy_transport: None,
+                identity: None,
+                last_seen_at: Some(2),
+            },
+        );
+        assert_eq!(
+            registry.devices[0].device_name_cache,
+            Some(DeviceNameCache::Value("Studio 猫".to_string()))
+        );
+    }
+
+    #[test]
     fn web_storage_exports_canonical_transports() {
         let registry = HardwareRegistry {
             schema_version: STORAGE_SCHEMA_VERSION,
             devices: vec![DeviceProfile {
                 id: "f293cc9c139e".to_string(),
                 name: "Bench Hub".to_string(),
+                hostname: None,
+                device_name_cache: None,
                 transports: Some(DeviceProfileTransports {
                     http_base_url: Some("http://isolapurr-usb-hub-f293cc9c139e.local".to_string()),
                     local_usb_port_path: Some("/dev/cu.usbmodem21221401".to_string()),
@@ -675,6 +755,30 @@ mod tests {
             devices[0]["transports"]["localUsbPortPath"],
             "/dev/cu.usbmodem21221401"
         );
+    }
+
+    #[test]
+    fn web_storage_exports_name_cache_for_browser_profile_migration() {
+        let profile = DeviceProfile {
+            id: "f293cc9c139e".to_string(),
+            name: "Bench Hub".to_string(),
+            hostname: None,
+            device_name_cache: Some(DeviceNameCache::Unset),
+            transports: Some(DeviceProfileTransports {
+                http_base_url: Some("http://192.168.1.42".to_string()),
+                local_usb_port_path: None,
+                web_serial_label: None,
+            }),
+            legacy_transport: None,
+            identity: None,
+            last_seen_at: None,
+        };
+        let device = web_storage_devices(&HardwareRegistry {
+            schema_version: STORAGE_SCHEMA_VERSION,
+            devices: vec![profile],
+        })
+        .remove(0);
+        assert_eq!(device["deviceNameCache"]["state"], "unset");
     }
 
     #[test]
@@ -947,6 +1051,8 @@ mod tests {
             profiles: vec![DeviceProfile {
                 id: "f293cc9c139e".to_string(),
                 name: "CLI device".to_string(),
+                hostname: None,
+                device_name_cache: None,
                 transports: Some(DeviceProfileTransports {
                     http_base_url: None,
                     local_usb_port_path: Some("/dev/cu.usbmodem101".to_string()),

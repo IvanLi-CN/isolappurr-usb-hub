@@ -15,6 +15,10 @@ import type {
   PowerConfigResponse,
   WifiConfigResponse,
 } from "../domain/deviceApi";
+import {
+  normalizeDeviceDisplayName,
+  validateDeviceDisplayName,
+} from "../domain/deviceName";
 import type { AddDeviceInput, StoredDevice } from "../domain/devices";
 import type { DiscoverySnapshot } from "../domain/discovery";
 import { clearIpScanSession } from "../domain/ipScanSession";
@@ -117,6 +121,7 @@ type DemoApiResponse =
       wifi_preserved?: boolean;
       runId?: number;
     }
+  | { display_name: string | null }
   | { migrated: boolean; imported?: { devices: number; settings: boolean } };
 
 const DEMO_MODE_DISABLED: DemoModeContextValue = {
@@ -426,6 +431,7 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
               hostname: device.info.device.hostname,
               fqdn: device.info.device.fqdn,
               mac: device.info.device.mac,
+              display_name: device.info.device.display_name,
               firmware: device.info.device.firmware,
               wifi: { ipv4: device.info.device.wifi.ipv4 },
             },
@@ -460,6 +466,37 @@ function handleDemoLocalUsbRequest(url: URL, init?: RequestInit): Response {
     return jsonResponse({
       response: { accepted: true, duration_ms: 5000 },
     } as unknown as DemoApiResponse);
+  }
+  if (suffix === "settings/name" && method === "PUT") {
+    const body = readJsonBody(init) as { name?: unknown } | null;
+    const value = typeof body?.name === "string" ? body.name : "";
+    const name = normalizeDeviceDisplayName(value);
+    const error = validateDeviceDisplayName(name);
+    if (error) {
+      return apiError(400, "invalid_name", error);
+    }
+    updateWorld((current) => {
+      const mutated = cloneWorld(current);
+      const target = findByDeviceId(mutated, record.stored.id);
+      if (target) {
+        target.info.device.display_name = name;
+        target.stored.deviceNameCache = { state: "value", value: name };
+      }
+      return mutated;
+    });
+    return jsonResponse({ display_name: name });
+  }
+  if (suffix === "settings/name" && method === "DELETE") {
+    updateWorld((current) => {
+      const mutated = cloneWorld(current);
+      const target = findByDeviceId(mutated, record.stored.id);
+      if (target) {
+        target.info.device.display_name = null;
+        target.stored.deviceNameCache = { state: "unset" };
+      }
+      return mutated;
+    });
+    return jsonResponse({ display_name: null });
   }
   if (suffix === "wifi" && method === "GET") {
     return jsonResponse({
@@ -759,6 +796,37 @@ function handleDemoDeviceRequest(url: URL, init?: RequestInit): Response {
 
   if (url.pathname === "/api/v1/info" && method === "GET") {
     return jsonResponse(record.info);
+  }
+  if (url.pathname === "/api/v1/settings/name" && method === "PUT") {
+    const body = readJsonBody(init) as { name?: unknown } | null;
+    const value = typeof body?.name === "string" ? body.name : "";
+    const name = normalizeDeviceDisplayName(value);
+    const error = validateDeviceDisplayName(name);
+    if (error) {
+      return apiError(400, "invalid_name", error);
+    }
+    updateWorld((current) => {
+      const mutated = cloneWorld(current);
+      const target = findByDeviceId(mutated, record.stored.id);
+      if (target) {
+        target.info.device.display_name = name;
+        target.stored.deviceNameCache = { state: "value", value: name };
+      }
+      return mutated;
+    });
+    return jsonResponse({ display_name: name });
+  }
+  if (url.pathname === "/api/v1/settings/name" && method === "DELETE") {
+    updateWorld((current) => {
+      const mutated = cloneWorld(current);
+      const target = findByDeviceId(mutated, record.stored.id);
+      if (target) {
+        target.info.device.display_name = null;
+        target.stored.deviceNameCache = { state: "unset" };
+      }
+      return mutated;
+    });
+    return jsonResponse({ display_name: null });
   }
   if (url.pathname === "/api/v1/ports" && method === "GET") {
     return jsonResponse(record.ports);

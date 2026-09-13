@@ -11,6 +11,7 @@ import type {
   PowerConfigResponse,
   Result,
 } from "../domain/deviceApi";
+import { deviceNameCacheFromInfo } from "../domain/deviceName";
 import {
   FLASH_TRANSPORT_LOCK_ALL,
   isLocalUsbSuppressedForFlashDevice,
@@ -88,7 +89,7 @@ export function DeviceRuntimeProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { devices, rebindHttpBaseUrl } = useDevices();
+  const { devices, rebindHttpBaseUrl, updateDeviceNameCache } = useDevices();
   const { enabled: demoEnabled } = useDemoMode();
   const coordinator = useMemo(
     () =>
@@ -106,6 +107,7 @@ export function DeviceRuntimeProvider({
     coordinator.getLeaseState(),
   );
   const inflight = useRef<Set<string>>(new Set());
+  const pollGeneration = useRef<Record<string, number>>({});
   const runtimeByIdRef = useRef(runtimeById);
   const localUsbAgent = useRef<DesktopAgent | null>(null);
   const lastDemoEnabled = useRef(demoEnabled);
@@ -657,16 +659,21 @@ export function DeviceRuntimeProvider({
     [devices, runtimeById],
   );
 
+  const pollDeviceRef = useRef<
+    (deviceId: string, baseUrl: string) => Promise<void>
+  >(() => Promise.resolve());
   const pollDevice = useCallback(
     async (deviceId: string, baseUrl: string) => {
       if (inflight.current.has(deviceId)) {
         return;
       }
+      const generation = pollGeneration.current[deviceId] ?? 0;
       inflight.current.add(deviceId);
       try {
         let res: Result<PortsResponse> | null = null;
         let transport: DeviceTransport | null = null;
         let identityVerified = false;
+        let infoSnapshot: DeviceInfoResponse | undefined;
         for (const candidate of orderedTransports(deviceId)) {
           const candidateBaseUrl =
             candidate === "http"
@@ -700,6 +707,13 @@ export function DeviceRuntimeProvider({
               isDeviceInfoResponse(infoRes.value) &&
               infoRes.value.device.device_id?.trim().toLowerCase() ===
                 deviceId.trim().toLowerCase();
+            if (
+              identityVerified &&
+              infoRes.ok &&
+              isDeviceInfoResponse(infoRes.value)
+            ) {
+              infoSnapshot = infoRes.value;
+            }
             break;
           }
           res = candidateRes;
@@ -707,6 +721,7 @@ export function DeviceRuntimeProvider({
         if (!res) {
           return;
         }
+        const stalePoll = pollGeneration.current[deviceId] !== generation;
         setRuntimeById((prev) => {
           const current = prev[deviceId];
           if (!current) {
@@ -742,6 +757,9 @@ export function DeviceRuntimeProvider({
                 lastError: null,
                 transport,
                 identityVerified,
+                deviceInfo: stalePoll
+                  ? current.deviceInfo
+                  : (infoSnapshot ?? current.deviceInfo),
                 hub,
                 ports,
               },
@@ -780,14 +798,31 @@ export function DeviceRuntimeProvider({
             },
           };
         });
+        if (!stalePoll && infoSnapshot && identityVerified) {
+          const cache = deviceNameCacheFromInfo(infoSnapshot);
+          if (cache.state !== "unknown") {
+            void updateDeviceNameCache(
+              deviceId,
+              cache,
+              infoSnapshot.device.hostname,
+            );
+          }
+        }
       } finally {
         inflight.current.delete(deviceId);
+        if (pollGeneration.current[deviceId] !== generation) {
+          void pollDeviceRef.current(deviceId, baseUrl);
+        }
       }
     },
-    [devices, markChannelResult, orderedTransports, requestTransport],
+    [
+      devices,
+      markChannelResult,
+      orderedTransports,
+      requestTransport,
+      updateDeviceNameCache,
+    ],
   );
-  const pollDeviceRef = useRef(pollDevice);
-
   useEffect(() => {
     pollDeviceRef.current = pollDevice;
   }, [pollDevice]);
@@ -958,14 +993,32 @@ export function DeviceRuntimeProvider({
           deviceId.trim().toLowerCase();
         setRuntimeById((prev) => {
           const current = prev[deviceId];
-          if (!current || current.identityVerified === identityVerified) {
+          if (
+            !current ||
+            (current.identityVerified === identityVerified &&
+              current.deviceInfo === checked.value)
+          ) {
             return prev;
           }
           return {
             ...prev,
-            [deviceId]: { ...current, identityVerified },
+            [deviceId]: {
+              ...current,
+              identityVerified,
+              deviceInfo: checked.value,
+            },
           };
         });
+        if (identityVerified) {
+          const cache = deviceNameCacheFromInfo(checked.value);
+          if (cache.state !== "unknown") {
+            void updateDeviceNameCache(
+              deviceId,
+              cache,
+              checked.value.device.hostname,
+            );
+          }
+        }
         preferredTransportByDevice.current[deviceId] = activeTransport;
         if (activeTransport === "http") {
           const rebound = verifiedWifiHttpBaseUrl(checked.value, deviceId);
@@ -985,6 +1038,7 @@ export function DeviceRuntimeProvider({
       requestLeaderRpc,
       requestTransport,
       runtimeById,
+      updateDeviceNameCache,
     ],
   );
 
@@ -1085,8 +1139,14 @@ export function DeviceRuntimeProvider({
     syncPowerConfigSnapshot,
   });
 
+  const invalidateDevicePoll = useCallback((deviceId: string) => {
+    pollGeneration.current[deviceId] =
+      (pollGeneration.current[deviceId] ?? 0) + 1;
+  }, []);
+
   const {
     clearIdleBias,
+    clearDeviceName,
     clearWifi,
     handleRuntimeRpcRequest,
     identify,
@@ -1103,6 +1163,7 @@ export function DeviceRuntimeProvider({
     setIdleBias,
     setLock,
     setData,
+    setDeviceName,
     setPower,
     setPowerRuntime,
     setRoute,
@@ -1120,6 +1181,7 @@ export function DeviceRuntimeProvider({
     requestLeaderRpc,
     refreshCanonicalPowerConfig,
     refreshDevice,
+    invalidateDevicePoll,
     runDeviceCommand,
     runSharedMutation,
     runtimeByIdRef,
@@ -1128,12 +1190,14 @@ export function DeviceRuntimeProvider({
     syncObservedPowerLock,
     syncPdDiagnosticsSnapshot,
     syncPowerConfigSnapshot,
+    updateDeviceNameCache,
   });
   rpcRequestHandlerRef.current = handleRuntimeRpcRequest;
 
   const value = useMemo<DeviceRuntimeContextValue>(() => {
     return buildDeviceRuntimeContextValue({
       now,
+      devices,
       runtimeById,
       coordination,
       canControlHardware: true,
@@ -1161,10 +1225,14 @@ export function DeviceRuntimeProvider({
       setData,
       replug,
       setUsbCDownstreamRoute: setRoute,
+      setDeviceName,
+      clearDeviceName,
     });
   }, [
     clearWifi,
+    clearDeviceName,
     coordination,
+    devices,
     deviceInfo,
     identify,
     idleBias,
@@ -1173,6 +1241,7 @@ export function DeviceRuntimeProvider({
     powerConfig,
     reboot,
     refreshDevice,
+    setDeviceName,
     replug,
     resetSettings,
     restoreDefaults,

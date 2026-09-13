@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -17,6 +18,7 @@ import {
   migrateFromLocalStorage,
   upsertStoredDevice,
 } from "../domain/desktopStorage";
+import type { DeviceNameCache } from "../domain/deviceName";
 import type {
   AddDeviceInput,
   AddDeviceValidationResult,
@@ -44,6 +46,11 @@ type DevicesContextValue = {
   addDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   upsertDevice: (input: AddDeviceInput) => Promise<AddDeviceValidationResult>;
   rebindHttpBaseUrl: (deviceId: string, httpBaseUrl: string) => Promise<void>;
+  updateDeviceNameCache: (
+    deviceId: string,
+    cache: DeviceNameCache,
+    hostname?: string,
+  ) => Promise<void>;
   removeDevice: (deviceId: string) => Promise<void>;
   getDevice: (deviceId: string) => StoredDevice | undefined;
 };
@@ -51,6 +58,9 @@ type DevicesContextValue = {
 const DevicesContext = createContext<DevicesContextValue | null>(null);
 
 type DeviceStateSource = "provided" | "browser" | "desktop" | "demo";
+
+const DEVICE_PROFILE_SYNC_CHANNEL = "isolapurr-device-profiles.v1";
+const DEVICE_PROFILE_SYNC_STORAGE_KEY = "isolapurr-device-profiles.sync.v1";
 
 export function DevicesProvider({
   children,
@@ -70,6 +80,11 @@ export function DevicesProvider({
     initialDevices ? "provided" : "browser",
   );
   const [ready, setReady] = useState(false);
+  const profileSyncTabId = useRef(
+    `profile-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const profileSyncChannelRef = useRef<BroadcastChannel | null>(null);
+  const migrationAttemptedRef = useRef(false);
 
   useEffect(() => {
     if (!ready || status !== "ready" || source !== "browser") {
@@ -101,6 +116,65 @@ export function DevicesProvider({
       window.removeEventListener("storage", handleStorage);
     };
   }, [agent, source, status]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || status !== "ready" || !agent) {
+      return;
+    }
+    const refreshFromDesktop = () => {
+      void fetchStoredDevices(agent).then((res) => {
+        if (!res.ok) {
+          return;
+        }
+        setDevices(res.value);
+        setSource(isDemoDesktopAgent(agent) ? "demo" : "desktop");
+      });
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== DEVICE_PROFILE_SYNC_STORAGE_KEY) {
+        return;
+      }
+      refreshFromDesktop();
+    };
+    window.addEventListener("storage", handleStorage);
+    const channel =
+      typeof BroadcastChannel === "undefined"
+        ? null
+        : new BroadcastChannel(DEVICE_PROFILE_SYNC_CHANNEL);
+    if (channel) {
+      profileSyncChannelRef.current = channel;
+      channel.onmessage = (event: MessageEvent<unknown>) => {
+        const message = event.data as { sourceTabId?: unknown };
+        if (message?.sourceTabId === profileSyncTabId.current) {
+          return;
+        }
+        refreshFromDesktop();
+      };
+    }
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      channel?.close();
+      if (profileSyncChannelRef.current === channel) {
+        profileSyncChannelRef.current = null;
+      }
+    };
+  }, [agent, status]);
+
+  const broadcastProfileSync = useCallback(() => {
+    const message = { sourceTabId: profileSyncTabId.current };
+    profileSyncChannelRef.current?.postMessage(message);
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        DEVICE_PROFILE_SYNC_STORAGE_KEY,
+        JSON.stringify({ ...message, at: Date.now() }),
+      );
+    } catch {
+      // Desktop storage remains authoritative when localStorage is unavailable.
+    }
+  }, []);
 
   useEffect(() => {
     if (status !== "ready") {
@@ -160,10 +234,20 @@ export function DevicesProvider({
   }, [agent, demoEnabled]);
 
   useEffect(() => {
-    if (status !== "ready" || !agent || isDemoDesktopAgent(agent)) {
+    if (
+      status !== "ready" ||
+      !agent ||
+      isDemoDesktopAgent(agent) ||
+      migrationAttemptedRef.current
+    ) {
       return;
     }
+    migrationAttemptedRef.current = true;
     void (async () => {
+      const existing = await fetchStoredDevices(agent);
+      if (!existing.ok || existing.value.length > 0) {
+        return;
+      }
       const payload = readMigrationPayload();
       if (!payload) {
         return;
@@ -178,10 +262,12 @@ export function DevicesProvider({
           message: "Imported devices/settings from browser storage.",
         });
         window.dispatchEvent(new CustomEvent("isolapurr-storage-migrated"));
-        const refreshed = await fetchStoredDevices(agent);
-        if (refreshed.ok) {
-          setDevices(refreshed.value);
-        }
+      }
+      // Another tab may have won the one-shot migration while this tab was
+      // reading the empty registry; refresh in either response case.
+      const refreshed = await fetchStoredDevices(agent);
+      if (refreshed.ok) {
+        setDevices(refreshed.value);
       }
     })();
   }, [agent, status, pushToast]);
@@ -250,6 +336,7 @@ export function DevicesProvider({
         );
         return [...next, res.value];
       });
+      broadcastProfileSync();
       return { ok: true, device: res.value };
     };
 
@@ -294,6 +381,7 @@ export function DevicesProvider({
             );
             return [...next, res.value];
           });
+          broadcastProfileSync();
           return { ok: true, device: res.value };
         }
 
@@ -329,10 +417,32 @@ export function DevicesProvider({
           id,
           name,
           baseUrl: baseUrl.baseUrl,
+          deviceNameCache: existing?.deviceNameCache,
           transports: mergeStoredDeviceTransports(
             existing?.transports,
             input.transports,
           ),
+        });
+      },
+      updateDeviceNameCache: async (deviceId, cache, hostname) => {
+        const existing = devices.find((device) => device.id === deviceId);
+        if (!existing) {
+          return;
+        }
+        const current = existing.deviceNameCache;
+        const nextHostname = hostname?.trim() || existing.hostname;
+        if (
+          current?.state === cache.state &&
+          (cache.state !== "value" ||
+            (current.state === "value" && current.value === cache.value)) &&
+          nextHostname === existing.hostname
+        ) {
+          return;
+        }
+        await persistDevice({
+          ...existing,
+          hostname: nextHostname,
+          deviceNameCache: cache,
         });
       },
       rebindHttpBaseUrl: async (deviceId, httpBaseUrl) => {
@@ -363,10 +473,11 @@ export function DevicesProvider({
         forgetLocalUsbDeviceLink(deviceId);
         forgetWebSerialDeviceTransport(deviceId);
         setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+        broadcastProfileSync();
       },
       getDevice: (deviceId) => devices.find((d) => d.id === deviceId),
     };
-  }, [devices, agent, demoEnabled, pushToast]);
+  }, [devices, agent, demoEnabled, pushToast, broadcastProfileSync]);
 
   return (
     <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>

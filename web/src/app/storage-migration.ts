@@ -1,3 +1,4 @@
+import { parseDeviceNameCache } from "../domain/deviceName";
 import {
   DEVICES_STORAGE_KEY,
   normalizeBaseUrl,
@@ -42,6 +43,14 @@ function parseStoredDevice(value: unknown): StoredDevice | null {
   return {
     id,
     name: record.name,
+    hostname:
+      typeof record.hostname === "string" && record.hostname.trim().length > 0
+        ? record.hostname.trim()
+        : undefined,
+    deviceNameCache:
+      record.deviceNameCache === undefined
+        ? undefined
+        : parseDeviceNameCache(record.deviceNameCache),
     baseUrl: normalized.ok ? normalized.baseUrl : record.baseUrl,
     transports: transports
       ? {

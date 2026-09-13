@@ -147,6 +147,10 @@ enum WifiCommand {
 
 #[derive(Debug, Subcommand)]
 enum SettingsCommand {
+    Name {
+        #[command(subcommand)]
+        command: SettingsNameCommand,
+    },
     Reset {
         #[command(flatten)]
         selector: ApiSelectorArgs,
@@ -155,6 +159,18 @@ enum SettingsCommand {
         #[arg(long)]
         yes: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum SettingsNameCommand {
+    Show(ApiSelectorArgs),
+    Set {
+        #[command(flatten)]
+        selector: ApiSelectorArgs,
+        #[arg(long)]
+        name: String,
+    },
+    Clear(ApiSelectorArgs),
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

@@ -48,6 +48,66 @@ async fn main() -> anyhow::Result<()> {
                 }
             },
             Command::Settings { command } => match command {
+                SettingsCommand::Name { command } => match command {
+                    SettingsNameCommand::Show(selector) => {
+                        let selected_device_id =
+                            selected_device_id_for_name_command(&client, &devd, &selector).await?;
+                        let value = request_selected(
+                            &client,
+                            &devd,
+                            selector,
+                            Method::GET,
+                            "/settings/name",
+                            None,
+                        )
+                        .await?;
+                        if let (Some(device_id), Some(cache)) =
+                            (selected_device_id, device_name_cache_from_mutation(&value))
+                        {
+                            update_device_name_cache(&device_id, cache)?;
+                        }
+                        value
+                    }
+                    SettingsNameCommand::Set { selector, name } => {
+                        let selected_device_id =
+                            selected_device_id_for_name_command(&client, &devd, &selector).await?;
+                        let name = isolapurr_host::normalize_device_display_name(&name)?;
+                        let value = request_selected(
+                            &client,
+                            &devd,
+                            selector,
+                            Method::PUT,
+                            "/settings/name",
+                            Some(json!({"name": name})),
+                        )
+                        .await?;
+                        if let (Some(device_id), Some(cache)) =
+                            (selected_device_id, device_name_cache_from_mutation(&value))
+                        {
+                            update_device_name_cache(&device_id, cache)?;
+                        }
+                        value
+                    }
+                    SettingsNameCommand::Clear(selector) => {
+                        let selected_device_id =
+                            selected_device_id_for_name_command(&client, &devd, &selector).await?;
+                        let value = request_selected(
+                            &client,
+                            &devd,
+                            selector,
+                            Method::DELETE,
+                            "/settings/name",
+                            None,
+                        )
+                        .await?;
+                        if let (Some(device_id), Some(cache)) =
+                            (selected_device_id, device_name_cache_from_mutation(&value))
+                        {
+                            update_device_name_cache(&device_id, cache)?;
+                        }
+                        value
+                    }
+                },
                 SettingsCommand::Reset {
                     selector,
                     scope,
@@ -129,4 +189,43 @@ async fn main() -> anyhow::Result<()> {
         print_human(&output);
     }
     Ok(())
+}
+
+fn device_name_cache_from_mutation(value: &Value) -> Option<DeviceNameCache> {
+    let result = value.get("result").unwrap_or(value);
+    let display_name = result.get("display_name").or_else(|| {
+        result
+            .get("device")
+            .and_then(|device| device.get("display_name"))
+    })?;
+    if let Some(name) = display_name.as_str() {
+        return Some(DeviceNameCache::Value(name.to_string()));
+    }
+    display_name.is_null().then_some(DeviceNameCache::Unset)
+}
+
+fn device_id_from_info(value: &Value) -> Option<String> {
+    let result = value.get("result").unwrap_or(value);
+    result
+        .get("device_id")
+        .or_else(|| {
+            result
+                .get("device")
+                .and_then(|device| device.get("device_id"))
+        })
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+async fn selected_device_id_for_name_command(
+    client: &Client,
+    devd: &DevdClient,
+    selector: &ApiSelectorArgs,
+) -> anyhow::Result<Option<String>> {
+    if selector.device_id.is_some() {
+        return Ok(selector.device_id.clone());
+    }
+    let info =
+        request_selected(client, devd, selector.clone(), Method::GET, "/status", None).await?;
+    Ok(device_id_from_info(&info))
 }

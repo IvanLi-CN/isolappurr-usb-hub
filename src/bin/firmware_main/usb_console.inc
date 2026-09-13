@@ -73,7 +73,50 @@ async fn handle_usb_jsonl_request(
             Some(state) => Some(*state.lock().await),
             None => None,
         };
-        write_usb_info_json(&mut body, id.as_str(), device_names, wifi);
+        let display_name = { *api_state.lock().await }.device_display_name;
+        write_usb_info_json(&mut body, id.as_str(), device_names, wifi, display_name);
+        return body;
+    }
+
+    if request.contains("\"method\":\"settings.name.set\"")
+        || request.contains("\"method\": \"settings.name.set\"")
+    {
+        let Some(value) = extract_json_string(request, "name") else {
+            write_jsonl_error(&mut body, id.as_str(), "invalid_name", "name must be 1-48 UTF-8 bytes without controls or outer whitespace", false);
+            return body;
+        };
+        let Some(name) = isolapurr_firmware_core::device_name::DeviceDisplayName::new(value.as_str()) else {
+            write_jsonl_error(&mut body, id.as_str(), "invalid_name", "name must be 1-48 UTF-8 bytes without controls or outer whitespace", false);
+            return body;
+        };
+        match net::try_set_device_name(api_state, net::ApiDeviceNameCommand::Set(name)).await {
+            Ok(()) => {
+                    if wait_device_name_result(api_state).await {
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":{{\"display_name\":", id.as_str());
+                    write_json_string(&mut body, name.as_str());
+                    let _ = body.push_str("}}");
+                } else {
+                    write_jsonl_error(&mut body, id.as_str(), "eeprom_failed", "device display name could not be saved to EEPROM U21", true);
+                }
+            }
+            Err(net::ApiActionError::Busy) => write_jsonl_error(&mut body, id.as_str(), "busy", "device display name is busy or locked", true),
+        }
+        return body;
+    }
+
+    if request.contains("\"method\":\"settings.name.clear\"")
+        || request.contains("\"method\": \"settings.name.clear\"")
+    {
+        match net::try_set_device_name(api_state, net::ApiDeviceNameCommand::Clear).await {
+            Ok(()) => {
+                if wait_device_name_result(api_state).await {
+                    let _ = write!(body, "{{\"id\":{},\"ok\":true,\"result\":{{\"display_name\":null}}}}", id.as_str());
+                } else {
+                    write_jsonl_error(&mut body, id.as_str(), "eeprom_failed", "device display name could not be cleared from EEPROM U21", true);
+                }
+            }
+            Err(net::ApiActionError::Busy) => write_jsonl_error(&mut body, id.as_str(), "busy", "device display name is busy or locked", true),
+        }
         return body;
     }
 
@@ -817,6 +860,19 @@ pub(crate) async fn wait_settings_reset_result() -> SettingsResetResult {
 }
 
 #[cfg(feature = "net_http")]
+async fn wait_device_name_result(api_state: &'static net::ApiSharedMutex) -> bool {
+    let result = DEVICE_NAME_RESULT.wait().await;
+    let mut guard = api_state.lock().await;
+    guard.device_name_inflight = false;
+    result
+}
+
+#[cfg(feature = "net_http")]
+pub(crate) fn reset_device_name_result() {
+    DEVICE_NAME_RESULT.reset();
+}
+
+#[cfg(feature = "net_http")]
 pub(crate) fn reset_settings_reset_result() {
     SETTINGS_RESET_RESULT.reset();
 }
@@ -906,6 +962,26 @@ fn parse_json_string_value(rest: &str) -> Option<(alloc::string::String, usize)>
                             let (_, hex) = chars.next()?;
                             code = (code << 4) | hex.to_digit(16)?;
                         }
+                        let code = if (0xD800..=0xDBFF).contains(&code) {
+                            let (_, slash) = chars.next()?;
+                            let (_, marker) = chars.next()?;
+                            if slash != '\\' || marker != 'u' {
+                                return None;
+                            }
+                            let mut low = 0u32;
+                            for _ in 0..4 {
+                                let (_, hex) = chars.next()?;
+                                low = (low << 4) | hex.to_digit(16)?;
+                            }
+                            if !(0xDC00..=0xDFFF).contains(&low) {
+                                return None;
+                            }
+                            0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                        } else if (0xDC00..=0xDFFF).contains(&code) {
+                            return None;
+                        } else {
+                            code
+                        };
                         let decoded = char::from_u32(code)?;
                         let _ = out.push(decoded);
                     }
@@ -989,6 +1065,7 @@ fn write_usb_info_json(
     id: &str,
     device_names: Option<&net::DeviceNames>,
     wifi: Option<net::WifiState>,
+    display_name: Option<isolapurr_firmware_core::device_name::DeviceDisplayName>,
 ) {
     let _ = write!(
         body,
@@ -1006,6 +1083,11 @@ fn write_usb_info_json(
         write_json_string(body, names.hostname_fqdn.as_str());
         let _ = write!(body, ",\"mac\":");
         write_json_string(body, mac.as_str());
+        let _ = body.push_str(",\"display_name\":");
+        match display_name {
+            Some(value) => write_json_string(body, value.as_str()),
+            None => body.push_str("null"),
+        }
         let _ = body.push(',');
     }
 
@@ -1023,7 +1105,7 @@ fn write_usb_info_json(
         firmware_uptime_ms()
     );
     write_usb_wifi_object(body, wifi);
-    let _ = body.push_str("},\"capabilities\":{\"identify\":true}}}");
+    let _ = body.push_str("},\"capabilities\":{\"identify\":true,\"device_name\":true}}}");
 }
 
 include!(concat!(

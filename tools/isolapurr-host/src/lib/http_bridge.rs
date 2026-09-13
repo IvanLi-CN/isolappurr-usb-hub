@@ -42,6 +42,12 @@ fn router(state: AppState, web_root: Option<PathBuf>, allow_dev_cors: bool) -> R
             get(wifi_get).post(wifi_set).delete(wifi_clear),
         )
         .route(
+            "/api/v1/devices/{id}/settings/name",
+            get(device_name_show)
+                .put(device_name_set)
+                .delete(device_name_clear),
+        )
+        .route(
             "/api/v1/devices/{id}/settings/reset",
             post(settings_reset_bridge::settings_reset),
         )
@@ -217,8 +223,18 @@ async fn scan_devices(State(state): State<AppState>, headers: HeaderMap) -> Resp
         Ok(ports) => ports,
         Err(err) => return internal_error(&format!("serial enumeration failed: {err}")),
     };
-    let mut inner = state.inner.lock().await;
-    reconcile_scanned_usb_devices(&mut inner, ports);
+    let scanned_ids = ports
+        .iter()
+        .map(|port| stable_usb_device_id(&port.port_path))
+        .collect::<Vec<_>>();
+    {
+        let mut inner = state.inner.lock().await;
+        reconcile_scanned_usb_devices(&mut inner, ports);
+    }
+    for device_id in scanned_ids {
+        let _ = usb_jsonl_request_with_exclusive(&state, &device_id, "info", None, None).await;
+    }
+    let inner = state.inner.lock().await;
     let devices = inner.devices.values().cloned().collect::<Vec<_>>();
     Json(json!({"devices": devices})).into_response()
 }
@@ -363,7 +379,12 @@ fn upsert_usb_device(inner: &mut DevdState, port: UsbTarget) -> DeviceRecord {
         .devices
         .entry(id.clone())
         .and_modify(|device| {
-            device.display_name = port.label.clone();
+            let previous_label = device.usb.as_ref().map(|usb| usb.label.as_str());
+            if device.display_name.is_empty()
+                || previous_label == Some(device.display_name.as_str())
+            {
+                device.display_name = port.label.clone();
+            }
             device.connection = "available".to_string();
             device.usb = Some(port.clone());
         })
@@ -484,6 +505,96 @@ async fn wifi_clear(
         Ok(value) => Json(redact_sensitive(&value)).into_response(),
         Err(err) => error_from_anyhow(err),
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceNameRequest {
+    name: String,
+}
+
+async fn device_name_show(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match dispatch_ipc_request(
+        &state,
+        "device.settings.name.show",
+        json!({"device_id": id}),
+    )
+    .await
+    {
+        Ok(value) => jsonl_device_response(value),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_name_set(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<DeviceNameRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match dispatch_ipc_request(
+        &state,
+        "device.settings.name.set",
+        json!({"device_id": id, "name": req.name}),
+    )
+    .await
+    {
+        Ok(value) => jsonl_device_response(value),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+async fn device_name_clear(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return *response;
+    }
+    match dispatch_ipc_request(
+        &state,
+        "device.settings.name.clear",
+        json!({"device_id": id}),
+    )
+    .await
+    {
+        Ok(value) => jsonl_device_response(value),
+        Err(err) => error_from_anyhow(err),
+    }
+}
+
+fn jsonl_device_response(value: Value) -> Response {
+    if value.get("ok").and_then(Value::as_bool) == Some(false) {
+        let error = value.get("error");
+        let code = error
+            .and_then(|value| value.get("code"))
+            .and_then(Value::as_str)
+            .unwrap_or("device_error");
+        let message = error
+            .and_then(|value| value.get("message"))
+            .and_then(Value::as_str)
+            .unwrap_or("device request failed");
+        let retryable = error
+            .and_then(|value| value.get("retryable"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        return match code {
+            "invalid_name" => invalid_name(message),
+            "busy" => conflict(message),
+            _ => error_response(StatusCode::BAD_GATEWAY, "device_error", message, retryable),
+        };
+    }
+    Json(redact_sensitive(&value)).into_response()
 }
 
 async fn device_ports(

@@ -261,7 +261,48 @@ async fn usb_jsonl_request_with_exclusive(
         .await
         .context("serial worker join")??;
     push_trace(state, device_id, "rx", method, &response).await;
+    if response.get("ok").and_then(Value::as_bool) != Some(false)
+        && matches!(method, "info" | "settings.name.set" | "settings.name.clear")
+    {
+        update_usb_device_display_name(state, device_id, &response).await;
+    }
     Ok(response)
+}
+
+async fn update_usb_device_display_name(state: &AppState, device_id: &str, response: &Value) {
+    let display_name = display_name_from_usb_response(device_id, response);
+    let mut inner = state.inner.lock().await;
+    let Some(record) = inner.devices.get_mut(device_id) else {
+        return;
+    };
+    if !display_name.trim().is_empty() {
+        record.display_name = display_name;
+    }
+}
+
+fn display_name_from_usb_response(device_id: &str, response: &Value) -> String {
+    let device = response
+        .get("result")
+        .and_then(|value| value.get("device"))
+        .or_else(|| response.get("device"));
+    let mutation_name = response
+        .get("result")
+        .and_then(|value| value.get("display_name"));
+    let fallback = format!("isolapurr-usb-hub-{device_id}");
+    let display_name = mutation_name
+        .and_then(Value::as_str)
+        .or_else(|| {
+            device
+                .and_then(|value| value.get("display_name"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            device
+                .and_then(|value| value.get("hostname"))
+                .and_then(Value::as_str)
+        })
+        .unwrap_or(fallback.as_str());
+    display_name.to_string()
 }
 
 async fn usb_wifi_clear_request(state: &AppState, device_id: &str) -> anyhow::Result<Value> {
@@ -487,6 +528,32 @@ mod device_io_tests {
             SERIAL_POWER_CONFIG_EARLY_VERIFY_TIMEOUT_MS
         );
         assert_eq!(serial_timeout_ms_for_method("power.idle_bias_run"), 178_000);
+    }
+
+    #[test]
+    fn usb_name_response_prefers_hardware_name_and_falls_back_to_hostname() {
+        assert_eq!(
+            display_name_from_usb_response(
+                "aabbcc001122",
+                &json!({
+                    "ok": true,
+                    "result": {
+                        "device": {
+                            "hostname": "isolapurr-usb-hub-aabbcc001122",
+                            "display_name": "Bench 猫"
+                        }
+                    }
+                })
+            ),
+            "Bench 猫"
+        );
+        assert_eq!(
+            display_name_from_usb_response(
+                "aabbcc001122",
+                &json!({ "ok": true, "result": { "display_name": null } })
+            ),
+            "isolapurr-usb-hub-aabbcc001122"
+        );
     }
 
     #[test]

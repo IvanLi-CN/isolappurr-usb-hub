@@ -201,6 +201,12 @@ fn map_devd_ipc_endpoint(
             "device.wifi.set"
         }
         ("DELETE", "wifi") => "device.wifi.clear",
+        ("GET", "settings/name") => "device.settings.name.show",
+        ("PUT", "settings/name") => {
+            merge_body(params_map, body);
+            "device.settings.name.set"
+        }
+        ("DELETE", "settings/name") => "device.settings.name.clear",
         ("POST", "settings/reset") => {
             merge_body(params_map, body);
             "device.settings.reset"
@@ -444,6 +450,11 @@ fn map_http_endpoint(
         ("GET", "/wifi") => (method, "/api/v1/wifi".to_string(), body),
         ("POST", "/wifi") => (Method::POST, "/api/v1/wifi/set".to_string(), body),
         ("DELETE", "/wifi") => (Method::POST, "/api/v1/wifi/clear".to_string(), body),
+        // Firmware exposes the read-only name in the additive info response;
+        // only PUT/DELETE have dedicated settings endpoints.
+        ("GET", "/settings/name") => (Method::GET, "/api/v1/info".to_string(), body),
+        ("PUT", "/settings/name") => (Method::PUT, "/api/v1/settings/name".to_string(), body),
+        ("DELETE", "/settings/name") => (Method::DELETE, "/api/v1/settings/name".to_string(), body),
         ("POST", "/settings/reset") => {
             let scope = body
                 .as_ref()
@@ -652,6 +663,7 @@ async fn handle_hardware(
             let saved = save_hardware(SavedHardwareInput {
                 device_id: device_id.clone(),
                 name,
+                hostname: None,
                 transports: DeviceProfileTransports {
                     http_base_url: url,
                     local_usb_port_path: port_path,
@@ -661,6 +673,7 @@ async fn handle_hardware(
                     device_id: Some(device_id),
                     mac: None,
                 }),
+                device_name_cache: None,
             })?;
             Ok(json!({"path": path, "device": saved}))
         }

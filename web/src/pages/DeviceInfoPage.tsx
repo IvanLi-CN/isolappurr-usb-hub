@@ -30,6 +30,7 @@ export function DeviceInfoPage() {
       <div className="pt-1">
         <DeviceInfoPanel
           device={device}
+          displayName={runtime.displayName(device.id)}
           transport={runtime.transport(device.id)}
           wifiManagementTransport={runtime.wifiManagementTransport(device.id)}
           sharedCommand={deviceRuntime?.command ?? null}
@@ -38,6 +39,8 @@ export function DeviceInfoPage() {
           loadWifiConfig={() => runtime.wifiConfig(device.id)}
           saveWifiConfig={(input) => runtime.saveWifiConfig(device.id, input)}
           clearWifiConfig={() => runtime.clearWifiConfig(device.id)}
+          setDeviceName={(name) => runtime.setDeviceName(device.id, name)}
+          clearDeviceName={() => runtime.clearDeviceName(device.id)}
           resetSettings={(scope) => runtime.resetSettings(device.id, scope)}
           rebootDevice={() => runtime.rebootDevice(device.id)}
           usbCDownstreamRoute={
