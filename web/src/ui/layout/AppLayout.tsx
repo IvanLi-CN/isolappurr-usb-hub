@@ -3,17 +3,24 @@ import { useLocation } from "react-router";
 import { useDemoMode } from "../../app/demo-mode";
 import { DemoLink } from "../../app/demo-navigation";
 import { useTheme } from "../../app/theme-ui";
+import type {
+  DeviceNameMutationResponse,
+  Result,
+} from "../../domain/deviceApi";
 import { usePwaInstall } from "../../pwa/install";
 import { ActionButton, IconButton } from "../actions/ActionButton";
 import { BrandLogo } from "../brand/BrandLogo";
 import { BrandMark } from "../brand/BrandMark";
 import { ThemeMenu } from "../nav/ThemeMenu";
 import { DemoControlPanel } from "./DemoControlPanel";
+import { DeviceHeaderName } from "./DeviceHeaderName";
 
 export type AppLayoutHeaderInfo = {
   title: string;
   subtitle: string;
   mobileTitle?: string;
+  nameEditable?: boolean;
+  onSaveName?: (value: string) => Promise<Result<DeviceNameMutationResponse>>;
 };
 
 type SidebarRenderContext = {
@@ -166,28 +173,31 @@ export function AppLayout({
       <header className="app-shell__header border-b border-[var(--border)] bg-[var(--panel-2)]">
         <div className="app-shell__frame mx-auto max-w-[1600px]">
           <div className="flex min-h-16 items-center justify-between gap-3 lg:hidden">
-            <DemoLink className={mobileBrandLinkClassName} to="/">
-              {showBrandLogo ? (
+            {showBrandLogo ? (
+              <DemoLink className={mobileBrandLinkClassName} to="/">
                 <BrandLogo
                   className="shrink-0 text-[var(--text)]"
                   markVariant="color"
                   size="sm"
                 />
-              ) : (
-                <>
+              </DemoLink>
+            ) : (
+              <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                <DemoLink className="shrink-0 text-[var(--text)]" to="/">
                   <BrandMark
                     className="h-8 w-8 shrink-0"
                     variant={headerBrandVariant}
                   />
-                  <span
-                    className="min-w-0 truncate"
-                    data-testid="app-header-mobile-title"
-                  >
-                    {mobileBrandLabel ?? "IsolaPurr USB Hub"}
-                  </span>
-                </>
-              )}
-            </DemoLink>
+                </DemoLink>
+                <DeviceHeaderName
+                  compact
+                  editable={headerInfo?.nameEditable}
+                  onSave={headerInfo?.onSaveName}
+                  title={mobileBrandLabel ?? "IsolaPurr USB Hub"}
+                  titleTestId="app-header-mobile-title"
+                />
+              </div>
+            )}
             <div className="flex shrink-0 items-center gap-2">
               {showDemoControl ? <DemoControlPanel /> : null}
               {renderInstallAction("app-header-install-cta-mobile", true)}
@@ -241,13 +251,12 @@ export function AppLayout({
               ].join(" ")}
             >
               {headerInfo ? (
-                <div className="min-w-0">
-                  <div
-                    className="truncate text-[24px] font-bold leading-8"
-                    data-testid="app-header-device-title"
-                  >
-                    {headerInfo.title}
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <DeviceHeaderName
+                    editable={headerInfo.nameEditable}
+                    onSave={headerInfo.onSaveName}
+                    title={headerInfo.title}
+                  />
                   <div
                     className="mt-1 truncate font-mono text-[12px] font-semibold text-[var(--muted)]"
                     data-testid="app-header-device-subtitle"

@@ -56,6 +56,11 @@ function RootLayout() {
     isDeviceDetailRoute && selectedDevice
       ? {
           mobileTitle: runtime.displayName(selectedDevice.id),
+          nameEditable:
+            runtime.displayNameInfo(selectedDevice.id)?.capabilities
+              ?.device_name === true,
+          onSaveName: (value: string) =>
+            runtime.setDeviceName(selectedDevice.id, value),
           subtitle: `id: ${shortId} • ${selectedDevice.baseUrl}`,
           title: runtime.displayName(selectedDevice.id),
         }
