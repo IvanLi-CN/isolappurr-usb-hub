@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   createDemoDesktopAgent,
+  type DesktopAgent,
   isDemoDesktopAgent,
 } from "../domain/desktopAgent";
 import {
@@ -90,6 +91,21 @@ export function DevicesProvider({
   );
   const profileSyncChannelRef = useRef<BroadcastChannel | null>(null);
   const migrationAttemptedRef = useRef(false);
+  const desktopFetchSequenceRef = useRef(0);
+
+  const fetchAndApplyDesktopDevices = useCallback(
+    async (requestAgent: DesktopAgent) => {
+      const sequence = ++desktopFetchSequenceRef.current;
+      const res = await fetchStoredDevices(requestAgent);
+      if (sequence !== desktopFetchSequenceRef.current || !res.ok) {
+        return res;
+      }
+      setDevices(res.value);
+      setSource(isDemoDesktopAgent(requestAgent) ? "demo" : "desktop");
+      return res;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!ready || status !== "ready" || source !== "browser") {
@@ -127,13 +143,7 @@ export function DevicesProvider({
       return;
     }
     const refreshFromDesktop = () => {
-      void fetchStoredDevices(agent).then((res) => {
-        if (!res.ok) {
-          return;
-        }
-        setDevices(res.value);
-        setSource(isDemoDesktopAgent(agent) ? "demo" : "desktop");
-      });
+      void fetchAndApplyDesktopDevices(agent);
     };
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== DEVICE_PROFILE_SYNC_STORAGE_KEY) {
@@ -163,7 +173,7 @@ export function DevicesProvider({
         profileSyncChannelRef.current = null;
       }
     };
-  }, [agent, status]);
+  }, [agent, fetchAndApplyDesktopDevices, status]);
 
   const broadcastProfileSync = useCallback(() => {
     const message = { sourceTabId: profileSyncTabId.current };
@@ -188,7 +198,7 @@ export function DevicesProvider({
     let cancelled = false;
     void (async () => {
       if (agent) {
-        const res = await fetchStoredDevices(agent);
+        const res = await fetchAndApplyDesktopDevices(agent);
         if (cancelled) {
           return;
         }
@@ -197,9 +207,6 @@ export function DevicesProvider({
             variant: "error",
             message: `Desktop storage unavailable: ${res.error.message}`,
           });
-        } else {
-          setDevices(res.value);
-          setSource(isDemoDesktopAgent(agent) ? "demo" : "desktop");
         }
       } else if (!initialDevices) {
         setDevices(loadStoredDevices());
@@ -212,7 +219,7 @@ export function DevicesProvider({
     return () => {
       cancelled = true;
     };
-  }, [agent, status, pushToast, initialDevices]);
+  }, [agent, fetchAndApplyDesktopDevices, status, pushToast, initialDevices]);
 
   useEffect(() => {
     if (!demoEnabled) {
@@ -223,12 +230,7 @@ export function DevicesProvider({
       const demoAgent =
         agent && isDemoDesktopAgent(agent) ? agent : createDemoDesktopAgent();
       void (async () => {
-        const res = await fetchStoredDevices(demoAgent);
-        if (!res.ok) {
-          return;
-        }
-        setDevices(res.value);
-        setSource("demo");
+        await fetchAndApplyDesktopDevices(demoAgent);
       })();
     };
 
@@ -236,7 +238,7 @@ export function DevicesProvider({
     return () => {
       window.removeEventListener(DEMO_RESET_EVENT, syncDemoDevices);
     };
-  }, [agent, demoEnabled]);
+  }, [agent, demoEnabled, fetchAndApplyDesktopDevices]);
 
   useEffect(() => {
     if (
@@ -249,7 +251,7 @@ export function DevicesProvider({
     }
     migrationAttemptedRef.current = true;
     void (async () => {
-      const existing = await fetchStoredDevices(agent);
+      const existing = await fetchAndApplyDesktopDevices(agent);
       if (!existing.ok) {
         return;
       }
@@ -258,10 +260,7 @@ export function DevicesProvider({
         return;
       }
       if (hasCompletedDesktopMigration(payload)) {
-        const refreshed = await fetchStoredDevices(agent);
-        if (refreshed.ok) {
-          setDevices(refreshed.value);
-        }
+        await fetchAndApplyDesktopDevices(agent);
         return;
       }
       const res = await migrateFromLocalStorage(agent, payload);
@@ -278,12 +277,9 @@ export function DevicesProvider({
       }
       // Another tab may have won the one-shot migration while this tab was
       // reading the empty registry; refresh in either response case.
-      const refreshed = await fetchStoredDevices(agent);
-      if (refreshed.ok) {
-        setDevices(refreshed.value);
-      }
+      await fetchAndApplyDesktopDevices(agent);
     })();
-  }, [agent, status, pushToast]);
+  }, [agent, fetchAndApplyDesktopDevices, status, pushToast]);
 
   useEffect(() => {
     if (
