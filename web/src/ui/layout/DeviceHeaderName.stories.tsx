@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { expect, userEvent, within } from "@storybook/test";
+import { expect, fn, userEvent, within } from "@storybook/test";
 import { ToastProvider } from "../toast/ToastProvider";
 import { DeviceHeaderName } from "./DeviceHeaderName";
 
@@ -13,9 +13,12 @@ const meta: Meta<typeof DeviceHeaderName> = {
       <ToastProvider>
         <div
           className="min-w-[320px] bg-[var(--panel-2)] p-6 text-[var(--text)]"
+          data-visual-evidence-surface
           data-theme="isolapurr"
         >
-          <Story />
+          <div data-visual-evidence-target>
+            <Story />
+          </div>
         </div>
       </ToastProvider>
     ),
@@ -24,6 +27,12 @@ const meta: Meta<typeof DeviceHeaderName> = {
     title: "Studio 猫",
     editable: true,
     onSave: async (value) => ({ ok: true, value: { display_name: value } }),
+    clipboardContent: {
+      plainText:
+        "Device name: Studio 猫, Device ID: aabbcc001122, Connection: Web Serial",
+      markdown:
+        "**Device name:** Studio 猫, **Device ID:** `aabbcc001122`, **Connection:** Web Serial",
+    },
   },
 };
 
@@ -90,14 +99,14 @@ export const InvalidName: Story = {
 };
 
 export const CopyAction: Story = {
-  args: { copyText: async () => undefined },
+  args: { writeClipboard: fn() },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(
-      canvas.getByRole("button", { name: "Copy device name" }),
+      canvas.getByRole("button", { name: "Copy device info" }),
     );
     await expect(
-      canvas.getByRole("button", { name: "Device name copied" }),
+      canvas.getByRole("button", { name: "Device info copied" }),
     ).toBeVisible();
   },
 };

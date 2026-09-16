@@ -26,6 +26,12 @@
   It is only valid for advanced Local USB flows such as first flash, firmware upgrade, add-device bootstrap, and development maintenance.
   It is not a second device identity.
 
+## Connection paths
+
+- `active transport`
+  The connection path currently used to communicate with a saved Hub. It describes the current path, not every available path or the client's saved preference.
+  _Avoid_: preferred transport, available transport.
+
 ## Excluded terms
 
 - `hardware_id`
