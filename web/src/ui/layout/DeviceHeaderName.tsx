@@ -9,6 +9,10 @@ import {
 } from "../../domain/deviceName";
 import { IconButton } from "../actions/ActionButton";
 import { useToast } from "../toast/ToastProvider";
+import {
+  type DeviceClipboardContent,
+  writeDeviceClipboard,
+} from "./deviceClipboard";
 
 function EditIcon() {
   return (
@@ -79,7 +83,8 @@ type Props = {
   compact?: boolean;
   titleTestId?: string;
   onSave?: (value: string) => Promise<Result<DeviceNameMutationResponse>>;
-  copyText?: (value: string) => Promise<void>;
+  clipboardContent: DeviceClipboardContent;
+  writeClipboard?: (content: DeviceClipboardContent) => Promise<void>;
 };
 
 export function DeviceHeaderName({
@@ -88,7 +93,8 @@ export function DeviceHeaderName({
   compact = false,
   titleTestId = "app-header-device-title",
   onSave,
-  copyText,
+  clipboardContent,
+  writeClipboard,
 }: Props) {
   const { pushToast } = useToast();
   const [committedTitle, setCommittedTitle] = useState(title);
@@ -178,9 +184,8 @@ export function DeviceHeaderName({
   };
 
   const copy = async () => {
-    const value = editing ? draft : committedTitle;
     try {
-      await (copyText ? copyText(value) : navigator.clipboard.writeText(value));
+      await (writeClipboard ?? writeDeviceClipboard)(clipboardContent);
       setCopied(true);
       if (copiedTimerRef.current !== null) {
         window.clearTimeout(copiedTimerRef.current);
@@ -188,11 +193,11 @@ export function DeviceHeaderName({
       copiedTimerRef.current = window.setTimeout(() => {
         setCopied(false);
       }, 1600);
-      pushToast({ message: "Device name copied.", variant: "success" });
+      pushToast({ message: "Device info copied.", variant: "success" });
     } catch {
-      setError("Could not copy the device name.");
+      setError("Could not copy device info.");
       pushToast({
-        message: "Could not copy the device name.",
+        message: "Could not copy device info.",
         variant: "error",
       });
     }
@@ -295,7 +300,7 @@ export function DeviceHeaderName({
               <EditIcon />
             </IconButton>
             <IconButton
-              label={copied ? "Device name copied" : "Copy device name"}
+              label={copied ? "Device info copied" : "Copy device info"}
               size={iconSize}
               tone={copied ? "primary" : "quiet"}
               onClick={() => void copy()}

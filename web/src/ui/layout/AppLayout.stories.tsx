@@ -16,6 +16,13 @@ import { DeviceListPanel } from "../panels/DeviceListPanel";
 import { ToastProvider } from "../toast/ToastProvider";
 import { AppLayout } from "./AppLayout";
 
+const deviceClipboardContent = {
+  plainText:
+    "Device name: isolapurr-usb-hub-856a141cdbd4, Device ID: 856a141cdbd4, Connection: Wi-Fi / LAN",
+  markdown:
+    "**Device name:** isolapurr-usb-hub-856a141cdbd4, **Device ID:** `856a141cdbd4`, **Connection:** Wi-Fi / LAN",
+};
+
 const devices: StoredDevice[] = [
   { id: "demo-a", name: "Demo Hub A", baseUrl: "http://192.168.1.23" },
   { id: "demo-b", name: "Demo Hub B", baseUrl: "http://usb-hub.local" },
@@ -54,11 +61,14 @@ const meta: Meta<typeof AppLayout> = {
                       >
                         <div
                           className="min-h-screen bg-[var(--bg)] text-[var(--text)]"
+                          data-visual-evidence-surface
                           data-theme={
                             context.parameters.isolapurrTheme ?? "isolapurr"
                           }
                         >
-                          <Story />
+                          <div data-visual-evidence-target>
+                            <Story />
+                          </div>
                         </div>
                       </AddDeviceUiProvider>
                     </DeviceRuntimeProvider>
@@ -161,6 +171,7 @@ export const DeviceHeaderDesktop: Story = {
       title: "isolapurr-usb-hub-856a141cdbd4",
       subtitle: "id: 856a14 • http://192.168.31.122",
       mobileTitle: "isolapurr-usb-hub-856a141cdbd4",
+      clipboardContent: deviceClipboardContent,
     },
   },
   parameters: {
@@ -206,6 +217,7 @@ export const DeviceHeaderMobileDrawer: Story = {
       title: "isolapurr-usb-hub-856a141cdbd4",
       subtitle: "id: 856a14 • http://192.168.31.122",
       mobileTitle: "isolapurr-usb-hub-856a141cdbd4",
+      clipboardContent: deviceClipboardContent,
     },
     showMobileSidebarDrawer: true,
   },

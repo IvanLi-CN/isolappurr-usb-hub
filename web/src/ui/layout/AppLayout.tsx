@@ -14,6 +14,7 @@ import { BrandMark } from "../brand/BrandMark";
 import { ThemeMenu } from "../nav/ThemeMenu";
 import { DemoControlPanel } from "./DemoControlPanel";
 import { DeviceHeaderName } from "./DeviceHeaderName";
+import type { DeviceClipboardContent } from "./deviceClipboard";
 
 export type AppLayoutHeaderInfo = {
   title: string;
@@ -21,6 +22,8 @@ export type AppLayoutHeaderInfo = {
   mobileTitle?: string;
   nameEditable?: boolean;
   onSaveName?: (value: string) => Promise<Result<DeviceNameMutationResponse>>;
+  clipboardContent: DeviceClipboardContent;
+  writeClipboard?: (content: DeviceClipboardContent) => Promise<void>;
 };
 
 type SidebarRenderContext = {
@@ -181,7 +184,7 @@ export function AppLayout({
                   size="sm"
                 />
               </DemoLink>
-            ) : (
+            ) : headerInfo ? (
               <div className="flex min-w-0 flex-1 items-center gap-2.5">
                 <DemoLink className="shrink-0 text-[var(--text)]" to="/">
                   <BrandMark
@@ -195,9 +198,11 @@ export function AppLayout({
                   onSave={headerInfo?.onSaveName}
                   title={mobileBrandLabel ?? "IsolaPurr USB Hub"}
                   titleTestId="app-header-mobile-title"
+                  clipboardContent={headerInfo.clipboardContent}
+                  writeClipboard={headerInfo.writeClipboard}
                 />
               </div>
-            )}
+            ) : null}
             <div className="flex shrink-0 items-center gap-2">
               {showDemoControl ? <DemoControlPanel /> : null}
               {renderInstallAction("app-header-install-cta-mobile", true)}
@@ -256,6 +261,8 @@ export function AppLayout({
                     editable={headerInfo.nameEditable}
                     onSave={headerInfo.onSaveName}
                     title={headerInfo.title}
+                    clipboardContent={headerInfo.clipboardContent}
+                    writeClipboard={headerInfo.writeClipboard}
                   />
                   <div
                     className="mt-1 truncate font-mono text-[12px] font-semibold text-[var(--muted)]"

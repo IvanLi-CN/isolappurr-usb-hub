@@ -24,6 +24,7 @@ import { FirmwareFlashPage } from "./pages/FirmwareFlashPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PwaInstallProvider } from "./pwa/install";
 import { AppLayout } from "./ui/layout/AppLayout";
+import { formatDeviceClipboardContent } from "./ui/layout/deviceClipboard";
 import { DeviceListPanel } from "./ui/panels/DeviceListPanel";
 import { ToastProvider } from "./ui/toast/ToastProvider";
 
@@ -52,6 +53,20 @@ function RootLayout() {
     selectedDevice && selectedDevice.id.length > 6
       ? selectedDevice.id.slice(0, 6)
       : selectedDevice?.id;
+  const activeTransport = selectedDevice
+    ? runtime.transport(selectedDevice.id)
+    : null;
+  const isDeviceOnline = selectedDevice
+    ? runtime.connectionState(selectedDevice.id) === "online"
+    : false;
+  const connectionLabel =
+    isDeviceOnline && activeTransport
+      ? activeTransport === "http"
+        ? "Wi-Fi / LAN"
+        : activeTransport === "web_serial"
+          ? "Web Serial"
+          : "Local USB"
+      : "Not connected";
   const headerInfo =
     isDeviceDetailRoute && selectedDevice
       ? {
@@ -63,6 +78,11 @@ function RootLayout() {
             runtime.setDeviceName(selectedDevice.id, value),
           subtitle: `id: ${shortId} • ${selectedDevice.baseUrl}`,
           title: runtime.displayName(selectedDevice.id),
+          clipboardContent: formatDeviceClipboardContent({
+            deviceName: runtime.displayName(selectedDevice.id),
+            deviceId: selectedDevice.id,
+            connection: connectionLabel,
+          }),
         }
       : null;
 
