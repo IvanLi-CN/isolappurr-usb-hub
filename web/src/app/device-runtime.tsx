@@ -35,6 +35,7 @@ import {
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
 import {
+  type CrossTabRuntimeCoordinator,
   type CrossTabRuntimeLeaseState,
   DEMO_RUNTIME_SCOPE,
   getSharedCrossTabRuntimeCoordinator,
@@ -100,26 +101,24 @@ export type {
 
 export function DeviceRuntimeProvider({
   children,
-  runtimeScopeId,
 }: {
   children: React.ReactNode;
-  runtimeScopeId?: string;
 }) {
   const { devices, rebindHttpBaseUrl, updateDeviceNameCache } = useDevices();
   const { enabled: demoEnabled } = useDemoMode();
   const coordinator = useMemo(
     () =>
       getSharedCrossTabRuntimeCoordinator(
-        runtimeScopeId ??
-          (demoEnabled ? DEMO_RUNTIME_SCOPE : LIVE_RUNTIME_SCOPE),
+        demoEnabled ? DEMO_RUNTIME_SCOPE : LIVE_RUNTIME_SCOPE,
       ),
-    [demoEnabled, runtimeScopeId],
+    [demoEnabled],
   );
   const { pushToast } = useToast();
   const [now, setNow] = useState(() => Date.now());
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(
     {},
   );
+  const snapshotHydratedFor = useRef<CrossTabRuntimeCoordinator | null>(null);
   const [coordination, setCoordination] = useState(() =>
     coordinator.getLeaseState(),
   );
@@ -158,10 +157,13 @@ export function DeviceRuntimeProvider({
 
   useEffect(() => {
     coordinator.start();
-    const cachedSnapshot = coordinator.readSnapshot();
-    if (cachedSnapshot) {
-      setNow(cachedSnapshot.now);
-      setRuntimeById(cachedSnapshot.runtimeById);
+    if (snapshotHydratedFor.current !== coordinator) {
+      snapshotHydratedFor.current = coordinator;
+      const cachedSnapshot = coordinator.readSnapshot();
+      if (cachedSnapshot) {
+        setNow(cachedSnapshot.now);
+        setRuntimeById(cachedSnapshot.runtimeById);
+      }
     }
     const unsubscribeLease = coordinator.subscribeLease(setCoordination);
     const unsubscribeMessages = coordinator.subscribeMessages((message) => {
@@ -620,7 +622,8 @@ export function DeviceRuntimeProvider({
         if (!res) {
           return;
         }
-        const stalePoll = pollGeneration.current[deviceId] !== generation;
+        const stalePoll =
+          (pollGeneration.current[deviceId] ?? 0) !== generation;
         setRuntimeById((prev) => {
           const current = prev[deviceId];
           if (!current) {
@@ -709,7 +712,7 @@ export function DeviceRuntimeProvider({
         }
       } finally {
         inflight.current.delete(deviceId);
-        if (pollGeneration.current[deviceId] !== generation) {
+        if ((pollGeneration.current[deviceId] ?? 0) !== generation) {
           void pollDeviceRef.current(deviceId, baseUrl);
         }
       }

@@ -176,6 +176,10 @@
 - Verified browser lease acquisition after expired-lease takeover requests and
   rechecked runtime authority before each device transport dispatch, including
   fallback transports.
+- Scoped snapshot hydration to coordinator changes so leadership-effect restarts
+  cannot replace initialized device state with an older empty snapshot; missing
+  poll generations now compare as `0` to avoid recursively restarting the first
+  poll.
 - Split the cross-tab Power runtime namespace by mode so `?demo=true` pages
   use a separate lease/snapshot scope from live saved-device pages. This keeps
   same-origin demo data from poisoning the live device card and Power snapshot.
