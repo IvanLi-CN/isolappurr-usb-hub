@@ -170,8 +170,8 @@
   every same-origin tab forwards power reads and writes through the shared
   runtime queue.
 - Hardened the shared mutation boundary so cross-tab RPC timeouts and stale
-  leaders return a takeover-retryable busy result, never invoke a device write
-  after losing the lease, and keep the Power draft available to a manual
+  leaders return a takeover-retryable busy result, never start a new device
+  write after losing the lease, and keep the Power draft available to a manual
   `Retry` toast action.
 - Verified browser lease acquisition after expired-lease takeover requests and
   rechecked runtime authority before each device transport dispatch, including

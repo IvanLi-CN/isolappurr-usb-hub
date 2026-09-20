@@ -426,15 +426,17 @@ for diagnostics.
   second lock heartbeat or transport owner.
 - Given the current same-origin runtime leader stops responding to a Power
   mutation, when the RPC timeout elapses, then the caller receives a retryable
-  takeover result, the device receives no stale write, the local draft remains
-  dirty, and the notification offers `Retry`.
+  takeover result, no new device transport dispatch is started by the stale
+  runtime, the local draft remains dirty, and the notification offers `Retry`.
 - Given the operator activates that `Retry` action, when the current tab takes
   over the runtime lease and the save succeeds, then the latest local draft is
   submitted exactly once and the canonical response clears every deselected
   Fixed PDO, including 12 V.
 - Given a stale leader loses its lease while a mutation is queued, when the
-  queue reaches the device invocation boundary, then it returns the same
-  takeover result and never invokes the device transport.
+  queue reaches each device transport invocation boundary, then it returns the
+  same takeover result and never starts a stale transport dispatch. A request
+  already dispatched before lease loss may finish, but its result MUST NOT be
+  treated as proof of current runtime authority.
 - Given one same-origin tab edits `Output mode`, when the operator has not yet
   clicked `Save and apply`, then those `Output mode` changes remain local to
   that tab and the device state does not change.

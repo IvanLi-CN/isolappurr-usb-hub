@@ -359,7 +359,11 @@ export function DeviceRuntimeProvider({
     }, [coordinator]);
   const { runSharedMutation } = createSharedMutationController({
     canInvokeMutation: () => {
-      if (coordinationRoleRef.current !== "follower" && isLeaderRef.current) {
+      if (
+        coordinationRoleRef.current !== "follower" &&
+        isLeaderRef.current &&
+        coordinator.hasCurrentLease()
+      ) {
         return null;
       }
       return takeoverRecoveryError(
@@ -1048,7 +1052,8 @@ export function DeviceRuntimeProvider({
       for (const transport of transports) {
         if (
           RUNTIME_MUTATION_METHODS.has(method) &&
-          coordinationRoleRef.current === "follower"
+          (coordinationRoleRef.current === "follower" ||
+            !coordinator.hasCurrentLease())
         ) {
           return {
             ok: false,
@@ -1112,7 +1117,13 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [devices, markChannelResult, orderedTransports, requestTransport],
+    [
+      coordinator,
+      devices,
+      markChannelResult,
+      orderedTransports,
+      requestTransport,
+    ],
   );
 
   const refreshCanonicalPowerConfig = useDeviceRuntimePowerLock({

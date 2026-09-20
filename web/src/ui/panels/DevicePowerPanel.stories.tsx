@@ -125,6 +125,9 @@ export const CrossTabSaveRetry: Story = {
   render: (args) => {
     const [savedConfig, setSavedConfig] = useState(retryInitialConfig);
     const [attempts, setAttempts] = useState(0);
+    const [canonicalFixedVoltages, setCanonicalFixedVoltages] = useState(
+      retryInitialConfig.capability.pd.fixed_voltages_mv,
+    );
     return (
       <div
         className="min-h-screen bg-[var(--bg)] p-6"
@@ -155,11 +158,17 @@ export const CrossTabSaveRetry: Story = {
                   capability: input.capability,
                 };
                 setSavedConfig(nextConfig);
+                setCanonicalFixedVoltages(
+                  input.capability.pd.fixed_voltages_mv,
+                );
                 return ok(nextConfig);
               }}
             />
             <span className="sr-only" data-testid="save-attempts">
               {attempts}
+            </span>
+            <span className="sr-only" data-testid="canonical-fixed-voltages">
+              {JSON.stringify(canonicalFixedVoltages)}
             </span>
           </ToastProvider>
         </div>
@@ -184,6 +193,9 @@ export const CrossTabSaveRetry: Story = {
     await waitFor(() =>
       expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
     );
+    await expect(
+      canvas.getByTestId("canonical-fixed-voltages"),
+    ).toHaveTextContent("[]");
     await waitFor(() =>
       expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(0),
     );

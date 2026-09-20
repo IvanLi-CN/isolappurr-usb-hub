@@ -244,6 +244,7 @@ export class CrossTabRuntimeCoordinator {
   private readonly messageListeners = new Set<MessageListener>();
   private channel: BroadcastChannel | null = null;
   private heartbeatTimer: number | null = null;
+  private leaseRefreshInFlight: Promise<void> | null = null;
   private started = false;
   private leaseState: CrossTabRuntimeLeaseState = {
     role: "unsupported",
@@ -293,9 +294,10 @@ export class CrossTabRuntimeCoordinator {
     window.addEventListener("storage", this.handleStorageEvent);
     window.addEventListener("pagehide", this.handlePageHide);
     window.addEventListener("beforeunload", this.handlePageHide);
-    this.refreshLeaseState(true);
+    this.refreshLeaseStateImmediately(true);
+    void this.refreshLeaseState(true);
     this.heartbeatTimer = window.setInterval(() => {
-      this.refreshLeaseState(true);
+      void this.refreshLeaseState(true);
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -323,6 +325,16 @@ export class CrossTabRuntimeCoordinator {
 
   getLeaseState(): CrossTabRuntimeLeaseState {
     return this.leaseState;
+  }
+
+  hasCurrentLease(): boolean {
+    if (this.leaseState.role === "unsupported") {
+      return true;
+    }
+    const lease = this.readLease();
+    return Boolean(
+      lease && lease.tabId === this.tabId && !isLeaseExpired(lease),
+    );
   }
 
   subscribeLease(listener: LeaseListener): () => void {
@@ -395,9 +407,9 @@ export class CrossTabRuntimeCoordinator {
     ) {
       return;
     }
-    this.refreshLeaseState(true);
+    void this.refreshLeaseState(true);
     await Promise.resolve();
-    this.refreshLeaseState();
+    await this.refreshLeaseState();
   }
 
   private readonly handleStorageEvent = (event: StorageEvent) => {
@@ -412,7 +424,7 @@ export class CrossTabRuntimeCoordinator {
         });
         return;
       }
-      this.refreshLeaseState(true);
+      void this.refreshLeaseState(true);
       return;
     }
     if (event.key === this.snapshotStorageKey) {
@@ -480,7 +492,61 @@ export class CrossTabRuntimeCoordinator {
     });
   }
 
-  private refreshLeaseState(preferAcquire = false): void {
+  private refreshLeaseState(preferAcquire = false): Promise<void> {
+    const refresh = async () => {
+      if (!this.started) {
+        return;
+      }
+      if (
+        typeof window === "undefined" ||
+        typeof window.localStorage === "undefined"
+      ) {
+        this.setLeaseState({
+          role: "unsupported",
+          currentTabId: this.tabId,
+          leaderTabId: null,
+          leaseExpiresAt: null,
+        });
+        return;
+      }
+
+      let lease = this.readLease();
+      if (
+        preferAcquire &&
+        (isLeaseExpired(lease) || lease?.tabId === this.tabId)
+      ) {
+        lease = await this.tryAcquireLease();
+      }
+
+      if (lease && !isLeaseExpired(lease)) {
+        this.setLeaseState({
+          role: lease.tabId === this.tabId ? "leader" : "follower",
+          currentTabId: this.tabId,
+          leaderTabId: lease.tabId,
+          leaseExpiresAt: lease.expiresAt,
+        });
+        return;
+      }
+
+      this.setLeaseState({
+        role: "follower",
+        currentTabId: this.tabId,
+        leaderTabId: null,
+        leaseExpiresAt: null,
+      });
+    };
+    const previous = this.leaseRefreshInFlight ?? Promise.resolve();
+    const next = previous.then(refresh, refresh);
+    const tracked = next.finally(() => {
+      if (this.leaseRefreshInFlight === tracked) {
+        this.leaseRefreshInFlight = null;
+      }
+    });
+    this.leaseRefreshInFlight = tracked;
+    return next;
+  }
+
+  private refreshLeaseStateImmediately(preferAcquire = false): void {
     if (
       typeof window === "undefined" ||
       typeof window.localStorage === "undefined"
@@ -493,15 +559,19 @@ export class CrossTabRuntimeCoordinator {
       });
       return;
     }
-
     let lease = this.readLease();
     if (
       preferAcquire &&
       (isLeaseExpired(lease) || lease?.tabId === this.tabId)
     ) {
-      lease = this.tryAcquireLease();
+      const hasWebLocks = Boolean(
+        typeof navigator !== "undefined" &&
+          (navigator as Navigator & { locks?: unknown }).locks,
+      );
+      if (!hasWebLocks) {
+        lease = this.writeLease();
+      }
     }
-
     if (lease && !isLeaseExpired(lease)) {
       this.setLeaseState({
         role: lease.tabId === this.tabId ? "leader" : "follower",
@@ -511,7 +581,6 @@ export class CrossTabRuntimeCoordinator {
       });
       return;
     }
-
     this.setLeaseState({
       role: "follower",
       currentTabId: this.tabId,
@@ -520,13 +589,44 @@ export class CrossTabRuntimeCoordinator {
     });
   }
 
-  private tryAcquireLease(): LeaseRecord | null {
+  private async tryAcquireLease(): Promise<LeaseRecord | null> {
+    if (!this.started) {
+      return this.readLease();
+    }
     const current = this.readLease();
     if (current && !isLeaseExpired(current) && current.tabId !== this.tabId) {
       return current;
     }
-    this.writeLease();
-    return this.readLease();
+    const acquire = async () => {
+      if (!this.started) {
+        return this.readLease();
+      }
+      const latest = this.readLease();
+      if (latest && !isLeaseExpired(latest) && latest.tabId !== this.tabId) {
+        return latest;
+      }
+      this.writeLease();
+      return this.readLease();
+    };
+    const locks = (typeof navigator !== "undefined" ? navigator : null) as
+      | (Navigator & {
+          locks?: {
+            request: <T>(
+              name: string,
+              options: { mode: "exclusive" },
+              callback: () => Promise<T>,
+            ) => Promise<T>;
+          };
+        })
+      | null;
+    if (locks?.locks) {
+      return locks.locks.request(
+        `isolapurr.runtime.lease.${this.channelName}`,
+        { mode: "exclusive" },
+        acquire,
+      );
+    }
+    return acquire();
   }
 
   private notifyMessageListeners(message: RuntimeChannelMessage): void {

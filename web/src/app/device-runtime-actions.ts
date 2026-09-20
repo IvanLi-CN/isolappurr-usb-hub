@@ -946,7 +946,8 @@ export function createDeviceRuntimeActions({
     const deviceId = String(message.args[0] ?? "");
     if (
       message.kind === "mutation" &&
-      coordinationRoleRef.current === "follower"
+      (coordinationRoleRef.current === "follower" ||
+        !coordinator.hasCurrentLease())
     ) {
       coordinator.postMessage({
         type: "runtime-rpc-response",

@@ -807,8 +807,7 @@ export function useDevicePowerPanelState({
   );
 
   const retryPowerConfig = useCallback(async () => {
-    const retryForm = formRef.current;
-    if (!retryForm || retryInFlightRef.current) {
+    if (!formRef.current || retryInFlightRef.current) {
       return;
     }
     retryInFlightRef.current = true;
@@ -825,7 +824,10 @@ export function useDevicePowerPanelState({
         });
         return;
       }
-      await submit(retryForm, "auto");
+      const latestForm = formRef.current;
+      if (latestForm) {
+        await submit(latestForm, "auto");
+      }
     } finally {
       retryInFlightRef.current = false;
     }

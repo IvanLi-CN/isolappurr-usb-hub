@@ -114,9 +114,11 @@ describe("CrossTabRuntimeCoordinator", () => {
   test("supports explicit takeover after the previous lease expires", async () => {
     const leader = new CrossTabRuntimeCoordinator();
     leader.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const follower = new CrossTabRuntimeCoordinator();
     follower.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     (
       window.localStorage as Storage & {
         setItemSilently: (key: string, value: string) => void;
@@ -141,10 +143,12 @@ describe("CrossTabRuntimeCoordinator", () => {
   test("elects one winner when two expired followers request takeover together", async () => {
     const initialLeader = new CrossTabRuntimeCoordinator();
     initialLeader.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const first = new CrossTabRuntimeCoordinator();
     first.start();
     const second = new CrossTabRuntimeCoordinator();
     second.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     (
       window.localStorage as Storage & {
         setItemSilently: (key: string, value: string) => void;
