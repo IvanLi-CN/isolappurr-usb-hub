@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, waitFor, within } from "@storybook/test";
 
-import { DeviceRuntimeProvider } from "../../app/device-runtime";
-import { DevicesProvider } from "../../app/devices-store";
+import { DeviceRuntimeContext } from "../../app/device-runtime-context";
+import type { DeviceRuntimeContextValue } from "../../app/device-runtime-support";
 import type { PdDiagnosticsResponse } from "../../domain/deviceApi";
 import type { StoredDevice } from "../../domain/devices";
 import {
@@ -419,6 +419,70 @@ function mockDeviceInfo(hostname: string) {
   };
 }
 
+function dashboardRuntime(device: StoredDevice): DeviceRuntimeContextValue {
+  const hostname = new URL(device.baseUrl).hostname;
+  const port = (portId: "port_a" | "port_c") => ({
+    portId,
+    label: portId === "port_a" ? "USB-A" : "USB-C",
+    capability_schema: 1,
+    telemetry:
+      portId === "port_c"
+        ? mockUsbCTelemetry(hostname)
+        : {
+            status: "ok" as const,
+            voltage_mv: 5000,
+            current_ma: 420,
+            power_mw: 2100,
+            sample_uptime_ms: 123_456,
+          },
+    state: {
+      power_enabled: true,
+      data_connected: true,
+      replugging: false,
+      busy: false,
+    },
+    capabilities: { data_replug: true, data_set: true, power_set: true },
+  });
+
+  return {
+    now: 123_456,
+    runtimeById: {
+      [device.id]: { command: null },
+    } as DeviceRuntimeContextValue["runtimeById"],
+    coordination: {
+      role: "unsupported",
+      currentTabId: "storybook",
+      leaderTabId: null,
+      leaseExpiresAt: null,
+    },
+    canControlHardware: false,
+    connectionState: () => "online",
+    lastOkAt: () => 123_456,
+    lastErrorLabel: () => null,
+    transport: () => "http",
+    wifiManagementTransport: () => null,
+    channelState: () => "online",
+    hub: () => mockHub(hostname),
+    port: (_deviceId, portId) => port(portId),
+    pending: () => false,
+    displayName: () => device.name,
+    displayNameInfo: () => null,
+    powerLockOwner: () => 0,
+    requestControlTakeover: async () => ({
+      role: "unsupported",
+      currentTabId: "storybook",
+      leaderTabId: null,
+      leaseExpiresAt: null,
+    }),
+    pdDiagnostics: async () => ({
+      ok: true,
+      value: mockUsbCDiagnostics(hostname),
+    }),
+    setPower: async () => ({ ok: true, value: { accepted: true } }),
+    setData: async () => ({ ok: true, value: { accepted: true } }),
+  } as unknown as DeviceRuntimeContextValue;
+}
+
 const mockDeviceApi = async (
   input: Parameters<typeof fetch>[0],
   init: Parameters<typeof fetch>[1],
@@ -549,13 +613,13 @@ const meta: Meta<typeof DeviceDashboardPanel> = {
     mockFetchDecorator(mockDeviceApi),
     (Story, context) => (
       <ToastProvider>
-        <DevicesProvider initialDevices={[context.args.device ?? demoDevice]}>
-          <DeviceRuntimeProvider runtimeScopeId="storybook-dashboard">
-            <div className="max-w-[980px]">
-              <Story />
-            </div>
-          </DeviceRuntimeProvider>
-        </DevicesProvider>
+        <DeviceRuntimeContext.Provider
+          value={dashboardRuntime(context.args.device ?? demoDevice)}
+        >
+          <div className="max-w-[980px]">
+            <Story />
+          </div>
+        </DeviceRuntimeContext.Provider>
       </ToastProvider>
     ),
   ],
