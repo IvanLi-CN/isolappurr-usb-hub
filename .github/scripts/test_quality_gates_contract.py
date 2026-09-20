@@ -20,6 +20,7 @@ EXPECTED_REQUIRED_CHECKS = [
     "Desktop / linux",
     "Pages / PR build",
     "Repo Contracts / Python contract tests",
+    "Repo Contracts / Worktree bootstrap",
 ]
 
 EXPECTED_PR_WORKFLOWS = {

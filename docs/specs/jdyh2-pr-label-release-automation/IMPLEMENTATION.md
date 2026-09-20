@@ -31,7 +31,7 @@
 
 ## Remaining Gaps
 
-- 当前没有已知实现缺口；后续若 required checks 集合变动，必须同时更新 `.github/quality-gates.json`、对应 workflow/job 名称与 GitHub live branch protection。
+- 当前没有已知实现缺口；`Repo Contracts / Worktree bootstrap` 已加入 required-check contract。后续若 required checks 集合变动，必须同时更新 `.github/quality-gates.json`、对应 workflow/job 名称与 GitHub live branch protection。
 
 ## Related Changes
 

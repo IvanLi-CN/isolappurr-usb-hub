@@ -39,6 +39,10 @@ Hard boundary:
 
 - Developer workflow inherits user-facing safety rules, but is allowed to use source commands and repo-local validation gates.
 
+### Linked worktree readiness
+
+After `just hooks-install` has been run once in the primary checkout, a linked worktree uses the shared Lefthook `post-checkout` hook to best-effort restore the root and Web Bun dependencies plus the firmware, host-tools, and desktop Cargo caches. The hook never selects hardware, copies local environment files, or installs toolchains. When recovery needs to be strict, run `just worktree-bootstrap`; it aggregates failures and returns a non-zero status while the automatic hook remains non-blocking.
+
 ### Repo truth-source maintenance
 
 Use `isolapurr-maintainer-workflow` when the task changes:

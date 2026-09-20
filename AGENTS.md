@@ -41,8 +41,11 @@
 - `just host-tools-test`
 - `just web-check`
 - `just desktop-agent-build`
+- `just worktree-bootstrap`
 
 Use [README.md](README.md) for broader command context and [docs/maintainer-workflow.md](docs/maintainer-workflow.md) for routing.
+
+New linked worktrees rely on the shared Lefthook `post-checkout` bootstrap. Use `just worktree-bootstrap` when the automatic best-effort path reports a warning.
 
 ## Hard Safety Rules
 

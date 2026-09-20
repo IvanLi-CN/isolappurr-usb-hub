@@ -109,6 +109,8 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 
 - 安装提交工具依赖：`bun install`
 - 安装 hooks：`just hooks-install`（等价于 `lefthook install`）
+- 新 linked worktree 会通过共享 Lefthook `post-checkout` hook best-effort 恢复 root/Web Bun 与 firmware、host-tools、desktop Cargo 依赖；严格修复使用 `just worktree-bootstrap`。
+- Worktree bootstrap 只使用 lockfile，不安装 toolchain 或 Playwright browser，也不会复制/覆盖 `.env`、`.esp32-port`、端口缓存或硬件状态；自动路径失败只告警，手动入口返回聚合失败码。
 
 ### Agent skills
 
