@@ -10,6 +10,11 @@ import {
 type StorageListener = (event: StorageEvent) => void;
 type WindowListener = (event: Event) => void;
 
+const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "navigator",
+);
+
 function installMockWindow() {
   const store = new Map<string, string>();
   const storageListeners = new Set<StorageListener>();
@@ -108,7 +113,15 @@ describe("CrossTabRuntimeCoordinator", () => {
   afterEach(() => {
     Reflect.deleteProperty(globalThis, "window");
     Reflect.deleteProperty(globalThis, "BroadcastChannel");
-    Reflect.deleteProperty(globalThis, "navigator");
+    if (originalNavigatorDescriptor) {
+      Object.defineProperty(
+        globalThis,
+        "navigator",
+        originalNavigatorDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(globalThis, "navigator");
+    }
   });
 
   test("elects one leader and keeps later tabs as followers", async () => {

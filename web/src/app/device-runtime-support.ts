@@ -35,6 +35,27 @@ import type { CrossTabRuntimeLeaseState } from "./cross-tab-runtime";
 export type ConnectionState = "online" | "offline" | "unknown";
 export type DeviceTransport = "http" | "web_serial" | "local_usb";
 
+export const RUNTIME_MUTATION_METHODS = new Set([
+  "identify",
+  "wifi.set",
+  "wifi.clear",
+  "settings.name.set",
+  "settings.name.clear",
+  "settings.reset",
+  "reboot",
+  "power.config_set",
+  "power.config_defaults",
+  "power.lock",
+  "power.runtime_set",
+  "power.idle_bias_set",
+  "power.idle_bias_run",
+  "power.idle_bias_clear",
+  "port.power_set",
+  "port.data_set",
+  "port.replug",
+  "hub.route_set",
+]);
+
 export function takeoverRecoveryError(message: string): DeviceApiError {
   return {
     kind: "busy",

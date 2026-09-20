@@ -40,9 +40,6 @@ import {
   getSharedCrossTabRuntimeCoordinator,
   LIVE_RUNTIME_SCOPE,
   type RuntimeChannelMessage,
-  type RuntimeRpcMethod,
-  type RuntimeRpcResultMap,
-  runtimeRpcMethodKind,
 } from "./cross-tab-runtime";
 import { useDemoMode } from "./demo-mode";
 import { createDeviceRuntimeActions } from "./device-runtime-actions";
@@ -54,6 +51,10 @@ import {
 } from "./device-runtime-helpers";
 import { useDeviceRuntimePowerLock } from "./device-runtime-power-lock";
 import {
+  createRequestLeaderRpc,
+  type PendingRuntimeRpc,
+} from "./device-runtime-rpc";
+import {
   markDeviceRuntimeChannel,
   syncDeviceRuntimeIdleBias,
   syncDeviceRuntimePdDiagnostics,
@@ -61,7 +62,6 @@ import {
 } from "./device-runtime-snapshots";
 import {
   createEmptyChannels,
-  crossTabRuntimeTimeoutResult,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
   type DeviceTransport,
@@ -74,6 +74,7 @@ import {
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
+  RUNTIME_MUTATION_METHODS,
   recoverWifiClearLikeTimeout,
   resetLocalUsbRuntimeState,
   resetLocalUsbRuntimeStateForDevice,
@@ -96,27 +97,6 @@ export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
-
-const RUNTIME_MUTATION_METHODS = new Set([
-  "identify",
-  "wifi.set",
-  "wifi.clear",
-  "settings.name.set",
-  "settings.name.clear",
-  "settings.reset",
-  "reboot",
-  "power.config_set",
-  "power.config_defaults",
-  "power.lock",
-  "power.runtime_set",
-  "power.idle_bias_set",
-  "power.idle_bias_run",
-  "power.idle_bias_clear",
-  "port.power_set",
-  "port.data_set",
-  "port.replug",
-  "hub.route_set",
-]);
 
 export function DeviceRuntimeProvider({
   children,
@@ -152,16 +132,7 @@ export function DeviceRuntimeProvider({
   const preferredTransportByDevice = useRef<Record<string, DeviceTransport>>(
     {},
   );
-  const pendingRpc = useRef<
-    Record<
-      string,
-      {
-        resolve: (value: unknown) => void;
-        reject: (reason?: unknown) => void;
-        timeoutId: number;
-      }
-    >
-  >({});
+  const pendingRpc = useRef<Record<string, PendingRuntimeRpc>>({});
   const rpcRequestHandlerRef = useRef<
     | ((
         message: Extract<
@@ -286,69 +257,15 @@ export function DeviceRuntimeProvider({
   }, [devices]);
   const createRpcRequestId = createRuntimeRpcRequestId;
 
-  const runtimeRpcTimeoutMs = useCallback(
-    (method: RuntimeRpcMethod): number => {
-      if (method === "runIdleBiasCalibration") {
-        return 190_000;
-      }
-      if (
-        method === "savePowerConfig" ||
-        method === "restorePowerDefaults" ||
-        method === "setPowerLock" ||
-        method === "setPowerRuntime" ||
-        method === "setIdleBiasCorrection" ||
-        method === "clearIdleBiasCalibration" ||
-        method === "saveWifiConfig" ||
-        method === "clearWifiConfig" ||
-        method === "resetSettings" ||
-        method === "rebootDevice" ||
-        method === "setPower" ||
-        method === "setData" ||
-        method === "replug" ||
-        method === "setUsbCDownstreamRoute"
-      ) {
-        return 25_000;
-      }
-      return 8_000;
-    },
-    [],
-  );
-  const requestLeaderRpc = useCallback(
-    async <TMethod extends RuntimeRpcMethod>(
-      method: TMethod,
-      args: unknown[],
-    ): Promise<RuntimeRpcResultMap[TMethod]> => {
-      const requestId = createRpcRequestId();
-      return new Promise<RuntimeRpcResultMap[TMethod]>((resolve, reject) => {
-        const timeoutId = window.setTimeout(() => {
-          delete pendingRpc.current[requestId];
-          resolve(
-            crossTabRuntimeTimeoutResult<unknown>(
-              method,
-            ) as RuntimeRpcResultMap[TMethod],
-          );
-        }, runtimeRpcTimeoutMs(method));
-        pendingRpc.current[requestId] = {
-          resolve: (value) => resolve(value as RuntimeRpcResultMap[TMethod]),
-          reject,
-          timeoutId,
-        };
-        coordinator.postMessage({
-          type: "runtime-rpc-request",
-          originTabId: coordination.currentTabId,
-          requestId,
-          kind: runtimeRpcMethodKind(method),
-          method,
-          args,
-        });
-      });
-    },
-    [
-      coordinator,
-      coordination.currentTabId,
-      createRpcRequestId,
-      runtimeRpcTimeoutMs,
-    ],
+  const requestLeaderRpc = useMemo(
+    () =>
+      createRequestLeaderRpc({
+        coordinator,
+        currentTabId: coordination.currentTabId,
+        createRpcRequestId,
+        pendingRpc,
+      }),
+    [coordinator, coordination.currentTabId, createRpcRequestId],
   );
   const requestControlTakeover =
     useCallback(async (): Promise<CrossTabRuntimeLeaseState> => {
