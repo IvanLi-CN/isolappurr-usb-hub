@@ -191,6 +191,19 @@ describe("CrossTabRuntimeCoordinator", () => {
     ).toHaveLength(1);
   });
 
+  test("does not claim a leader without an atomic browser lock", async () => {
+    const navigatorWithLocks = globalThis.navigator as Navigator & {
+      locks?: unknown;
+    };
+    navigatorWithLocks.locks = undefined;
+    const coordinator = new CrossTabRuntimeCoordinator();
+    coordinator.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(coordinator.getLeaseState().role).toBe("unsupported");
+    expect(coordinator.hasCurrentLease()).toBeFalse();
+  });
+
   test("classifies runtime RPC methods into query and mutation kinds", () => {
     expect(runtimeRpcMethodKind("deviceInfo")).toBe("query");
     expect(runtimeRpcMethodKind("savePowerConfig")).toBe("mutation");

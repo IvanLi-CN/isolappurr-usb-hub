@@ -150,10 +150,12 @@ export function useDevicePowerPanelState({
   const slowLockToastShownRef = useRef(false);
   const blockingCommandToastKeyRef = useRef<string | null>(null);
   const outputModeDraftRef = useRef<OutputModeDraft | null>(null);
+  const outputModeConflictRef = useRef(false);
   const outputModeBaselineSignatureRef = useRef<string | null>(null);
   const outputModeConflictToastKeyRef = useRef<string | null>(null);
   const retrySaveRef = useRef<() => void>(() => undefined);
   const retryInFlightRef = useRef(false);
+  outputModeConflictRef.current = outputModeConflict;
 
   const initializeLoadedConfig = useCallback(
     (nextConfig: PowerConfigResponse) => {
@@ -824,7 +826,7 @@ export function useDevicePowerPanelState({
         });
         return;
       }
-      if (outputModeConflict) {
+      if (outputModeConflictRef.current) {
         pushToast({
           id: `${deviceKey}:output-mode-conflict`,
           message:
@@ -841,13 +843,7 @@ export function useDevicePowerPanelState({
     } finally {
       retryInFlightRef.current = false;
     }
-  }, [
-    deviceKey,
-    outputModeConflict,
-    pushToast,
-    requestRuntimeTakeover,
-    submit,
-  ]);
+  }, [deviceKey, pushToast, requestRuntimeTakeover, submit]);
 
   useEffect(() => {
     retrySaveRef.current = () => {
