@@ -388,14 +388,15 @@ export class CrossTabRuntimeCoordinator {
     );
   }
 
-  requestTakeover(): void {
+  async requestTakeover(): Promise<void> {
     if (
       typeof window === "undefined" ||
       typeof window.localStorage === "undefined"
     ) {
       return;
     }
-    this.writeLease();
+    this.refreshLeaseState(true);
+    await Promise.resolve();
     this.refreshLeaseState();
   }
 
@@ -498,7 +499,7 @@ export class CrossTabRuntimeCoordinator {
       preferAcquire &&
       (isLeaseExpired(lease) || lease?.tabId === this.tabId)
     ) {
-      lease = this.writeLease();
+      lease = this.tryAcquireLease();
     }
 
     if (lease && !isLeaseExpired(lease)) {
@@ -511,23 +512,21 @@ export class CrossTabRuntimeCoordinator {
       return;
     }
 
-    if (preferAcquire) {
-      const nextLease = this.writeLease();
-      this.setLeaseState({
-        role: "leader",
-        currentTabId: this.tabId,
-        leaderTabId: nextLease.tabId,
-        leaseExpiresAt: nextLease.expiresAt,
-      });
-      return;
-    }
-
     this.setLeaseState({
       role: "follower",
       currentTabId: this.tabId,
       leaderTabId: null,
       leaseExpiresAt: null,
     });
+  }
+
+  private tryAcquireLease(): LeaseRecord | null {
+    const current = this.readLease();
+    if (current && !isLeaseExpired(current) && current.tabId !== this.tabId) {
+      return current;
+    }
+    this.writeLease();
+    return this.readLease();
   }
 
   private notifyMessageListeners(message: RuntimeChannelMessage): void {

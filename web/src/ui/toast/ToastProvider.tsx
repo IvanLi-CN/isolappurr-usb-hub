@@ -26,8 +26,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const pushToast = useCallback((input: ToastInput) => {
     const variant = input.variant ?? "info";
     const durationMs = input.durationMs ?? 2500;
+    const action = input.action
+      ? {
+          label: input.action.label,
+          onClick: () => {
+            input.action?.onClick();
+            if (input.id) {
+              toast.dismiss(input.id);
+            }
+          },
+        }
+      : undefined;
     toast[variant](input.message, {
-      action: input.action,
+      action,
       duration: durationMs,
       id: input.id,
     });

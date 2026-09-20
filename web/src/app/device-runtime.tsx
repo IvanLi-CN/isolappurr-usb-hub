@@ -95,6 +95,28 @@ export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
+
+const RUNTIME_MUTATION_METHODS = new Set([
+  "identify",
+  "wifi.set",
+  "wifi.clear",
+  "settings.name.set",
+  "settings.name.clear",
+  "settings.reset",
+  "reboot",
+  "power.config_set",
+  "power.config_defaults",
+  "power.lock",
+  "power.runtime_set",
+  "power.idle_bias_set",
+  "power.idle_bias_run",
+  "power.idle_bias_clear",
+  "port.power_set",
+  "port.data_set",
+  "port.replug",
+  "hub.route_set",
+]);
+
 export function DeviceRuntimeProvider({
   children,
 }: {
@@ -327,13 +349,14 @@ export function DeviceRuntimeProvider({
       runtimeRpcTimeoutMs,
     ],
   );
-  const requestControlTakeover = useCallback((): CrossTabRuntimeLeaseState => {
-    coordinator.requestTakeover();
-    const next = coordinator.getLeaseState();
-    isLeaderRef.current = next.role !== "follower";
-    coordinationRoleRef.current = next.role;
-    return next;
-  }, [coordinator]);
+  const requestControlTakeover =
+    useCallback(async (): Promise<CrossTabRuntimeLeaseState> => {
+      await coordinator.requestTakeover();
+      const next = coordinator.getLeaseState();
+      isLeaderRef.current = next.role !== "follower";
+      coordinationRoleRef.current = next.role;
+      return next;
+    }, [coordinator]);
   const { runSharedMutation } = createSharedMutationController({
     canInvokeMutation: () => {
       if (coordinationRoleRef.current !== "follower" && isLeaderRef.current) {
@@ -1023,6 +1046,17 @@ export function DeviceRuntimeProvider({
         };
       }
       for (const transport of transports) {
+        if (
+          RUNTIME_MUTATION_METHODS.has(method) &&
+          coordinationRoleRef.current === "follower"
+        ) {
+          return {
+            ok: false,
+            error: takeoverRecoveryError(
+              "This browser tab no longer controls the device. Take over control and retry.",
+            ),
+          };
+        }
         const candidate = await requestTransport<T>(
           deviceId,
           transport === "http" ? httpBaseUrlForDevice(device) : device.baseUrl,

@@ -334,7 +334,7 @@ export const defaultArgs: DevicePowerPanelProps = {
   },
   canControlHardware: true,
   powerLockOwner: stableOwner,
-  requestRuntimeTakeover: () => ({
+  requestRuntimeTakeover: async () => ({
     role: "leader",
     currentTabId: "tab-a",
     leaderTabId: "tab-a",

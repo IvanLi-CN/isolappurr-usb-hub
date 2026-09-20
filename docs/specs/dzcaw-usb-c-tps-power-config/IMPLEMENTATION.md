@@ -173,6 +173,9 @@
   leaders return a takeover-retryable busy result, never invoke a device write
   after losing the lease, and keep the Power draft available to a manual
   `Retry` toast action.
+- Verified browser lease acquisition after expired-lease takeover requests and
+  rechecked runtime authority before each device transport dispatch, including
+  fallback transports.
 - Split the cross-tab Power runtime namespace by mode so `?demo=true` pages
   use a separate lease/snapshot scope from live saved-device pages. This keeps
   same-origin demo data from poisoning the live device card and Power snapshot.

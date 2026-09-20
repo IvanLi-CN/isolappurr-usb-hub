@@ -41,6 +41,9 @@ function installMockWindow() {
         listener(event);
       }
     },
+    setItemSilently(key: string, value: string) {
+      store.set(key, value);
+    },
     removeItem(key: string) {
       const oldValue = store.get(key) ?? null;
       store.delete(key);
@@ -108,19 +111,65 @@ describe("CrossTabRuntimeCoordinator", () => {
     );
   });
 
-  test("supports explicit takeover by a follower tab", () => {
+  test("supports explicit takeover after the previous lease expires", async () => {
     const leader = new CrossTabRuntimeCoordinator();
     leader.start();
 
     const follower = new CrossTabRuntimeCoordinator();
     follower.start();
-    follower.requestTakeover();
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.leader-lease.v1.live",
+      JSON.stringify({
+        tabId: leader.getTabId(),
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        updatedAt: new Date(Date.now() - 2).toISOString(),
+      }),
+    );
+    await follower.requestTakeover();
 
     expect(follower.getLeaseState().role).toBe("leader");
     expect(leader.getLeaseState().role).toBe("follower");
     expect(leader.getLeaseState().leaderTabId).toBe(
       follower.getLeaseState().leaderTabId,
     );
+  });
+
+  test("elects one winner when two expired followers request takeover together", async () => {
+    const initialLeader = new CrossTabRuntimeCoordinator();
+    initialLeader.start();
+    const first = new CrossTabRuntimeCoordinator();
+    first.start();
+    const second = new CrossTabRuntimeCoordinator();
+    second.start();
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.leader-lease.v1.live",
+      JSON.stringify({
+        tabId: initialLeader.getTabId(),
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        updatedAt: new Date(Date.now() - 2).toISOString(),
+      }),
+    );
+
+    await Promise.all([first.requestTakeover(), second.requestTakeover()]);
+
+    expect(
+      [first.getLeaseState().role, second.getLeaseState().role].filter(
+        (role) => role === "leader",
+      ),
+    ).toHaveLength(1);
+    expect(
+      [first.getLeaseState().role, second.getLeaseState().role].filter(
+        (role) => role === "follower",
+      ),
+    ).toHaveLength(1);
   });
 
   test("classifies runtime RPC methods into query and mutation kinds", () => {

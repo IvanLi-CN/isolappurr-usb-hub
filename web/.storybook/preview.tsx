@@ -66,12 +66,16 @@ const ISOLAPURR_VIEWPORTS = {
 
 const preview: Preview = {
   decorators: [
-    (Story) => (
+    (Story, context) => (
       <DemoModeProvider>
         <DesktopAgentProvider>
-          <ToastProvider>
+          {context.parameters.skipToastProvider ? (
             <Story />
-          </ToastProvider>
+          ) : (
+            <ToastProvider>
+              <Story />
+            </ToastProvider>
+          )}
         </DesktopAgentProvider>
       </DemoModeProvider>
     ),

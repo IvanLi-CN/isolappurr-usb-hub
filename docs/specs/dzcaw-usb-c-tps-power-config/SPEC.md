@@ -208,7 +208,10 @@ for diagnostics.
 - A same-browser mutation that cannot be confirmed by the current runtime
   leader MUST resolve as a retryable busy result instead of rejecting an
   unhandled Promise. The queued mutation MUST re-check leader ownership before
-  invoking the device transport and MUST refuse a stale leader write.
+  every device transport dispatch and MUST refuse a stale leader write.
+- A manual takeover MUST acquire only an expired or absent browser lease, read
+  the lease back after writing, and settle its role asynchronously so concurrent
+  retries cannot both proceed as runtime leader.
 - The Web Power surface MUST keep the failed draft dirty and show a `Retry`
   action only for this takeover-recovery result. Activating `Retry` MUST first
   take over the browser runtime lease and then submit the latest local draft;

@@ -51,7 +51,7 @@ export type DevicePowerPanelProps = {
   sharedPowerConfig: PowerConfigResponse | null;
   sharedIdleBiasSnapshot: IdleBiasResponse | null;
   sharedPdDiagnostics: PdDiagnosticsResponse | null;
-  requestRuntimeTakeover: () => CrossTabRuntimeLeaseState;
+  requestRuntimeTakeover: () => Promise<CrossTabRuntimeLeaseState>;
   loadPowerConfig: () => Promise<Result<PowerConfigResponse>>;
   loadIdleBias: () => Promise<Result<IdleBiasResponse>>;
   savePowerConfig: (
@@ -813,7 +813,7 @@ export function useDevicePowerPanelState({
     }
     retryInFlightRef.current = true;
     try {
-      const lease = requestRuntimeTakeover();
+      const lease = await requestRuntimeTakeover();
       if (lease.role !== "leader" && lease.role !== "unsupported") {
         pushToast({
           id: `${deviceKey}:power-save-failed`,
