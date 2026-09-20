@@ -12,7 +12,7 @@
 
 - `REQ-WTB-001`: `lefthook.yml`, `scripts/run-lefthook-hook.sh`, `scripts/worktree-bootstrap.sh`, and `just worktree-bootstrap` share one setup chain.
 - `REQ-WTB-002`: `scripts/worktree-bootstrap.sh` recovers root/Web Bun and the three Cargo manifests with frozen or locked commands.
-- `REQ-WTB-003`: linked-only detection, digest markers in Git metadata, warning/strict failure modes, historical no-op behavior, and local-state preservation are covered by the smoke fixture.
+- `REQ-WTB-003`: linked-only detection, digest markers in Git metadata, per-worktree locking, cached Cargo metadata checks, warning/strict failure modes, historical no-op behavior, and local-state preservation are covered by the smoke fixture.
 - `REQ-WTB-004`: `.github/workflows/repo-contracts.yml` runs the real smoke with verified Lefthook `v2.1.14`; `.github/quality-gates.json` declares the required context.
 
 ## Verification Commands

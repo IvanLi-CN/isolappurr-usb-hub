@@ -13,7 +13,7 @@
 - `linked-worktree readiness`: the state in which the five repository-managed dependency surfaces have completed their locked recovery steps for the current manifest digest.
 - `automatic bootstrap`: the `post-checkout` path that runs only for linked worktrees and returns success after reporting failures as warnings.
 - `strict repair`: `just worktree-bootstrap`, which runs the same setup and returns an aggregate non-zero status when any step fails.
-- `readiness marker`: a digest-named file under the current worktree's Git metadata; it is not a repository-tracked file.
+- `readiness marker`: a digest-named file under the current worktree's Git metadata; it is not a repository-tracked file and is trusted only after local Bun directories and offline Cargo metadata checks pass.
 - Interface: `lefthook.yml` `post-checkout`, `just worktree-bootstrap`, and `scripts/test-worktree-bootstrap.sh`.
 
 ## Requirements
@@ -48,7 +48,7 @@
 
 - Method: `bash scripts/test-worktree-bootstrap.sh`.
 - covers: `REQ-WTB-001`, `REQ-WTB-002`, `REQ-WTB-003`, `REQ-WTB-004`.
-- Pass condition: a real linked worktree runs all five steps once, skips the same digest on repeat, handles missing historical scripts safely, distinguishes automatic and strict failures, and preserves custom hooks and local state.
+- Pass condition: a real linked worktree runs all five steps once, verifies cached Bun/Cargo readiness on repeat without refetching, serializes concurrent runs, handles missing historical scripts safely, distinguishes automatic and strict failures, and preserves custom hooks and local state.
 
 ### VER-WTB-002
 

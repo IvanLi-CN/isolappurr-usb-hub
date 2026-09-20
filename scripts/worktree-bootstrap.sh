@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2329
 set -u -o pipefail
 
 mode="automatic"
@@ -48,14 +49,23 @@ record_failure() {
   printf 'worktree bootstrap: %s\n' "$1" >&2
 }
 
+finish_failures() {
+  local status="${1:-${#failures[@]}}"
+  if [[ "$mode" == "automatic" ]]; then
+    printf 'warning: automatic bootstrap completed with %d warning(s); run just worktree-bootstrap for strict repair\n' "${#failures[@]}" >&2
+    exit 0
+  fi
+  printf 'worktree bootstrap: %d step(s) failed\n' "${#failures[@]}" >&2
+  exit "$status"
+}
+
 for manifest in "${manifest_files[@]}"; do
   if [[ ! -f "$manifest" ]]; then
     record_failure "required lockfile or manifest is missing: $manifest"
   fi
 done
 if (( ${#failures[@]} > 0 )); then
-  [[ "$mode" == "automatic" ]] && exit 0
-  exit "${#failures[@]}"
+  finish_failures
 fi
 
 hash_text() {
@@ -76,19 +86,65 @@ manifest_digest="$({
 git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
 if [[ -z "$git_dir" ]]; then
   record_failure "Git metadata directory could not be resolved"
-  [[ "$mode" == "automatic" ]] && exit 0
-  exit 2
+  finish_failures 2
 fi
 git_dir="$(cd "$git_dir" 2>/dev/null && pwd -P || true)"
 if [[ -z "$git_dir" ]]; then
   record_failure "Git metadata directory is not accessible"
-  [[ "$mode" == "automatic" ]] && exit 0
-  exit 2
+  finish_failures 2
 fi
 
 marker_dir="$git_dir/isolapurr-worktree-bootstrap"
 marker="$marker_dir/$manifest_digest"
-if [[ -f "$marker" && -d "$ROOT/node_modules" && -d "$ROOT/web/node_modules" ]]; then
+
+mkdir -p "$marker_dir" || {
+  record_failure "could not create Git metadata directory"
+  finish_failures 2
+}
+
+lock_dir="$marker_dir/.lock"
+lock_acquired=0
+release_lock() {
+  if (( lock_acquired == 1 )); then
+    rm -rf "$lock_dir"
+  fi
+}
+
+acquire_lock() {
+  local attempt lock_pid
+  for ((attempt = 1; attempt <= 120; attempt++)); do
+    if mkdir "$lock_dir" 2>/dev/null; then
+      printf '%s\n' "$$" > "$lock_dir/pid"
+      lock_acquired=1
+      return 0
+    fi
+    lock_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+    if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
+      rm -rf "$lock_dir"
+      continue
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+if ! acquire_lock; then
+  record_failure "timed out waiting for another bootstrap run"
+  finish_failures 75
+fi
+trap release_lock EXIT
+
+cargo_cache_ready() {
+  local manifest
+  for manifest in Cargo.toml tools/isolapurr-host/Cargo.toml desktop/src-tauri/Cargo.toml; do
+    "$CARGO_BIN" metadata --locked --offline --format-version 1 --manifest-path "$manifest" >/dev/null 2>&1 || return 1
+  done
+}
+
+if [[ -f "$marker" \
+  && -d "$ROOT/node_modules/.bin" \
+  && -d "$ROOT/web/node_modules/.bin" ]] \
+  && cargo_cache_ready; then
   printf 'worktree bootstrap: manifest %s is already ready\n' "$manifest_digest"
   exit 0
 fi
@@ -142,12 +198,7 @@ if (( ${#failures[@]} == 0 )); then
 fi
 
 if (( ${#failures[@]} > 0 )); then
-  if [[ "$mode" == "automatic" ]]; then
-    printf 'warning: automatic bootstrap completed with %d warning(s); run just worktree-bootstrap for strict repair\n' "${#failures[@]}" >&2
-    exit 0
-  fi
-  printf 'worktree bootstrap: %d step(s) failed\n' "${#failures[@]}" >&2
-  exit "${#failures[@]}"
+  finish_failures
 fi
 
 exit 0

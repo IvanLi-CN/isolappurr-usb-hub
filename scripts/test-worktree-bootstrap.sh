@@ -56,7 +56,8 @@ git -C "$fixture" commit -qm "test: add bootstrap fixture"
 current_commit="$(git -C "$fixture" rev-parse HEAD)"
 
 fake_tool="$tmp_root/fake-tool"
-printf '%s\n' '#!/usr/bin/env bash' 'set -u' 'tool="${0##*/}"' 'printf "%s\\t%s\\t%s\\n" "$tool" "$PWD" "$*" >> "$BOOTSTRAP_LOG"' 'if [[ "${FAIL_MODE:-0}" == "1" ]]; then exit 23; fi' 'if [[ "$tool" == "bun" ]]; then mkdir -p "$PWD/node_modules"; fi' 'exit 0' > "$fake_tool"
+# shellcheck disable=SC2016
+printf '%s\n' '#!/usr/bin/env bash' 'set -u' 'tool="${0##*/}"' 'printf "%s\\t%s\\t%s\\n" "$tool" "$PWD" "$*" >> "$BOOTSTRAP_LOG"' 'if [[ "${SLEEP_MODE:-0}" == "1" ]]; then sleep 0.2; fi' 'if [[ "${FAIL_MODE:-0}" == "1" ]]; then exit 23; fi' 'if [[ "$tool" == "bun" ]]; then mkdir -p "$PWD/node_modules/.bin"; fi' 'exit 0' > "$fake_tool"
 chmod +x "$fake_tool"
 ln -s "$fake_tool" "$fake_bin/bun"
 ln -s "$fake_tool" "$fake_bin/cargo"
@@ -70,6 +71,10 @@ git -C "$fixture" worktree add --detach "$linked" "$current_commit" >/dev/null
 
 call_count="$(wc -l < "$log_file" | tr -d ' ')"
 assert_equal "$call_count" "5" "first linked checkout did not run all five dependency steps"
+fetch_count="$(grep -c $'\tfetch ' "$log_file" || true)"
+install_count="$(grep -c $'\tinstall ' "$log_file" || true)"
+assert_equal "$fetch_count" "3" "first linked checkout did not run all Cargo fetch steps"
+assert_equal "$install_count" "2" "first linked checkout did not run both Bun install steps"
 linked_git_dir="$(git -C "$linked" rev-parse --git-dir)"
 marker_count="$(find "$linked_git_dir/isolapurr-worktree-bootstrap" -maxdepth 1 -type f -print 2>/dev/null | wc -l | tr -d ' ')"
 [[ "$marker_count" == "1" ]] || fail "first linked checkout did not create one readiness marker"
@@ -77,13 +82,41 @@ marker_count="$(find "$linked_git_dir/isolapurr-worktree-bootstrap" -maxdepth 1 
 before_repeat="$call_count"
 git -C "$linked" switch -c repeat >/dev/null
 after_repeat="$(wc -l < "$log_file" | tr -d ' ')"
-assert_equal "$after_repeat" "$before_repeat" "repeat checkout reran a ready manifest"
+repeat_fetch_count="$(grep -c $'\tfetch ' "$log_file" || true)"
+repeat_install_count="$(grep -c $'\tinstall ' "$log_file" || true)"
+assert_equal "$repeat_fetch_count" "$fetch_count" "repeat checkout reran Cargo fetch"
+assert_equal "$repeat_install_count" "$install_count" "repeat checkout reran Bun install"
+[[ "$after_repeat" -gt "$before_repeat" ]] || fail "repeat checkout did not verify cached Cargo metadata"
 
 historical_commit="$(git -C "$fixture" rev-list --max-parents=0 HEAD)"
 git -C "$linked" checkout "$historical_commit" >/dev/null
-after_historical="$(wc -l < "$log_file" | tr -d ' ')"
-assert_equal "$after_historical" "$after_repeat" "historical revision executed bootstrap steps"
+after_historical_fetch="$(grep -c $'\tfetch ' "$log_file" || true)"
+assert_equal "$after_historical_fetch" "$fetch_count" "historical revision executed bootstrap steps"
 git -C "$linked" checkout "$current_commit" >/dev/null
+
+rm -rf "$linked/node_modules" "$linked/web/node_modules"
+find "$linked_git_dir/isolapurr-worktree-bootstrap" -type f -delete
+export SLEEP_MODE=1
+(cd "$linked" && bash scripts/worktree-bootstrap.sh --strict > "$tmp_root/concurrent-1.out" 2>&1; printf '%s\n' "$?" > "$tmp_root/concurrent-1.rc") &
+first_pid=$!
+(cd "$linked" && bash scripts/worktree-bootstrap.sh --strict > "$tmp_root/concurrent-2.out" 2>&1; printf '%s\n' "$?" > "$tmp_root/concurrent-2.rc") &
+second_pid=$!
+wait "$first_pid"
+wait "$second_pid"
+unset SLEEP_MODE
+[[ "$(< "$tmp_root/concurrent-1.rc")" == "0" ]] || fail "first concurrent bootstrap failed"
+[[ "$(< "$tmp_root/concurrent-2.rc")" == "0" ]] || fail "second concurrent bootstrap failed"
+concurrent_fetch_count="$(grep -c $'\tfetch ' "$log_file" || true)"
+concurrent_install_count="$(grep -c $'\tinstall ' "$log_file" || true)"
+assert_equal "$concurrent_fetch_count" "$((fetch_count + 3))" "concurrent bootstrap duplicated Cargo fetch"
+assert_equal "$concurrent_install_count" "$((install_count + 2))" "concurrent bootstrap duplicated Bun install"
+
+mv "$linked/web/bun.lock" "$linked/web/bun.lock.missing"
+early_output="$(cd "$linked" && bash scripts/worktree-bootstrap.sh --automatic 2>&1)"
+early_status=$?
+assert_equal "$early_status" "0" "automatic missing-manifest failure did not return success"
+[[ "$early_output" == *"warning"* ]] || fail "automatic missing-manifest failure did not print a warning"
+mv "$linked/web/bun.lock.missing" "$linked/web/bun.lock"
 
 printf '%s\n' local-env > "$linked/.env"
 printf '%s\n' local-port > "$linked/.esp32-port"
