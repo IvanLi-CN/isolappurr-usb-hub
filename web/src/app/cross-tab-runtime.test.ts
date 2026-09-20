@@ -86,6 +86,18 @@ function installMockWindow() {
     configurable: true,
     value: undefined,
   });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      locks: {
+        request: async <T>(
+          _name: string,
+          _options: { mode: "exclusive" },
+          callback: () => Promise<T>,
+        ) => callback(),
+      },
+    },
+  });
 }
 
 describe("CrossTabRuntimeCoordinator", () => {
@@ -96,15 +108,18 @@ describe("CrossTabRuntimeCoordinator", () => {
   afterEach(() => {
     Reflect.deleteProperty(globalThis, "window");
     Reflect.deleteProperty(globalThis, "BroadcastChannel");
+    Reflect.deleteProperty(globalThis, "navigator");
   });
 
-  test("elects one leader and keeps later tabs as followers", () => {
+  test("elects one leader and keeps later tabs as followers", async () => {
     const leader = new CrossTabRuntimeCoordinator();
     leader.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(leader.getLeaseState().role).toBe("leader");
 
     const follower = new CrossTabRuntimeCoordinator();
     follower.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(follower.getLeaseState().role).toBe("follower");
     expect(follower.getLeaseState().leaderTabId).toBe(
       leader.getLeaseState().leaderTabId,
@@ -284,12 +299,13 @@ describe("CrossTabRuntimeCoordinator", () => {
     unsubscribeSecondary();
   });
 
-  test("isolates demo and live runtime scopes", () => {
+  test("isolates demo and live runtime scopes", async () => {
     const liveLeader = new CrossTabRuntimeCoordinator(LIVE_RUNTIME_SCOPE);
     liveLeader.start();
 
     const demoLeader = new CrossTabRuntimeCoordinator(DEMO_RUNTIME_SCOPE);
     demoLeader.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(liveLeader.getLeaseState().role).toBe("leader");
     expect(demoLeader.getLeaseState().role).toBe("leader");

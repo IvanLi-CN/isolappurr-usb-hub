@@ -53,6 +53,21 @@ export function crossTabRuntimeTimeoutResult<T>(method: string): Result<T> {
   };
 }
 
+export function fenceRuntimeMutationResult<T>(
+  result: Result<T>,
+  hasCurrentLease: boolean,
+): Result<T> {
+  if (hasCurrentLease) {
+    return result;
+  }
+  return {
+    ok: false,
+    error: takeoverRecoveryError(
+      "This browser tab lost control while the device request was running. Take over control and retry.",
+    ),
+  };
+}
+
 export type ChannelRuntime = {
   lastOkAt: number | null;
   lastError: DeviceApiError | null;

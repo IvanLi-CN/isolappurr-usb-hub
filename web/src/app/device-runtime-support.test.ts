@@ -6,6 +6,7 @@ import {
   clearPowerLockResume,
   crossTabRuntimeTimeoutResult,
   type DeviceRuntime,
+  fenceRuntimeMutationResult,
   getStablePowerLockOwner,
   markPowerLockHeld,
   resolveActiveDeviceTransport,
@@ -42,6 +43,26 @@ describe("crossTabRuntimeTimeoutResult", () => {
         kind: "busy",
         message:
           "The active browser tab did not confirm savePowerConfig. Take over control and retry.",
+        retryable: true,
+        recovery: "takeover",
+      },
+    });
+  });
+});
+
+describe("fenceRuntimeMutationResult", () => {
+  test("turns an in-flight mutation result into takeover recovery after lease loss", () => {
+    expect(
+      fenceRuntimeMutationResult(
+        { ok: true, value: { accepted: true } },
+        false,
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        kind: "busy",
+        message:
+          "This browser tab lost control while the device request was running. Take over control and retry.",
         retryable: true,
         recovery: "takeover",
       },

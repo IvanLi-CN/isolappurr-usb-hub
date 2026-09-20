@@ -65,6 +65,7 @@ import {
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
   type DeviceTransport,
+  fenceRuntimeMutationResult,
   getStablePowerLockOwner,
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
@@ -1069,6 +1070,15 @@ export function DeviceRuntimeProvider({
           method,
           params,
         );
+        const hasCurrentLease = coordinator.hasCurrentLease();
+        if (RUNTIME_MUTATION_METHODS.has(method) && !hasCurrentLease) {
+          const fencedResult = fenceRuntimeMutationResult(
+            candidate,
+            hasCurrentLease,
+          );
+          markChannelResult(deviceId, transport, fencedResult);
+          return fencedResult;
+        }
         markChannelResult(deviceId, transport, candidate);
         if (method === "identify") {
           res = candidate;

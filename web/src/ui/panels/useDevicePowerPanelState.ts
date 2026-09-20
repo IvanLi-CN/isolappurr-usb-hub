@@ -824,6 +824,16 @@ export function useDevicePowerPanelState({
         });
         return;
       }
+      if (outputModeConflict) {
+        pushToast({
+          id: `${deviceKey}:output-mode-conflict`,
+          message:
+            "Output mode changed in another tab. Refresh the page before saving this draft.",
+          variant: "warning",
+          durationMs: 3200,
+        });
+        return;
+      }
       const latestForm = formRef.current;
       if (latestForm) {
         await submit(latestForm, "auto");
@@ -831,7 +841,13 @@ export function useDevicePowerPanelState({
     } finally {
       retryInFlightRef.current = false;
     }
-  }, [deviceKey, pushToast, requestRuntimeTakeover, submit]);
+  }, [
+    deviceKey,
+    outputModeConflict,
+    pushToast,
+    requestRuntimeTakeover,
+    submit,
+  ]);
 
   useEffect(() => {
     retrySaveRef.current = () => {

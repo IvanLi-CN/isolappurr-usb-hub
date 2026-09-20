@@ -135,6 +135,23 @@ const MESSAGE_STORAGE_KEY_PREFIX = "isolapurr.runtime.message.v1";
 const LEASE_TTL_MS = 15_000;
 const HEARTBEAT_INTERVAL_MS = 5_000;
 
+type RuntimeLockManager = {
+  request: <T>(
+    name: string,
+    options: { mode: "exclusive" },
+    callback: () => Promise<T>,
+  ) => Promise<T>;
+};
+
+function getRuntimeLockManager(): RuntimeLockManager | null {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+  return (
+    (navigator as Navigator & { locks?: RuntimeLockManager }).locks ?? null
+  );
+}
+
 const MUTATION_METHODS = new Set<RuntimeRpcMethod>([
   "saveWifiConfig",
   "clearWifiConfig",
@@ -328,7 +345,10 @@ export class CrossTabRuntimeCoordinator {
   }
 
   hasCurrentLease(): boolean {
-    if (this.leaseState.role === "unsupported") {
+    if (
+      typeof window === "undefined" ||
+      typeof window.localStorage === "undefined"
+    ) {
       return true;
     }
     const lease = this.readLease();
@@ -564,11 +584,7 @@ export class CrossTabRuntimeCoordinator {
       preferAcquire &&
       (isLeaseExpired(lease) || lease?.tabId === this.tabId)
     ) {
-      const hasWebLocks = Boolean(
-        typeof navigator !== "undefined" &&
-          (navigator as Navigator & { locks?: unknown }).locks,
-      );
-      if (!hasWebLocks) {
+      if (!getRuntimeLockManager() && lease?.tabId === this.tabId) {
         lease = this.writeLease();
       }
     }
@@ -578,6 +594,15 @@ export class CrossTabRuntimeCoordinator {
         currentTabId: this.tabId,
         leaderTabId: lease.tabId,
         leaseExpiresAt: lease.expiresAt,
+      });
+      return;
+    }
+    if (!lease && !getRuntimeLockManager()) {
+      this.setLeaseState({
+        role: "unsupported",
+        currentTabId: this.tabId,
+        leaderTabId: null,
+        leaseExpiresAt: null,
       });
       return;
     }
@@ -608,25 +633,19 @@ export class CrossTabRuntimeCoordinator {
       this.writeLease();
       return this.readLease();
     };
-    const locks = (typeof navigator !== "undefined" ? navigator : null) as
-      | (Navigator & {
-          locks?: {
-            request: <T>(
-              name: string,
-              options: { mode: "exclusive" },
-              callback: () => Promise<T>,
-            ) => Promise<T>;
-          };
-        })
-      | null;
-    if (locks?.locks) {
-      return locks.locks.request(
+    const locks = getRuntimeLockManager();
+    if (locks) {
+      return locks.request(
         `isolapurr.runtime.lease.${this.channelName}`,
         { mode: "exclusive" },
         acquire,
       );
     }
-    return acquire();
+    if (current && current.tabId === this.tabId && !isLeaseExpired(current)) {
+      this.writeLease();
+      return this.readLease();
+    }
+    return current;
   }
 
   private notifyMessageListeners(message: RuntimeChannelMessage): void {
