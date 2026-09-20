@@ -58,6 +58,7 @@
 |-------|-----------|----------------|------|-----------|-------|
 | Brand marketing asset themes | active | implemented | `brand-marketing-asset-themes/SPEC.md` | - | Reproducible light and dark poster/social marketing exports |
 | Device display name | active | implemented | `device-display-name/SPEC.md` | - | Hardware-owned UTF-8 label with stable device identity and cross-transport client fallback |
+| Worktree bootstrap | active | implemented | `worktree-bootstrap/SPEC.md` | - | Lefthook linked-worktree dependency recovery with required smoke coverage |
 
 ## Legacy Index
 

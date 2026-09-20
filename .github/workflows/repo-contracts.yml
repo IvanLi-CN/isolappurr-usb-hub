@@ -45,3 +45,25 @@ jobs:
 
       - name: Run contract tests
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .github/scripts -p "test_*.py"
+
+  worktree-bootstrap:
+    name: Repo Contracts / Worktree bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install verified Lefthook
+        env:
+          LEFTHOOK_VERSION: 2.1.14
+          LEFTHOOK_SHA256: 3a00d7c023a701a72ee071a91d4c9f347a862fcd68295d8d8dffd02f92d81ddf
+        run: |
+          asset="lefthook_${LEFTHOOK_VERSION}_Linux_x86_64"
+          url="https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/${asset}"
+          curl --fail --location --silent --show-error "$url" --output "$RUNNER_TEMP/lefthook"
+          printf '%s  %s\n' "$LEFTHOOK_SHA256" "$RUNNER_TEMP/lefthook" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/lefthook"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Run linked-worktree smoke
+        run: bash scripts/test-worktree-bootstrap.sh

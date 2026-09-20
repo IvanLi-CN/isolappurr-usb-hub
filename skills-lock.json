@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "worktree-bootstrap": {
+      "source": "IvanLi-CN/style-playbook-skills",
+      "sourceType": "github",
+      "skillPath": "skills/policies/worktree-bootstrap/SKILL.md",
+      "computedHash": "47ebb775edf36055e5aa8ea8543403418a223d38a4e8a744bba2337c59229af1"
+    }
+  }
+}

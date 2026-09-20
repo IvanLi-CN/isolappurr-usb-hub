@@ -257,4 +257,10 @@ desktop-icons:
 hooks-install:
 	lefthook install
 
+worktree-bootstrap:
+	bash scripts/worktree-bootstrap.sh --strict
+
+test-worktree-bootstrap:
+	bash scripts/test-worktree-bootstrap.sh
+
 all: build web-build

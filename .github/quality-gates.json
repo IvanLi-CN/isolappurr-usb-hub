@@ -28,7 +28,8 @@
           "Desktop / windows": 15368,
           "Desktop / linux": 15368,
           "Pages / PR build": 15368,
-          "Repo Contracts / Python contract tests": 15368
+          "Repo Contracts / Python contract tests": 15368,
+          "Repo Contracts / Worktree bootstrap": 15368
         }
       }
     }
@@ -57,7 +58,8 @@
     "Desktop / windows",
     "Desktop / linux",
     "Pages / PR build",
-    "Repo Contracts / Python contract tests"
+    "Repo Contracts / Python contract tests",
+    "Repo Contracts / Worktree bootstrap"
   ],
   "informational_checks": [],
   "waivers": [],
@@ -97,7 +99,10 @@
     },
     {
       "workflow": "Repo Contracts",
-      "jobs": ["Repo Contracts / Python contract tests"]
+      "jobs": [
+        "Repo Contracts / Python contract tests",
+        "Repo Contracts / Worktree bootstrap"
+      ]
     }
   ],
   "expected_main_workflows": [
@@ -128,7 +133,10 @@
     },
     {
       "workflow": "Repo Contracts",
-      "jobs": ["Repo Contracts / Python contract tests"]
+      "jobs": [
+        "Repo Contracts / Python contract tests",
+        "Repo Contracts / Worktree bootstrap"
+      ]
     }
   ],
   "expected_release_workflows": [
