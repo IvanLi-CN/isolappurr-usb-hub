@@ -76,12 +76,19 @@ hash_text() {
   fi
 }
 
-if ! manifest_digest="$({
-  for manifest in "${manifest_files[@]}"; do
-    printf '%s ' "$manifest"
-    git hash-object "$manifest"
-  done
-} | hash_text | awk '{print $1}')"; then
+manifest_hashes=""
+for manifest in "${manifest_files[@]}"; do
+  if ! manifest_hash="$(git hash-object "$manifest" 2>/dev/null)"; then
+    record_failure "could not hash manifest: $manifest"
+    finish_failures 2
+  fi
+  if [[ ! "$manifest_hash" =~ ^[[:xdigit:]]{40}$ ]]; then
+    record_failure "manifest hash is invalid: $manifest"
+    finish_failures 2
+  fi
+  manifest_hashes+="$manifest $manifest_hash"$'\n'
+done
+if ! manifest_digest="$(printf '%s' "$manifest_hashes" | hash_text | awk '{print $1}')"; then
   record_failure "could not calculate manifest digest"
   finish_failures 2
 fi
@@ -152,7 +159,10 @@ acquire_lock() {
     fi
     if ! kill -0 "$lock_pid" 2>/dev/null; then
       if [[ -d "$lock_dir" ]]; then
-        rm -rf "$lock_dir"
+        stale_lock_dir="$marker_dir/.stale-lock-$$-${RANDOM}"
+        if mv "$lock_dir" "$stale_lock_dir" 2>/dev/null; then
+          rm -rf "$stale_lock_dir"
+        fi
       elif [[ "$(cat "$lock_dir" 2>/dev/null || true)" == "$lock_snapshot" ]]; then
         rm -f "$lock_dir"
       fi
@@ -176,10 +186,11 @@ cargo_cache_ready() {
   done
 }
 
-if [[ -f "$marker" \
-  && -d "$ROOT/node_modules/.bin" \
-  && -d "$ROOT/web/node_modules/.bin" ]] \
-  && cargo_cache_ready; then
+ bun_dependencies_ready() {
+  [[ -e "$ROOT/node_modules/.bin/commitlint" && -e "$ROOT/web/node_modules/.bin/vite" ]]
+}
+
+if [[ -f "$marker" ]] && bun_dependencies_ready && cargo_cache_ready; then
   printf 'worktree bootstrap: manifest %s is already ready\n' "$manifest_digest"
   exit 0
 fi
@@ -220,6 +231,11 @@ run_step "Web Bun dependencies" run_web_bun
 run_step "firmware Cargo cache" run_firmware_cargo
 run_step "host-tools Cargo cache" run_host_tools_cargo
 run_step "desktop Cargo cache" run_desktop_cargo
+
+if (( ${#failures[@]} == 0 )); then
+  bun_dependencies_ready || record_failure "Bun dependency sentinels are missing after install"
+  cargo_cache_ready || record_failure "Cargo metadata is not ready after fetch"
+fi
 
 if (( ${#failures[@]} == 0 )); then
   mkdir -p "$marker_dir"

@@ -19,5 +19,6 @@ commit-msg:
 post-checkout:
   commands:
     worktree-bootstrap:
-      run: bash scripts/run-lefthook-hook.sh post-checkout {1} {2} {3}
+      run: >-
+        bash -c 'if [[ -f scripts/run-lefthook-hook.sh ]]; then bash scripts/run-lefthook-hook.sh post-checkout "$1" "$2" "$3"; fi' -- {1} {2} {3}
       fail_text: "linked worktree bootstrap was skipped or reported a warning; use just worktree-bootstrap for strict repair"

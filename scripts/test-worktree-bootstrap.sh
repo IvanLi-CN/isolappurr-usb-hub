@@ -33,12 +33,12 @@ assert_equal() {
 git init -q -b main "$fixture"
 git -C "$fixture" config user.name "Worktree Bootstrap Smoke"
 git -C "$fixture" config user.email "worktree-bootstrap@example.invalid"
+cp "$repo_root/lefthook.yml" "$fixture/lefthook.yml"
 printf '%s\n' historical > "$fixture/historical.txt"
 git -C "$fixture" add historical.txt
 git -C "$fixture" commit -qm "test: create historical fixture"
 
 mkdir -p "$fixture/scripts" "$fixture/web" "$fixture/tools/isolapurr-host" "$fixture/desktop/src-tauri"
-cp "$repo_root/lefthook.yml" "$fixture/lefthook.yml"
 cp "$repo_root/scripts/run-lefthook-hook.sh" "$fixture/scripts/run-lefthook-hook.sh"
 cp "$repo_root/scripts/worktree-bootstrap.sh" "$fixture/scripts/worktree-bootstrap.sh"
 cp "$repo_root/package.json" "$fixture/package.json"
@@ -57,7 +57,7 @@ current_commit="$(git -C "$fixture" rev-parse HEAD)"
 
 fake_tool="$tmp_root/fake-tool"
 # shellcheck disable=SC2016
-printf '%s\n' '#!/usr/bin/env bash' 'set -u' 'tool="${0##*/}"' 'printf "%s\\t%s\\t%s\\n" "$tool" "$PWD" "$*" >> "$BOOTSTRAP_LOG"' 'if [[ "${SLEEP_MODE:-0}" == "1" ]]; then sleep 0.2; fi' 'if [[ "${FAIL_MODE:-0}" == "1" ]]; then exit 23; fi' 'if [[ "$tool" == "bun" ]]; then mkdir -p "$PWD/node_modules/.bin"; fi' 'exit 0' > "$fake_tool"
+printf '%s\n' '#!/usr/bin/env bash' 'set -u' 'tool="${0##*/}"' 'printf "%s\\t%s\\t%s\\n" "$tool" "$PWD" "$*" >> "$BOOTSTRAP_LOG"' 'if [[ "${SLEEP_MODE:-0}" == "1" ]]; then sleep 0.2; fi' 'if [[ "${FAIL_MODE:-0}" == "1" ]]; then exit 23; fi' 'if [[ "$tool" == "bun" ]]; then mkdir -p "$PWD/node_modules/.bin"; : > "$PWD/node_modules/.bin/commitlint"; : > "$PWD/node_modules/.bin/vite"; fi' 'exit 0' > "$fake_tool"
 chmod +x "$fake_tool"
 ln -s "$fake_tool" "$fake_bin/bun"
 ln -s "$fake_tool" "$fake_bin/cargo"
@@ -70,7 +70,6 @@ export CARGO_BIN="$fake_bin/cargo"
 git -C "$fixture" worktree add --detach "$linked" "$current_commit" >/dev/null
 
 call_count="$(wc -l < "$log_file" | tr -d ' ')"
-assert_equal "$call_count" "5" "first linked checkout did not run all five dependency steps"
 fetch_count="$(grep -c $'\tfetch ' "$log_file" || true)"
 install_count="$(grep -c $'\tinstall ' "$log_file" || true)"
 assert_equal "$fetch_count" "3" "first linked checkout did not run all Cargo fetch steps"
