@@ -111,6 +111,13 @@ concurrent_install_count="$(grep -c $'\tinstall ' "$log_file" || true)"
 assert_equal "$concurrent_fetch_count" "$((fetch_count + 3))" "concurrent bootstrap duplicated Cargo fetch"
 assert_equal "$concurrent_install_count" "$((install_count + 2))" "concurrent bootstrap duplicated Bun install"
 
+stale_lock="$linked_git_dir/isolapurr-worktree-bootstrap/.lock"
+mkdir "$stale_lock"
+stale_output="$(cd "$linked" && bash scripts/worktree-bootstrap.sh --strict 2>&1)"
+stale_status=$?
+assert_equal "$stale_status" "0" "stale lock without PID blocked strict repair"
+[[ "$stale_output" == *"already ready"* ]] || fail "stale lock recovery did not reach readiness marker"
+
 mv "$linked/web/bun.lock" "$linked/web/bun.lock.missing"
 early_output="$(cd "$linked" && bash scripts/worktree-bootstrap.sh --automatic 2>&1)"
 early_status=$?

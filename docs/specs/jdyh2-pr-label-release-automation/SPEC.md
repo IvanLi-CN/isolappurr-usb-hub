@@ -73,6 +73,7 @@
   - `Desktop / linux`
   - `Pages / PR build`
   - `Repo Contracts / Python contract tests`
+  - `Repo Contracts / Worktree bootstrap`
 - Required PR workflows must trigger on both `pull_request` and `merge_group`; they must not rely on top-level `paths` / `paths-ignore` filters to decide whether the required check exists.
 - Failure notification must call `IvanLi-CN/oidrune/.github/workflows/notify.yml@e48822f99c6402a753ed86557ea029754cbab20b`.
 - Failure notification caller jobs must grant `id-token: write`, must use Oidrune's default gateway by omitting `gateway_url` and `oidc_audience`, and must not pass the legacy Telegram secret.

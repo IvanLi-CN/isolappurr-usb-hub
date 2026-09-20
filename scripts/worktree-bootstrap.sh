@@ -76,12 +76,19 @@ hash_text() {
   fi
 }
 
-manifest_digest="$({
+if ! manifest_digest="$({
   for manifest in "${manifest_files[@]}"; do
     printf '%s ' "$manifest"
     git hash-object "$manifest"
   done
-} | hash_text | awk '{print $1}')"
+} | hash_text | awk '{print $1}')"; then
+  record_failure "could not calculate manifest digest"
+  finish_failures 2
+fi
+if [[ ! "$manifest_digest" =~ ^[[:xdigit:]]{64}$ ]]; then
+  record_failure "manifest digest is invalid"
+  finish_failures 2
+fi
 
 git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
 if [[ -z "$git_dir" ]]; then
@@ -119,6 +126,18 @@ acquire_lock() {
       return 0
     fi
     lock_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+    if [[ -z "$lock_pid" ]]; then
+      if (( attempt > 4 )); then
+        rm -rf "$lock_dir"
+        continue
+      fi
+      sleep 0.25
+      continue
+    fi
+    if [[ ! "$lock_pid" =~ ^[0-9]+$ ]]; then
+      rm -rf "$lock_dir"
+      continue
+    fi
     if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
       rm -rf "$lock_dir"
       continue
