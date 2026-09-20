@@ -548,16 +548,6 @@ export class CrossTabRuntimeCoordinator {
         return;
       }
 
-      if ((!lease || isLeaseExpired(lease)) && !getRuntimeLockManager()) {
-        this.setLeaseState({
-          role: "unsupported",
-          currentTabId: this.tabId,
-          leaderTabId: null,
-          leaseExpiresAt: null,
-        });
-        return;
-      }
-
       this.setLeaseState({
         role: "follower",
         currentTabId: this.tabId,
@@ -655,7 +645,11 @@ export class CrossTabRuntimeCoordinator {
       this.writeLease();
       return this.readLease();
     }
-    return current;
+    this.writeLease();
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 50);
+    });
+    return this.readLease();
   }
 
   private notifyMessageListeners(message: RuntimeChannelMessage): void {

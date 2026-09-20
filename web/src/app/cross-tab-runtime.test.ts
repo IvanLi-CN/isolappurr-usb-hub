@@ -191,17 +191,27 @@ describe("CrossTabRuntimeCoordinator", () => {
     ).toHaveLength(1);
   });
 
-  test("does not claim a leader without an atomic browser lock", async () => {
+  test("settles one leader through the storage fallback", async () => {
     const navigatorWithLocks = globalThis.navigator as Navigator & {
       locks?: unknown;
     };
     navigatorWithLocks.locks = undefined;
-    const coordinator = new CrossTabRuntimeCoordinator();
-    coordinator.start();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const first = new CrossTabRuntimeCoordinator();
+    const second = new CrossTabRuntimeCoordinator();
+    first.start();
+    second.start();
+    await Promise.all([first.requestTakeover(), second.requestTakeover()]);
 
-    expect(coordinator.getLeaseState().role).toBe("unsupported");
-    expect(coordinator.hasCurrentLease()).toBeFalse();
+    expect(
+      [first.getLeaseState().role, second.getLeaseState().role].filter(
+        (role) => role === "leader",
+      ),
+    ).toHaveLength(1);
+    expect(
+      [first.getLeaseState().role, second.getLeaseState().role].filter(
+        (role) => role === "follower",
+      ),
+    ).toHaveLength(1);
   });
 
   test("classifies runtime RPC methods into query and mutation kinds", () => {
