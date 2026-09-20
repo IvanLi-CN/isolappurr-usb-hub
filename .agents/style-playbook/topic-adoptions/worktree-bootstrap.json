@@ -2,7 +2,7 @@
   "evidence": [
     "docs/specs/worktree-bootstrap/SPEC.md"
   ],
-  "implementation_commit": "56ef3336e215629b71f26f1959add71314d4ad14",
+  "implementation_commit": "d88ceb9152d7b06bdbab624750ac38425b2f5281",
   "playbook_commit": "be09e7e4fbcb3dfbe253407f95a89e487b377402",
   "policy_observations": [
     {
