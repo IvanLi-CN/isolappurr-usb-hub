@@ -111,35 +111,51 @@ mkdir -p "$marker_dir" || {
 
 lock_dir="$marker_dir/.lock"
 lock_acquired=0
+lock_owner_file="$marker_dir/.lock-owner-$$-${RANDOM}"
+lock_content="$$ ${RANDOM}"
 release_lock() {
   if (( lock_acquired == 1 )); then
-    rm -rf "$lock_dir"
+    if [[ -f "$lock_dir" && "$(cat "$lock_dir" 2>/dev/null || true)" == "$lock_content" ]]; then
+      rm -f "$lock_dir"
+    fi
+    rm -f "$lock_owner_file"
   fi
 }
 
 acquire_lock() {
-  local attempt lock_pid
+  local attempt lock_pid lock_snapshot
+  printf '%s\n' "$lock_content" > "$lock_owner_file"
   for ((attempt = 1; attempt <= 120; attempt++)); do
-    if mkdir "$lock_dir" 2>/dev/null; then
-      printf '%s\n' "$$" > "$lock_dir/pid"
+    if ln "$lock_owner_file" "$lock_dir" 2>/dev/null; then
       lock_acquired=1
       return 0
     fi
-    lock_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+
+    lock_pid=""
+    lock_snapshot=""
+    if [[ -d "$lock_dir" ]]; then
+      lock_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+    elif [[ -f "$lock_dir" ]]; then
+      lock_snapshot="$(cat "$lock_dir" 2>/dev/null || true)"
+      lock_pid="${lock_snapshot%% *}"
+    else
+      sleep 0.25
+      continue
+    fi
     if [[ -z "$lock_pid" ]]; then
-      if (( attempt > 4 )); then
-        rm -rf "$lock_dir"
-        continue
-      fi
       sleep 0.25
       continue
     fi
     if [[ ! "$lock_pid" =~ ^[0-9]+$ ]]; then
-      rm -rf "$lock_dir"
+      sleep 0.25
       continue
     fi
-    if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
-      rm -rf "$lock_dir"
+    if ! kill -0 "$lock_pid" 2>/dev/null; then
+      if [[ -d "$lock_dir" ]]; then
+        rm -rf "$lock_dir"
+      elif [[ "$(cat "$lock_dir" 2>/dev/null || true)" == "$lock_snapshot" ]]; then
+        rm -f "$lock_dir"
+      fi
       continue
     fi
     sleep 0.25

@@ -19,7 +19,7 @@
 
 - `bash scripts/test-worktree-bootstrap.sh`
 - `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .github/scripts -p "test_*.py"`
-- `python3 bin/spec_contract_check.py --path docs/specs/worktree-bootstrap/SPEC.md`
+- `lefthook validate`
 
 ## Rollout Facts
 

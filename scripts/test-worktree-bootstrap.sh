@@ -113,6 +113,7 @@ assert_equal "$concurrent_install_count" "$((install_count + 2))" "concurrent bo
 
 stale_lock="$linked_git_dir/isolapurr-worktree-bootstrap/.lock"
 mkdir "$stale_lock"
+printf '%s\n' 2147483647 > "$stale_lock/pid"
 stale_output="$(cd "$linked" && bash scripts/worktree-bootstrap.sh --strict 2>&1)"
 stale_status=$?
 assert_equal "$stale_status" "0" "stale lock without PID blocked strict repair"
