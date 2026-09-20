@@ -1,0 +1,16 @@
+{
+  "evidence": [
+    "docs/specs/worktree-bootstrap/SPEC.md"
+  ],
+  "implementation_commit": "d2921c1f286e401f9e38ecbd7c253cae06f2b8b2",
+  "playbook_commit": "be09e7e4fbcb3dfbe253407f95a89e487b377402",
+  "policy_observations": [
+    {
+      "reason": "package-and-lock-verified",
+      "slug": "worktree-bootstrap",
+      "state": "installed"
+    }
+  ],
+  "schema_version": 1,
+  "topic": "worktree-bootstrap"
+}
