@@ -37,6 +37,7 @@ import {
   type DeviceRuntime,
   type DeviceTransport,
   getStablePowerLockOwner,
+  takeoverRecoveryError,
 } from "./device-runtime-support";
 
 type UpdateRuntimeState = Dispatch<
@@ -417,7 +418,7 @@ export function createDeviceRuntimeActions({
     owner: number,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<PowerConfigResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("savePowerConfig", [deviceId, input, owner]);
     }
     return runSharedMutation({
@@ -943,6 +944,24 @@ export function createDeviceRuntimeActions({
     message: Extract<RuntimeChannelMessage, { type: "runtime-rpc-request" }>,
   ) => {
     const deviceId = String(message.args[0] ?? "");
+    if (
+      message.kind === "mutation" &&
+      coordinationRoleRef.current === "follower"
+    ) {
+      coordinator.postMessage({
+        type: "runtime-rpc-response",
+        originTabId: currentTabId,
+        targetTabId: message.originTabId,
+        requestId: message.requestId,
+        result: {
+          ok: false,
+          error: takeoverRecoveryError(
+            "The active browser tab no longer controls the device. Take over control and retry.",
+          ),
+        },
+      });
+      return;
+    }
     try {
       let result:
         | Result<{ ok: true }>

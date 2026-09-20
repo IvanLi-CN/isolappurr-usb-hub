@@ -35,6 +35,24 @@ import type { CrossTabRuntimeLeaseState } from "./cross-tab-runtime";
 export type ConnectionState = "online" | "offline" | "unknown";
 export type DeviceTransport = "http" | "web_serial" | "local_usb";
 
+export function takeoverRecoveryError(message: string): DeviceApiError {
+  return {
+    kind: "busy",
+    message,
+    retryable: true,
+    recovery: "takeover",
+  };
+}
+
+export function crossTabRuntimeTimeoutResult<T>(method: string): Result<T> {
+  return {
+    ok: false,
+    error: takeoverRecoveryError(
+      `The active browser tab did not confirm ${method}. Take over control and retry.`,
+    ),
+  };
+}
+
 export type ChannelRuntime = {
   lastOkAt: number | null;
   lastError: DeviceApiError | null;
@@ -129,7 +147,7 @@ export type DeviceRuntimeContextValue = {
   displayName: (deviceId: string) => string;
   displayNameInfo: (deviceId: string) => DeviceInfoResponse | null;
   powerLockOwner: (deviceId: string) => number;
-  requestControlTakeover: () => void;
+  requestControlTakeover: () => CrossTabRuntimeLeaseState;
   refreshDevice: (deviceId: string) => Promise<void>;
   deviceInfo: (deviceId: string) => Promise<Result<DeviceInfoResponse>>;
   identify: (deviceId: string) => Promise<Result<IdentifyResponse>>;

@@ -38,6 +38,7 @@ export function DevicePowerPage() {
         coordination={runtime.coordination}
         canControlHardware={runtime.canControlHardware}
         powerLockOwner={runtime.powerLockOwner(deviceId)}
+        requestRuntimeTakeover={runtime.requestControlTakeover}
         clearIdleBiasCalibration={(owner) =>
           runtime.clearIdleBiasCalibration(deviceId, owner)
         }

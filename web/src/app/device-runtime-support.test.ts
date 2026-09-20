@@ -4,11 +4,13 @@ import {
   applyOptimisticPowerConfig,
   canResumePowerLock,
   clearPowerLockResume,
+  crossTabRuntimeTimeoutResult,
   type DeviceRuntime,
   getStablePowerLockOwner,
   markPowerLockHeld,
   resolveActiveDeviceTransport,
   resolveOrderedDeviceTransports,
+  takeoverRecoveryError,
 } from "./device-runtime-support";
 
 const STALE_LOCAL_USB_DEVICE = {
@@ -20,6 +22,32 @@ const STALE_LOCAL_USB_DEVICE = {
     localUsbPortPath: "/dev/cu.usbmodem21231401",
   },
 };
+
+describe("takeoverRecoveryError", () => {
+  test("marks cross-tab authority failures as manually recoverable", () => {
+    expect(takeoverRecoveryError("take over")).toEqual({
+      kind: "busy",
+      message: "take over",
+      retryable: true,
+      recovery: "takeover",
+    });
+  });
+});
+
+describe("crossTabRuntimeTimeoutResult", () => {
+  test("converts an RPC timeout into a retryable Result", () => {
+    expect(crossTabRuntimeTimeoutResult("savePowerConfig")).toEqual({
+      ok: false,
+      error: {
+        kind: "busy",
+        message:
+          "The active browser tab did not confirm savePowerConfig. Take over control and retry.",
+        retryable: true,
+        recovery: "takeover",
+      },
+    });
+  });
+});
 
 function runtimeWithVerifiedHttp(): DeviceRuntime {
   const now = Date.now();

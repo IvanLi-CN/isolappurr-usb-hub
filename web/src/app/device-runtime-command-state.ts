@@ -1,6 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
-import type { Result } from "../domain/deviceApi";
+import type { DeviceApiError, Result } from "../domain/deviceApi";
 import type { RuntimeRpcMethod } from "./cross-tab-runtime";
 import {
   type DeviceRuntime,
@@ -17,6 +17,7 @@ type CreateSharedMutationControllerParams = {
   createRpcRequestId: () => string;
   deviceMutationQueues: MutableRefObject<Record<string, Promise<void>>>;
   setRuntimeById: UpdateRuntimeState;
+  canInvokeMutation?: () => DeviceApiError | null;
 };
 
 type UpdateDeviceCommandParams = {
@@ -133,6 +134,7 @@ function finishDeviceCommandState({
 }
 
 export function createSharedMutationController({
+  canInvokeMutation,
   currentTabId,
   createRpcRequestId,
   deviceMutationQueues,
@@ -175,6 +177,18 @@ export function createSharedMutationController({
           state: "running",
           setRuntimeById,
         });
+        const authorizationError = canInvokeMutation?.() ?? null;
+        if (authorizationError) {
+          finishDeviceCommandState({
+            deviceId,
+            requestId,
+            succeeded: false,
+            incrementRevision: false,
+            errorMessage: authorizationError.message,
+            setRuntimeById,
+          });
+          return { ok: false, error: authorizationError };
+        }
         const result = await invoke();
         finishDeviceCommandState({
           deviceId,

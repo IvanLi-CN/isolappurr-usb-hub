@@ -51,6 +51,7 @@ export type DevicePowerPanelProps = {
   sharedPowerConfig: PowerConfigResponse | null;
   sharedIdleBiasSnapshot: IdleBiasResponse | null;
   sharedPdDiagnostics: PdDiagnosticsResponse | null;
+  requestRuntimeTakeover: () => CrossTabRuntimeLeaseState;
   loadPowerConfig: () => Promise<Result<PowerConfigResponse>>;
   loadIdleBias: () => Promise<Result<IdleBiasResponse>>;
   savePowerConfig: (
@@ -101,6 +102,7 @@ export function useDevicePowerPanelState({
   sharedPowerConfig,
   sharedIdleBiasSnapshot,
   sharedPdDiagnostics,
+  requestRuntimeTakeover,
   loadPowerConfig,
   loadIdleBias,
   savePowerConfig,
@@ -150,6 +152,8 @@ export function useDevicePowerPanelState({
   const outputModeDraftRef = useRef<OutputModeDraft | null>(null);
   const outputModeBaselineSignatureRef = useRef<string | null>(null);
   const outputModeConflictToastKeyRef = useRef<string | null>(null);
+  const retrySaveRef = useRef<() => void>(() => undefined);
+  const retryInFlightRef = useRef(false);
 
   const initializeLoadedConfig = useCallback(
     (nextConfig: PowerConfigResponse) => {
@@ -705,7 +709,24 @@ export function useDevicePowerPanelState({
       setSaveInFlight(true);
       setSlowSavePhase("idle");
       setError(null);
-      const res = await savePowerConfig(nextForm, ownerRef.current);
+      let res: Result<PowerConfigResponse>;
+      try {
+        res = await savePowerConfig(nextForm, ownerRef.current);
+      } catch (caught) {
+        res = {
+          ok: false,
+          error: {
+            kind: "api_error",
+            status: 500,
+            code: "power_save_failed",
+            message:
+              caught instanceof Error
+                ? caught.message
+                : "Power settings could not be saved.",
+            retryable: true,
+          },
+        };
+      }
       if (!mountedRef.current) {
         return;
       }
@@ -762,20 +783,59 @@ export function useDevicePowerPanelState({
           });
         }
       } else {
-        if (source === "auto") {
+        const takeoverRecovery =
+          res.error.kind === "busy" && res.error.recovery === "takeover";
+        if (source === "auto" || takeoverRecovery) {
           setAutoApplyFailed(true);
         }
         setError(res.error.message);
         pushToast({
-          message: res.error.message,
+          id: `${deviceKey}:power-save-failed`,
+          message: takeoverRecovery
+            ? "Power settings were not saved. Take over this browser and retry."
+            : res.error.message,
           variant: res.error.kind === "busy" ? "warning" : "error",
-          durationMs: 3200,
+          durationMs: takeoverRecovery ? Number.POSITIVE_INFINITY : 3200,
+          action: takeoverRecovery
+            ? { label: "Retry", onClick: () => retrySaveRef.current() }
+            : undefined,
         });
       }
       return res;
     },
-    [pushToast, savePowerConfig],
+    [deviceKey, pushToast, savePowerConfig],
   );
+
+  const retryPowerConfig = useCallback(async () => {
+    const retryForm = formRef.current;
+    if (!retryForm || retryInFlightRef.current) {
+      return;
+    }
+    retryInFlightRef.current = true;
+    try {
+      const lease = requestRuntimeTakeover();
+      if (lease.role !== "leader" && lease.role !== "unsupported") {
+        pushToast({
+          id: `${deviceKey}:power-save-failed`,
+          message:
+            "Another browser tab still controls the device. Retry after it releases control.",
+          variant: "warning",
+          durationMs: Number.POSITIVE_INFINITY,
+          action: { label: "Retry", onClick: () => retrySaveRef.current() },
+        });
+        return;
+      }
+      await submit(retryForm, "auto");
+    } finally {
+      retryInFlightRef.current = false;
+    }
+  }, [deviceKey, pushToast, requestRuntimeTakeover, submit]);
+
+  useEffect(() => {
+    retrySaveRef.current = () => {
+      void retryPowerConfig();
+    };
+  }, [retryPowerConfig]);
 
   const restoreDefaults = useCallback(async () => {
     setBusy(true);

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { expect, userEvent, within } from "@storybook/test";
+import { expect, userEvent, waitFor, within } from "@storybook/test";
 import { useState } from "react";
 
 import type { PdDiagnosticsResponse } from "../../domain/deviceApi";
@@ -34,15 +34,20 @@ const meta: Meta<typeof DevicePowerPanel> = {
     layout: "fullscreen",
   },
   decorators: [
-    (Story) => (
-      <ToastProvider>
-        <div className="min-h-screen bg-[var(--bg)] p-6">
-          <div className="mx-auto max-w-[1280px]">
-            <Story />
-          </div>
+    (Story, context) =>
+      context.parameters.skipToastProvider ? (
+        <div className="min-h-screen bg-[var(--bg)]">
+          <Story />
         </div>
-      </ToastProvider>
-    ),
+      ) : (
+        <ToastProvider>
+          <div className="min-h-screen bg-[var(--bg)] p-6">
+            <div className="mx-auto max-w-[1280px]">
+              <Story />
+            </div>
+          </div>
+        </ToastProvider>
+      ),
   ],
 };
 
@@ -103,6 +108,92 @@ export const Default: Story = {
       canvas.getByRole("button", { name: "Save and apply" }),
     ).toBeDisabled();
   },
+};
+
+const retryInitialConfig = {
+  ...controlledHereConfig,
+  capability: {
+    ...controlledHereConfig.capability,
+    pd: {
+      ...controlledHereConfig.capability.pd,
+      fixed_voltages_mv: [12000],
+    },
+  },
+};
+
+export const CrossTabSaveRetry: Story = {
+  render: (args) => {
+    const [savedConfig, setSavedConfig] = useState(retryInitialConfig);
+    const [attempts, setAttempts] = useState(0);
+    return (
+      <div
+        className="min-h-screen bg-[var(--bg)] p-6"
+        data-visual-evidence-surface
+      >
+        <div data-visual-evidence-target>
+          <ToastProvider>
+            <DevicePowerPanel
+              {...args}
+              sharedPowerConfig={savedConfig}
+              loadPowerConfig={() => ok(savedConfig)}
+              savePowerConfig={async (input) => {
+                setAttempts((current) => current + 1);
+                if (attempts === 0) {
+                  return {
+                    ok: false,
+                    error: {
+                      kind: "busy" as const,
+                      message:
+                        "The active browser tab did not confirm this change.",
+                      retryable: true as const,
+                      recovery: "takeover" as const,
+                    },
+                  };
+                }
+                const nextConfig = {
+                  ...savedConfig,
+                  capability: input.capability,
+                };
+                setSavedConfig(nextConfig);
+                return ok(nextConfig);
+              }}
+            />
+            <span className="sr-only" data-testid="save-attempts">
+              {attempts}
+            </span>
+          </ToastProvider>
+        </div>
+      </div>
+    );
+  },
+  args: {
+    ...defaultArgs,
+    sharedPowerConfig: retryInitialConfig,
+    loadPowerConfig: () => ok(retryInitialConfig),
+  },
+  parameters: { skipToastProvider: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+    );
+    const retryButton = await page.findByRole("button", { name: "Retry" });
+    await waitFor(() => expect(retryButton).toBeVisible());
+    await userEvent.click(retryButton);
+    await waitFor(() =>
+      expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
+    );
+    await expect(
+      await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  },
+};
+
+export const CrossTabSaveFailure: Story = {
+  render: CrossTabSaveRetry.render,
+  args: CrossTabSaveRetry.args,
+  parameters: { skipToastProvider: true },
 };
 
 export const ControlledHere: Story = {

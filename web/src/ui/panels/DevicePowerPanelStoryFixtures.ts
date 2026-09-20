@@ -334,6 +334,12 @@ export const defaultArgs: DevicePowerPanelProps = {
   },
   canControlHardware: true,
   powerLockOwner: stableOwner,
+  requestRuntimeTakeover: () => ({
+    role: "leader",
+    currentTabId: "tab-a",
+    leaderTabId: "tab-a",
+    leaseExpiresAt: new Date(Date.now() + 15_000).toISOString(),
+  }),
   localAdvancedLocked: false,
   sharedCommand: null,
   sharedRevision: 0,

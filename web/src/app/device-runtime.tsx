@@ -35,6 +35,7 @@ import {
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
 import {
+  type CrossTabRuntimeLeaseState,
   DEMO_RUNTIME_SCOPE,
   getSharedCrossTabRuntimeCoordinator,
   LIVE_RUNTIME_SCOPE,
@@ -60,6 +61,7 @@ import {
 } from "./device-runtime-snapshots";
 import {
   createEmptyChannels,
+  crossTabRuntimeTimeoutResult,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
   type DeviceTransport,
@@ -81,6 +83,7 @@ import {
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
+  takeoverRecoveryError,
   verifiedWifiHttpBaseUrl,
 } from "./device-runtime-support";
 import { requestHttpTransport } from "./device-runtime-transport";
@@ -296,7 +299,11 @@ export function DeviceRuntimeProvider({
       return new Promise<RuntimeRpcResultMap[TMethod]>((resolve, reject) => {
         const timeoutId = window.setTimeout(() => {
           delete pendingRpc.current[requestId];
-          reject(new Error(`Cross-tab runtime request timed out: ${method}`));
+          resolve(
+            crossTabRuntimeTimeoutResult<unknown>(
+              method,
+            ) as RuntimeRpcResultMap[TMethod],
+          );
         }, runtimeRpcTimeoutMs(method));
         pendingRpc.current[requestId] = {
           resolve: (value) => resolve(value as RuntimeRpcResultMap[TMethod]),
@@ -320,10 +327,22 @@ export function DeviceRuntimeProvider({
       runtimeRpcTimeoutMs,
     ],
   );
-  const requestControlTakeover = useCallback(() => {
+  const requestControlTakeover = useCallback((): CrossTabRuntimeLeaseState => {
     coordinator.requestTakeover();
+    const next = coordinator.getLeaseState();
+    isLeaderRef.current = next.role !== "follower";
+    coordinationRoleRef.current = next.role;
+    return next;
   }, [coordinator]);
   const { runSharedMutation } = createSharedMutationController({
+    canInvokeMutation: () => {
+      if (coordinationRoleRef.current !== "follower" && isLeaderRef.current) {
+        return null;
+      }
+      return takeoverRecoveryError(
+        "This browser tab no longer controls the device. Take over control and retry.",
+      );
+    },
     currentTabId: coordination.currentTabId,
     createRpcRequestId,
     deviceMutationQueues,

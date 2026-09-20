@@ -169,6 +169,10 @@
   transport bootstrap, polling, command serialization, and lock heartbeat while
   every same-origin tab forwards power reads and writes through the shared
   runtime queue.
+- Hardened the shared mutation boundary so cross-tab RPC timeouts and stale
+  leaders return a takeover-retryable busy result, never invoke a device write
+  after losing the lease, and keep the Power draft available to a manual
+  `Retry` toast action.
 - Split the cross-tab Power runtime namespace by mode so `?demo=true` pages
   use a separate lease/snapshot scope from live saved-device pages. This keeps
   same-origin demo data from poisoning the live device card and Power snapshot.
