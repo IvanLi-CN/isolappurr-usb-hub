@@ -550,7 +550,7 @@ const meta: Meta<typeof DeviceDashboardPanel> = {
     (Story, context) => (
       <ToastProvider>
         <DevicesProvider initialDevices={[context.args.device ?? demoDevice]}>
-          <DeviceRuntimeProvider>
+          <DeviceRuntimeProvider runtimeScopeId="storybook-dashboard">
             <div className="max-w-[980px]">
               <Story />
             </div>

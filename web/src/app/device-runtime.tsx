@@ -100,17 +100,20 @@ export type {
 
 export function DeviceRuntimeProvider({
   children,
+  runtimeScopeId,
 }: {
   children: React.ReactNode;
+  runtimeScopeId?: string;
 }) {
   const { devices, rebindHttpBaseUrl, updateDeviceNameCache } = useDevices();
   const { enabled: demoEnabled } = useDemoMode();
   const coordinator = useMemo(
     () =>
       getSharedCrossTabRuntimeCoordinator(
-        demoEnabled ? DEMO_RUNTIME_SCOPE : LIVE_RUNTIME_SCOPE,
+        runtimeScopeId ??
+          (demoEnabled ? DEMO_RUNTIME_SCOPE : LIVE_RUNTIME_SCOPE),
       ),
-    [demoEnabled],
+    [demoEnabled, runtimeScopeId],
   );
   const { pushToast } = useToast();
   const [now, setNow] = useState(() => Date.now());
