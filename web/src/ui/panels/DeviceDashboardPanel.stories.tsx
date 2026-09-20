@@ -571,9 +571,13 @@ type Story = StoryObj<typeof DeviceDashboardPanel>;
 export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(
-      await canvas.findByTestId("dashboard-usb-c-tmp-temperature"),
-    ).toHaveTextContent("43°C");
+    await waitFor(
+      () =>
+        expect(
+          canvas.getByTestId("dashboard-usb-c-tmp-temperature"),
+        ).toHaveTextContent("43°C"),
+      { timeout: 5_000 },
+    );
     await expect(
       await canvas.findByTestId("dashboard-usb-c-iout-limit"),
     ).toHaveTextContent("0.50 A");
