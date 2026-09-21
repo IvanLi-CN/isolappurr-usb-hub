@@ -82,8 +82,8 @@ import {
   resolveActiveDeviceTransport,
   resolveLocalUsbTarget,
   resolveOrderedDeviceTransports,
-  runQueuedDeviceRequest,
-  shouldForgetWebSerialTransport,
+  runQueuedDeviceRequestWithAuthorization,
+  runtimeMutationDispatchError,
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
   takeoverRecoveryError,
@@ -91,6 +91,7 @@ import {
 } from "./device-runtime-support";
 import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
+import { createWebSerialRequester } from "./device-runtime-web-serial";
 import { useDevices } from "./devices-store";
 
 export { useDeviceRuntime } from "./device-runtime-context";
@@ -150,6 +151,22 @@ export function DeviceRuntimeProvider({
   const coordinationRoleRef = useRef(coordination.role);
   isLeaderRef.current = isLeader;
   coordinationRoleRef.current = coordination.role;
+  const getMutationDispatchAuthorizationError = useCallback(
+    (method: string) =>
+      runtimeMutationDispatchError(
+        method,
+        coordinationRoleRef.current,
+        coordinator.hasCurrentLease(),
+      ),
+    [coordinator],
+  );
+  const requestWebSerial = useMemo(
+    () =>
+      createWebSerialRequester({
+        getDispatchAuthorizationError: getMutationDispatchAuthorizationError,
+      }),
+    [getMutationDispatchAuthorizationError],
+  );
 
   useEffect(() => {
     runtimeByIdRef.current = runtimeById;
@@ -358,9 +375,10 @@ export function DeviceRuntimeProvider({
         };
       }
       const timeoutMs = jsonlTimeoutMsForMethod(method, params);
-      return runQueuedDeviceRequest(
+      return runQueuedDeviceRequestWithAuthorization(
         localUsbRequestQueues.current,
         deviceId,
+        () => getMutationDispatchAuthorizationError(method),
         async () => {
           let caughtError: unknown = null;
           try {
@@ -429,66 +447,7 @@ export function DeviceRuntimeProvider({
         },
       );
     },
-    [devices, getLocalUsbAgent],
-  );
-  const requestWebSerial = useCallback(
-    async <T,>(
-      deviceId: string,
-      method: string,
-      params?: Record<string, unknown>,
-    ): Promise<Result<T>> => {
-      const transport = getWebSerialDeviceTransport(deviceId);
-      if (!transport) {
-        return {
-          ok: false,
-          error: { kind: "offline", message: "Web Serial not connected" },
-        };
-      }
-      try {
-        const timeoutMs = jsonlTimeoutMsForMethod(method, params);
-        const response = await transport.request({
-          id: nextJsonlRequestId(),
-          method,
-          params,
-          timeoutMs,
-        });
-        const envelope = response as JsonlEnvelope<T>;
-        if (envelope?.ok && envelope.result !== undefined) {
-          return { ok: true, value: envelope.result };
-        }
-        return {
-          ok: false,
-          error: {
-            kind: "api_error",
-            status: 500,
-            code: envelope?.error?.code ?? "web_serial_error",
-            message: envelope?.error?.message ?? "Web Serial request failed",
-            retryable: envelope?.error?.retryable ?? false,
-          },
-        };
-      } catch (err) {
-        const recovered = await recoverWifiClearLikeTimeout<T>(
-          async (request) => transport.request(request),
-          method,
-          params,
-        );
-        if (recovered) {
-          return recovered;
-        }
-        if (shouldForgetWebSerialTransport(err)) {
-          forgetWebSerialDeviceTransport(deviceId);
-        }
-        return {
-          ok: false,
-          error: {
-            kind: "offline",
-            message:
-              err instanceof Error ? err.message : "Web Serial request failed",
-          },
-        };
-      }
-    },
-    [],
+    [devices, getLocalUsbAgent, getMutationDispatchAuthorizationError],
   );
 
   const requestTransport = useCallback(
@@ -500,8 +459,11 @@ export function DeviceRuntimeProvider({
       params?: Record<string, unknown>,
     ): Promise<Result<T>> => {
       if (transport === "http") {
-        return runQueuedDeviceRequest(httpRequestQueues.current, deviceId, () =>
-          requestHttpTransport<T>(baseUrl, method, params),
+        return runQueuedDeviceRequestWithAuthorization(
+          httpRequestQueues.current,
+          deviceId,
+          () => getMutationDispatchAuthorizationError(method),
+          () => requestHttpTransport<T>(baseUrl, method, params),
         );
       }
       if (transport === "web_serial") {
@@ -509,7 +471,7 @@ export function DeviceRuntimeProvider({
       }
       return requestLocalUsb<T>(deviceId, method, params);
     },
-    [requestLocalUsb, requestWebSerial],
+    [getMutationDispatchAuthorizationError, requestLocalUsb, requestWebSerial],
   );
 
   const markChannelResult = useCallback(
@@ -974,16 +936,12 @@ export function DeviceRuntimeProvider({
         };
       }
       for (const transport of transports) {
-        if (
-          RUNTIME_MUTATION_METHODS.has(method) &&
-          (coordinationRoleRef.current === "follower" ||
-            !coordinator.hasCurrentLease())
-        ) {
+        const authorizationError =
+          getMutationDispatchAuthorizationError(method);
+        if (authorizationError) {
           return {
             ok: false,
-            error: takeoverRecoveryError(
-              "This browser tab no longer controls the device. Take over control and retry.",
-            ),
+            error: authorizationError,
           };
         }
         const candidate = await requestTransport<T>(
@@ -1003,6 +961,13 @@ export function DeviceRuntimeProvider({
           return fencedResult;
         }
         markChannelResult(deviceId, transport, candidate);
+        if (
+          !candidate.ok &&
+          candidate.error.kind === "busy" &&
+          candidate.error.recovery === "takeover"
+        ) {
+          return candidate;
+        }
         if (method === "identify") {
           res = candidate;
           const definitePreDispatchOffline =
@@ -1053,6 +1018,7 @@ export function DeviceRuntimeProvider({
     [
       coordinator,
       devices,
+      getMutationDispatchAuthorizationError,
       markChannelResult,
       orderedTransports,
       requestTransport,

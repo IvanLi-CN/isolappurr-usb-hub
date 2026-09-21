@@ -174,8 +174,14 @@
   write after losing the lease, and keep the Power draft available to a manual
   `Retry` toast action.
 - Verified browser lease acquisition after expired-lease takeover requests and
-  rechecked runtime authority before each device transport dispatch, including
-  fallback transports.
+  rechecked runtime authority as HTTP and Local USB requests leave their
+  queues and immediately before Web Serial writes, including fallback
+  transports. Queue contention tests prove stale mutations never reach those
+  dispatch boundaries.
+- Added Power-panel interaction coverage proving `Retry` takes over first,
+  submits the latest Fixed PDO draft, trusts canonical readback, and stays
+  manual after a failed retry. Ordinary device-busy, offline, and API failures
+  keep their existing paths without exposing takeover actions.
 - Scoped snapshot hydration to coordinator changes so leadership-effect restarts
   cannot replace initialized device state with an older empty snapshot; missing
   poll generations now compare as `0` to avoid recursively restarting the first

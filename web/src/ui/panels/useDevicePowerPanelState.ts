@@ -155,6 +155,7 @@ export function useDevicePowerPanelState({
   const outputModeConflictToastKeyRef = useRef<string | null>(null);
   const retrySaveRef = useRef<() => void>(() => undefined);
   const retryInFlightRef = useRef(false);
+  const retryToastSequenceRef = useRef(0);
   outputModeConflictRef.current = outputModeConflict;
 
   const initializeLoadedConfig = useCallback(
@@ -813,11 +814,13 @@ export function useDevicePowerPanelState({
       return;
     }
     retryInFlightRef.current = true;
+    retryToastSequenceRef.current += 1;
+    const retryToastId = `${deviceKey}:power-save-retry:${retryToastSequenceRef.current}`;
     try {
       const lease = await requestRuntimeTakeover();
       if (lease.role !== "leader" && lease.role !== "unsupported") {
         pushToast({
-          id: `${deviceKey}:power-save-failed`,
+          id: retryToastId,
           message:
             "Another browser tab still controls the device. Retry after it releases control.",
           variant: "warning",
@@ -840,6 +843,19 @@ export function useDevicePowerPanelState({
       if (latestForm) {
         await submit(latestForm, "auto");
       }
+    } catch (caught) {
+      const message =
+        caught instanceof Error
+          ? `This browser tab could not take control: ${caught.message}`
+          : "This browser tab could not take control. The Power draft remains unsaved.";
+      setError(message);
+      pushToast({
+        id: retryToastId,
+        message,
+        variant: "warning",
+        durationMs: Number.POSITIVE_INFINITY,
+        action: { label: "Retry", onClick: () => retrySaveRef.current() },
+      });
     } finally {
       retryInFlightRef.current = false;
     }

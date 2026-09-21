@@ -11,6 +11,9 @@ import {
   markPowerLockHeld,
   resolveActiveDeviceTransport,
   resolveOrderedDeviceTransports,
+  runQueuedDeviceRequest,
+  runQueuedDeviceRequestWithAuthorization,
+  runtimeMutationDispatchError,
   takeoverRecoveryError,
 } from "./device-runtime-support";
 
@@ -32,6 +35,24 @@ describe("takeoverRecoveryError", () => {
       retryable: true,
       recovery: "takeover",
     });
+  });
+});
+
+describe("runtimeMutationDispatchError", () => {
+  test("requires a current leader lease only for mutations", () => {
+    expect(
+      runtimeMutationDispatchError("power.config_set", "follower", false),
+    ).toEqual(
+      takeoverRecoveryError(
+        "This browser tab no longer controls the device. Take over control and retry.",
+      ),
+    );
+    expect(
+      runtimeMutationDispatchError("power.config_get", "follower", false),
+    ).toBeNull();
+    expect(
+      runtimeMutationDispatchError("power.config_set", "leader", true),
+    ).toBeNull();
   });
 });
 
@@ -67,6 +88,50 @@ describe("fenceRuntimeMutationResult", () => {
         recovery: "takeover",
       },
     });
+  });
+});
+
+describe("runQueuedDeviceRequestWithAuthorization", () => {
+  test("blocks a mutation that loses its lease while waiting for the transport queue", async () => {
+    const queues: Record<string, Promise<void>> = {};
+    let releaseFirst: (() => void) | null = null;
+    let notifyFirstStarted: (() => void) | null = null;
+    const firstStarted = new Promise<void>((resolve) => {
+      notifyFirstStarted = resolve;
+    });
+    const first = runQueuedDeviceRequest(queues, "device-a", async () => {
+      notifyFirstStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+    });
+    await firstStarted;
+
+    let ownsLease = true;
+    let dispatchCalled = false;
+    const second = runQueuedDeviceRequestWithAuthorization(
+      queues,
+      "device-a",
+      () =>
+        runtimeMutationDispatchError("power.config_set", "leader", ownsLease),
+      async () => {
+        dispatchCalled = true;
+        return { ok: true, value: "written" };
+      },
+    );
+
+    ownsLease = false;
+    releaseFirst?.();
+    await first;
+    const result = await second;
+
+    expect(result).toEqual({
+      ok: false,
+      error: takeoverRecoveryError(
+        "This browser tab no longer controls the device. Take over control and retry.",
+      ),
+    });
+    expect(dispatchCalled).toBe(false);
   });
 });
 

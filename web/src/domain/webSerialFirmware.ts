@@ -12,6 +12,7 @@ const DEFAULT_JSONL_TIMEOUT_MS = 5_000;
 export type WebSerialOperationOptions = {
   signal?: AbortSignal;
   deadlineAt?: number;
+  beforeDispatch?: () => boolean;
 };
 
 function probeTimeoutError(): Error {
@@ -281,10 +282,14 @@ export class WebSerialJsonlTransport {
     const response = this.waitForResponse(request, options);
     try {
       await runWithinOperationDeadline(
-        () =>
-          this.writer?.write(
+        () => {
+          if (options.beforeDispatch && !options.beforeDispatch()) {
+            throw new Error("Web Serial request rejected by dispatch guard");
+          }
+          return this.writer?.write(
             new TextEncoder().encode(payload),
-          ) as Promise<void>,
+          ) as Promise<void>;
+        },
         options,
         () => this.disconnect().catch(() => undefined),
       );

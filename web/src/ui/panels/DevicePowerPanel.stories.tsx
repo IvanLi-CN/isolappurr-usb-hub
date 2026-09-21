@@ -1,8 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, userEvent, waitFor, within } from "@storybook/test";
-import { useState } from "react";
+import { type ReactNode, useLayoutEffect, useState } from "react";
 
-import type { PdDiagnosticsResponse } from "../../domain/deviceApi";
+import type {
+  DeviceApiError,
+  PdDiagnosticsResponse,
+} from "../../domain/deviceApi";
 import { ToastProvider } from "../toast/ToastProvider";
 import { DevicePowerPanel } from "./DevicePowerPanel";
 import {
@@ -25,6 +28,23 @@ import {
   pdDiagnostics,
   withThermal,
 } from "./DevicePowerPanelStoryFixtures";
+
+function StorybookDarkTheme({ children }: { children: ReactNode }) {
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const previousTheme = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", "isolapurr-dark");
+    return () => {
+      if (previousTheme === null) {
+        root.removeAttribute("data-theme");
+      } else {
+        root.setAttribute("data-theme", previousTheme);
+      }
+    };
+  }, []);
+
+  return <>{children}</>;
+}
 
 const meta: Meta<typeof DevicePowerPanel> = {
   title: "Panels/DevicePowerPanel",
@@ -116,65 +136,101 @@ const retryInitialConfig = {
     ...controlledHereConfig.capability,
     pd: {
       ...controlledHereConfig.capability.pd,
-      fixed_voltages_mv: [12000],
+      fixed_voltages_mv: [9000, 12000],
     },
   },
 };
 
-export const CrossTabSaveRetry: Story = {
-  render: (args) => {
-    const [savedConfig, setSavedConfig] = useState(retryInitialConfig);
-    const [attempts, setAttempts] = useState(0);
-    const [canonicalFixedVoltages, setCanonicalFixedVoltages] = useState(
-      retryInitialConfig.capability.pd.fixed_voltages_mv,
-    );
-    return (
-      <div
-        className="min-h-screen bg-[var(--bg)] p-6"
-        data-visual-evidence-surface
-      >
-        <div data-visual-evidence-target>
-          <ToastProvider>
-            <DevicePowerPanel
-              {...args}
-              sharedPowerConfig={savedConfig}
-              loadPowerConfig={() => ok(savedConfig)}
-              savePowerConfig={async (input) => {
-                setAttempts((current) => current + 1);
-                if (attempts === 0) {
-                  return {
-                    ok: false,
-                    error: {
-                      kind: "busy" as const,
-                      message:
-                        "The active browser tab did not confirm this change.",
-                      retryable: true as const,
-                      recovery: "takeover" as const,
-                    },
-                  };
-                }
-                const nextConfig = {
-                  ...savedConfig,
-                  capability: input.capability,
+function CrossTabRetryHarness({
+  args,
+  retryFails,
+  takeoverFails = false,
+}: {
+  args: Story["args"];
+  retryFails: boolean;
+  takeoverFails?: boolean;
+}) {
+  const [savedConfig, setSavedConfig] = useState(retryInitialConfig);
+  const [attempts, setAttempts] = useState(0);
+  const [events, setEvents] = useState<string[]>([]);
+  const [canonicalFixedVoltages, setCanonicalFixedVoltages] = useState(
+    retryInitialConfig.capability.pd.fixed_voltages_mv,
+  );
+  return (
+    <div
+      className="min-h-screen bg-[var(--bg)] p-12"
+      data-visual-evidence-surface
+    >
+      <div className="mx-auto max-w-[1280px]" data-visual-evidence-target>
+        <ToastProvider>
+          <DevicePowerPanel
+            {...args}
+            requestRuntimeTakeover={async () => {
+              setEvents((current) => [...current, "takeover"]);
+              if (takeoverFails) {
+                throw new Error("Browser runtime lease is unavailable.");
+              }
+              return args.requestRuntimeTakeover();
+            }}
+            sharedPowerConfig={savedConfig}
+            loadPowerConfig={() => ok(savedConfig)}
+            savePowerConfig={async (input) => {
+              const attempt = attempts;
+              const fixedVoltages = input.capability.pd.fixed_voltages_mv;
+              setAttempts((current) => current + 1);
+              setEvents((current) => [
+                ...current,
+                `save:${JSON.stringify(fixedVoltages)}`,
+              ]);
+              if (attempt === 0) {
+                return {
+                  ok: false,
+                  error: {
+                    kind: "busy" as const,
+                    message:
+                      "The active browser tab did not confirm this change.",
+                    retryable: true as const,
+                    recovery: "takeover" as const,
+                  },
                 };
-                setSavedConfig(nextConfig);
-                setCanonicalFixedVoltages(
-                  input.capability.pd.fixed_voltages_mv,
-                );
-                return ok(nextConfig);
-              }}
-            />
-            <span className="sr-only" data-testid="save-attempts">
-              {attempts}
-            </span>
-            <span className="sr-only" data-testid="canonical-fixed-voltages">
-              {JSON.stringify(canonicalFixedVoltages)}
-            </span>
-          </ToastProvider>
-        </div>
+              }
+              if (retryFails) {
+                return {
+                  ok: false,
+                  error: {
+                    kind: "busy" as const,
+                    message: "The device is still busy.",
+                    retryable: true as const,
+                  },
+                };
+              }
+              const nextConfig = {
+                ...savedConfig,
+                capability: input.capability,
+              };
+              setSavedConfig(nextConfig);
+              setCanonicalFixedVoltages(fixedVoltages);
+              return ok(nextConfig);
+            }}
+          />
+          <span className="sr-only" data-testid="save-attempts">
+            {attempts}
+          </span>
+          <span className="sr-only" data-testid="retry-events">
+            {JSON.stringify(events)}
+          </span>
+          <span className="sr-only" data-testid="canonical-fixed-voltages">
+            {JSON.stringify(canonicalFixedVoltages)}
+          </span>
+        </ToastProvider>
       </div>
-    );
-  },
+    </div>
+  );
+}
+
+export const CrossTabSaveRetry: Story = {
+  render: (args) => <CrossTabRetryHarness args={args} retryFails={false} />,
+  tags: ["retry-recovery"],
   args: {
     ...defaultArgs,
     sharedPowerConfig: retryInitialConfig,
@@ -189,9 +245,23 @@ export const CrossTabSaveRetry: Story = {
     );
     const retryButton = await page.findByRole("button", { name: "Retry" });
     await waitFor(() => expect(retryButton).toBeVisible());
+    const retryStyle = getComputedStyle(retryButton);
+    expect(retryStyle.backgroundColor).toBe(
+      "oklch(0.963237 0.0173632 58.3113)",
+    );
+    expect(retryStyle.color).toBe("oklch(0.538231 0.122252 15.2946)");
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 9V" }),
+    );
+    await expect(
+      await canvas.findByRole("button", { name: "Fixed PDO 9V" }),
+    ).toHaveAttribute("aria-pressed", "false");
     await userEvent.click(retryButton);
     await waitFor(() =>
       expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
+    );
+    await expect(canvas.getByTestId("retry-events")).toHaveTextContent(
+      '["save:[9000]","takeover","save:[]"]',
     );
     await expect(
       canvas.getByTestId("canonical-fixed-voltages"),
@@ -202,11 +272,16 @@ export const CrossTabSaveRetry: Story = {
     await expect(
       await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
     ).toHaveAttribute("aria-pressed", "false");
+    for (const voltage of ["9V", "12V", "15V", "20V"]) {
+      await expect(
+        canvas.getByRole("button", { name: `Fixed PDO ${voltage}` }),
+      ).toHaveAttribute("aria-pressed", "false");
+    }
   },
 };
 
-export const CrossTabSaveFailure: Story = {
-  render: CrossTabSaveRetry.render,
+export const CrossTabRetryFailure: Story = {
+  render: (args) => <CrossTabRetryHarness args={args} retryFails />,
   args: CrossTabSaveRetry.args,
   parameters: { skipToastProvider: true },
   play: async ({ canvasElement }) => {
@@ -217,8 +292,176 @@ export const CrossTabSaveFailure: Story = {
     );
     const retryButton = await page.findByRole("button", { name: "Retry" });
     await waitFor(() => expect(retryButton).toBeVisible());
+    await userEvent.click(retryButton);
+    await waitFor(() =>
+      expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await expect(
+      canvas.getByRole("button", { name: "Fixed PDO 12V" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(
+      0,
+    );
+    await expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2");
   },
 };
+
+export const CrossTabRetryScreenshot: Story = {
+  render: (args) => <CrossTabRetryHarness args={args} retryFails={true} />,
+  args: CrossTabSaveRetry.args,
+  parameters: {
+    skipToastProvider: true,
+    viewport: { defaultViewport: "isolapurrLaptop" },
+  },
+};
+
+export const CrossTabRetryScreenshotDark: Story = {
+  ...CrossTabRetryScreenshot,
+  tags: ["retry-recovery"],
+  decorators: [
+    (Story) => (
+      <StorybookDarkTheme>
+        <Story />
+      </StorybookDarkTheme>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+    );
+    const retryButton = await page.findByRole("button", { name: "Retry" });
+    const toast = retryButton.closest<HTMLElement>("[data-sonner-toast]");
+    const toaster = toast?.closest<HTMLElement>("[data-sonner-toaster]");
+    const closeButton = toast?.querySelector<HTMLElement>(
+      "[data-close-button]",
+    );
+
+    if (!toast || !toaster || !closeButton) {
+      throw new Error("Expected the retry warning toast and its controls.");
+    }
+
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = "var(--surface-warning-bg)";
+    document.body.append(probe);
+    const expectedBackground = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+
+    await waitFor(() =>
+      expect(toaster).toHaveAttribute("data-sonner-theme", "dark"),
+    );
+    await expect(toast).toHaveStyle({ backgroundColor: expectedBackground });
+    await expect(closeButton).toHaveStyle({
+      backgroundColor: expectedBackground,
+    });
+    await expect(toast).toHaveStyle({ color: "rgb(233, 238, 244)" });
+  },
+};
+
+export const CrossTabTakeoverFailure: Story = {
+  render: (args) => (
+    <CrossTabRetryHarness args={args} retryFails={false} takeoverFails />
+  ),
+  args: CrossTabSaveRetry.args,
+  parameters: { skipToastProvider: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+    );
+    const retryButton = await page.findByRole("button", { name: "Retry" });
+    await waitFor(() => expect(retryButton).toBeVisible());
+    await userEvent.click(retryButton);
+    await waitFor(() =>
+      expect(canvas.getByTestId("retry-events")).toHaveTextContent(
+        '["save:[9000]","takeover"]',
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1");
+    await expect(
+      canvas.getByRole("button", { name: "Fixed PDO 12V" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(
+      1,
+    );
+  },
+};
+
+function ordinarySaveFailureStory(error: DeviceApiError): Story {
+  return {
+    render: (args) => <OrdinarySaveFailureHarness args={args} error={error} />,
+    args: {
+      ...defaultArgs,
+      sharedPowerConfig: retryInitialConfig,
+      loadPowerConfig: () => ok(retryInitialConfig),
+    },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      const page = within(canvasElement.ownerDocument.body);
+      await userEvent.click(
+        await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+      );
+      await waitFor(() =>
+        expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1"),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await expect(
+        page.queryAllByRole("button", { name: "Retry" }),
+      ).toHaveLength(0);
+      await expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1");
+      await expect(
+        canvas.getByRole("button", { name: "Fixed PDO 12V" }),
+      ).toHaveAttribute("aria-pressed", "false");
+    },
+  };
+}
+
+function OrdinarySaveFailureHarness({
+  args,
+  error,
+}: {
+  args: Story["args"];
+  error: DeviceApiError;
+}) {
+  const [attempts, setAttempts] = useState(0);
+  return (
+    <>
+      <DevicePowerPanel
+        {...args}
+        savePowerConfig={async () => {
+          setAttempts((current) => current + 1);
+          return { ok: false, error };
+        }}
+      />
+      <span className="sr-only" data-testid="save-attempts">
+        {attempts}
+      </span>
+    </>
+  );
+}
+
+export const OrdinaryOfflineSaveFailure = ordinarySaveFailureStory({
+  kind: "offline",
+  message: "The device is offline.",
+});
+
+export const OrdinaryBusySaveFailure = ordinarySaveFailureStory({
+  kind: "busy",
+  retryable: true,
+  message: "The device is locked by another host.",
+});
+
+export const OrdinaryApiSaveFailure = ordinarySaveFailureStory({
+  kind: "api_error",
+  status: 403,
+  code: "device_locked",
+  message: "The device rejected this request.",
+  retryable: false,
+});
 
 export const ControlledHere: Story = {
   args: {

@@ -65,6 +65,22 @@ export function takeoverRecoveryError(message: string): DeviceApiError {
   };
 }
 
+export function runtimeMutationDispatchError(
+  method: string,
+  role: CrossTabRuntimeLeaseState["role"],
+  hasCurrentLease: boolean,
+): DeviceApiError | null {
+  if (
+    !RUNTIME_MUTATION_METHODS.has(method) ||
+    (role !== "follower" && hasCurrentLease)
+  ) {
+    return null;
+  }
+  return takeoverRecoveryError(
+    "This browser tab no longer controls the device. Take over control and retry.",
+  );
+}
+
 export function crossTabRuntimeTimeoutResult<T>(method: string): Result<T> {
   return {
     ok: false,
@@ -649,6 +665,20 @@ export async function runQueuedDeviceRequest<T>(
       delete queues[deviceId];
     }
   }
+}
+
+export function runQueuedDeviceRequestWithAuthorization<T>(
+  queues: Record<string, Promise<void>>,
+  deviceId: string,
+  getAuthorizationError: () => DeviceApiError | null,
+  dispatch: () => Promise<Result<T>>,
+): Promise<Result<T>> {
+  return runQueuedDeviceRequest(queues, deviceId, async () => {
+    const authorizationError = getAuthorizationError();
+    return authorizationError
+      ? { ok: false, error: authorizationError }
+      : dispatch();
+  });
 }
 
 export function uniqueTransports(
