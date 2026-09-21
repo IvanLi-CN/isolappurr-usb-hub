@@ -91,6 +91,19 @@ function serializeAutoApplyForm(form: FormState): string {
   return JSON.stringify(form);
 }
 
+function autoApplyForm(
+  form: FormState,
+  canonicalConfig: PowerConfigResponse | null,
+): FormState {
+  if (!canonicalConfig) {
+    return form;
+  }
+  return applyOutputModeDraft(
+    form,
+    extractOutputModeDraft(cloneConfig(canonicalConfig)),
+  );
+}
+
 export function useDevicePowerPanelState({
   deviceKey,
   coordination,
@@ -841,7 +854,7 @@ export function useDevicePowerPanelState({
       }
       const latestForm = formRef.current;
       if (latestForm) {
-        await submit(latestForm, "auto");
+        await submit(autoApplyForm(latestForm, config), "auto");
       }
     } catch (caught) {
       const message =
@@ -859,7 +872,7 @@ export function useDevicePowerPanelState({
     } finally {
       retryInFlightRef.current = false;
     }
-  }, [deviceKey, pushToast, requestRuntimeTakeover, submit]);
+  }, [config, deviceKey, pushToast, requestRuntimeTakeover, submit]);
 
   useEffect(() => {
     retrySaveRef.current = () => {
@@ -913,13 +926,7 @@ export function useDevicePowerPanelState({
     ) {
       return;
     }
-    const currentForm =
-      config === null
-        ? form
-        : applyOutputModeDraft(
-            form,
-            extractOutputModeDraft(cloneConfig(config)),
-          );
+    const currentForm = autoApplyForm(form, config);
     const timeoutId = window.setTimeout(() => {
       void submit(currentForm, "auto");
     }, AUTO_APPLY_DELAY_MS);

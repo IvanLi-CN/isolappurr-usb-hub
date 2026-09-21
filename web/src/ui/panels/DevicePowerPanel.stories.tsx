@@ -156,6 +156,10 @@ function CrossTabRetryHarness({
   const [canonicalFixedVoltages, setCanonicalFixedVoltages] = useState(
     retryInitialConfig.capability.pd.fixed_voltages_mv,
   );
+  const [lastSubmittedOutputMode, setLastSubmittedOutputMode] = useState({
+    tps_mode: retryInitialConfig.tps_mode,
+    voltage_mv: retryInitialConfig.manual.voltage_mv,
+  });
   return (
     <div
       className="min-h-screen bg-[var(--bg)] p-12"
@@ -177,6 +181,10 @@ function CrossTabRetryHarness({
             savePowerConfig={async (input) => {
               const attempt = attempts;
               const fixedVoltages = input.capability.pd.fixed_voltages_mv;
+              setLastSubmittedOutputMode({
+                tps_mode: input.tps_mode,
+                voltage_mv: input.manual.voltage_mv,
+              });
               setAttempts((current) => current + 1);
               setEvents((current) => [
                 ...current,
@@ -209,7 +217,9 @@ function CrossTabRetryHarness({
                 capability: input.capability,
               };
               setSavedConfig(nextConfig);
-              setCanonicalFixedVoltages(fixedVoltages);
+              setCanonicalFixedVoltages(
+                nextConfig.capability.pd.fixed_voltages_mv,
+              );
               return ok(nextConfig);
             }}
           />
@@ -221,6 +231,9 @@ function CrossTabRetryHarness({
           </span>
           <span className="sr-only" data-testid="canonical-fixed-voltages">
             {JSON.stringify(canonicalFixedVoltages)}
+          </span>
+          <span className="sr-only" data-testid="last-submitted-output-mode">
+            {JSON.stringify(lastSubmittedOutputMode)}
           </span>
         </ToastProvider>
       </div>
@@ -256,6 +269,10 @@ export const CrossTabSaveRetry: Story = {
     await expect(
       await canvas.findByRole("button", { name: "Fixed PDO 9V" }),
     ).toHaveAttribute("aria-pressed", "false");
+    const voltageInput = await canvas.findByDisplayValue("9 V");
+    await userEvent.clear(voltageInput);
+    await userEvent.type(voltageInput, "12 V");
+    await expect(voltageInput).toHaveValue("12 V");
     await userEvent.click(retryButton);
     await waitFor(() =>
       expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
@@ -266,6 +283,9 @@ export const CrossTabSaveRetry: Story = {
     await expect(
       canvas.getByTestId("canonical-fixed-voltages"),
     ).toHaveTextContent("[]");
+    await expect(
+      canvas.getByTestId("last-submitted-output-mode"),
+    ).toHaveTextContent('{"tps_mode":"manual","voltage_mv":9000}');
     await waitFor(() =>
       expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(0),
     );
