@@ -177,7 +177,11 @@
   rechecked runtime authority as HTTP and Local USB requests leave their
   queues and immediately before Web Serial writes, including fallback
   transports. Queue contention tests prove stale mutations never reach those
-  dispatch boundaries.
+  dispatch boundaries. Shared mutations also fence the result after their
+  awaited canonical refresh, and RPC mutation responses apply the same final
+  authority check before reaching a follower.
+- Runtime coordinator shutdown now releases its active browser lease before
+  removing listeners, with coverage for stop/unmount-style replacement.
 - Added Power-panel interaction coverage proving `Retry` takes over first,
   submits the latest Fixed PDO draft, trusts canonical readback, and stays
   manual after a failed retry. Ordinary device-busy, offline, and API failures

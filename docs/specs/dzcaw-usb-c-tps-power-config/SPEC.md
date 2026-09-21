@@ -209,6 +209,9 @@ for diagnostics.
   leader MUST resolve as a retryable busy result instead of rejecting an
   unhandled Promise. The queued mutation MUST re-check leader ownership before
   every device transport dispatch and MUST refuse a stale leader write.
+- When a same-origin runtime coordinator stops or unmounts, it MUST release its
+  browser runtime lease before removing its listeners so a replacement Power
+  page can acquire control without waiting for the lease TTL.
 - A manual takeover MUST acquire only an expired or absent browser lease, read
   the lease back after writing, and settle its role asynchronously so concurrent
   retries cannot both proceed as runtime leader.
@@ -437,6 +440,9 @@ for diagnostics.
   same takeover result and never starts a stale transport dispatch. A request
   already dispatched before lease loss may finish, but its result MUST NOT be
   treated as proof of current runtime authority.
+- Given a runtime mutation finishes its device request but loses the browser
+  lease while canonical state is being refreshed, then the caller MUST receive
+  the same takeover result instead of a successful mutation response.
 - Given one same-origin tab edits `Output mode`, when the operator has not yet
   clicked `Save and apply`, then those `Output mode` changes remain local to
   that tab and the device state does not change.

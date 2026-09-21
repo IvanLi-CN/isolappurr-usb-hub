@@ -322,6 +322,7 @@ export class CrossTabRuntimeCoordinator {
     if (!this.started) {
       return;
     }
+    this.releaseLeaseIfLeader();
     this.started = false;
     if (typeof window !== "undefined") {
       window.removeEventListener("storage", this.handleStorageEvent);

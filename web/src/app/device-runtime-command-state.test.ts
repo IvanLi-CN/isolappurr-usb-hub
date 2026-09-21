@@ -37,4 +37,30 @@ describe("createSharedMutationController", () => {
     expect(invokeCalled).toBe(false);
     expect(runtimeById).toEqual({});
   });
+
+  test("fences a completed mutation when authority is lost before result delivery", async () => {
+    let ownsLease = true;
+    const { runSharedMutation } = createSharedMutationController({
+      canInvokeMutation: () =>
+        ownsLease ? null : takeoverRecoveryError("take over"),
+      currentTabId: "tab-a",
+      createRpcRequestId: () => "request-1",
+      deviceMutationQueues: { current: {} },
+      setRuntimeById: () => undefined,
+    });
+
+    const result = await runSharedMutation({
+      deviceId: "device-a",
+      method: "savePowerConfig",
+      invoke: async () => {
+        ownsLease = false;
+        return { ok: true, value: { accepted: true } };
+      },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: takeoverRecoveryError("take over"),
+    });
+  });
 });

@@ -1138,12 +1138,21 @@ export function createDeviceRuntimeActions({
           );
           break;
       }
+      const fencedResult =
+        message.kind === "mutation" && !coordinator.hasCurrentLease()
+          ? {
+              ok: false as const,
+              error: takeoverRecoveryError(
+                "This browser tab no longer controls the device. Take over control and retry.",
+              ),
+            }
+          : result;
       coordinator.postMessage({
         type: "runtime-rpc-response",
         originTabId: currentTabId,
         targetTabId: message.originTabId,
         requestId: message.requestId,
-        result,
+        result: fencedResult,
       });
     } catch (err) {
       coordinator.postMessage({

@@ -387,4 +387,16 @@ describe("CrossTabRuntimeCoordinator", () => {
     expect(demoLeader.readSnapshot()?.runtimeById.aabbcc001122).toBeDefined();
     unsubscribe();
   });
+
+  test("releases the active lease when the coordinator stops", async () => {
+    const coordinator = new CrossTabRuntimeCoordinator(LIVE_RUNTIME_SCOPE);
+    coordinator.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(coordinator.hasCurrentLease()).toBe(true);
+    coordinator.stop();
+
+    expect(coordinator.hasCurrentLease()).toBe(false);
+    expect(coordinator.getLeaseState().role).toBe("follower");
+  });
 });
