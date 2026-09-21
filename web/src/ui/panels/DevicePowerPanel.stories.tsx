@@ -296,13 +296,12 @@ export const CrossTabRetryFailure: Story = {
     await waitFor(() =>
       expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
     );
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await waitFor(() =>
+      expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(0),
+    );
     await expect(
       canvas.getByRole("button", { name: "Fixed PDO 12V" }),
     ).toHaveAttribute("aria-pressed", "false");
-    await expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(
-      0,
-    );
     await expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2");
   },
 };
@@ -380,14 +379,13 @@ export const CrossTabTakeoverFailure: Story = {
         '["save:[9000]","takeover"]',
       ),
     );
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await waitFor(() =>
+      expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(1),
+    );
     await expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1");
     await expect(
       canvas.getByRole("button", { name: "Fixed PDO 12V" }),
     ).toHaveAttribute("aria-pressed", "false");
-    await expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(
-      1,
-    );
   },
 };
 
@@ -408,10 +406,11 @@ function ordinarySaveFailureStory(error: DeviceApiError): Story {
       await waitFor(() =>
         expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1"),
       );
-      await new Promise((resolve) => setTimeout(resolve, 350));
-      await expect(
-        page.queryAllByRole("button", { name: "Retry" }),
-      ).toHaveLength(0);
+      await waitFor(() =>
+        expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(
+          0,
+        ),
+      );
       await expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1");
       await expect(
         canvas.getByRole("button", { name: "Fixed PDO 12V" }),

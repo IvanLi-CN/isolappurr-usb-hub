@@ -15,6 +15,14 @@ const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(
   "navigator",
 );
 
+let activeCoordinators: CrossTabRuntimeCoordinator[] = [];
+
+function createCoordinator(scopeId?: string): CrossTabRuntimeCoordinator {
+  const coordinator = new CrossTabRuntimeCoordinator(scopeId);
+  activeCoordinators.push(coordinator);
+  return coordinator;
+}
+
 function installMockWindow() {
   const store = new Map<string, string>();
   const storageListeners = new Set<StorageListener>();
@@ -107,10 +115,15 @@ function installMockWindow() {
 
 describe("CrossTabRuntimeCoordinator", () => {
   beforeEach(() => {
+    activeCoordinators = [];
     installMockWindow();
   });
 
   afterEach(() => {
+    for (const coordinator of activeCoordinators) {
+      coordinator.stop();
+    }
+    activeCoordinators = [];
     Reflect.deleteProperty(globalThis, "window");
     Reflect.deleteProperty(globalThis, "BroadcastChannel");
     if (originalNavigatorDescriptor) {
@@ -125,12 +138,12 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("elects one leader and keeps later tabs as followers", async () => {
-    const leader = new CrossTabRuntimeCoordinator();
+    const leader = createCoordinator();
     leader.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(leader.getLeaseState().role).toBe("leader");
 
-    const follower = new CrossTabRuntimeCoordinator();
+    const follower = createCoordinator();
     follower.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(follower.getLeaseState().role).toBe("follower");
@@ -140,11 +153,11 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("supports explicit takeover after the previous lease expires", async () => {
-    const leader = new CrossTabRuntimeCoordinator();
+    const leader = createCoordinator();
     leader.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const follower = new CrossTabRuntimeCoordinator();
+    const follower = createCoordinator();
     follower.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
     (
@@ -169,12 +182,12 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("elects one winner when two expired followers request takeover together", async () => {
-    const initialLeader = new CrossTabRuntimeCoordinator();
+    const initialLeader = createCoordinator();
     initialLeader.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const first = new CrossTabRuntimeCoordinator();
+    const first = createCoordinator();
     first.start();
-    const second = new CrossTabRuntimeCoordinator();
+    const second = createCoordinator();
     second.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
     (
@@ -209,8 +222,8 @@ describe("CrossTabRuntimeCoordinator", () => {
       locks?: unknown;
     };
     navigatorWithLocks.locks = undefined;
-    const first = new CrossTabRuntimeCoordinator();
-    const second = new CrossTabRuntimeCoordinator();
+    const first = createCoordinator();
+    const second = createCoordinator();
     first.start();
     second.start();
     await Promise.all([first.requestTakeover(), second.requestTakeover()]);
@@ -234,10 +247,10 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("broadcasts shared runtime snapshots through storage fallback", () => {
-    const leader = new CrossTabRuntimeCoordinator();
+    const leader = createCoordinator();
     leader.start();
 
-    const follower = new CrossTabRuntimeCoordinator();
+    const follower = createCoordinator();
     follower.start();
 
     let seenSnapshotOrigin: string | null = null;
@@ -259,7 +272,7 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("does not loop its own snapshot back through storage fallback", () => {
-    const leader = new CrossTabRuntimeCoordinator();
+    const leader = createCoordinator();
     leader.start();
 
     let seenSnapshots = 0;
@@ -281,10 +294,10 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("forwards runtime rpc requests and responses through storage fallback", () => {
-    const leader = new CrossTabRuntimeCoordinator();
+    const leader = createCoordinator();
     leader.start();
 
-    const secondaryTab = new CrossTabRuntimeCoordinator();
+    const secondaryTab = createCoordinator();
     secondaryTab.start();
 
     let requestSeen = false;
@@ -336,10 +349,10 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("isolates demo and live runtime scopes", async () => {
-    const liveLeader = new CrossTabRuntimeCoordinator(LIVE_RUNTIME_SCOPE);
+    const liveLeader = createCoordinator(LIVE_RUNTIME_SCOPE);
     liveLeader.start();
 
-    const demoLeader = new CrossTabRuntimeCoordinator(DEMO_RUNTIME_SCOPE);
+    const demoLeader = createCoordinator(DEMO_RUNTIME_SCOPE);
     demoLeader.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -389,7 +402,7 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("releases the active lease when the coordinator stops", async () => {
-    const coordinator = new CrossTabRuntimeCoordinator(LIVE_RUNTIME_SCOPE);
+    const coordinator = createCoordinator(LIVE_RUNTIME_SCOPE);
     coordinator.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
 

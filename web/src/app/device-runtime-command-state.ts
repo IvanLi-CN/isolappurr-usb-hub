@@ -191,7 +191,7 @@ export function createSharedMutationController({
         }
         const invokedResult = await invoke();
         const postInvokeAuthorizationError = canInvokeMutation?.() ?? null;
-        const result = postInvokeAuthorizationError
+        const result: Result<T> = postInvokeAuthorizationError
           ? { ok: false, error: postInvokeAuthorizationError }
           : invokedResult;
         finishDeviceCommandState({
