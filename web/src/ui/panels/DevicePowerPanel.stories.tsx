@@ -214,6 +214,8 @@ function CrossTabRetryHarness({
               }
               const nextConfig = {
                 ...savedConfig,
+                tps_mode: input.tps_mode,
+                manual: input.manual,
                 capability: input.capability,
               };
               setSavedConfig(nextConfig);
@@ -297,6 +299,39 @@ export const CrossTabSaveRetry: Story = {
         canvas.getByRole("button", { name: `Fixed PDO ${voltage}` }),
       ).toHaveAttribute("aria-pressed", "false");
     }
+  },
+};
+
+export const CrossTabOutputModeSaveRetry: Story = {
+  render: (args) => <CrossTabRetryHarness args={args} retryFails={false} />,
+  args: CrossTabSaveRetry.args,
+  tags: ["retry-recovery"],
+  parameters: { skipToastProvider: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    const voltageInput = await canvas.findByDisplayValue("9 V");
+    await userEvent.clear(voltageInput);
+    await userEvent.type(voltageInput, "12 V");
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Save and apply" }),
+    );
+
+    const retryButton = await page.findByRole("button", { name: "Retry" });
+    await waitFor(() => expect(retryButton).toBeVisible());
+    await userEvent.clear(voltageInput);
+    await userEvent.type(voltageInput, "15 V");
+    await userEvent.click(retryButton);
+
+    await waitFor(() =>
+      expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
+    );
+    await expect(
+      canvas.getByTestId("last-submitted-output-mode"),
+    ).toHaveTextContent('{"tps_mode":"manual","voltage_mv":15000}');
+    await expect(
+      canvas.getByRole("button", { name: "Save and apply" }),
+    ).toBeDisabled();
   },
 };
 

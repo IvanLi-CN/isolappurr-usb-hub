@@ -167,6 +167,7 @@ export function useDevicePowerPanelState({
   const outputModeBaselineSignatureRef = useRef<string | null>(null);
   const outputModeConflictToastKeyRef = useRef<string | null>(null);
   const retrySaveRef = useRef<() => void>(() => undefined);
+  const retrySubmitSourceRef = useRef<"auto" | "output_mode">("auto");
   const retryInFlightRef = useRef(false);
   const retryToastSequenceRef = useRef(0);
   outputModeConflictRef.current = outputModeConflict;
@@ -720,6 +721,7 @@ export function useDevicePowerPanelState({
   const activeProtocol = pdDiagnostics?.active_protocol ?? null;
   const submit = useCallback(
     async (nextForm: FormState, source: "auto" | "output_mode") => {
+      retrySubmitSourceRef.current = source;
       const submittedSnapshot = serializeAutoApplyForm(nextForm);
       saveStartedAtRef.current = Date.now();
       setSaveInFlight(true);
@@ -792,6 +794,7 @@ export function useDevicePowerPanelState({
         setOutputModeDraft(nextOutputModeDraft);
         outputModeBaselineSignatureRef.current = canonicalOutputModeSignature;
         setOutputModeConflict(false);
+        retrySubmitSourceRef.current = "auto";
         if (source === "output_mode" && nextOutputModeDraft === null) {
           pushToast({
             message: "Output mode saved and applied.",
@@ -801,6 +804,7 @@ export function useDevicePowerPanelState({
       } else {
         const takeoverRecovery =
           res.error.kind === "busy" && res.error.recovery === "takeover";
+        retrySubmitSourceRef.current = takeoverRecovery ? source : "auto";
         if (source === "auto" || takeoverRecovery) {
           setAutoApplyFailed(true);
         }
@@ -829,6 +833,7 @@ export function useDevicePowerPanelState({
     retryInFlightRef.current = true;
     retryToastSequenceRef.current += 1;
     const retryToastId = `${deviceKey}:power-save-retry:${retryToastSequenceRef.current}`;
+    const retrySource = retrySubmitSourceRef.current;
     try {
       const lease = await requestRuntimeTakeover();
       if (lease.role !== "leader" && lease.role !== "unsupported") {
@@ -854,7 +859,11 @@ export function useDevicePowerPanelState({
       }
       const latestForm = formRef.current;
       if (latestForm) {
-        await submit(autoApplyForm(latestForm, config), "auto");
+        const retryForm =
+          retrySource === "output_mode"
+            ? latestForm
+            : autoApplyForm(latestForm, config);
+        await submit(retryForm, retrySource);
       }
     } catch (caught) {
       const message =

@@ -182,10 +182,12 @@
   authority check before reaching a follower.
 - Runtime coordinator shutdown now releases its active browser lease before
   removing listeners, with coverage for stop/unmount-style replacement.
-- Added Power-panel interaction coverage proving `Retry` takes over first,
-  submits the latest Fixed PDO draft, trusts canonical readback, and stays
-  manual after a failed retry. Ordinary device-busy, offline, and API failures
-  keep their existing paths without exposing takeover actions.
+- Added Power-panel interaction coverage proving `Retry` takes over first and
+  resubmits the latest draft for the failed save source: automatic Fixed PDO
+  retries preserve unsaved `Output mode` edits, while explicit `Save and apply`
+  retries include the latest `Output mode` draft. Successful retries trust
+  canonical readback; ordinary device-busy, offline, and API failures keep their
+  existing paths without exposing takeover actions.
 - Scoped snapshot hydration to coordinator changes so leadership-effect restarts
   cannot replace initialized device state with an older empty snapshot; missing
   poll generations now compare as `0` to avoid recursively restarting the first
