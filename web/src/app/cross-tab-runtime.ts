@@ -648,7 +648,7 @@ export class CrossTabRuntimeCoordinator {
     }
     this.writeLease();
     await new Promise<void>((resolve) => {
-      window.setTimeout(resolve, 50);
+      setTimeout(resolve, 50);
     });
     return this.readLease();
   }

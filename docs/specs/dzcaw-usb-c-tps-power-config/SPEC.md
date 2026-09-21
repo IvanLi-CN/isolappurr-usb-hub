@@ -629,9 +629,9 @@ for diagnostics.
 ## Visual Evidence
 
 - source_type: storybook_canvas
-  story_id_or_title: `Panels/DevicePowerPanel/CrossTabSaveFailure`
+  story_id_or_title: `Panels/DevicePowerPanel/CrossTabRetryScreenshot`
   state: takeover-retryable Power save failure with `Retry` notification
-  requested_viewport: `isolapurrDesktop`
+  requested_viewport: `isolapurrLaptop`
   viewport_strategy: `storybook-viewport`
   capture_scope: `element`
   margin_policy: `require_margin`
