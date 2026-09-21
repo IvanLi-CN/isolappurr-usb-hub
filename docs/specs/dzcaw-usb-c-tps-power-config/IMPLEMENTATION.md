@@ -182,6 +182,10 @@
   authority check before reaching a follower.
 - Runtime coordinator shutdown now releases its active browser lease before
   removing listeners, with coverage for stop/unmount-style replacement.
+- Runtime subscriptions now live for the coordinator's full provider lifetime;
+  leadership changes update the observed role without stopping and restarting
+  the coordinator, preventing a newly acquired lease from being released
+  during an in-flight device mutation.
 - Added Power-panel interaction coverage proving `Retry` takes over first and
   resubmits the latest draft for the failed save source: automatic Fixed PDO
   retries preserve unsaved `Output mode` edits, while explicit `Save and apply`

@@ -142,6 +142,8 @@ describe("CrossTabRuntimeCoordinator", () => {
     leader.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(leader.getLeaseState().role).toBe("leader");
+    expect(leader.hasCurrentLease()).toBeTrue();
+    expect(leader.hasActiveLeader()).toBeFalse();
 
     const follower = createCoordinator();
     follower.start();
@@ -150,6 +152,8 @@ describe("CrossTabRuntimeCoordinator", () => {
     expect(follower.getLeaseState().leaderTabId).toBe(
       leader.getLeaseState().leaderTabId,
     );
+    expect(follower.hasCurrentLease()).toBeFalse();
+    expect(follower.hasActiveLeader()).toBeTrue();
   });
 
   test("supports explicit takeover after the previous lease expires", async () => {

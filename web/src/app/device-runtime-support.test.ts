@@ -40,19 +40,13 @@ describe("takeoverRecoveryError", () => {
 
 describe("runtimeMutationDispatchError", () => {
   test("requires a current leader lease only for mutations", () => {
-    expect(
-      runtimeMutationDispatchError("power.config_set", "follower", false),
-    ).toEqual(
+    expect(runtimeMutationDispatchError("power.config_set", false)).toEqual(
       takeoverRecoveryError(
         "This browser tab no longer controls the device. Take over control and retry.",
       ),
     );
-    expect(
-      runtimeMutationDispatchError("power.config_get", "follower", false),
-    ).toBeNull();
-    expect(
-      runtimeMutationDispatchError("power.config_set", "leader", true),
-    ).toBeNull();
+    expect(runtimeMutationDispatchError("power.config_get", false)).toBeNull();
+    expect(runtimeMutationDispatchError("power.config_set", true)).toBeNull();
   });
 });
 
@@ -112,8 +106,7 @@ describe("runQueuedDeviceRequestWithAuthorization", () => {
     const second = runQueuedDeviceRequestWithAuthorization(
       queues,
       "device-a",
-      () =>
-        runtimeMutationDispatchError("power.config_set", "leader", ownsLease),
+      () => runtimeMutationDispatchError("power.config_set", ownsLease),
       async () => {
         dispatchCalled = true;
         return { ok: true, value: "written" };

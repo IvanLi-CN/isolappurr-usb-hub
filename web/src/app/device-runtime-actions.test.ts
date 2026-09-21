@@ -83,20 +83,17 @@ describe("applyConfirmedPortsSnapshot", () => {
 });
 
 describe("shouldRequestLeaderRpc", () => {
-  test("routes a stale hold callback through the current leader after lease loss", () => {
-    expect(shouldRequestLeaderRpc(false, "follower")).toBeTrue();
-    expect(shouldRequestLeaderRpc(false, "unsupported")).toBeFalse();
-    expect(shouldRequestLeaderRpc(true, "leader")).toBeFalse();
+  test("routes only when another tab currently owns the lease", () => {
+    expect(shouldRequestLeaderRpc(false, true)).toBeTrue();
+    expect(shouldRequestLeaderRpc(true, false)).toBeFalse();
+    expect(shouldRequestLeaderRpc(false, false)).toBeFalse();
   });
 });
 
 describe("runtime action lease handoff", () => {
   test("routes a hold completion through RPC after leadership changes", async () => {
     const calls: Array<[RuntimeRpcMethod, unknown[]]> = [];
-    const isLeaderRef = { current: true };
-    const coordinationRoleRef = {
-      current: "leader" as const,
-    };
+    let ownsLease = true;
     const requestLeaderRpc = async <TMethod extends RuntimeRpcMethod>(
       method: TMethod,
       args: unknown[],
@@ -113,14 +110,16 @@ describe("runtime action lease handoff", () => {
     const actions = createDeviceRuntimeActions({
       coordinator: new (class {
         postMessage() {}
+        hasCurrentLease() {
+          return ownsLease;
+        }
+        hasActiveLeader() {
+          return !ownsLease;
+        }
       })() as CrossTabRuntimeCoordinator,
-      coordinationRole: "leader",
-      coordinationRoleRef,
       currentTabId: "tab-leader",
       deviceInfo: unreachable,
       devices: [{ id: "aabbccddeeff", name: "Demo", baseUrl: "http://demo" }],
-      isLeader: true,
-      isLeaderRef,
       pushToast: () => {},
       requestLeaderRpc,
       refreshCanonicalPowerConfig: unreachable,
@@ -135,8 +134,7 @@ describe("runtime action lease handoff", () => {
       syncPowerConfigSnapshot: () => {},
     });
 
-    isLeaderRef.current = false;
-    coordinationRoleRef.current = "follower";
+    ownsLease = false;
 
     await expect(
       actions.setPower("aabbccddeeff", "port_a", false),

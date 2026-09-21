@@ -217,9 +217,13 @@ for diagnostics.
   retries cannot both proceed as runtime leader.
 - The Web Power surface MUST keep the failed draft dirty and show a `Retry`
   action only for this takeover-recovery result. Activating `Retry` MUST first
-  take over the browser runtime lease and then submit the latest local draft;
-  ordinary device-lock, offline, and API errors MUST NOT silently take over or
-  retry.
+  take over the browser runtime lease. When the failed save was an automatic
+  background apply, retry MUST submit the latest auto-apply fields while
+  retaining canonical `Output mode` values; unsaved `Output mode` edits remain
+  local until `Save and apply`. When the failed save was an explicit `Save and
+  apply`, retry MUST submit the latest local form including its `Output mode`
+  draft. Ordinary device-lock, offline, and API errors MUST NOT silently take
+  over or retry.
 - Local advanced controls MUST be blocked while a host lock is active, except
   existing USB-C power on/off behavior.
 - Web UI MUST show write/read errors instead of staying in a loading state.
@@ -435,6 +439,14 @@ for diagnostics.
   over the runtime lease and the save succeeds, then the latest local draft is
   submitted exactly once and the canonical response clears every deselected
   Fixed PDO, including 12 V.
+- Given an automatic background save failed and the operator edits `Output
+  mode` without clicking `Save and apply`, when the operator activates `Retry`
+  and the save succeeds, then the latest auto-apply fields are saved while the
+  canonical `Output mode` remains unchanged and its local draft remains dirty.
+- Given an explicit `Save and apply` failed and the operator edits `Output
+  mode` again, when the operator activates `Retry` and the save succeeds, then
+  Retry submits the latest `Output mode` draft after taking over the runtime
+  lease and the canonical response clears that draft.
 - Given a stale leader loses its lease while a mutation is queued, when the
   queue reaches each device transport invocation boundary, then it returns the
   same takeover result and never starts a stale transport dispatch. A request

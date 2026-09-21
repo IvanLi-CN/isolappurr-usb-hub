@@ -148,16 +148,10 @@ export function DeviceRuntimeProvider({
   const wasLeaderRef = useRef(coordination.role !== "follower");
   const isLeader = coordination.role !== "follower";
   const isLeaderRef = useRef(isLeader);
-  const coordinationRoleRef = useRef(coordination.role);
   isLeaderRef.current = isLeader;
-  coordinationRoleRef.current = coordination.role;
   const getMutationDispatchAuthorizationError = useCallback(
     (method: string) =>
-      runtimeMutationDispatchError(
-        method,
-        coordinationRoleRef.current,
-        coordinator.hasCurrentLease(),
-      ),
+      runtimeMutationDispatchError(method, coordinator.hasCurrentLease()),
     [coordinator],
   );
   const requestWebSerial = useMemo(
@@ -173,6 +167,7 @@ export function DeviceRuntimeProvider({
   }, [runtimeById]);
 
   useEffect(() => {
+    const currentTabId = coordinator.getTabId();
     coordinator.start();
     if (snapshotHydratedFor.current !== coordinator) {
       snapshotHydratedFor.current = coordinator;
@@ -186,8 +181,8 @@ export function DeviceRuntimeProvider({
     const unsubscribeMessages = coordinator.subscribeMessages((message) => {
       if (
         message.type === "runtime-snapshot" &&
-        message.originTabId !== coordination.currentTabId &&
-        !isLeader
+        message.originTabId !== currentTabId &&
+        !isLeaderRef.current
       ) {
         setNow(message.snapshot.now);
         setRuntimeById(message.snapshot.runtimeById);
@@ -195,7 +190,7 @@ export function DeviceRuntimeProvider({
       }
       if (
         message.type === "runtime-rpc-response" &&
-        message.targetTabId === coordination.currentTabId
+        message.targetTabId === currentTabId
       ) {
         const pending = pendingRpc.current[message.requestId];
         if (!pending) {
@@ -206,7 +201,7 @@ export function DeviceRuntimeProvider({
         pending.resolve(message.result);
         return;
       }
-      if (message.type === "runtime-rpc-request" && isLeader) {
+      if (message.type === "runtime-rpc-request" && isLeaderRef.current) {
         void rpcRequestHandlerRef.current?.(message);
       }
     });
@@ -215,7 +210,7 @@ export function DeviceRuntimeProvider({
       unsubscribeLease();
       coordinator.stop();
     };
-  }, [coordinator, coordination.currentTabId, isLeader]);
+  }, [coordinator]);
 
   useEffect(() => {
     if (!isLeader) {
@@ -292,18 +287,11 @@ export function DeviceRuntimeProvider({
   const requestControlTakeover =
     useCallback(async (): Promise<CrossTabRuntimeLeaseState> => {
       await coordinator.requestTakeover();
-      const next = coordinator.getLeaseState();
-      isLeaderRef.current = next.role !== "follower";
-      coordinationRoleRef.current = next.role;
-      return next;
+      return coordinator.getLeaseState();
     }, [coordinator]);
   const { runSharedMutation } = createSharedMutationController({
     canInvokeMutation: () => {
-      if (
-        coordinationRoleRef.current !== "follower" &&
-        isLeaderRef.current &&
-        coordinator.hasCurrentLease()
-      ) {
+      if (coordinator.hasCurrentLease()) {
         return null;
       }
       return takeoverRecoveryError(
@@ -795,7 +783,7 @@ export function DeviceRuntimeProvider({
 
   const refreshDevice = useCallback(
     async (deviceId: string) => {
-      if (!isLeader && coordination.role !== "unsupported") {
+      if (coordinator.hasActiveLeader()) {
         await requestLeaderRpc("refreshDevice", [deviceId]);
         return;
       }
@@ -805,12 +793,12 @@ export function DeviceRuntimeProvider({
       }
       await pollDevice(deviceId, httpBaseUrlForDevice(device));
     },
-    [coordination.role, devices, isLeader, pollDevice, requestLeaderRpc],
+    [coordinator, devices, pollDevice, requestLeaderRpc],
   );
 
   const deviceInfo = useCallback(
     async (deviceId: string): Promise<Result<DeviceInfoResponse>> => {
-      if (!isLeader && coordination.role !== "unsupported") {
+      if (coordinator.hasActiveLeader()) {
         return requestLeaderRpc("deviceInfo", [deviceId]);
       }
       const device = devices.find((d) => d.id === deviceId);
@@ -894,9 +882,8 @@ export function DeviceRuntimeProvider({
       return checked;
     },
     [
-      coordination.role,
+      coordinator,
       devices,
-      isLeader,
       markChannelResult,
       rebindHttpBaseUrl,
       requestLeaderRpc,
@@ -1065,13 +1052,9 @@ export function DeviceRuntimeProvider({
     wifiConfig,
   } = createDeviceRuntimeActions({
     coordinator,
-    coordinationRole: coordination.role,
-    coordinationRoleRef,
     currentTabId: coordination.currentTabId,
     deviceInfo,
     devices,
-    isLeader,
-    isLeaderRef,
     pushToast,
     requestLeaderRpc,
     refreshCanonicalPowerConfig,

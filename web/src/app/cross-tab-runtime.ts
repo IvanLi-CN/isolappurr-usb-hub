@@ -358,6 +358,13 @@ export class CrossTabRuntimeCoordinator {
     );
   }
 
+  hasActiveLeader(): boolean {
+    const lease = this.readLease();
+    return Boolean(
+      lease && lease.tabId !== this.tabId && !isLeaseExpired(lease),
+    );
+  }
+
   subscribeLease(listener: LeaseListener): () => void {
     this.leaseListeners.add(listener);
     listener(this.leaseState);

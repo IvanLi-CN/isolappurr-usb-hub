@@ -326,9 +326,16 @@ export const CrossTabOutputModeSaveRetry: Story = {
     await waitFor(() =>
       expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
     );
+    await expect(canvas.getByTestId("retry-events")).toHaveTextContent(
+      '["save:[9000,12000]","takeover","save:[9000,12000]"]',
+    );
     await expect(
       canvas.getByTestId("last-submitted-output-mode"),
     ).toHaveTextContent('{"tps_mode":"manual","voltage_mv":15000}');
+    await expect(
+      await page.findByText("Output mode saved and applied."),
+    ).toBeVisible();
+    await expect(await canvas.findByDisplayValue("15 V")).toBeVisible();
     await expect(
       canvas.getByRole("button", { name: "Save and apply" }),
     ).toBeDisabled();

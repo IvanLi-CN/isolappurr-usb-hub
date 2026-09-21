@@ -73,13 +73,9 @@ export function staleRuntimeMutationError(): DeviceApiError {
 
 export function runtimeMutationDispatchError(
   method: string,
-  role: CrossTabRuntimeLeaseState["role"],
   hasCurrentLease: boolean,
 ): DeviceApiError | null {
-  if (
-    !RUNTIME_MUTATION_METHODS.has(method) ||
-    (role !== "follower" && hasCurrentLease)
-  ) {
+  if (!RUNTIME_MUTATION_METHODS.has(method) || hasCurrentLease) {
     return null;
   }
   return takeoverRecoveryError(
