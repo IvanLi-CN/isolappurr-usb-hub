@@ -37,7 +37,7 @@ import {
   type DeviceRuntime,
   type DeviceTransport,
   getStablePowerLockOwner,
-  takeoverRecoveryError,
+  staleRuntimeMutationError,
 } from "./device-runtime-support";
 
 type UpdateRuntimeState = Dispatch<
@@ -939,7 +939,6 @@ export function createDeviceRuntimeActions({
       },
     });
   };
-
   const handleRuntimeRpcRequest = async (
     message: Extract<RuntimeChannelMessage, { type: "runtime-rpc-request" }>,
   ) => {
@@ -954,12 +953,7 @@ export function createDeviceRuntimeActions({
         originTabId: currentTabId,
         targetTabId: message.originTabId,
         requestId: message.requestId,
-        result: {
-          ok: false,
-          error: takeoverRecoveryError(
-            "The active browser tab no longer controls the device. Take over control and retry.",
-          ),
-        },
+        result: { ok: false, error: staleRuntimeMutationError() },
       });
       return;
     }
@@ -1140,12 +1134,7 @@ export function createDeviceRuntimeActions({
       }
       const fencedResult =
         message.kind === "mutation" && !coordinator.hasCurrentLease()
-          ? {
-              ok: false as const,
-              error: takeoverRecoveryError(
-                "This browser tab no longer controls the device. Take over control and retry.",
-              ),
-            }
+          ? { ok: false as const, error: staleRuntimeMutationError() }
           : result;
       coordinator.postMessage({
         type: "runtime-rpc-response",

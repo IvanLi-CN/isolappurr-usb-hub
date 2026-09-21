@@ -65,6 +65,12 @@ export function takeoverRecoveryError(message: string): DeviceApiError {
   };
 }
 
+export function staleRuntimeMutationError(): DeviceApiError {
+  return takeoverRecoveryError(
+    "This browser tab lost device control. Take over and retry.",
+  );
+}
+
 export function runtimeMutationDispatchError(
   method: string,
   role: CrossTabRuntimeLeaseState["role"],
