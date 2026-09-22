@@ -198,7 +198,11 @@
   a later successful save. Browsers without Web Locks receive the same
   takeover-retryable busy result without a device dispatch rather than using an
   unsafe cross-context storage compare-and-swap approximation. The same safe
-  refusal applies when persistent browser storage is unavailable.
+  refusal applies when persistent browser storage is unavailable. Long-running
+  mutations hold the Web Lock through the full invoke lifecycle, while the
+  persisted record is renewed as an additional recovery signal. Local USB
+  registration, busy retries, devd dispatches, and legacy fallbacks all receive
+  the current mutation authorization guard immediately before their requests.
 - Added Power-panel interaction coverage proving `Retry` takes over first and
   resubmits the latest draft for the failed save source: automatic Fixed PDO
   retries preserve unsaved `Output mode` edits, while explicit `Save and apply`

@@ -466,6 +466,9 @@ for diagnostics.
   state. If the browser does not expose Web Locks or persistent browser
   storage, the mutation MUST resolve as the same takeover-retryable busy result
   without invoking the device.
+- When a mutation invokes a Local USB transport, authorization MUST be checked
+  immediately before every registration, retry, devd, and legacy fallback
+  dispatch, not only before entering the transport queue.
 - Given a runtime mutation finishes its device request but loses the browser
   lease while canonical state is being refreshed, then the caller MUST receive
   the same takeover result instead of a successful mutation response.
