@@ -170,6 +170,7 @@ export function useDevicePowerPanelState({
   const retrySubmitSourceRef = useRef<"auto" | "output_mode">("auto");
   const retryInFlightRef = useRef(false);
   const retryToastSequenceRef = useRef(0);
+  const retryToastIdRef = useRef<string | null>(null);
   outputModeConflictRef.current = outputModeConflict;
 
   const initializeLoadedConfig = useCallback(
@@ -751,6 +752,10 @@ export function useDevicePowerPanelState({
       setSaveInFlight(false);
       if (res.ok) {
         dismissToast(`${deviceKey}:power-save-failed`);
+        if (retryToastIdRef.current) {
+          dismissToast(retryToastIdRef.current);
+          retryToastIdRef.current = null;
+        }
         const canonicalForm = cloneConfig(res.value);
         const canonicalOutputMode = extractOutputModeDraft(canonicalForm);
         const canonicalOutputModeSignature =
@@ -834,6 +839,7 @@ export function useDevicePowerPanelState({
     retryInFlightRef.current = true;
     retryToastSequenceRef.current += 1;
     const retryToastId = `${deviceKey}:power-save-retry:${retryToastSequenceRef.current}`;
+    retryToastIdRef.current = retryToastId;
     const retrySource = retrySubmitSourceRef.current;
     try {
       const lease = await requestRuntimeTakeover();

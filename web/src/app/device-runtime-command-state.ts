@@ -222,6 +222,19 @@ export function createSharedMutationController({
             return { ok: false, error: fenceError };
           }
         }
+        const postFenceAuthorizationError = canInvokeMutation?.() ?? null;
+        if (postFenceAuthorizationError) {
+          releaseMutationFence?.(deviceId, requestId);
+          finishDeviceCommandState({
+            deviceId,
+            requestId,
+            succeeded: false,
+            incrementRevision: false,
+            errorMessage: postFenceAuthorizationError.message,
+            setRuntimeById,
+          });
+          return { ok: false, error: postFenceAuthorizationError };
+        }
         let invokedResult: Result<T>;
         try {
           invokedResult = await invoke();

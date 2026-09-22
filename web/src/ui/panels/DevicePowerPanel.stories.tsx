@@ -146,11 +146,13 @@ function CrossTabRetryHarness({
   retryFails,
   takeoverFails = false,
   takeoverFailures = 1,
+  takeoverRole = "leader",
 }: {
   args: Story["args"];
   retryFails: boolean;
   takeoverFails?: boolean;
   takeoverFailures?: number;
+  takeoverRole?: "leader" | "follower";
 }) {
   const [savedConfig, setSavedConfig] = useState(retryInitialConfig);
   const [attempts, setAttempts] = useState(0);
@@ -176,7 +178,10 @@ function CrossTabRetryHarness({
               if (takeoverFails) {
                 throw new Error("Browser runtime lease is unavailable.");
               }
-              return args.requestRuntimeTakeover();
+              const lease = await args.requestRuntimeTakeover();
+              return takeoverRole === "follower"
+                ? { ...lease, role: "follower" as const, leaderTabId: "tab-b" }
+                : lease;
             }}
             sharedPowerConfig={savedConfig}
             loadPowerConfig={() => ok(savedConfig)}
@@ -444,6 +449,52 @@ export const CrossTabTakeoverFailure: Story = {
     await expect(
       canvas.getByRole("button", { name: "Fixed PDO 12V" }),
     ).toHaveAttribute("aria-pressed", "false");
+  },
+};
+
+export const CrossTabTakeoverFollower: Story = {
+  render: (args) => (
+    <CrossTabRetryHarness
+      args={args}
+      retryFails={false}
+      takeoverRole="follower"
+    />
+  ),
+  args: CrossTabSaveRetry.args,
+  parameters: { skipToastProvider: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+    );
+    const retryButton = await page.findByRole("button", { name: "Retry" });
+    await waitFor(() => expect(retryButton).toBeVisible());
+    await userEvent.click(retryButton);
+    await waitFor(() =>
+      expect(canvas.getByTestId("retry-events")).toHaveTextContent(
+        '["save:[9000]","takeover"]',
+      ),
+    );
+    await expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1");
+    await expect(
+      canvas.getByRole("button", { name: "Fixed PDO 12V" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() =>
+      expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(1),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 15V" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Save and apply" }),
+    );
+    await waitFor(() =>
+      expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
+    );
+    await waitFor(() =>
+      expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(0),
+    );
   },
 };
 

@@ -105,9 +105,9 @@ function installMockWindow() {
       locks: {
         request: async <T>(
           _name: string,
-          _options: { mode: "exclusive" },
-          callback: () => Promise<T>,
-        ) => callback(),
+          _options: { mode: "exclusive"; ifAvailable?: boolean },
+          callback: (lock?: unknown) => Promise<T>,
+        ) => callback({}),
       },
     },
   });
@@ -177,7 +177,7 @@ describe("CrossTabRuntimeCoordinator", () => {
         setItemSilently: (key: string, value: string) => void;
       }
     ).setItemSilently(
-      "isolapurr.runtime.mutation-fence.v1.device-a",
+      "isolapurr.runtime.mutation-fence.v1.isolapurr.runtime.cross-tab.v1.mutation-fence.device-a",
       JSON.stringify({
         deviceId: "device-a",
         tabId: first.getTabId(),
@@ -188,6 +188,70 @@ describe("CrossTabRuntimeCoordinator", () => {
     );
     await expect(
       first.tryAcquireMutationFence("device-a", "request-3"),
+    ).resolves.toBeTrue();
+  });
+
+  test("serializes concurrent fence acquisition through Web Locks", async () => {
+    let firstLockEntered = false;
+    let releaseFirstLock: (() => void) | null = null;
+    let lockTail = Promise.resolve();
+    const navigatorWithLocks = globalThis.navigator as Navigator & {
+      locks: {
+        request: <T>(
+          name: string,
+          options: { mode: "exclusive"; ifAvailable?: boolean },
+          callback: (lock?: unknown) => Promise<T>,
+        ) => Promise<T>;
+      };
+    };
+    navigatorWithLocks.locks = {
+      request: async <T>(
+        _name: string,
+        _options: { mode: "exclusive"; ifAvailable?: boolean },
+        callback: (lock?: unknown) => Promise<T>,
+      ) => {
+        const previous = lockTail;
+        let release: (() => void) | null = null;
+        lockTail = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await previous;
+        if (!firstLockEntered) {
+          firstLockEntered = true;
+          await new Promise<void>((resolve) => {
+            releaseFirstLock = resolve;
+          });
+        }
+        try {
+          return await callback({});
+        } finally {
+          release?.();
+        }
+      },
+    };
+    const first = createCoordinator("concurrent-fence");
+    const second = createCoordinator("concurrent-fence");
+    const firstAttempt = first.tryAcquireMutationFence("device-b", "request-1");
+    const secondAttempt = second.tryAcquireMutationFence(
+      "device-b",
+      "request-2",
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    releaseFirstLock?.();
+
+    await expect(firstAttempt).resolves.toBeTrue();
+    await expect(secondAttempt).resolves.toBeFalse();
+  });
+
+  test("keeps live and demo mutation fences isolated", async () => {
+    const live = createCoordinator(LIVE_RUNTIME_SCOPE);
+    const demo = createCoordinator(DEMO_RUNTIME_SCOPE);
+
+    await expect(
+      live.tryAcquireMutationFence("device-c", "live-request"),
+    ).resolves.toBeTrue();
+    await expect(
+      demo.tryAcquireMutationFence("device-c", "demo-request"),
     ).resolves.toBeTrue();
   });
 

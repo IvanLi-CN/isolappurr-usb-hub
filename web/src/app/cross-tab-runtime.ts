@@ -150,8 +150,8 @@ export const MUTATION_FENCE_TTL_MS = 210_000;
 type RuntimeLockManager = {
   request: <T>(
     name: string,
-    options: { mode: "exclusive" },
-    callback: () => Promise<T>,
+    options: { mode: "exclusive"; ifAvailable?: boolean },
+    callback: (lock?: unknown) => Promise<T>,
   ) => Promise<T>;
 };
 
@@ -426,7 +426,7 @@ export class CrossTabRuntimeCoordinator {
     try {
       const storageKey = scopedStorageKey(
         MUTATION_FENCE_STORAGE_KEY_PREFIX,
-        deviceId,
+        `${this.channelName}.${deviceId}`,
       );
       const acquire = async () => {
         const current = parseMutationFenceRecord(
@@ -463,8 +463,8 @@ export class CrossTabRuntimeCoordinator {
       }
       return locks.request(
         `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
-        { mode: "exclusive" },
-        acquire,
+        { mode: "exclusive", ifAvailable: true },
+        (lock) => (lock ? acquire() : Promise.resolve(false)),
       );
     } catch {
       return false;
@@ -481,7 +481,7 @@ export class CrossTabRuntimeCoordinator {
     try {
       const storageKey = scopedStorageKey(
         MUTATION_FENCE_STORAGE_KEY_PREFIX,
-        deviceId,
+        `${this.channelName}.${deviceId}`,
       );
       const current = parseMutationFenceRecord(
         window.localStorage.getItem(storageKey),
