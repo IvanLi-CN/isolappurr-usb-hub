@@ -270,6 +270,52 @@ describe("CrossTabRuntimeCoordinator", () => {
     expect(secondResult).toBeFalse();
   });
 
+  test("ignores malformed persisted fence expiry", async () => {
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.mutation-fence.v1.isolapurr.runtime.cross-tab.v1.live.device-f",
+      JSON.stringify({
+        deviceId: "device-f",
+        tabId: "stale-tab",
+        requestId: "stale-request",
+        expiresAt: "not-a-date",
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const coordinator = createCoordinator();
+
+    await expect(
+      coordinator.tryAcquireMutationFence("device-f", "request-1"),
+    ).resolves.toBeTrue();
+  });
+
+  test("treats throwing storage methods as unsupported", async () => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem() {
+          throw new Error("storage denied");
+        },
+        setItem() {
+          throw new Error("storage denied");
+        },
+        removeItem() {
+          throw new Error("storage denied");
+        },
+      },
+    });
+    const coordinator = createCoordinator();
+
+    expect(() => coordinator.start()).not.toThrow();
+    expect(coordinator.hasCurrentLease()).toBeFalse();
+    await expect(
+      coordinator.tryAcquireMutationFence("device-g", "request-1"),
+    ).resolves.toBeFalse();
+  });
+
   test("keeps live and demo mutation fences isolated", async () => {
     const live = createCoordinator(LIVE_RUNTIME_SCOPE);
     const demo = createCoordinator(DEMO_RUNTIME_SCOPE);

@@ -239,7 +239,9 @@ function parseMutationFenceRecord(
       typeof parsed.requestId !== "string" ||
       parsed.requestId.length === 0 ||
       typeof parsed.expiresAt !== "string" ||
-      typeof parsed.updatedAt !== "string"
+      typeof parsed.updatedAt !== "string" ||
+      !Number.isFinite(Date.parse(parsed.expiresAt)) ||
+      !Number.isFinite(Date.parse(parsed.updatedAt))
     ) {
       return null;
     }
@@ -299,6 +301,17 @@ function isMutationFenceExpired(
   return Date.parse(record.expiresAt) <= now;
 }
 
+function getRuntimeStorage(): Storage | null {
+  try {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export class CrossTabRuntimeCoordinator {
   private readonly channelName: string;
   private readonly leaseStorageKey: string;
@@ -336,10 +349,7 @@ export class CrossTabRuntimeCoordinator {
       return;
     }
     this.started = true;
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    if (!getRuntimeStorage()) {
       this.setLeaseState({
         role: "unsupported",
         currentTabId: this.tabId,
@@ -394,10 +404,7 @@ export class CrossTabRuntimeCoordinator {
   }
 
   hasCurrentLease(): boolean {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    if (!getRuntimeStorage()) {
       return false;
     }
     const lease = this.readLease();
@@ -417,10 +424,8 @@ export class CrossTabRuntimeCoordinator {
     deviceId: string,
     requestId: string,
   ): Promise<boolean> {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return false;
     }
     try {
@@ -429,9 +434,7 @@ export class CrossTabRuntimeCoordinator {
         `${this.channelName}.${deviceId}`,
       );
       const acquire = async () => {
-        const current = parseMutationFenceRecord(
-          window.localStorage.getItem(storageKey),
-        );
+        const current = parseMutationFenceRecord(storage.getItem(storageKey));
         if (
           current &&
           !isMutationFenceExpired(current) &&
@@ -446,10 +449,8 @@ export class CrossTabRuntimeCoordinator {
           updatedAt: new Date().toISOString(),
           expiresAt: new Date(Date.now() + MUTATION_FENCE_TTL_MS).toISOString(),
         };
-        window.localStorage.setItem(storageKey, JSON.stringify(next));
-        const written = parseMutationFenceRecord(
-          window.localStorage.getItem(storageKey),
-        );
+        storage.setItem(storageKey, JSON.stringify(next));
+        const written = parseMutationFenceRecord(storage.getItem(storageKey));
         return Boolean(
           written &&
             written.tabId === this.tabId &&
@@ -464,7 +465,7 @@ export class CrossTabRuntimeCoordinator {
         // tabs both believing they own the single-writer fence.
         return false;
       }
-      return locks.request(
+      return await locks.request(
         `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
         { mode: "exclusive", ifAvailable: true },
         (lock) => (lock ? acquire() : Promise.resolve(false)),
@@ -478,10 +479,8 @@ export class CrossTabRuntimeCoordinator {
     deviceId: string,
     requestId: string,
   ): Promise<void> {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return;
     }
     try {
@@ -490,26 +489,35 @@ export class CrossTabRuntimeCoordinator {
         `${this.channelName}.${deviceId}`,
       );
       const release = async () => {
-        const current = parseMutationFenceRecord(
-          window.localStorage.getItem(storageKey),
-        );
+        const current = parseMutationFenceRecord(storage.getItem(storageKey));
         if (
           current &&
           current.tabId === this.tabId &&
           current.requestId === requestId
         ) {
-          window.localStorage.removeItem(storageKey);
+          storage.removeItem(storageKey);
         }
+        return true;
       };
       const locks = getRuntimeLockManager();
       if (!locks) {
         return;
       }
-      await locks.request(
-        `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
-        { mode: "exclusive" },
-        () => release(),
-      );
+      const releaseDeadline = Date.now() + MUTATION_FENCE_TTL_MS;
+      const tryRelease = async (): Promise<void> => {
+        const released = await locks.request(
+          `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+          { mode: "exclusive", ifAvailable: true },
+          (lock) => (lock ? release() : Promise.resolve(false)),
+        );
+        if (!released && Date.now() < releaseDeadline) {
+          setTimeout(() => void tryRelease(), 50);
+        }
+      };
+      await tryRelease();
+      // The first non-blocking attempt is enough for the mutation caller. A
+      // bounded background retry removes the owner record once a brief
+      // competing acquisition releases the Web Lock.
     } catch {
       // A failed cleanup only leaves the bounded fence to expire naturally.
     }
@@ -531,26 +539,27 @@ export class CrossTabRuntimeCoordinator {
   }
 
   readSnapshot(): SharedRuntimeSnapshot | null {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return null;
     }
-    return parseSnapshot(window.localStorage.getItem(this.snapshotStorageKey));
+    try {
+      return parseSnapshot(storage.getItem(this.snapshotStorageKey));
+    } catch {
+      return null;
+    }
   }
 
   publishSnapshot(snapshot: SharedRuntimeSnapshot): void {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return;
     }
-    window.localStorage.setItem(
-      this.snapshotStorageKey,
-      JSON.stringify(snapshot),
-    );
+    try {
+      storage.setItem(this.snapshotStorageKey, JSON.stringify(snapshot));
+    } catch {
+      return;
+    }
     this.postMessage({
       type: "runtime-snapshot",
       originTabId: this.tabId,
@@ -563,26 +572,25 @@ export class CrossTabRuntimeCoordinator {
       this.channel.postMessage(message);
       return;
     }
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return;
     }
-    window.localStorage.setItem(
-      this.messageStorageKey,
-      JSON.stringify({
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        payload: message,
-      }),
-    );
+    try {
+      storage.setItem(
+        this.messageStorageKey,
+        JSON.stringify({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          payload: message,
+        }),
+      );
+    } catch {
+      // Storage-backed messaging is unavailable; the active tab stays safe.
+    }
   }
 
   async requestTakeover(): Promise<void> {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    if (!getRuntimeStorage()) {
       return;
     }
     void this.refreshLeaseState(true);
@@ -631,13 +639,15 @@ export class CrossTabRuntimeCoordinator {
   };
 
   private readLease(): LeaseRecord | null {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return null;
     }
-    return parseLeaseRecord(window.localStorage.getItem(this.leaseStorageKey));
+    try {
+      return parseLeaseRecord(storage.getItem(this.leaseStorageKey));
+    } catch {
+      return null;
+    }
   }
 
   private writeLease(): LeaseRecord {
@@ -646,22 +656,32 @@ export class CrossTabRuntimeCoordinator {
       updatedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + LEASE_TTL_MS).toISOString(),
     };
-    window.localStorage.setItem(this.leaseStorageKey, JSON.stringify(record));
+    const storage = getRuntimeStorage();
+    if (!storage) {
+      return record;
+    }
+    try {
+      storage.setItem(this.leaseStorageKey, JSON.stringify(record));
+    } catch {
+      // The caller will observe the missing lease and remain unsupported.
+    }
     return record;
   }
 
   private releaseLeaseIfLeader(): void {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return;
     }
     const lease = this.readLease();
     if (!lease || lease.tabId !== this.tabId) {
       return;
     }
-    window.localStorage.removeItem(this.leaseStorageKey);
+    try {
+      storage.removeItem(this.leaseStorageKey);
+    } catch {
+      return;
+    }
     this.setLeaseState({
       role: "follower",
       currentTabId: this.tabId,
@@ -675,10 +695,7 @@ export class CrossTabRuntimeCoordinator {
       if (!this.started) {
         return;
       }
-      if (
-        typeof window === "undefined" ||
-        typeof window.localStorage === "undefined"
-      ) {
+      if (!getRuntimeStorage()) {
         this.setLeaseState({
           role: "unsupported",
           currentTabId: this.tabId,
@@ -725,10 +742,7 @@ export class CrossTabRuntimeCoordinator {
   }
 
   private refreshLeaseStateImmediately(preferAcquire = false): void {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    if (!getRuntimeStorage()) {
       this.setLeaseState({
         role: "unsupported",
         currentTabId: this.tabId,
