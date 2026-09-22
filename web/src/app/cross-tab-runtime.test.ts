@@ -169,6 +169,42 @@ describe("CrossTabRuntimeCoordinator", () => {
     ).resolves.toBeFalse();
   });
 
+  test("ignores malformed persisted leader lease dates", async () => {
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.leader-lease.v1.live",
+      JSON.stringify({
+        tabId: "stale-tab",
+        expiresAt: "not-a-date",
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const coordinator = createCoordinator();
+
+    coordinator.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(coordinator.getLeaseState().role).toBe("leader");
+  });
+
+  test("handles rejected Web Locks without an unhandled refresh", async () => {
+    const navigatorWithLocks = globalThis.navigator as Navigator & {
+      locks?: unknown;
+    };
+    navigatorWithLocks.locks = {
+      request: async () => {
+        throw new Error("locks denied");
+      },
+    };
+    const coordinator = createCoordinator();
+
+    expect(() => coordinator.start()).not.toThrow();
+    await coordinator.requestTakeover();
+    expect(coordinator.getLeaseState().role).not.toBe("leader");
+  });
+
   test("serializes device mutations across tabs with an expiring fence", async () => {
     const first = createCoordinator("mutation-fence");
     const second = createCoordinator("mutation-fence");
@@ -270,7 +306,7 @@ describe("CrossTabRuntimeCoordinator", () => {
     expect(secondResult).toBeFalse();
   });
 
-  test("ignores malformed persisted fence expiry", async () => {
+  test("refuses malformed persisted fence expiry", async () => {
     (
       window.localStorage as Storage & {
         setItemSilently: (key: string, value: string) => void;
@@ -289,7 +325,7 @@ describe("CrossTabRuntimeCoordinator", () => {
 
     await expect(
       coordinator.tryAcquireMutationFence("device-f", "request-1"),
-    ).resolves.toBeTrue();
+    ).resolves.toBeFalse();
   });
 
   test("treats throwing storage methods as unsupported", async () => {

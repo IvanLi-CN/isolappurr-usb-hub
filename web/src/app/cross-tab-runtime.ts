@@ -213,7 +213,9 @@ function parseLeaseRecord(raw: string | null): LeaseRecord | null {
       typeof parsed.tabId !== "string" ||
       parsed.tabId.length === 0 ||
       typeof parsed.expiresAt !== "string" ||
-      typeof parsed.updatedAt !== "string"
+      typeof parsed.updatedAt !== "string" ||
+      !Number.isFinite(Date.parse(parsed.expiresAt)) ||
+      !Number.isFinite(Date.parse(parsed.updatedAt))
     ) {
       return null;
     }
@@ -434,7 +436,13 @@ export class CrossTabRuntimeCoordinator {
         `${this.channelName}.${deviceId}`,
       );
       const acquire = async () => {
-        const current = parseMutationFenceRecord(storage.getItem(storageKey));
+        const raw = storage.getItem(storageKey);
+        const current = parseMutationFenceRecord(raw);
+        if (raw !== null && !current) {
+          // A malformed record may represent an in-flight writer. Refuse a
+          // new mutation rather than overwriting evidence we cannot validate.
+          return false;
+        }
         if (
           current &&
           !isMutationFenceExpired(current) &&
@@ -511,7 +519,9 @@ export class CrossTabRuntimeCoordinator {
           (lock) => (lock ? release() : Promise.resolve(false)),
         );
         if (!released && Date.now() < releaseDeadline) {
-          setTimeout(() => void tryRelease(), 50);
+          setTimeout(() => {
+            void tryRelease().catch(() => undefined);
+          }, 50);
         }
       };
       await tryRelease();
@@ -807,11 +817,15 @@ export class CrossTabRuntimeCoordinator {
     };
     const locks = getRuntimeLockManager();
     if (locks) {
-      return locks.request(
-        `isolapurr.runtime.lease.${this.channelName}`,
-        { mode: "exclusive" },
-        acquire,
-      );
+      try {
+        return await locks.request(
+          `isolapurr.runtime.lease.${this.channelName}`,
+          { mode: "exclusive" },
+          acquire,
+        );
+      } catch {
+        return null;
+      }
     }
     if (current && current.tabId === this.tabId && !isLeaseExpired(current)) {
       this.writeLease();

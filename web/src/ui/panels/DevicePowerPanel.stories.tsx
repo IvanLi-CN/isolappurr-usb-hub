@@ -46,6 +46,23 @@ function StorybookDarkTheme({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function StorybookLightTheme({ children }: { children: ReactNode }) {
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const previousTheme = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", "isolapurr");
+    return () => {
+      if (previousTheme === null) {
+        root.removeAttribute("data-theme");
+      } else {
+        root.setAttribute("data-theme", previousTheme);
+      }
+    };
+  }, []);
+
+  return <>{children}</>;
+}
+
 const meta: Meta<typeof DevicePowerPanel> = {
   title: "Panels/DevicePowerPanel",
   component: DevicePowerPanel,
@@ -376,6 +393,13 @@ export const CrossTabRetryScreenshot: Story = {
     skipToastProvider: true,
     viewport: { defaultViewport: "isolapurrLaptop" },
   },
+  decorators: [
+    (Story) => (
+      <StorybookLightTheme>
+        <Story />
+      </StorybookLightTheme>
+    ),
+  ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const page = within(canvasElement.ownerDocument.body);
@@ -384,6 +408,8 @@ export const CrossTabRetryScreenshot: Story = {
     );
     const retryButton = await page.findByRole("button", { name: "Retry" });
     await waitFor(() => expect(retryButton).toBeVisible());
+    const toaster = retryButton.closest("[data-sonner-toaster]");
+    await expect(toaster).toHaveAttribute("data-sonner-theme", "light");
   },
 };
 
