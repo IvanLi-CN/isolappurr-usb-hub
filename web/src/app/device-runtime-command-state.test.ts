@@ -63,4 +63,62 @@ describe("createSharedMutationController", () => {
       error: takeoverRecoveryError("take over"),
     });
   });
+
+  test("blocks a second tab while the first device mutation is in flight", async () => {
+    let fenceHeld = false;
+    let releaseFirstInvoke: (() => void) | null = null;
+    const createController = (tabId: string) =>
+      createSharedMutationController({
+        canInvokeMutation: () => null,
+        currentTabId: tabId,
+        createRpcRequestId: () => `${tabId}-request`,
+        deviceMutationQueues: { current: {} },
+        setRuntimeById: () => undefined,
+        tryAcquireMutationFence: async () => {
+          if (fenceHeld) {
+            return false;
+          }
+          fenceHeld = true;
+          return true;
+        },
+        releaseMutationFence: () => {
+          fenceHeld = false;
+        },
+      });
+    const first = createController("tab-a");
+    const second = createController("tab-b");
+    let firstInvokeCalled = false;
+    let secondInvokeCalled = false;
+    const firstResultPromise = first.runSharedMutation({
+      deviceId: "device-a",
+      method: "savePowerConfig",
+      invoke: async () => {
+        firstInvokeCalled = true;
+        await new Promise<void>((resolve) => {
+          releaseFirstInvoke = resolve;
+        });
+        return { ok: true, value: { accepted: true } };
+      },
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const secondResult = await second.runSharedMutation({
+      deviceId: "device-a",
+      method: "savePowerConfig",
+      invoke: async () => {
+        secondInvokeCalled = true;
+        return { ok: true, value: { accepted: true } };
+      },
+    });
+
+    expect(firstInvokeCalled).toBeTrue();
+    expect(secondInvokeCalled).toBeFalse();
+    expect(secondResult.ok).toBeFalse();
+    if (releaseFirstInvoke) {
+      releaseFirstInvoke();
+    }
+    await expect(firstResultPromise).resolves.toEqual({
+      ok: true,
+      value: { accepted: true },
+    });
+  });
 });

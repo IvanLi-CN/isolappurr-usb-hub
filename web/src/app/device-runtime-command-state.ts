@@ -18,6 +18,11 @@ type CreateSharedMutationControllerParams = {
   deviceMutationQueues: MutableRefObject<Record<string, Promise<void>>>;
   setRuntimeById: UpdateRuntimeState;
   canInvokeMutation?: () => DeviceApiError | null;
+  tryAcquireMutationFence?: (
+    deviceId: string,
+    requestId: string,
+  ) => Promise<boolean>;
+  releaseMutationFence?: (deviceId: string, requestId: string) => void;
 };
 
 type UpdateDeviceCommandParams = {
@@ -138,7 +143,9 @@ export function createSharedMutationController({
   currentTabId,
   createRpcRequestId,
   deviceMutationQueues,
+  releaseMutationFence,
   setRuntimeById,
+  tryAcquireMutationFence,
 }: CreateSharedMutationControllerParams) {
   const runSharedMutation = async <T>({
     deviceId,
@@ -189,7 +196,52 @@ export function createSharedMutationController({
           });
           return { ok: false, error: authorizationError };
         }
-        const invokedResult = await invoke();
+        if (tryAcquireMutationFence) {
+          let acquired = false;
+          try {
+            acquired = await tryAcquireMutationFence(deviceId, requestId);
+          } catch {
+            acquired = false;
+          }
+          if (!acquired) {
+            const fenceError = {
+              kind: "busy" as const,
+              message:
+                "Another browser tab is still completing a device mutation. Retry after it finishes.",
+              retryable: true as const,
+              recovery: "takeover" as const,
+            };
+            finishDeviceCommandState({
+              deviceId,
+              requestId,
+              succeeded: false,
+              incrementRevision: false,
+              errorMessage: fenceError.message,
+              setRuntimeById,
+            });
+            return { ok: false, error: fenceError };
+          }
+        }
+        let invokedResult: Result<T>;
+        try {
+          invokedResult = await invoke();
+        } catch (caught) {
+          invokedResult = {
+            ok: false,
+            error: {
+              kind: "api_error",
+              status: 500,
+              code: "runtime_mutation_failed",
+              message:
+                caught instanceof Error
+                  ? caught.message
+                  : "Device mutation failed.",
+              retryable: true,
+            },
+          };
+        } finally {
+          releaseMutationFence?.(deviceId, requestId);
+        }
         const postInvokeAuthorizationError = canInvokeMutation?.() ?? null;
         const result: Result<T> = postInvokeAuthorizationError
           ? { ok: false, error: postInvokeAuthorizationError }

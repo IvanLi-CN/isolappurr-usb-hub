@@ -124,7 +124,7 @@ export function useDevicePowerPanelState({
   setPowerRuntime,
   loadPdDiagnostics,
 }: DevicePowerPanelProps) {
-  const { pushToast } = useToast();
+  const { dismissToast, pushToast } = useToast();
   const [config, setConfig] = useState<PowerConfigResponse | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -750,6 +750,7 @@ export function useDevicePowerPanelState({
       }
       setSaveInFlight(false);
       if (res.ok) {
+        dismissToast(`${deviceKey}:power-save-failed`);
         const canonicalForm = cloneConfig(res.value);
         const canonicalOutputMode = extractOutputModeDraft(canonicalForm);
         const canonicalOutputModeSignature =
@@ -823,7 +824,7 @@ export function useDevicePowerPanelState({
       }
       return res;
     },
-    [deviceKey, pushToast, savePowerConfig],
+    [deviceKey, dismissToast, pushToast, savePowerConfig],
   );
 
   const retryPowerConfig = useCallback(async () => {

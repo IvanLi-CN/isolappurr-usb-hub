@@ -301,6 +301,10 @@ export function DeviceRuntimeProvider({
     currentTabId: coordination.currentTabId,
     createRpcRequestId,
     deviceMutationQueues,
+    tryAcquireMutationFence: (deviceId, requestId) =>
+      coordinator.tryAcquireMutationFence(deviceId, requestId),
+    releaseMutationFence: (deviceId, requestId) =>
+      coordinator.releaseMutationFence(deviceId, requestId),
     setRuntimeById,
   });
   const syncObservedPowerLock = useObservedPowerLockSync();

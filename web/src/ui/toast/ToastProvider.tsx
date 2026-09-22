@@ -25,6 +25,7 @@ export type ToastInput = {
 
 type ToastContextValue = {
   pushToast: (toast: ToastInput) => void;
+  dismissToast: (id?: string) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -97,8 +98,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       id: input.id,
     });
   }, []);
+  const dismissToast = useCallback((id?: string) => {
+    toast.dismiss(id);
+  }, []);
 
-  const value = useMemo(() => ({ pushToast }), [pushToast]);
+  const value = useMemo(
+    () => ({ dismissToast, pushToast }),
+    [dismissToast, pushToast],
+  );
 
   return (
     <ToastContext.Provider value={value}>

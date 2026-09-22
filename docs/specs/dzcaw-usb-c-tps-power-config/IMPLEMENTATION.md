@@ -186,6 +186,12 @@
   leadership changes update the observed role without stopping and restarting
   the coordinator, preventing a newly acquired lease from being released
   during an in-flight device mutation.
+- Added a persisted per-device mutation fence around the shared mutation queue.
+  A second tab now receives the same takeover-retryable busy result while the
+  first tab's device request is still in flight, including when the first tab
+  is suspended after losing its browser lease. The 210-second fence covers the
+  longest supported Local USB JSONL request plus recovery margin and is
+  released after canonical refresh completes.
 - Added Power-panel interaction coverage proving `Retry` takes over first and
   resubmits the latest draft for the failed save source: automatic Fixed PDO
   retries preserve unsaved `Output mode` edits, while explicit `Save and apply`

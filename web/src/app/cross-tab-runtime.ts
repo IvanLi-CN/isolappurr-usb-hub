@@ -21,6 +21,14 @@ type LeaseRecord = {
   updatedAt: string;
 };
 
+type MutationFenceRecord = {
+  deviceId: string;
+  tabId: string;
+  requestId: string;
+  expiresAt: string;
+  updatedAt: string;
+};
+
 export const LIVE_RUNTIME_SCOPE = "live";
 export const DEMO_RUNTIME_SCOPE = "demo";
 
@@ -132,8 +140,12 @@ const CHANNEL_NAME_PREFIX = "isolapurr.runtime.cross-tab.v1";
 const LEASE_STORAGE_KEY_PREFIX = "isolapurr.runtime.leader-lease.v1";
 const SNAPSHOT_STORAGE_KEY_PREFIX = "isolapurr.runtime.snapshot.v1";
 const MESSAGE_STORAGE_KEY_PREFIX = "isolapurr.runtime.message.v1";
+const MUTATION_FENCE_STORAGE_KEY_PREFIX = "isolapurr.runtime.mutation-fence.v1";
 const LEASE_TTL_MS = 15_000;
 const HEARTBEAT_INTERVAL_MS = 5_000;
+// JSONL power calibration can take 178s; keep the single-writer fence alive
+// through that request plus a bounded recovery margin.
+export const MUTATION_FENCE_TTL_MS = 210_000;
 
 type RuntimeLockManager = {
   request: <T>(
@@ -211,6 +223,32 @@ function parseLeaseRecord(raw: string | null): LeaseRecord | null {
   }
 }
 
+function parseMutationFenceRecord(
+  raw: string | null,
+): MutationFenceRecord | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<MutationFenceRecord>;
+    if (
+      typeof parsed.deviceId !== "string" ||
+      parsed.deviceId.length === 0 ||
+      typeof parsed.tabId !== "string" ||
+      parsed.tabId.length === 0 ||
+      typeof parsed.requestId !== "string" ||
+      parsed.requestId.length === 0 ||
+      typeof parsed.expiresAt !== "string" ||
+      typeof parsed.updatedAt !== "string"
+    ) {
+      return null;
+    }
+    return parsed as MutationFenceRecord;
+  } catch {
+    return null;
+  }
+}
+
 function parseSnapshot(raw: string | null): SharedRuntimeSnapshot | null {
   if (!raw) {
     return null;
@@ -245,6 +283,16 @@ function parseMessage(raw: string | null): RuntimeChannelMessage | null {
 }
 
 function isLeaseExpired(record: LeaseRecord | null, now = Date.now()): boolean {
+  if (!record) {
+    return true;
+  }
+  return Date.parse(record.expiresAt) <= now;
+}
+
+function isMutationFenceExpired(
+  record: MutationFenceRecord | null,
+  now = Date.now(),
+): boolean {
   if (!record) {
     return true;
   }
@@ -363,6 +411,91 @@ export class CrossTabRuntimeCoordinator {
     return Boolean(
       lease && lease.tabId !== this.tabId && !isLeaseExpired(lease),
     );
+  }
+
+  async tryAcquireMutationFence(
+    deviceId: string,
+    requestId: string,
+  ): Promise<boolean> {
+    if (
+      typeof window === "undefined" ||
+      typeof window.localStorage === "undefined"
+    ) {
+      return true;
+    }
+    try {
+      const storageKey = scopedStorageKey(
+        MUTATION_FENCE_STORAGE_KEY_PREFIX,
+        deviceId,
+      );
+      const acquire = async () => {
+        const current = parseMutationFenceRecord(
+          window.localStorage.getItem(storageKey),
+        );
+        if (
+          current &&
+          !isMutationFenceExpired(current) &&
+          (current.tabId !== this.tabId || current.requestId !== requestId)
+        ) {
+          return false;
+        }
+        const next: MutationFenceRecord = {
+          deviceId,
+          tabId: this.tabId,
+          requestId,
+          updatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + MUTATION_FENCE_TTL_MS).toISOString(),
+        };
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+        const written = parseMutationFenceRecord(
+          window.localStorage.getItem(storageKey),
+        );
+        return Boolean(
+          written &&
+            written.tabId === this.tabId &&
+            written.requestId === requestId &&
+            !isMutationFenceExpired(written),
+        );
+      };
+      const locks = getRuntimeLockManager();
+      if (!locks) {
+        return acquire();
+      }
+      return locks.request(
+        `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+        { mode: "exclusive" },
+        acquire,
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  releaseMutationFence(deviceId: string, requestId: string): void {
+    if (
+      typeof window === "undefined" ||
+      typeof window.localStorage === "undefined"
+    ) {
+      return;
+    }
+    try {
+      const storageKey = scopedStorageKey(
+        MUTATION_FENCE_STORAGE_KEY_PREFIX,
+        deviceId,
+      );
+      const current = parseMutationFenceRecord(
+        window.localStorage.getItem(storageKey),
+      );
+      if (
+        current &&
+        current.tabId === this.tabId &&
+        current.requestId === requestId
+      ) {
+        window.localStorage.removeItem(storageKey);
+      }
+    } catch {
+      // A failed cleanup only leaves the bounded fence to expire naturally.
+    }
   }
 
   subscribeLease(listener: LeaseListener): () => void {

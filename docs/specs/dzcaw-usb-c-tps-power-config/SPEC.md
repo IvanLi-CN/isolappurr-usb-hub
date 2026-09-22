@@ -452,6 +452,15 @@ for diagnostics.
   same takeover result and never starts a stale transport dispatch. A request
   already dispatched before lease loss may finish, but its result MUST NOT be
   treated as proof of current runtime authority.
+- Same-origin device mutations MUST also acquire a persisted per-device
+  mutation fence immediately before the single-writer queue invokes the device
+  transport. A fence held by another tab MUST return the takeover-retryable
+  busy result without invoking the device transport. The fence MUST remain
+  valid for at least the longest supported Local USB JSONL request plus a
+  bounded recovery margin (currently 210 seconds for the 178-second
+  calibration request), and the owner MUST release it after the request and
+  canonical refresh finish. This prevents a new leader from overlapping an
+  in-flight write from a suspended old leader.
 - Given a runtime mutation finishes its device request but loses the browser
   lease while canonical state is being refreshed, then the caller MUST receive
   the same takeover result instead of a successful mutation response.

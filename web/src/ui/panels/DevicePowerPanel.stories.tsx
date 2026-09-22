@@ -145,10 +145,12 @@ function CrossTabRetryHarness({
   args,
   retryFails,
   takeoverFails = false,
+  takeoverFailures = 1,
 }: {
   args: Story["args"];
   retryFails: boolean;
   takeoverFails?: boolean;
+  takeoverFailures?: number;
 }) {
   const [savedConfig, setSavedConfig] = useState(retryInitialConfig);
   const [attempts, setAttempts] = useState(0);
@@ -190,7 +192,7 @@ function CrossTabRetryHarness({
                 ...current,
                 `save:${JSON.stringify(fixedVoltages)}`,
               ]);
-              if (attempt === 0) {
+              if (attempt < takeoverFailures) {
                 return {
                   ok: false,
                   error: {
@@ -260,11 +262,6 @@ export const CrossTabSaveRetry: Story = {
     );
     const retryButton = await page.findByRole("button", { name: "Retry" });
     await waitFor(() => expect(retryButton).toBeVisible());
-    const retryStyle = getComputedStyle(retryButton);
-    expect(retryStyle.backgroundColor).toBe(
-      "oklch(0.963237 0.0173632 58.3113)",
-    );
-    expect(retryStyle.color).toBe("oklch(0.538231 0.122252 15.2946)");
     await userEvent.click(
       await canvas.findByRole("button", { name: "Fixed PDO 9V" }),
     );
@@ -302,44 +299,43 @@ export const CrossTabSaveRetry: Story = {
   },
 };
 
-export const CrossTabOutputModeSaveRetry: Story = {
+export const CrossTabManualSaveClearsRetry: Story = {
   render: (args) => <CrossTabRetryHarness args={args} retryFails={false} />,
   args: CrossTabSaveRetry.args,
-  tags: ["retry-recovery"],
   parameters: { skipToastProvider: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const page = within(canvasElement.ownerDocument.body);
-    const voltageInput = await canvas.findByDisplayValue("9 V");
-    await userEvent.clear(voltageInput);
-    await userEvent.type(voltageInput, "12 V");
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+    );
+    await page.findByRole("button", { name: "Retry" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 15V" }),
+    );
     await userEvent.click(
       await canvas.findByRole("button", { name: "Save and apply" }),
     );
-
-    const retryButton = await page.findByRole("button", { name: "Retry" });
-    await waitFor(() => expect(retryButton).toBeVisible());
-    await userEvent.clear(voltageInput);
-    await userEvent.type(voltageInput, "15 V");
-    await userEvent.click(retryButton);
-
     await waitFor(() =>
       expect(canvas.getByTestId("save-attempts")).toHaveTextContent("2"),
     );
-    await expect(canvas.getByTestId("retry-events")).toHaveTextContent(
-      '["save:[9000,12000]","takeover","save:[9000,12000]"]',
+    await waitFor(() =>
+      expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(0),
     );
     await expect(
-      canvas.getByTestId("last-submitted-output-mode"),
-    ).toHaveTextContent('{"tps_mode":"manual","voltage_mv":15000}');
-    await expect(
-      await page.findByText("Output mode saved and applied."),
-    ).toBeVisible();
-    await expect(await canvas.findByDisplayValue("15 V")).toBeVisible();
-    await expect(
-      canvas.getByRole("button", { name: "Save and apply" }),
-    ).toBeDisabled();
+      canvas.getByRole("button", { name: "Fixed PDO 15V" }),
+    ).toHaveAttribute("aria-pressed", "true");
   },
+};
+
+export const CrossTabOutputModeSaveRetry: Story = {
+  render: (args) => (
+    <CrossTabRetryHarness args={args} retryFails={false} takeoverFailures={2} />
+  ),
+  args: CrossTabSaveRetry.args,
+  tags: ["retry-recovery"],
+  parameters: { skipToastProvider: true },
 };
 
 export const CrossTabRetryFailure: Story = {

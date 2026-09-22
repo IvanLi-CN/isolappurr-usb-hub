@@ -156,6 +156,41 @@ describe("CrossTabRuntimeCoordinator", () => {
     expect(follower.hasActiveLeader()).toBeTrue();
   });
 
+  test("serializes device mutations across tabs with an expiring fence", async () => {
+    const first = createCoordinator("mutation-fence");
+    const second = createCoordinator("mutation-fence");
+
+    await expect(
+      first.tryAcquireMutationFence("device-a", "request-1"),
+    ).resolves.toBeTrue();
+    await expect(
+      second.tryAcquireMutationFence("device-a", "request-2"),
+    ).resolves.toBeFalse();
+
+    first.releaseMutationFence("device-a", "request-1");
+    await expect(
+      second.tryAcquireMutationFence("device-a", "request-2"),
+    ).resolves.toBeTrue();
+
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.mutation-fence.v1.device-a",
+      JSON.stringify({
+        deviceId: "device-a",
+        tabId: first.getTabId(),
+        requestId: "expired",
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        updatedAt: new Date(Date.now() - 2).toISOString(),
+      }),
+    );
+    await expect(
+      first.tryAcquireMutationFence("device-a", "request-3"),
+    ).resolves.toBeTrue();
+  });
+
   test("supports explicit takeover after the previous lease expires", async () => {
     const leader = createCoordinator();
     leader.start();
