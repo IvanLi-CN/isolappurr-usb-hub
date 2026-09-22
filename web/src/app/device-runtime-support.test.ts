@@ -4,11 +4,17 @@ import {
   applyOptimisticPowerConfig,
   canResumePowerLock,
   clearPowerLockResume,
+  crossTabRuntimeTimeoutResult,
   type DeviceRuntime,
+  fenceRuntimeMutationResult,
   getStablePowerLockOwner,
   markPowerLockHeld,
   resolveActiveDeviceTransport,
   resolveOrderedDeviceTransports,
+  runQueuedDeviceRequest,
+  runQueuedDeviceRequestWithAuthorization,
+  runtimeMutationDispatchError,
+  takeoverRecoveryError,
 } from "./device-runtime-support";
 
 const STALE_LOCAL_USB_DEVICE = {
@@ -20,6 +26,107 @@ const STALE_LOCAL_USB_DEVICE = {
     localUsbPortPath: "/dev/cu.usbmodem21231401",
   },
 };
+
+describe("takeoverRecoveryError", () => {
+  test("marks cross-tab authority failures as manually recoverable", () => {
+    expect(takeoverRecoveryError("take over")).toEqual({
+      kind: "busy",
+      message: "take over",
+      retryable: true,
+      recovery: "takeover",
+    });
+  });
+});
+
+describe("runtimeMutationDispatchError", () => {
+  test("requires a current leader lease only for mutations", () => {
+    expect(runtimeMutationDispatchError("power.config_set", false)).toEqual(
+      takeoverRecoveryError(
+        "This browser tab no longer controls the device. Take over control and retry.",
+      ),
+    );
+    expect(runtimeMutationDispatchError("power.config_get", false)).toBeNull();
+    expect(runtimeMutationDispatchError("power.config_set", true)).toBeNull();
+  });
+});
+
+describe("crossTabRuntimeTimeoutResult", () => {
+  test("converts an RPC timeout into a retryable Result", () => {
+    expect(crossTabRuntimeTimeoutResult("savePowerConfig")).toEqual({
+      ok: false,
+      error: {
+        kind: "busy",
+        message:
+          "The active browser tab did not confirm savePowerConfig. Take over control and retry.",
+        retryable: true,
+        recovery: "takeover",
+      },
+    });
+  });
+});
+
+describe("fenceRuntimeMutationResult", () => {
+  test("turns an in-flight mutation result into takeover recovery after lease loss", () => {
+    expect(
+      fenceRuntimeMutationResult(
+        { ok: true, value: { accepted: true } },
+        false,
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        kind: "busy",
+        message:
+          "This browser tab lost control while the device request was running. Take over control and retry.",
+        retryable: true,
+        recovery: "takeover",
+      },
+    });
+  });
+});
+
+describe("runQueuedDeviceRequestWithAuthorization", () => {
+  test("blocks a mutation that loses its lease while waiting for the transport queue", async () => {
+    const queues: Record<string, Promise<void>> = {};
+    let releaseFirst: (() => void) | null = null;
+    let notifyFirstStarted: (() => void) | null = null;
+    const firstStarted = new Promise<void>((resolve) => {
+      notifyFirstStarted = resolve;
+    });
+    const first = runQueuedDeviceRequest(queues, "device-a", async () => {
+      notifyFirstStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+    });
+    await firstStarted;
+
+    let ownsLease = true;
+    let dispatchCalled = false;
+    const second = runQueuedDeviceRequestWithAuthorization(
+      queues,
+      "device-a",
+      () => runtimeMutationDispatchError("power.config_set", ownsLease),
+      async () => {
+        dispatchCalled = true;
+        return { ok: true, value: "written" };
+      },
+    );
+
+    ownsLease = false;
+    releaseFirst?.();
+    await first;
+    const result = await second;
+
+    expect(result).toEqual({
+      ok: false,
+      error: takeoverRecoveryError(
+        "This browser tab no longer controls the device. Take over control and retry.",
+      ),
+    });
+    expect(dispatchCalled).toBe(false);
+  });
+});
 
 function runtimeWithVerifiedHttp(): DeviceRuntime {
   const now = Date.now();

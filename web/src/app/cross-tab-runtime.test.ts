@@ -10,6 +10,19 @@ import {
 type StorageListener = (event: StorageEvent) => void;
 type WindowListener = (event: Event) => void;
 
+const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "navigator",
+);
+
+let activeCoordinators: CrossTabRuntimeCoordinator[] = [];
+
+function createCoordinator(scopeId?: string): CrossTabRuntimeCoordinator {
+  const coordinator = new CrossTabRuntimeCoordinator(scopeId);
+  activeCoordinators.push(coordinator);
+  return coordinator;
+}
+
 function installMockWindow() {
   const store = new Map<string, string>();
   const storageListeners = new Set<StorageListener>();
@@ -40,6 +53,9 @@ function installMockWindow() {
       for (const listener of storageListeners) {
         listener(event);
       }
+    },
+    setItemSilently(key: string, value: string) {
+      store.set(key, value);
     },
     removeItem(key: string) {
       const oldValue = store.get(key) ?? null;
@@ -83,44 +99,410 @@ function installMockWindow() {
     configurable: true,
     value: undefined,
   });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      locks: {
+        request: async <T>(
+          _name: string,
+          _options: { mode: "exclusive"; ifAvailable?: boolean },
+          callback: (lock?: unknown) => Promise<T>,
+        ) => callback({}),
+      },
+    },
+  });
 }
 
 describe("CrossTabRuntimeCoordinator", () => {
   beforeEach(() => {
+    activeCoordinators = [];
     installMockWindow();
   });
 
   afterEach(() => {
+    for (const coordinator of activeCoordinators) {
+      coordinator.stop();
+    }
+    activeCoordinators = [];
     Reflect.deleteProperty(globalThis, "window");
     Reflect.deleteProperty(globalThis, "BroadcastChannel");
+    if (originalNavigatorDescriptor) {
+      Object.defineProperty(
+        globalThis,
+        "navigator",
+        originalNavigatorDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(globalThis, "navigator");
+    }
   });
 
-  test("elects one leader and keeps later tabs as followers", () => {
-    const leader = new CrossTabRuntimeCoordinator();
+  test("elects one leader and keeps later tabs as followers", async () => {
+    const leader = createCoordinator();
     leader.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(leader.getLeaseState().role).toBe("leader");
+    expect(leader.hasCurrentLease()).toBeTrue();
+    expect(leader.hasActiveLeader()).toBeFalse();
 
-    const follower = new CrossTabRuntimeCoordinator();
+    const follower = createCoordinator();
     follower.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(follower.getLeaseState().role).toBe("follower");
     expect(follower.getLeaseState().leaderTabId).toBe(
       leader.getLeaseState().leaderTabId,
     );
+    expect(follower.hasCurrentLease()).toBeFalse();
+    expect(follower.hasActiveLeader()).toBeTrue();
   });
 
-  test("supports explicit takeover by a follower tab", () => {
-    const leader = new CrossTabRuntimeCoordinator();
-    leader.start();
+  test("refuses mutations when browser storage is unavailable", async () => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: undefined,
+    });
+    const coordinator = createCoordinator();
 
-    const follower = new CrossTabRuntimeCoordinator();
+    expect(coordinator.hasCurrentLease()).toBeFalse();
+    await expect(
+      coordinator.tryAcquireMutationFence("device-e", "request-1"),
+    ).resolves.toBeFalse();
+  });
+
+  test("ignores malformed persisted leader lease dates", async () => {
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.leader-lease.v1.live",
+      JSON.stringify({
+        tabId: "stale-tab",
+        expiresAt: "not-a-date",
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const coordinator = createCoordinator();
+
+    coordinator.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(coordinator.getLeaseState().role).toBe("leader");
+  });
+
+  test("handles rejected Web Locks without an unhandled refresh", async () => {
+    const navigatorWithLocks = globalThis.navigator as Navigator & {
+      locks?: unknown;
+    };
+    navigatorWithLocks.locks = {
+      request: async () => {
+        throw new Error("locks denied");
+      },
+    };
+    const coordinator = createCoordinator();
+
+    expect(() => coordinator.start()).not.toThrow();
+    await coordinator.requestTakeover();
+    expect(coordinator.getLeaseState().role).not.toBe("leader");
+  });
+
+  test("serializes device mutations across tabs with an expiring fence", async () => {
+    const first = createCoordinator("mutation-fence");
+    const second = createCoordinator("mutation-fence");
+
+    await expect(
+      first.tryAcquireMutationFence("device-a", "request-1"),
+    ).resolves.toBeTrue();
+    await expect(
+      second.tryAcquireMutationFence("device-a", "request-2"),
+    ).resolves.toBeFalse();
+
+    await first.releaseMutationFence("device-a", "request-1");
+    await expect(
+      second.tryAcquireMutationFence("device-a", "request-2"),
+    ).resolves.toBeTrue();
+
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.mutation-fence.v1.isolapurr.runtime.cross-tab.v1.mutation-fence.device-a",
+      JSON.stringify({
+        deviceId: "device-a",
+        tabId: first.getTabId(),
+        requestId: "expired",
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        updatedAt: new Date(Date.now() - 2).toISOString(),
+      }),
+    );
+    await expect(
+      first.tryAcquireMutationFence("device-a", "request-3"),
+    ).resolves.toBeTrue();
+  });
+
+  test("renews an in-flight fence for the same owner", async () => {
+    const coordinator = createCoordinator("renew-fence");
+    const other = createCoordinator("renew-fence");
+    await expect(
+      coordinator.tryAcquireMutationFence("device-renew", "request-1"),
+    ).resolves.toBeTrue();
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.mutation-fence.v1.isolapurr.runtime.cross-tab.v1.renew-fence.device-renew",
+      JSON.stringify({
+        deviceId: "device-renew",
+        tabId: coordinator.getTabId(),
+        requestId: "request-1",
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        updatedAt: new Date(Date.now() - 2).toISOString(),
+      }),
+    );
+
+    await expect(
+      coordinator.renewMutationFence("device-renew", "request-1"),
+    ).resolves.toBeTrue();
+    await expect(
+      other.tryAcquireMutationFence("device-renew", "request-2"),
+    ).resolves.toBeFalse();
+  });
+
+  test("holds the Web Lock for the full mutation invocation", async () => {
+    const coordinator = createCoordinator("held-fence");
+    const other = createCoordinator("held-fence");
+    let releaseInvoke: (() => void) | null = null;
+    const mutation = coordinator.runMutationWithFence(
+      "device-held",
+      "request-1",
+      () =>
+        new Promise((resolve) => {
+          releaseInvoke = () =>
+            resolve({ ok: true, value: { accepted: true } });
+        }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(
+      other.tryAcquireMutationFence("device-held", "request-2"),
+    ).resolves.toBeFalse();
+    releaseInvoke?.();
+    await expect(mutation).resolves.toEqual({
+      acquired: true,
+      result: { ok: true, value: { accepted: true } },
+    });
+  });
+
+  test("serializes concurrent fence acquisition through Web Locks", async () => {
+    let firstLockEntered = false;
+    let releaseFirstLock: (() => void) | null = null;
+    let lockHeld = false;
+    const navigatorWithLocks = globalThis.navigator as Navigator & {
+      locks: {
+        request: <T>(
+          name: string,
+          options: { mode: "exclusive"; ifAvailable?: boolean },
+          callback: (lock?: unknown) => Promise<T>,
+        ) => Promise<T>;
+      };
+    };
+    navigatorWithLocks.locks = {
+      request: async <T>(
+        _name: string,
+        options: { mode: "exclusive"; ifAvailable?: boolean },
+        callback: (lock?: unknown) => Promise<T>,
+      ) => {
+        if (options.ifAvailable && lockHeld) {
+          return callback(undefined);
+        }
+        lockHeld = true;
+        if (!firstLockEntered) {
+          firstLockEntered = true;
+          await new Promise<void>((resolve) => {
+            releaseFirstLock = resolve;
+          });
+        }
+        try {
+          return await callback({});
+        } finally {
+          lockHeld = false;
+        }
+      },
+    };
+    const first = createCoordinator("concurrent-fence");
+    const second = createCoordinator("concurrent-fence");
+    const firstAttempt = first.tryAcquireMutationFence("device-b", "request-1");
+    const secondAttempt = second.tryAcquireMutationFence(
+      "device-b",
+      "request-2",
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await expect(secondAttempt).resolves.toBeFalse();
+    releaseFirstLock?.();
+
+    await expect(firstAttempt).resolves.toBeTrue();
+  });
+
+  test("refuses mutation fences when Web Locks are unavailable", async () => {
+    const navigatorWithLocks = globalThis.navigator as Navigator & {
+      locks?: unknown;
+    };
+    navigatorWithLocks.locks = undefined;
+    const first = createCoordinator("storage-fence");
+    const second = createCoordinator("storage-fence");
+    const [firstResult, secondResult] = await Promise.all([
+      first.tryAcquireMutationFence("device-d", "request-1"),
+      second.tryAcquireMutationFence("device-d", "request-2"),
+    ]);
+
+    expect(firstResult).toBeFalse();
+    expect(secondResult).toBeFalse();
+  });
+
+  test("refuses malformed persisted fence expiry", async () => {
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.mutation-fence.v1.isolapurr.runtime.cross-tab.v1.live.device-f",
+      JSON.stringify({
+        deviceId: "device-f",
+        tabId: "stale-tab",
+        requestId: "stale-request",
+        expiresAt: "not-a-date",
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const coordinator = createCoordinator();
+
+    await expect(
+      coordinator.tryAcquireMutationFence("device-f", "request-1"),
+    ).resolves.toBeFalse();
+  });
+
+  test("treats throwing storage methods as unsupported", async () => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem() {
+          throw new Error("storage denied");
+        },
+        setItem() {
+          throw new Error("storage denied");
+        },
+        removeItem() {
+          throw new Error("storage denied");
+        },
+      },
+    });
+    const coordinator = createCoordinator();
+
+    expect(() => coordinator.start()).not.toThrow();
+    expect(coordinator.hasCurrentLease()).toBeFalse();
+    await expect(
+      coordinator.tryAcquireMutationFence("device-g", "request-1"),
+    ).resolves.toBeFalse();
+  });
+
+  test("keeps live and demo mutation fences isolated", async () => {
+    const live = createCoordinator(LIVE_RUNTIME_SCOPE);
+    const demo = createCoordinator(DEMO_RUNTIME_SCOPE);
+
+    await expect(
+      live.tryAcquireMutationFence("device-c", "live-request"),
+    ).resolves.toBeTrue();
+    await expect(
+      demo.tryAcquireMutationFence("device-c", "demo-request"),
+    ).resolves.toBeTrue();
+  });
+
+  test("supports explicit takeover after the previous lease expires", async () => {
+    const leader = createCoordinator();
+    leader.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const follower = createCoordinator();
     follower.start();
-    follower.requestTakeover();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.leader-lease.v1.live",
+      JSON.stringify({
+        tabId: leader.getTabId(),
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        updatedAt: new Date(Date.now() - 2).toISOString(),
+      }),
+    );
+    await follower.requestTakeover();
 
     expect(follower.getLeaseState().role).toBe("leader");
     expect(leader.getLeaseState().role).toBe("follower");
     expect(leader.getLeaseState().leaderTabId).toBe(
       follower.getLeaseState().leaderTabId,
     );
+  });
+
+  test("elects one winner when two expired followers request takeover together", async () => {
+    const initialLeader = createCoordinator();
+    initialLeader.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const first = createCoordinator();
+    first.start();
+    const second = createCoordinator();
+    second.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.leader-lease.v1.live",
+      JSON.stringify({
+        tabId: initialLeader.getTabId(),
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        updatedAt: new Date(Date.now() - 2).toISOString(),
+      }),
+    );
+
+    await Promise.all([first.requestTakeover(), second.requestTakeover()]);
+
+    expect(
+      [first.getLeaseState().role, second.getLeaseState().role].filter(
+        (role) => role === "leader",
+      ),
+    ).toHaveLength(1);
+    expect(
+      [first.getLeaseState().role, second.getLeaseState().role].filter(
+        (role) => role === "follower",
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("settles one leader through the storage fallback", async () => {
+    const navigatorWithLocks = globalThis.navigator as Navigator & {
+      locks?: unknown;
+    };
+    navigatorWithLocks.locks = undefined;
+    const first = createCoordinator();
+    const second = createCoordinator();
+    first.start();
+    second.start();
+    await Promise.all([first.requestTakeover(), second.requestTakeover()]);
+
+    expect(
+      [first.getLeaseState().role, second.getLeaseState().role].filter(
+        (role) => role === "leader",
+      ),
+    ).toHaveLength(1);
+    expect(
+      [first.getLeaseState().role, second.getLeaseState().role].filter(
+        (role) => role === "follower",
+      ),
+    ).toHaveLength(1);
   });
 
   test("classifies runtime RPC methods into query and mutation kinds", () => {
@@ -130,10 +512,10 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("broadcasts shared runtime snapshots through storage fallback", () => {
-    const leader = new CrossTabRuntimeCoordinator();
+    const leader = createCoordinator();
     leader.start();
 
-    const follower = new CrossTabRuntimeCoordinator();
+    const follower = createCoordinator();
     follower.start();
 
     let seenSnapshotOrigin: string | null = null;
@@ -155,7 +537,7 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("does not loop its own snapshot back through storage fallback", () => {
-    const leader = new CrossTabRuntimeCoordinator();
+    const leader = createCoordinator();
     leader.start();
 
     let seenSnapshots = 0;
@@ -177,10 +559,10 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("forwards runtime rpc requests and responses through storage fallback", () => {
-    const leader = new CrossTabRuntimeCoordinator();
+    const leader = createCoordinator();
     leader.start();
 
-    const secondaryTab = new CrossTabRuntimeCoordinator();
+    const secondaryTab = createCoordinator();
     secondaryTab.start();
 
     let requestSeen = false;
@@ -231,12 +613,13 @@ describe("CrossTabRuntimeCoordinator", () => {
     unsubscribeSecondary();
   });
 
-  test("isolates demo and live runtime scopes", () => {
-    const liveLeader = new CrossTabRuntimeCoordinator(LIVE_RUNTIME_SCOPE);
+  test("isolates demo and live runtime scopes", async () => {
+    const liveLeader = createCoordinator(LIVE_RUNTIME_SCOPE);
     liveLeader.start();
 
-    const demoLeader = new CrossTabRuntimeCoordinator(DEMO_RUNTIME_SCOPE);
+    const demoLeader = createCoordinator(DEMO_RUNTIME_SCOPE);
     demoLeader.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(liveLeader.getLeaseState().role).toBe("leader");
     expect(demoLeader.getLeaseState().role).toBe("leader");
@@ -281,5 +664,17 @@ describe("CrossTabRuntimeCoordinator", () => {
     expect(liveLeader.readSnapshot()).toBeNull();
     expect(demoLeader.readSnapshot()?.runtimeById.aabbcc001122).toBeDefined();
     unsubscribe();
+  });
+
+  test("releases the active lease when the coordinator stops", async () => {
+    const coordinator = createCoordinator(LIVE_RUNTIME_SCOPE);
+    coordinator.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(coordinator.hasCurrentLease()).toBe(true);
+    coordinator.stop();
+
+    expect(coordinator.hasCurrentLease()).toBe(false);
+    expect(coordinator.getLeaseState().role).toBe("follower");
   });
 });

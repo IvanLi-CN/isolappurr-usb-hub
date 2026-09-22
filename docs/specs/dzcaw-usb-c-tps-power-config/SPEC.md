@@ -205,6 +205,25 @@ for diagnostics.
 - Same-browser Power coordination MUST isolate live device pages from
   `?demo=true` Power pages. Demo and live routes MAY share an origin, but they
   MUST NOT share the same runtime lease or snapshot namespace.
+- A same-browser mutation that cannot be confirmed by the current runtime
+  leader MUST resolve as a retryable busy result instead of rejecting an
+  unhandled Promise. The queued mutation MUST re-check leader ownership before
+  every device transport dispatch and MUST refuse a stale leader write.
+- When a same-origin runtime coordinator stops or unmounts, it MUST release its
+  browser runtime lease before removing its listeners so a replacement Power
+  page can acquire control without waiting for the lease TTL.
+- A manual takeover MUST acquire only an expired or absent browser lease, read
+  the lease back after writing, and settle its role asynchronously so concurrent
+  retries cannot both proceed as runtime leader.
+- The Web Power surface MUST keep the failed draft dirty and show a `Retry`
+  action only for this takeover-recovery result. Activating `Retry` MUST first
+  take over the browser runtime lease. When the failed save was an automatic
+  background apply, retry MUST submit the latest auto-apply fields while
+  retaining canonical `Output mode` values; unsaved `Output mode` edits remain
+  local until `Save and apply`. When the failed save was an explicit `Save and
+  apply`, retry MUST submit the latest local form including its `Output mode`
+  draft. Ordinary device-lock, offline, and API errors MUST NOT silently take
+  over or retry.
 - Local advanced controls MUST be blocked while a host lock is active, except
   existing USB-C power on/off behavior.
 - Web UI MUST show write/read errors instead of staying in a loading state.
@@ -412,6 +431,47 @@ for diagnostics.
   when the Power page loads, then it shows `Controlled here`, can submit writes
   through the shared runtime, and reflects shared live state without starting a
   second lock heartbeat or transport owner.
+- Given the current same-origin runtime leader stops responding to a Power
+  mutation, when the RPC timeout elapses, then the caller receives a retryable
+  takeover result, no new device transport dispatch is started by the stale
+  runtime, the local draft remains dirty, and the notification offers `Retry`.
+- Given the operator activates that `Retry` action, when the current tab takes
+  over the runtime lease and the save succeeds, then the latest local draft is
+  submitted exactly once and the canonical response clears every deselected
+  Fixed PDO, including 12 V.
+- Given an automatic background save failed and the operator edits `Output
+  mode` without clicking `Save and apply`, when the operator activates `Retry`
+  and the save succeeds, then the latest auto-apply fields are saved while the
+  canonical `Output mode` remains unchanged and its local draft remains dirty.
+- Given an explicit `Save and apply` failed and the operator edits `Output
+  mode` again, when the operator activates `Retry` and the save succeeds, then
+  Retry submits the latest `Output mode` draft after taking over the runtime
+  lease and the canonical response clears that draft.
+- Given a stale leader loses its lease while a mutation is queued, when the
+  queue reaches each device transport invocation boundary, then it returns the
+  same takeover result and never starts a stale transport dispatch. A request
+  already dispatched before lease loss may finish, but its result MUST NOT be
+  treated as proof of current runtime authority.
+- Same-origin device mutations MUST also acquire a persisted per-device
+  mutation fence immediately before the single-writer queue invokes the device
+  transport. A fence held by another tab MUST return the takeover-retryable
+  busy result without invoking the device transport. The fence MUST remain
+  valid for at least the longest supported Local USB JSONL request plus a
+  bounded recovery margin (currently 210 seconds for the 178-second
+  calibration request), and the owner MUST release it after the request and
+  canonical refresh finish. Acquisition and owner release MUST use the same
+  scoped non-blocking lock protocol, and the fence key MUST include the live or
+  demo runtime scope. This prevents a new leader from overlapping an in-flight
+  write from a suspended old leader without allowing demo state to block live
+  state. If the browser does not expose Web Locks or persistent browser
+  storage, the mutation MUST resolve as the same takeover-retryable busy result
+  without invoking the device.
+- When a mutation invokes a Local USB transport, authorization MUST be checked
+  immediately before every registration, retry, devd, and legacy fallback
+  dispatch, not only before entering the transport queue.
+- Given a runtime mutation finishes its device request but loses the browser
+  lease while canonical state is being refreshed, then the caller MUST receive
+  the same takeover result instead of a successful mutation response.
 - Given one same-origin tab edits `Output mode`, when the operator has not yet
   clicked `Save and apply`, then those `Output mode` changes remain local to
   that tab and the device state does not change.
@@ -598,6 +658,43 @@ for diagnostics.
 ## Visual Evidence
 
 - source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CrossTabRetryScreenshot`
+  state: takeover-retryable Power save failure with `Retry` notification
+  requested_viewport: `isolapurrLaptop` (1280x800 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  margin_policy: `require_margin`
+  evidence_surface: `component`
+  surface_selector: `[data-visual-evidence-surface]`
+  target_selector: `[data-visual-evidence-target]`
+  target_program: `mock-only`
+  sensitive_exclusion: `N/A`
+  submission_gate: `pending-owner-approval`
+  evidence_note: verifies that a failed same-browser Power save leaves the
+  Fixed PDO draft visible and exposes a single manual `Retry` action that can
+  take over the browser runtime lease.
+
+![Device power panel cross-tab save retry](./assets/device-power-panel-cross-tab-save-retry.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CrossTabRetryScreenshotDark`
+  state: takeover-retryable Power save failure with dark warning action
+  requested_viewport: `isolapurrLaptop` (1280x800 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  margin_policy: `require_margin`
+  evidence_surface: `component`
+  surface_selector: `[data-visual-evidence-surface]`
+  target_selector: `[data-visual-evidence-target]`
+  target_program: `mock-only`
+  sensitive_exclusion: `N/A`
+  submission_gate: `pending-owner-approval`
+  evidence_note: verifies the same Retry recovery state keeps the warning
+  surface and action button on the dark semantic palette.
+
+![Device power panel cross-tab save retry dark](./assets/device-power-panel-cross-tab-save-retry-dark.png)
+
+- source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/Default`
   state: unlocked fallback when shared coordination is unavailable
   requested_viewport: `1365x1700`
@@ -662,7 +759,6 @@ for diagnostics.
   target_program: `mock-only`
   render_commit: `da56cdc`
   submission_gate: approved
-  PR: include
   evidence_note: verifies both dashboard devices render USB-A and USB-C live
   telemetry with fixed three-decimal precision in the compact PortMiniCard
   summary surface.
@@ -678,7 +774,6 @@ for diagnostics.
   target_program: `mock-only`
   render_commit: `da56cdc`
   submission_gate: approved
-  PR: include
   evidence_note: verifies the Power sidebar renders fixed three-decimal live
   V/A/W telemetry with amber, green, and blue semantic values without nested
   cards.
@@ -694,7 +789,6 @@ for diagnostics.
   target_program: `mock-only`
   render_commit: `da56cdc`
   submission_gate: approved
-  PR: include
   evidence_note: verifies the Power sidebar's semantic telemetry colors retain
   hierarchy and legibility in the dark theme.
 
@@ -709,7 +803,6 @@ for diagnostics.
   target_program: `mock-only`
   render_commit: `da56cdc`
   submission_gate: approved
-  PR: include
   evidence_note: verifies fixed three-decimal values remain readable with no
   horizontal overflow in the narrow Power layout.
 
@@ -723,7 +816,6 @@ for diagnostics.
   capture_scope: `viewport`
   target_program: `mock-only`
   submission_gate: approved
-  PR: include
   evidence_note: verifies the Manual TPS help popover keeps the measurement
   calculator with its explanatory copy and maps the 100mΩ recommendation onto
   the manual cable-loop compensation control that now auto-applies.
@@ -738,7 +830,6 @@ for diagnostics.
   capture_scope: `viewport`
   target_program: `mock-only`
   submission_gate: approved
-  PR: include
   evidence_note: verifies the independent Auto follow help popover recommends
   100mΩ from the same loop measurement and updates only the Auto follow SW2303
   compensation control before the shared runtime auto-applies it.
@@ -808,7 +899,6 @@ for diagnostics.
   during manual `Force`, without trying to duplicate the live USB-C state
   badges that now belong on the Dashboard card.
 
-PR: include
 ![Device power panel manual force config only](./assets/device-power-panel-manual-force-config-only.png)
 
 - source_type: storybook_canvas
@@ -824,7 +914,6 @@ PR: include
   cable-compensation slider and separate SW2303 line-compensation card both
   visible in the same saved power surface.
 
-PR: include
 ![Device power panel desktop](./assets/device-power-panel-default-desktop.png)
 
 - source_type: storybook_canvas
@@ -839,7 +928,6 @@ PR: include
   line-compensation card keeps the saved owner-facing role scoped to the next
   return to `Auto follow`.
 
-PR: include
 ![Device power panel manual TPS cable compensation](./assets/device-power-panel-manual-tps-cdc-set.png)
 
 - source_type: storybook_canvas
@@ -854,7 +942,6 @@ PR: include
   `FPWM` selected alongside the unchanged `tps_mode` and source-capability
   controls.
 
-PR: include
 ![Device power panel light-load mode](./assets/device-power-panel-light-load-mode.png)
 
 - source_type: storybook_canvas
@@ -869,7 +956,6 @@ PR: include
   voltage above `5 V` shows the explicit SW2303 heating warning and `Auto
   follow` recommendation.
 
-PR: include
 ![Device power panel output off manual high voltage](./assets/power-output-off-manual-high-voltage.png)
 
 - source_type: storybook_canvas
@@ -883,7 +969,6 @@ PR: include
   cable-compensation slider and SW2303 line-compensation control, while the
   saved values remain visible for inspection.
 
-PR: include
 ![Device power panel host locked](./assets/device-power-panel-host-locked.png)
 
 - source_type: live_hil_web_page
@@ -897,7 +982,6 @@ PR: include
   bridge contract on hardware `656A14`, with the page showing `EEPROM saved`
   after the write.
 
-PR: include
 ![Device power panel fpwm saved live](./assets/device-power-panel-fpwm-saved-live.png)
 
 - source_type: storybook_canvas
@@ -975,7 +1059,6 @@ PR: include
   evidence_note: proves a fresh page load still reflects the persisted light-
   load state from EEPROM instead of only showing an optimistic local toggle.
 
-PR: include
 ![Device power panel fpwm reloaded live](./assets/device-power-panel-fpwm-reloaded-live.png)
 
 - source_type: live_hil_web_page
@@ -988,7 +1071,6 @@ PR: include
   evidence_note: proves the same page can save back to `PFM`, leaving the final
   persisted hardware state at the default light-load mode.
 
-PR: include
 ![Device power panel current live](./assets/device-power-panel-current-live.png)
 
 - source_type: storybook_canvas
@@ -1001,7 +1083,6 @@ PR: include
   evidence_note: verifies the corrected-telemetry state, applied offset summary,
   and idle-bias action cluster after a successful calibration dataset exists.
 
-PR: include
 ![Device power panel idle-bias applied](./assets/device-power-panel-idle-bias-applied.png)
 
 - source_type: storybook_canvas
@@ -1054,7 +1135,6 @@ PR: include
   voltage display, and disabled power-configuration editing while the sweep is
   active.
 
-PR: include
 ![Device power panel idle-bias running](./assets/device-power-panel-idle-bias-running.png)
 
 - source_type: storybook_canvas
@@ -1068,7 +1148,6 @@ PR: include
   USB-C disconnect warning, and the promise that the prior power configuration
   is restored after the sweep.
 
-PR: include
 ![Device power panel idle-bias confirmation](./assets/device-power-panel-idle-bias-confirmation.png)
 
 - source_type: storybook_canvas
@@ -1081,7 +1160,6 @@ PR: include
   evidence_note: verifies that a failed idle-bias job reports the structured
   error state without collapsing the rest of the power panel.
 
-PR: include
 ![Device power panel idle-bias failure](./assets/device-power-panel-idle-bias-failure.png)
 
 - source_type: storybook_canvas
@@ -1096,7 +1174,6 @@ PR: include
   cards after the negotiation badge hides, while keeping the compact TPS CDC
   control reachable above the light-load card.
 
-PR: include
 ![Device power panel narrow](./assets/device-power-panel-narrow.png)
 
 - source_type: storybook_canvas
@@ -1109,7 +1186,6 @@ PR: include
   when the protocol grid is constrained into a medium two-column layout with
   enough per-card width.
 
-PR: include
 ![Device power panel medium wide cards](./assets/device-power-panel-medium-wide-cards.png)
 
 - source_type: storybook_canvas
@@ -1123,7 +1199,6 @@ PR: include
   setpoint + `FOCUS` badges while keeping the card V/A/W tied to the measured
   U17 telemetry.
 
-PR: include
 ![Device dashboard panel manual force live](./assets/device-dashboard-panel-manual-force-live.png)
 
 - source_type: storybook_canvas
@@ -1137,7 +1212,6 @@ PR: include
   setpoint + `ON` badges while keeping the card V/A/W tied to the measured
   U17 telemetry.
 
-PR: include
 ![Device dashboard panel manual path on live](./assets/device-dashboard-panel-manual-path-on-live.png)
 
 - source_type: storybook_canvas
@@ -1151,7 +1225,6 @@ PR: include
   setpoint + `OFF` badges while keeping the card V/A/W tied to the measured
   U17 telemetry.
 
-PR: include
 ![Device dashboard panel manual path off live](./assets/device-dashboard-panel-manual-path-off-live.png)
 
 - source_type: storybook_canvas
@@ -1164,7 +1237,6 @@ PR: include
   evidence_note: verifies legacy firmware without PD diagnostics keeps the
   existing USB-C status chip instead of rendering incomplete live badges.
 
-PR: include
 ![Device dashboard panel legacy firmware unknown isolation](./assets/device-dashboard-panel-legacy-firmware-unknown-isolation.png)
 
 - source_type: storybook_canvas
@@ -1177,7 +1249,6 @@ PR: include
   evidence_note: verifies live USB-C mode/setpoint badges do not suppress a
   real USB-C error status chip.
 
-PR: include
 ![Device dashboard panel live badges keep error status](./assets/device-dashboard-panel-live-badges-keep-error-status.png)
 
 - source_type: storybook_canvas
@@ -1191,7 +1262,6 @@ PR: include
   `IOUT_LIMIT` badge as `0.50 A` while keeping the existing `PD` and `9V`
   badges on the same row.
 
-PR: include
 ![Device dashboard panel output current limit live](./assets/device-dashboard-panel-output-current-limit-live.png)
 
 - source_type: storybook_canvas
@@ -1205,7 +1275,6 @@ PR: include
   when live diagnostics omit `iout_limit_ma`, while the existing `PD` and `9V`
   badges still render.
 
-PR: include
 ![Device dashboard panel output current limit missing](./assets/device-dashboard-panel-output-current-limit-missing.png)
 
 - source_type: live_hardware_browser
@@ -1220,7 +1289,6 @@ PR: include
   badge `ON` on the Overview page after restoring the Type-C default-path
   fallback behavior for non-negotiated sinks.
 
-PR: include
 ![HIL f293cc USB overview default path on](./assets/hil-f293cc-usb-overview-default-path-on.png)
 
 - source_type: live_hardware_browser
@@ -1235,7 +1303,6 @@ PR: include
   `37°C` ahead of the live USB-C current-limit and display-state badges while
   remaining below the thermal derating threshold.
 
-PR: include
 ![HIL dashboard TMP temperature chip](./assets/hil-dashboard-usb-c-tmp-temperature-chip.png)
 
 - source_type: storybook_canvas
@@ -1249,7 +1316,6 @@ PR: include
   hottest point, and the reduced effective cap while the runtime remains in
   `derating`.
 
-PR: include
 ![Device power panel thermal derating](./assets/device-power-panel-thermal-derating.png)
 
 - source_type: storybook_canvas
@@ -1263,7 +1329,6 @@ PR: include
   keeps output off, and explains that the operator must turn Power back on
   manually.
 
-PR: include
 ![Device power panel thermal rearm required](./assets/device-power-panel-thermal-rearm-required.png)
 
 - source_type: storybook_canvas
@@ -1277,7 +1342,6 @@ PR: include
   effective cap, and the operator-facing fault guidance when temperature
   telemetry is no longer trustworthy.
 
-PR: include
 ![Device power panel thermal sensor fault](./assets/device-power-panel-thermal-sensor-fault.png)
 
 ## Risks

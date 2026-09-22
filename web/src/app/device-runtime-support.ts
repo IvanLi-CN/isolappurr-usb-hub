@@ -21,6 +21,7 @@ import {
   devdLocalUsbDeviceIdFromBaseUrl,
   type JsonlRequest,
   LocalUsbAgentHttpError,
+  LocalUsbDispatchAuthorizationError,
   nextJsonlRequestId,
 } from "../domain/hardwareConsole";
 import type {
@@ -34,6 +35,78 @@ import type { CrossTabRuntimeLeaseState } from "./cross-tab-runtime";
 
 export type ConnectionState = "online" | "offline" | "unknown";
 export type DeviceTransport = "http" | "web_serial" | "local_usb";
+
+export const RUNTIME_MUTATION_METHODS = new Set([
+  "identify",
+  "wifi.set",
+  "wifi.clear",
+  "settings.name.set",
+  "settings.name.clear",
+  "settings.reset",
+  "reboot",
+  "power.config_set",
+  "power.config_defaults",
+  "power.lock",
+  "power.runtime_set",
+  "power.idle_bias_set",
+  "power.idle_bias_run",
+  "power.idle_bias_clear",
+  "port.power_set",
+  "port.data_set",
+  "port.replug",
+  "hub.route_set",
+]);
+
+export function takeoverRecoveryError(message: string): DeviceApiError {
+  return {
+    kind: "busy",
+    message,
+    retryable: true,
+    recovery: "takeover",
+  };
+}
+
+export function staleRuntimeMutationError(): DeviceApiError {
+  return takeoverRecoveryError(
+    "This browser tab lost device control. Take over and retry.",
+  );
+}
+
+export function runtimeMutationDispatchError(
+  method: string,
+  hasCurrentLease: boolean,
+): DeviceApiError | null {
+  if (!RUNTIME_MUTATION_METHODS.has(method) || hasCurrentLease) {
+    return null;
+  }
+  return takeoverRecoveryError(
+    "This browser tab no longer controls the device. Take over control and retry.",
+  );
+}
+
+export function crossTabRuntimeTimeoutResult<T>(method: string): Result<T> {
+  return {
+    ok: false,
+    error: takeoverRecoveryError(
+      `The active browser tab did not confirm ${method}. Take over control and retry.`,
+    ),
+  };
+}
+
+export function fenceRuntimeMutationResult<T>(
+  result: Result<T>,
+  hasCurrentLease: boolean,
+): Result<T> {
+  if (hasCurrentLease) {
+    return result;
+  }
+  return {
+    ok: false,
+    error: takeoverRecoveryError(
+      "This browser tab lost control while the device request was running. Take over control and retry.",
+    ),
+  };
+}
 
 export type ChannelRuntime = {
   lastOkAt: number | null;
@@ -129,7 +202,7 @@ export type DeviceRuntimeContextValue = {
   displayName: (deviceId: string) => string;
   displayNameInfo: (deviceId: string) => DeviceInfoResponse | null;
   powerLockOwner: (deviceId: string) => number;
-  requestControlTakeover: () => void;
+  requestControlTakeover: () => Promise<CrossTabRuntimeLeaseState>;
   refreshDevice: (deviceId: string) => Promise<void>;
   deviceInfo: (deviceId: string) => Promise<Result<DeviceInfoResponse>>;
   identify: (deviceId: string) => Promise<Result<IdentifyResponse>>;
@@ -519,6 +592,9 @@ export function resetLocalUsbRuntimeStateForDevice(
 }
 
 export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {
+  if (err instanceof LocalUsbDispatchAuthorizationError) {
+    return err.deviceError;
+  }
   if (err instanceof LocalUsbAgentHttpError) {
     if (err.status === 409 && err.code === "busy") {
       return { kind: "busy", message: err.message, retryable: true };
@@ -595,6 +671,20 @@ export async function runQueuedDeviceRequest<T>(
       delete queues[deviceId];
     }
   }
+}
+
+export function runQueuedDeviceRequestWithAuthorization<T>(
+  queues: Record<string, Promise<void>>,
+  deviceId: string,
+  getAuthorizationError: () => DeviceApiError | null,
+  dispatch: () => Promise<Result<T>>,
+): Promise<Result<T>> {
+  return runQueuedDeviceRequest(queues, deviceId, async () => {
+    const authorizationError = getAuthorizationError();
+    return authorizationError
+      ? { ok: false, error: authorizationError }
+      : dispatch();
+  });
 }
 
 export function uniqueTransports(

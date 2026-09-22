@@ -36,8 +36,6 @@ export function createDeviceNameActions(params: {
   devices: StoredDevice[];
   runtimeByIdRef: MutableRefObject<Record<string, DeviceRuntime>>;
   setRuntimeById: Dispatch<SetStateAction<Record<string, DeviceRuntime>>>;
-  isLeader: boolean;
-  coordinationRole: "leader" | "follower" | "unsupported";
   requestLeaderRpc: RequestLeaderRpc;
   runDeviceCommand: RunCommand;
   runSharedMutation: SharedMutation;
@@ -103,7 +101,7 @@ export function createDeviceNameActions(params: {
     paramsValue: Record<string, unknown> | undefined,
     options?: Options,
   ): Promise<Result<DeviceNameMutationResponse>> => {
-    if (!params.isLeader && params.coordinationRole !== "unsupported") {
+    if (params.coordinator.hasActiveLeader()) {
       return params.requestLeaderRpc(method, [
         deviceId,
         ...(paramsValue ? [paramsValue.name] : []),

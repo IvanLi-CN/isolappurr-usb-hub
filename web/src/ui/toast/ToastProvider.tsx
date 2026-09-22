@@ -1,29 +1,111 @@
-import { createContext, useCallback, useContext, useMemo } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Toaster, toast } from "sonner";
 
 export type ToastVariant = "info" | "success" | "warning" | "error";
+
+export type ToastAction = {
+  label: string;
+  onClick: () => void;
+};
 
 export type ToastInput = {
   id?: string;
   message: string;
   variant?: ToastVariant;
   durationMs?: number;
+  action?: ToastAction;
 };
 
 type ToastContextValue = {
   pushToast: (toast: ToastInput) => void;
+  dismissToast: (id?: string) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+type SonnerTheme = "light" | "dark";
+
+function resolveSonnerTheme(): SonnerTheme {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+  const theme = document.documentElement.getAttribute("data-theme");
+  if (theme === "isolapurr-dark") {
+    return "dark";
+  }
+  if (theme === "isolapurr") {
+    return "light";
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+function useSonnerTheme(): SonnerTheme {
+  const [theme, setTheme] = useState(resolveSonnerTheme);
+
+  useEffect(() => {
+    const updateTheme = () => setTheme(resolveSonnerTheme());
+    const root = document.documentElement;
+    const observer =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(updateTheme);
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+
+    observer?.observe(root, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    mediaQuery?.addEventListener("change", updateTheme);
+    updateTheme();
+
+    return () => {
+      observer?.disconnect();
+      mediaQuery?.removeEventListener("change", updateTheme);
+    };
+  }, []);
+
+  return theme;
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const theme = useSonnerTheme();
   const pushToast = useCallback((input: ToastInput) => {
     const variant = input.variant ?? "info";
     const durationMs = input.durationMs ?? 2500;
-    toast[variant](input.message, { duration: durationMs, id: input.id });
+    const action = input.action
+      ? {
+          label: input.action.label,
+          onClick: () => {
+            input.action?.onClick();
+            if (input.id) {
+              toast.dismiss(input.id);
+            }
+          },
+        }
+      : undefined;
+    toast[variant](input.message, {
+      action,
+      duration: durationMs,
+      id: input.id,
+    });
+  }, []);
+  const dismissToast = useCallback((id?: string) => {
+    toast.dismiss(id);
   }, []);
 
-  const value = useMemo(() => ({ pushToast }), [pushToast]);
+  const value = useMemo(
+    () => ({ dismissToast, pushToast }),
+    [dismissToast, pushToast],
+  );
 
   return (
     <ToastContext.Provider value={value}>
@@ -31,6 +113,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <Toaster
         closeButton
         richColors
+        theme={theme}
         position="bottom-right"
         toastOptions={{
           classNames: {

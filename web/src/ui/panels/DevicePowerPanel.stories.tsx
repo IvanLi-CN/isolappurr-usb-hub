@@ -1,8 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { expect, userEvent, within } from "@storybook/test";
+import { expect, userEvent, waitFor, within } from "@storybook/test";
 import { useState } from "react";
 
-import type { PdDiagnosticsResponse } from "../../domain/deviceApi";
+import type {
+  DeviceApiError,
+  PdDiagnosticsResponse,
+} from "../../domain/deviceApi";
 import { ToastProvider } from "../toast/ToastProvider";
 import { DevicePowerPanel } from "./DevicePowerPanel";
 import {
@@ -34,15 +37,20 @@ const meta: Meta<typeof DevicePowerPanel> = {
     layout: "fullscreen",
   },
   decorators: [
-    (Story) => (
-      <ToastProvider>
-        <div className="min-h-screen bg-[var(--bg)] p-6">
-          <div className="mx-auto max-w-[1280px]">
-            <Story />
-          </div>
+    (Story, context) =>
+      context.parameters.skipToastProvider ? (
+        <div className="min-h-screen bg-[var(--bg)]">
+          <Story />
         </div>
-      </ToastProvider>
-    ),
+      ) : (
+        <ToastProvider>
+          <div className="min-h-screen bg-[var(--bg)] p-6">
+            <div className="mx-auto max-w-[1280px]">
+              <Story />
+            </div>
+          </div>
+        </ToastProvider>
+      ),
   ],
 };
 
@@ -104,6 +112,90 @@ export const Default: Story = {
     ).toBeDisabled();
   },
 };
+
+const retryInitialConfig = {
+  ...controlledHereConfig,
+  capability: {
+    ...controlledHereConfig.capability,
+    pd: {
+      ...controlledHereConfig.capability.pd,
+      fixed_voltages_mv: [9000, 12000],
+    },
+  },
+};
+
+function ordinarySaveFailureStory(error: DeviceApiError): Story {
+  return {
+    render: (args) => <OrdinarySaveFailureHarness args={args} error={error} />,
+    args: {
+      ...defaultArgs,
+      sharedPowerConfig: retryInitialConfig,
+      loadPowerConfig: () => ok(retryInitialConfig),
+    },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      const page = within(canvasElement.ownerDocument.body);
+      await userEvent.click(
+        await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+      );
+      await waitFor(() =>
+        expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1"),
+      );
+      await waitFor(() =>
+        expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(
+          0,
+        ),
+      );
+      await expect(canvas.getByTestId("save-attempts")).toHaveTextContent("1");
+      await expect(
+        canvas.getByRole("button", { name: "Fixed PDO 12V" }),
+      ).toHaveAttribute("aria-pressed", "false");
+    },
+  };
+}
+
+function OrdinarySaveFailureHarness({
+  args,
+  error,
+}: {
+  args: Story["args"];
+  error: DeviceApiError;
+}) {
+  const [attempts, setAttempts] = useState(0);
+  return (
+    <>
+      <DevicePowerPanel
+        {...args}
+        savePowerConfig={async () => {
+          setAttempts((current) => current + 1);
+          return { ok: false, error };
+        }}
+      />
+      <span className="sr-only" data-testid="save-attempts">
+        {attempts}
+      </span>
+    </>
+  );
+}
+
+export const OrdinaryOfflineSaveFailure = ordinarySaveFailureStory({
+  kind: "offline",
+  message: "The device is offline.",
+});
+
+export const OrdinaryBusySaveFailure = ordinarySaveFailureStory({
+  kind: "busy",
+  retryable: true,
+  message: "The device is locked by another host.",
+});
+
+export const OrdinaryApiSaveFailure = ordinarySaveFailureStory({
+  kind: "api_error",
+  status: 403,
+  code: "device_locked",
+  message: "The device rejected this request.",
+  retryable: false,
+});
 
 export const ControlledHere: Story = {
   args: {

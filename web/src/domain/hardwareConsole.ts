@@ -1,4 +1,5 @@
 import { agentFetch, type DesktopAgent } from "./desktopAgent";
+import type { DeviceApiError } from "./deviceApi";
 import type {
   BundledFirmwareAsset,
   BundledFirmwareRelease,
@@ -59,6 +60,26 @@ export class LocalUsbAgentHttpError extends Error {
     this.status = status;
     this.code = code;
     this.retryable = retryable;
+  }
+}
+
+export class LocalUsbDispatchAuthorizationError extends Error {
+  readonly deviceError: DeviceApiError;
+
+  constructor(deviceError: DeviceApiError) {
+    super(deviceError.message);
+    this.deviceError = deviceError;
+  }
+}
+
+type LocalUsbDispatchGuard = () => DeviceApiError | null;
+
+function assertLocalUsbDispatchAuthorized(
+  getDispatchAuthorizationError?: LocalUsbDispatchGuard,
+): void {
+  const error = getDispatchAuthorizationError?.() ?? null;
+  if (error) {
+    throw new LocalUsbDispatchAuthorizationError(error);
   }
 }
 
@@ -426,6 +447,7 @@ export async function sendLocalUsbJsonlRequest(
   agent: DesktopAgent,
   portPath: string,
   request: JsonlRequest,
+  getDispatchAuthorizationError?: LocalUsbDispatchGuard,
 ): Promise<unknown> {
   const previous = localUsbRequestQueues[portPath] ?? Promise.resolve();
   let releaseQueue: () => void = () => undefined;
@@ -439,7 +461,12 @@ export async function sendLocalUsbJsonlRequest(
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= LOCAL_USB_BUSY_RETRIES; attempt += 1) {
       try {
-        return await sendLocalUsbJsonlRequestNow(agent, portPath, request);
+        return await sendLocalUsbJsonlRequestNow(
+          agent,
+          portPath,
+          request,
+          getDispatchAuthorizationError,
+        );
       } catch (err) {
         const error =
           err instanceof Error ? err : new Error("Local USB request failed");
@@ -466,18 +493,25 @@ export async function sendDevdLocalUsbJsonlRequest(
   agent: DesktopAgent,
   deviceId: string,
   request: JsonlRequest,
+  getDispatchAuthorizationError?: LocalUsbDispatchGuard,
 ): Promise<unknown> {
-  await ensureDevdLocalUsbDeviceRegistered(agent, deviceId);
+  await ensureDevdLocalUsbDeviceRegistered(
+    agent,
+    deviceId,
+    getDispatchAuthorizationError,
+  );
   const endpoint = localUsbMethodEndpoint(deviceId, request);
   let lease: { lease_id: string } | null = null;
   try {
     if (request.method === "reboot") {
+      assertLocalUsbDispatchAuthorized(getDispatchAuthorizationError);
       lease = await createLocalUsbLease(agent, deviceId);
       endpoint.body = {
         ...(endpoint.body as object),
         lease_id: lease.lease_id,
       };
     }
+    assertLocalUsbDispatchAuthorized(getDispatchAuthorizationError);
     const res = await agentFetch(agent, endpoint.path, {
       method: endpoint.method,
       body: endpoint.body ? JSON.stringify(endpoint.body) : undefined,
@@ -505,7 +539,9 @@ export async function sendDevdLocalUsbJsonlRequest(
 async function ensureDevdLocalUsbDeviceRegistered(
   agent: DesktopAgent,
   deviceId: string,
+  getDispatchAuthorizationError?: LocalUsbDispatchGuard,
 ): Promise<void> {
+  assertLocalUsbDispatchAuthorized(getDispatchAuthorizationError);
   const res = await agentFetch(agent, "/api/v1/devices/scan", {
     method: "POST",
   });
@@ -530,19 +566,27 @@ async function sendLocalUsbJsonlRequestNow(
   agent: DesktopAgent,
   portPath: string,
   request: JsonlRequest,
+  getDispatchAuthorizationError?: LocalUsbDispatchGuard,
 ): Promise<unknown> {
   const deviceId = stableLocalUsbDeviceId(portPath);
-  await ensureLocalUsbDeviceRegistered(agent, deviceId, portPath);
+  await ensureLocalUsbDeviceRegistered(
+    agent,
+    deviceId,
+    portPath,
+    getDispatchAuthorizationError,
+  );
   const endpoint = localUsbMethodEndpoint(deviceId, request);
   let lease: { lease_id: string } | null = null;
   try {
     if (request.method === "reboot") {
+      assertLocalUsbDispatchAuthorized(getDispatchAuthorizationError);
       lease = await createLocalUsbLease(agent, deviceId);
       endpoint.body = {
         ...(endpoint.body as object),
         lease_id: lease.lease_id,
       };
     }
+    assertLocalUsbDispatchAuthorized(getDispatchAuthorizationError);
     const res = await agentFetch(agent, endpoint.path, {
       method: endpoint.method,
       body: endpoint.body ? JSON.stringify(endpoint.body) : undefined,
@@ -553,7 +597,12 @@ async function sendLocalUsbJsonlRequestNow(
     } | null;
     if (!res.ok) {
       if (shouldFallbackToLegacySerialApi(res.status)) {
-        return legacyLocalUsbJsonlRequest(agent, portPath, request);
+        return legacyLocalUsbJsonlRequest(
+          agent,
+          portPath,
+          request,
+          getDispatchAuthorizationError,
+        );
       }
       throw new LocalUsbAgentHttpError(
         json?.error?.message ?? `Local USB request failed (${res.status})`,
@@ -563,7 +612,12 @@ async function sendLocalUsbJsonlRequestNow(
       );
     }
     if (!isUsableLocalUsbJson(json)) {
-      return legacyLocalUsbJsonlRequest(agent, portPath, request);
+      return legacyLocalUsbJsonlRequest(
+        agent,
+        portPath,
+        request,
+        getDispatchAuthorizationError,
+      );
     }
     return json?.response ?? json;
   } catch (err) {
@@ -571,7 +625,12 @@ async function sendLocalUsbJsonlRequestNow(
       err instanceof LocalUsbAgentHttpError &&
       shouldFallbackToLegacySerialApi(err.status)
     ) {
-      return legacyLocalUsbJsonlRequest(agent, portPath, request);
+      return legacyLocalUsbJsonlRequest(
+        agent,
+        portPath,
+        request,
+        getDispatchAuthorizationError,
+      );
     }
     throw err;
   } finally {
@@ -585,7 +644,9 @@ async function legacyLocalUsbJsonlRequest(
   agent: DesktopAgent,
   portPath: string,
   request: JsonlRequest,
+  getDispatchAuthorizationError?: LocalUsbDispatchGuard,
 ): Promise<unknown> {
+  assertLocalUsbDispatchAuthorized(getDispatchAuthorizationError);
   const res = await agentFetch(agent, "/api/v1/serial/request", {
     method: "POST",
     body: JSON.stringify({
@@ -631,7 +692,9 @@ async function ensureLocalUsbDeviceRegistered(
   agent: DesktopAgent,
   deviceId: string,
   portPath: string,
+  getDispatchAuthorizationError?: LocalUsbDispatchGuard,
 ): Promise<void> {
+  assertLocalUsbDispatchAuthorized(getDispatchAuthorizationError);
   const res = await agentFetch(agent, "/api/v1/serial/register", {
     method: "POST",
     body: JSON.stringify({ portPath }),

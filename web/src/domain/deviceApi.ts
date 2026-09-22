@@ -47,7 +47,12 @@ export type DeviceApiError = (
       message: string;
       actionable: "Browser blocked";
     }
-  | { kind: "busy"; message: string; retryable: true }
+  | {
+      kind: "busy";
+      message: string;
+      retryable: true;
+      recovery?: "takeover";
+    }
   | {
       kind: "api_error";
       status: number;

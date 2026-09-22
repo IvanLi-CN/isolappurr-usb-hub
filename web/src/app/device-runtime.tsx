@@ -35,13 +35,12 @@ import {
 } from "../domain/webSerialLinks";
 import { useToast } from "../ui/toast/ToastProvider";
 import {
+  type CrossTabRuntimeCoordinator,
+  type CrossTabRuntimeLeaseState,
   DEMO_RUNTIME_SCOPE,
   getSharedCrossTabRuntimeCoordinator,
   LIVE_RUNTIME_SCOPE,
   type RuntimeChannelMessage,
-  type RuntimeRpcMethod,
-  type RuntimeRpcResultMap,
-  runtimeRpcMethodKind,
 } from "./cross-tab-runtime";
 import { useDemoMode } from "./demo-mode";
 import { createDeviceRuntimeActions } from "./device-runtime-actions";
@@ -53,6 +52,11 @@ import {
 } from "./device-runtime-helpers";
 import { useDeviceRuntimePowerLock } from "./device-runtime-power-lock";
 import {
+  createRequestLeaderRpc,
+  type PendingRuntimeRpc,
+  settlePendingRuntimeRpc,
+} from "./device-runtime-rpc";
+import {
   markDeviceRuntimeChannel,
   syncDeviceRuntimeIdleBias,
   syncDeviceRuntimePdDiagnostics,
@@ -63,6 +67,7 @@ import {
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
   type DeviceTransport,
+  fenceRuntimeMutationResult,
   getStablePowerLockOwner,
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
@@ -71,20 +76,23 @@ import {
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
+  RUNTIME_MUTATION_METHODS,
   recoverWifiClearLikeTimeout,
   resetLocalUsbRuntimeState,
   resetLocalUsbRuntimeStateForDevice,
   resolveActiveDeviceTransport,
   resolveLocalUsbTarget,
   resolveOrderedDeviceTransports,
-  runQueuedDeviceRequest,
-  shouldForgetWebSerialTransport,
+  runQueuedDeviceRequestWithAuthorization,
+  runtimeMutationDispatchError,
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
+  takeoverRecoveryError,
   verifiedWifiHttpBaseUrl,
 } from "./device-runtime-support";
 import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
+import { createWebSerialRequester } from "./device-runtime-web-serial";
 import { useDevices } from "./devices-store";
 
 export { useDeviceRuntime } from "./device-runtime-context";
@@ -92,6 +100,7 @@ export type {
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
+
 export function DeviceRuntimeProvider({
   children,
 }: {
@@ -111,6 +120,7 @@ export function DeviceRuntimeProvider({
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(
     {},
   );
+  const snapshotHydratedFor = useRef<CrossTabRuntimeCoordinator | null>(null);
   const [coordination, setCoordination] = useState(() =>
     coordinator.getLeaseState(),
   );
@@ -126,16 +136,7 @@ export function DeviceRuntimeProvider({
   const preferredTransportByDevice = useRef<Record<string, DeviceTransport>>(
     {},
   );
-  const pendingRpc = useRef<
-    Record<
-      string,
-      {
-        resolve: (value: unknown) => void;
-        reject: (reason?: unknown) => void;
-        timeoutId: number;
-      }
-    >
-  >({});
+  const pendingRpc = useRef<Record<string, PendingRuntimeRpc>>({});
   const rpcRequestHandlerRef = useRef<
     | ((
         message: Extract<
@@ -148,27 +149,41 @@ export function DeviceRuntimeProvider({
   const wasLeaderRef = useRef(coordination.role !== "follower");
   const isLeader = coordination.role !== "follower";
   const isLeaderRef = useRef(isLeader);
-  const coordinationRoleRef = useRef(coordination.role);
   isLeaderRef.current = isLeader;
-  coordinationRoleRef.current = coordination.role;
+  const getMutationDispatchAuthorizationError = useCallback(
+    (method: string) =>
+      runtimeMutationDispatchError(method, coordinator.hasCurrentLease()),
+    [coordinator],
+  );
+  const requestWebSerial = useMemo(
+    () =>
+      createWebSerialRequester({
+        getDispatchAuthorizationError: getMutationDispatchAuthorizationError,
+      }),
+    [getMutationDispatchAuthorizationError],
+  );
 
   useEffect(() => {
     runtimeByIdRef.current = runtimeById;
   }, [runtimeById]);
 
   useEffect(() => {
+    const currentTabId = coordinator.getTabId();
     coordinator.start();
-    const cachedSnapshot = coordinator.readSnapshot();
-    if (cachedSnapshot) {
-      setNow(cachedSnapshot.now);
-      setRuntimeById(cachedSnapshot.runtimeById);
+    if (snapshotHydratedFor.current !== coordinator) {
+      snapshotHydratedFor.current = coordinator;
+      const cachedSnapshot = coordinator.readSnapshot();
+      if (cachedSnapshot) {
+        setNow(cachedSnapshot.now);
+        setRuntimeById(cachedSnapshot.runtimeById);
+      }
     }
     const unsubscribeLease = coordinator.subscribeLease(setCoordination);
     const unsubscribeMessages = coordinator.subscribeMessages((message) => {
       if (
         message.type === "runtime-snapshot" &&
-        message.originTabId !== coordination.currentTabId &&
-        !isLeader
+        message.originTabId !== currentTabId &&
+        !isLeaderRef.current
       ) {
         setNow(message.snapshot.now);
         setRuntimeById(message.snapshot.runtimeById);
@@ -176,18 +191,17 @@ export function DeviceRuntimeProvider({
       }
       if (
         message.type === "runtime-rpc-response" &&
-        message.targetTabId === coordination.currentTabId
+        message.targetTabId === currentTabId
       ) {
-        const pending = pendingRpc.current[message.requestId];
-        if (!pending) {
-          return;
-        }
-        window.clearTimeout(pending.timeoutId);
-        delete pendingRpc.current[message.requestId];
-        pending.resolve(message.result);
+        settlePendingRuntimeRpc(
+          pendingRpc,
+          message.requestId,
+          message.result,
+          window.clearTimeout,
+        );
         return;
       }
-      if (message.type === "runtime-rpc-request" && isLeader) {
+      if (message.type === "runtime-rpc-request" && isLeaderRef.current) {
         void rpcRequestHandlerRef.current?.(message);
       }
     });
@@ -196,7 +210,7 @@ export function DeviceRuntimeProvider({
       unsubscribeLease();
       coordinator.stop();
     };
-  }, [coordinator, coordination.currentTabId, isLeader]);
+  }, [coordinator]);
 
   useEffect(() => {
     if (!isLeader) {
@@ -260,73 +274,41 @@ export function DeviceRuntimeProvider({
   }, [devices]);
   const createRpcRequestId = createRuntimeRpcRequestId;
 
-  const runtimeRpcTimeoutMs = useCallback(
-    (method: RuntimeRpcMethod): number => {
-      if (method === "runIdleBiasCalibration") {
-        return 190_000;
-      }
-      if (
-        method === "savePowerConfig" ||
-        method === "restorePowerDefaults" ||
-        method === "setPowerLock" ||
-        method === "setPowerRuntime" ||
-        method === "setIdleBiasCorrection" ||
-        method === "clearIdleBiasCalibration" ||
-        method === "saveWifiConfig" ||
-        method === "clearWifiConfig" ||
-        method === "resetSettings" ||
-        method === "rebootDevice" ||
-        method === "setPower" ||
-        method === "setData" ||
-        method === "replug" ||
-        method === "setUsbCDownstreamRoute"
-      ) {
-        return 25_000;
-      }
-      return 8_000;
-    },
-    [],
+  const requestLeaderRpc = useMemo(
+    () =>
+      createRequestLeaderRpc({
+        coordinator,
+        currentTabId: coordination.currentTabId,
+        createRpcRequestId,
+        pendingRpc,
+      }),
+    [coordinator, coordination.currentTabId, createRpcRequestId],
   );
-  const requestLeaderRpc = useCallback(
-    async <TMethod extends RuntimeRpcMethod>(
-      method: TMethod,
-      args: unknown[],
-    ): Promise<RuntimeRpcResultMap[TMethod]> => {
-      const requestId = createRpcRequestId();
-      return new Promise<RuntimeRpcResultMap[TMethod]>((resolve, reject) => {
-        const timeoutId = window.setTimeout(() => {
-          delete pendingRpc.current[requestId];
-          reject(new Error(`Cross-tab runtime request timed out: ${method}`));
-        }, runtimeRpcTimeoutMs(method));
-        pendingRpc.current[requestId] = {
-          resolve: (value) => resolve(value as RuntimeRpcResultMap[TMethod]),
-          reject,
-          timeoutId,
-        };
-        coordinator.postMessage({
-          type: "runtime-rpc-request",
-          originTabId: coordination.currentTabId,
-          requestId,
-          kind: runtimeRpcMethodKind(method),
-          method,
-          args,
-        });
-      });
-    },
-    [
-      coordinator,
-      coordination.currentTabId,
-      createRpcRequestId,
-      runtimeRpcTimeoutMs,
-    ],
-  );
-  const requestControlTakeover = useCallback(() => {
-    coordinator.requestTakeover();
-  }, [coordinator]);
+  const requestControlTakeover =
+    useCallback(async (): Promise<CrossTabRuntimeLeaseState> => {
+      await coordinator.requestTakeover();
+      return coordinator.getLeaseState();
+    }, [coordinator]);
   const { runSharedMutation } = createSharedMutationController({
+    canInvokeMutation: () => {
+      if (coordinator.hasCurrentLease()) {
+        return null;
+      }
+      return takeoverRecoveryError(
+        "This browser tab no longer controls the device. Take over control and retry.",
+      );
+    },
     currentTabId: coordination.currentTabId,
     createRpcRequestId,
     deviceMutationQueues,
+    tryAcquireMutationFence: (deviceId, requestId) =>
+      coordinator.tryAcquireMutationFence(deviceId, requestId),
+    releaseMutationFence: (deviceId, requestId) =>
+      coordinator.releaseMutationFence(deviceId, requestId),
+    renewMutationFence: (deviceId, requestId) =>
+      coordinator.renewMutationFence(deviceId, requestId),
+    runMutationWithFence: (deviceId, requestId, invoke) =>
+      coordinator.runMutationWithFence(deviceId, requestId, invoke),
     setRuntimeById,
   });
   const syncObservedPowerLock = useObservedPowerLockSync();
@@ -389,9 +371,10 @@ export function DeviceRuntimeProvider({
         };
       }
       const timeoutMs = jsonlTimeoutMsForMethod(method, params);
-      return runQueuedDeviceRequest(
+      return runQueuedDeviceRequestWithAuthorization(
         localUsbRequestQueues.current,
         deviceId,
+        () => getMutationDispatchAuthorizationError(method),
         async () => {
           let caughtError: unknown = null;
           try {
@@ -407,11 +390,13 @@ export function DeviceRuntimeProvider({
                     agent,
                     target.deviceId,
                     request,
+                    () => getMutationDispatchAuthorizationError(method),
                   )
                 : await sendLocalUsbJsonlRequest(
                     agent,
                     target.portPath,
                     request,
+                    () => getMutationDispatchAuthorizationError(method),
                   );
             const envelope = response as JsonlEnvelope<T>;
             if (envelope?.ok && envelope.result !== undefined) {
@@ -437,11 +422,13 @@ export function DeviceRuntimeProvider({
                     agent,
                     target.deviceId,
                     request,
+                    () => getMutationDispatchAuthorizationError(method),
                   )
                 : await sendLocalUsbJsonlRequest(
                     agent,
                     target.portPath,
                     request,
+                    () => getMutationDispatchAuthorizationError(method),
                   ),
             method,
             params,
@@ -460,66 +447,7 @@ export function DeviceRuntimeProvider({
         },
       );
     },
-    [devices, getLocalUsbAgent],
-  );
-  const requestWebSerial = useCallback(
-    async <T,>(
-      deviceId: string,
-      method: string,
-      params?: Record<string, unknown>,
-    ): Promise<Result<T>> => {
-      const transport = getWebSerialDeviceTransport(deviceId);
-      if (!transport) {
-        return {
-          ok: false,
-          error: { kind: "offline", message: "Web Serial not connected" },
-        };
-      }
-      try {
-        const timeoutMs = jsonlTimeoutMsForMethod(method, params);
-        const response = await transport.request({
-          id: nextJsonlRequestId(),
-          method,
-          params,
-          timeoutMs,
-        });
-        const envelope = response as JsonlEnvelope<T>;
-        if (envelope?.ok && envelope.result !== undefined) {
-          return { ok: true, value: envelope.result };
-        }
-        return {
-          ok: false,
-          error: {
-            kind: "api_error",
-            status: 500,
-            code: envelope?.error?.code ?? "web_serial_error",
-            message: envelope?.error?.message ?? "Web Serial request failed",
-            retryable: envelope?.error?.retryable ?? false,
-          },
-        };
-      } catch (err) {
-        const recovered = await recoverWifiClearLikeTimeout<T>(
-          async (request) => transport.request(request),
-          method,
-          params,
-        );
-        if (recovered) {
-          return recovered;
-        }
-        if (shouldForgetWebSerialTransport(err)) {
-          forgetWebSerialDeviceTransport(deviceId);
-        }
-        return {
-          ok: false,
-          error: {
-            kind: "offline",
-            message:
-              err instanceof Error ? err.message : "Web Serial request failed",
-          },
-        };
-      }
-    },
-    [],
+    [devices, getLocalUsbAgent, getMutationDispatchAuthorizationError],
   );
 
   const requestTransport = useCallback(
@@ -531,8 +459,11 @@ export function DeviceRuntimeProvider({
       params?: Record<string, unknown>,
     ): Promise<Result<T>> => {
       if (transport === "http") {
-        return runQueuedDeviceRequest(httpRequestQueues.current, deviceId, () =>
-          requestHttpTransport<T>(baseUrl, method, params),
+        return runQueuedDeviceRequestWithAuthorization(
+          httpRequestQueues.current,
+          deviceId,
+          () => getMutationDispatchAuthorizationError(method),
+          () => requestHttpTransport<T>(baseUrl, method, params),
         );
       }
       if (transport === "web_serial") {
@@ -540,7 +471,7 @@ export function DeviceRuntimeProvider({
       }
       return requestLocalUsb<T>(deviceId, method, params);
     },
-    [requestLocalUsb, requestWebSerial],
+    [getMutationDispatchAuthorizationError, requestLocalUsb, requestWebSerial],
   );
 
   const markChannelResult = useCallback(
@@ -653,7 +584,8 @@ export function DeviceRuntimeProvider({
         if (!res) {
           return;
         }
-        const stalePoll = pollGeneration.current[deviceId] !== generation;
+        const stalePoll =
+          (pollGeneration.current[deviceId] ?? 0) !== generation;
         setRuntimeById((prev) => {
           const current = prev[deviceId];
           if (!current) {
@@ -742,7 +674,7 @@ export function DeviceRuntimeProvider({
         }
       } finally {
         inflight.current.delete(deviceId);
-        if (pollGeneration.current[deviceId] !== generation) {
+        if ((pollGeneration.current[deviceId] ?? 0) !== generation) {
           void pollDeviceRef.current(deviceId, baseUrl);
         }
       }
@@ -863,7 +795,7 @@ export function DeviceRuntimeProvider({
 
   const refreshDevice = useCallback(
     async (deviceId: string) => {
-      if (!isLeader && coordination.role !== "unsupported") {
+      if (coordinator.hasActiveLeader()) {
         await requestLeaderRpc("refreshDevice", [deviceId]);
         return;
       }
@@ -873,12 +805,12 @@ export function DeviceRuntimeProvider({
       }
       await pollDevice(deviceId, httpBaseUrlForDevice(device));
     },
-    [coordination.role, devices, isLeader, pollDevice, requestLeaderRpc],
+    [coordinator, devices, pollDevice, requestLeaderRpc],
   );
 
   const deviceInfo = useCallback(
     async (deviceId: string): Promise<Result<DeviceInfoResponse>> => {
-      if (!isLeader && coordination.role !== "unsupported") {
+      if (coordinator.hasActiveLeader()) {
         return requestLeaderRpc("deviceInfo", [deviceId]);
       }
       const device = devices.find((d) => d.id === deviceId);
@@ -962,9 +894,8 @@ export function DeviceRuntimeProvider({
       return checked;
     },
     [
-      coordination.role,
+      coordinator,
       devices,
-      isLeader,
       markChannelResult,
       rebindHttpBaseUrl,
       requestLeaderRpc,
@@ -1004,6 +935,14 @@ export function DeviceRuntimeProvider({
         };
       }
       for (const transport of transports) {
+        const authorizationError =
+          getMutationDispatchAuthorizationError(method);
+        if (authorizationError) {
+          return {
+            ok: false,
+            error: authorizationError,
+          };
+        }
         const candidate = await requestTransport<T>(
           deviceId,
           transport === "http" ? httpBaseUrlForDevice(device) : device.baseUrl,
@@ -1011,7 +950,23 @@ export function DeviceRuntimeProvider({
           method,
           params,
         );
+        const hasCurrentLease = coordinator.hasCurrentLease();
+        if (RUNTIME_MUTATION_METHODS.has(method) && !hasCurrentLease) {
+          const fencedResult = fenceRuntimeMutationResult(
+            candidate,
+            hasCurrentLease,
+          );
+          markChannelResult(deviceId, transport, fencedResult);
+          return fencedResult;
+        }
         markChannelResult(deviceId, transport, candidate);
+        if (
+          !candidate.ok &&
+          candidate.error.kind === "busy" &&
+          candidate.error.recovery === "takeover"
+        ) {
+          return candidate;
+        }
         if (method === "identify") {
           res = candidate;
           const definitePreDispatchOffline =
@@ -1059,7 +1014,14 @@ export function DeviceRuntimeProvider({
       }
       return res;
     },
-    [devices, markChannelResult, orderedTransports, requestTransport],
+    [
+      coordinator,
+      devices,
+      getMutationDispatchAuthorizationError,
+      markChannelResult,
+      orderedTransports,
+      requestTransport,
+    ],
   );
 
   const refreshCanonicalPowerConfig = useDeviceRuntimePowerLock({
@@ -1067,6 +1029,7 @@ export function DeviceRuntimeProvider({
     isLeader,
     runtimeByIdRef,
     runDeviceCommand,
+    runSharedMutation,
     syncObservedPowerLock,
     syncPowerConfigSnapshot,
   });
@@ -1102,13 +1065,9 @@ export function DeviceRuntimeProvider({
     wifiConfig,
   } = createDeviceRuntimeActions({
     coordinator,
-    coordinationRole: coordination.role,
-    coordinationRoleRef,
     currentTabId: coordination.currentTabId,
     deviceInfo,
     devices,
-    isLeader,
-    isLeaderRef,
     pushToast,
     requestLeaderRpc,
     refreshCanonicalPowerConfig,

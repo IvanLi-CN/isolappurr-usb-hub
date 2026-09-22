@@ -21,6 +21,14 @@ type LeaseRecord = {
   updatedAt: string;
 };
 
+type MutationFenceRecord = {
+  deviceId: string;
+  tabId: string;
+  requestId: string;
+  expiresAt: string;
+  updatedAt: string;
+};
+
 export const LIVE_RUNTIME_SCOPE = "live";
 export const DEMO_RUNTIME_SCOPE = "demo";
 
@@ -132,8 +140,30 @@ const CHANNEL_NAME_PREFIX = "isolapurr.runtime.cross-tab.v1";
 const LEASE_STORAGE_KEY_PREFIX = "isolapurr.runtime.leader-lease.v1";
 const SNAPSHOT_STORAGE_KEY_PREFIX = "isolapurr.runtime.snapshot.v1";
 const MESSAGE_STORAGE_KEY_PREFIX = "isolapurr.runtime.message.v1";
+const MUTATION_FENCE_STORAGE_KEY_PREFIX = "isolapurr.runtime.mutation-fence.v1";
 const LEASE_TTL_MS = 15_000;
 const HEARTBEAT_INTERVAL_MS = 5_000;
+// JSONL power calibration can take 178s; keep the single-writer fence alive
+// through that request plus a bounded recovery margin.
+export const MUTATION_FENCE_TTL_MS = 210_000;
+export const MUTATION_FENCE_RENEW_INTERVAL_MS = 30_000;
+
+type RuntimeLockManager = {
+  request: <T>(
+    name: string,
+    options: { mode: "exclusive"; ifAvailable?: boolean },
+    callback: (lock?: unknown) => Promise<T>,
+  ) => Promise<T>;
+};
+
+function getRuntimeLockManager(): RuntimeLockManager | null {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+  return (
+    (navigator as Navigator & { locks?: RuntimeLockManager }).locks ?? null
+  );
+}
 
 const MUTATION_METHODS = new Set<RuntimeRpcMethod>([
   "saveWifiConfig",
@@ -184,11 +214,41 @@ function parseLeaseRecord(raw: string | null): LeaseRecord | null {
       typeof parsed.tabId !== "string" ||
       parsed.tabId.length === 0 ||
       typeof parsed.expiresAt !== "string" ||
-      typeof parsed.updatedAt !== "string"
+      typeof parsed.updatedAt !== "string" ||
+      !Number.isFinite(Date.parse(parsed.expiresAt)) ||
+      !Number.isFinite(Date.parse(parsed.updatedAt))
     ) {
       return null;
     }
     return parsed as LeaseRecord;
+  } catch {
+    return null;
+  }
+}
+
+function parseMutationFenceRecord(
+  raw: string | null,
+): MutationFenceRecord | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<MutationFenceRecord>;
+    if (
+      typeof parsed.deviceId !== "string" ||
+      parsed.deviceId.length === 0 ||
+      typeof parsed.tabId !== "string" ||
+      parsed.tabId.length === 0 ||
+      typeof parsed.requestId !== "string" ||
+      parsed.requestId.length === 0 ||
+      typeof parsed.expiresAt !== "string" ||
+      typeof parsed.updatedAt !== "string" ||
+      !Number.isFinite(Date.parse(parsed.expiresAt)) ||
+      !Number.isFinite(Date.parse(parsed.updatedAt))
+    ) {
+      return null;
+    }
+    return parsed as MutationFenceRecord;
   } catch {
     return null;
   }
@@ -234,6 +294,27 @@ function isLeaseExpired(record: LeaseRecord | null, now = Date.now()): boolean {
   return Date.parse(record.expiresAt) <= now;
 }
 
+function isMutationFenceExpired(
+  record: MutationFenceRecord | null,
+  now = Date.now(),
+): boolean {
+  if (!record) {
+    return true;
+  }
+  return Date.parse(record.expiresAt) <= now;
+}
+
+function getRuntimeStorage(): Storage | null {
+  try {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export class CrossTabRuntimeCoordinator {
   private readonly channelName: string;
   private readonly leaseStorageKey: string;
@@ -244,6 +325,7 @@ export class CrossTabRuntimeCoordinator {
   private readonly messageListeners = new Set<MessageListener>();
   private channel: BroadcastChannel | null = null;
   private heartbeatTimer: number | null = null;
+  private leaseRefreshInFlight: Promise<void> | null = null;
   private started = false;
   private leaseState: CrossTabRuntimeLeaseState = {
     role: "unsupported",
@@ -270,10 +352,7 @@ export class CrossTabRuntimeCoordinator {
       return;
     }
     this.started = true;
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    if (!getRuntimeStorage()) {
       this.setLeaseState({
         role: "unsupported",
         currentTabId: this.tabId,
@@ -293,9 +372,10 @@ export class CrossTabRuntimeCoordinator {
     window.addEventListener("storage", this.handleStorageEvent);
     window.addEventListener("pagehide", this.handlePageHide);
     window.addEventListener("beforeunload", this.handlePageHide);
-    this.refreshLeaseState(true);
+    this.refreshLeaseStateImmediately(true);
+    void this.refreshLeaseState(true);
     this.heartbeatTimer = window.setInterval(() => {
-      this.refreshLeaseState(true);
+      void this.refreshLeaseState(true);
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -303,6 +383,7 @@ export class CrossTabRuntimeCoordinator {
     if (!this.started) {
       return;
     }
+    this.releaseLeaseIfLeader();
     this.started = false;
     if (typeof window !== "undefined") {
       window.removeEventListener("storage", this.handleStorageEvent);
@@ -325,6 +406,256 @@ export class CrossTabRuntimeCoordinator {
     return this.leaseState;
   }
 
+  hasCurrentLease(): boolean {
+    if (!getRuntimeStorage()) {
+      return false;
+    }
+    const lease = this.readLease();
+    return Boolean(
+      lease && lease.tabId === this.tabId && !isLeaseExpired(lease),
+    );
+  }
+
+  hasActiveLeader(): boolean {
+    const lease = this.readLease();
+    return Boolean(
+      lease && lease.tabId !== this.tabId && !isLeaseExpired(lease),
+    );
+  }
+
+  async tryAcquireMutationFence(
+    deviceId: string,
+    requestId: string,
+  ): Promise<boolean> {
+    const storage = getRuntimeStorage();
+    if (!storage) {
+      return false;
+    }
+    try {
+      const storageKey = scopedStorageKey(
+        MUTATION_FENCE_STORAGE_KEY_PREFIX,
+        `${this.channelName}.${deviceId}`,
+      );
+      const acquire = async () => {
+        const raw = storage.getItem(storageKey);
+        const current = parseMutationFenceRecord(raw);
+        if (raw !== null && !current) {
+          // A malformed record may represent an in-flight writer. Refuse a
+          // new mutation rather than overwriting evidence we cannot validate.
+          return false;
+        }
+        if (
+          current &&
+          !isMutationFenceExpired(current) &&
+          (current.tabId !== this.tabId || current.requestId !== requestId)
+        ) {
+          return false;
+        }
+        const next: MutationFenceRecord = {
+          deviceId,
+          tabId: this.tabId,
+          requestId,
+          updatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + MUTATION_FENCE_TTL_MS).toISOString(),
+        };
+        storage.setItem(storageKey, JSON.stringify(next));
+        const written = parseMutationFenceRecord(storage.getItem(storageKey));
+        return Boolean(
+          written &&
+            written.tabId === this.tabId &&
+            written.requestId === requestId &&
+            !isMutationFenceExpired(written),
+        );
+      };
+      const locks = getRuntimeLockManager();
+      if (!locks) {
+        // Storage has no cross-context compare-and-swap primitive. Refuse a
+        // mutation when Web Locks are unavailable instead of risking two
+        // tabs both believing they own the single-writer fence.
+        return false;
+      }
+      return await locks.request(
+        `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+        { mode: "exclusive", ifAvailable: true },
+        (lock) => (lock ? acquire() : Promise.resolve(false)),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async releaseMutationFence(
+    deviceId: string,
+    requestId: string,
+  ): Promise<void> {
+    const storage = getRuntimeStorage();
+    if (!storage) {
+      return;
+    }
+    try {
+      const storageKey = scopedStorageKey(
+        MUTATION_FENCE_STORAGE_KEY_PREFIX,
+        `${this.channelName}.${deviceId}`,
+      );
+      const release = async () => {
+        const current = parseMutationFenceRecord(storage.getItem(storageKey));
+        if (
+          current &&
+          current.tabId === this.tabId &&
+          current.requestId === requestId
+        ) {
+          storage.removeItem(storageKey);
+        }
+        return true;
+      };
+      const locks = getRuntimeLockManager();
+      if (!locks) {
+        return;
+      }
+      const releaseDeadline = Date.now() + MUTATION_FENCE_TTL_MS;
+      const tryRelease = async (): Promise<void> => {
+        const released = await locks.request(
+          `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+          { mode: "exclusive", ifAvailable: true },
+          (lock) => (lock ? release() : Promise.resolve(false)),
+        );
+        if (!released && Date.now() < releaseDeadline) {
+          setTimeout(() => {
+            void tryRelease().catch(() => undefined);
+          }, 50);
+        }
+      };
+      await tryRelease();
+      // The first non-blocking attempt is enough for the mutation caller. A
+      // bounded background retry removes the owner record once a brief
+      // competing acquisition releases the Web Lock.
+    } catch {
+      // A failed cleanup only leaves the bounded fence to expire naturally.
+    }
+  }
+
+  async renewMutationFence(
+    deviceId: string,
+    requestId: string,
+  ): Promise<boolean> {
+    const storage = getRuntimeStorage();
+    if (!storage) {
+      return false;
+    }
+    try {
+      const storageKey = scopedStorageKey(
+        MUTATION_FENCE_STORAGE_KEY_PREFIX,
+        `${this.channelName}.${deviceId}`,
+      );
+      const renew = async () => {
+        const raw = storage.getItem(storageKey);
+        const current = parseMutationFenceRecord(raw);
+        if (
+          !current ||
+          current.tabId !== this.tabId ||
+          current.requestId !== requestId
+        ) {
+          return false;
+        }
+        const next: MutationFenceRecord = {
+          ...current,
+          updatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + MUTATION_FENCE_TTL_MS).toISOString(),
+        };
+        storage.setItem(storageKey, JSON.stringify(next));
+        const written = parseMutationFenceRecord(storage.getItem(storageKey));
+        return Boolean(
+          written &&
+            written.tabId === this.tabId &&
+            written.requestId === requestId &&
+            !isMutationFenceExpired(written),
+        );
+      };
+      const locks = getRuntimeLockManager();
+      if (!locks) {
+        return false;
+      }
+      return await locks.request(
+        `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+        { mode: "exclusive", ifAvailable: true },
+        (lock) => (lock ? renew() : Promise.resolve(false)),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async runMutationWithFence<T>(
+    deviceId: string,
+    requestId: string,
+    invoke: () => Promise<Result<T>>,
+  ): Promise<{ acquired: boolean; result?: Result<T> }> {
+    const storage = getRuntimeStorage();
+    const locks = getRuntimeLockManager();
+    if (!storage || !locks) {
+      return { acquired: false };
+    }
+    const storageKey = scopedStorageKey(
+      MUTATION_FENCE_STORAGE_KEY_PREFIX,
+      `${this.channelName}.${deviceId}`,
+    );
+    try {
+      return await locks.request(
+        `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+        { mode: "exclusive", ifAvailable: true },
+        async (lock) => {
+          if (!lock) {
+            return { acquired: false };
+          }
+          const raw = storage.getItem(storageKey);
+          const current = parseMutationFenceRecord(raw);
+          if (raw !== null && !current) {
+            return { acquired: false };
+          }
+          if (
+            current &&
+            !isMutationFenceExpired(current) &&
+            (current.tabId !== this.tabId || current.requestId !== requestId)
+          ) {
+            return { acquired: false };
+          }
+          const next: MutationFenceRecord = {
+            deviceId,
+            tabId: this.tabId,
+            requestId,
+            updatedAt: new Date().toISOString(),
+            expiresAt: new Date(
+              Date.now() + MUTATION_FENCE_TTL_MS,
+            ).toISOString(),
+          };
+          storage.setItem(storageKey, JSON.stringify(next));
+          const written = parseMutationFenceRecord(storage.getItem(storageKey));
+          if (
+            !written ||
+            written.tabId !== this.tabId ||
+            written.requestId !== requestId
+          ) {
+            return { acquired: false };
+          }
+          try {
+            return { acquired: true, result: await invoke() };
+          } finally {
+            const owner = parseMutationFenceRecord(storage.getItem(storageKey));
+            if (
+              owner &&
+              owner.tabId === this.tabId &&
+              owner.requestId === requestId
+            ) {
+              storage.removeItem(storageKey);
+            }
+          }
+        },
+      );
+    } catch {
+      return { acquired: false };
+    }
+  }
+
   subscribeLease(listener: LeaseListener): () => void {
     this.leaseListeners.add(listener);
     listener(this.leaseState);
@@ -341,26 +672,27 @@ export class CrossTabRuntimeCoordinator {
   }
 
   readSnapshot(): SharedRuntimeSnapshot | null {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return null;
     }
-    return parseSnapshot(window.localStorage.getItem(this.snapshotStorageKey));
+    try {
+      return parseSnapshot(storage.getItem(this.snapshotStorageKey));
+    } catch {
+      return null;
+    }
   }
 
   publishSnapshot(snapshot: SharedRuntimeSnapshot): void {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return;
     }
-    window.localStorage.setItem(
-      this.snapshotStorageKey,
-      JSON.stringify(snapshot),
-    );
+    try {
+      storage.setItem(this.snapshotStorageKey, JSON.stringify(snapshot));
+    } catch {
+      return;
+    }
     this.postMessage({
       type: "runtime-snapshot",
       originTabId: this.tabId,
@@ -373,30 +705,30 @@ export class CrossTabRuntimeCoordinator {
       this.channel.postMessage(message);
       return;
     }
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return;
     }
-    window.localStorage.setItem(
-      this.messageStorageKey,
-      JSON.stringify({
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        payload: message,
-      }),
-    );
+    try {
+      storage.setItem(
+        this.messageStorageKey,
+        JSON.stringify({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          payload: message,
+        }),
+      );
+    } catch {
+      // Storage-backed messaging is unavailable; the active tab stays safe.
+    }
   }
 
-  requestTakeover(): void {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+  async requestTakeover(): Promise<void> {
+    if (!getRuntimeStorage()) {
       return;
     }
-    this.writeLease();
-    this.refreshLeaseState();
+    void this.refreshLeaseState(true);
+    await Promise.resolve();
+    await this.refreshLeaseState();
   }
 
   private readonly handleStorageEvent = (event: StorageEvent) => {
@@ -411,7 +743,7 @@ export class CrossTabRuntimeCoordinator {
         });
         return;
       }
-      this.refreshLeaseState(true);
+      void this.refreshLeaseState(true);
       return;
     }
     if (event.key === this.snapshotStorageKey) {
@@ -440,13 +772,15 @@ export class CrossTabRuntimeCoordinator {
   };
 
   private readLease(): LeaseRecord | null {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return null;
     }
-    return parseLeaseRecord(window.localStorage.getItem(this.leaseStorageKey));
+    try {
+      return parseLeaseRecord(storage.getItem(this.leaseStorageKey));
+    } catch {
+      return null;
+    }
   }
 
   private writeLease(): LeaseRecord {
@@ -455,22 +789,32 @@ export class CrossTabRuntimeCoordinator {
       updatedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + LEASE_TTL_MS).toISOString(),
     };
-    window.localStorage.setItem(this.leaseStorageKey, JSON.stringify(record));
+    const storage = getRuntimeStorage();
+    if (!storage) {
+      return record;
+    }
+    try {
+      storage.setItem(this.leaseStorageKey, JSON.stringify(record));
+    } catch {
+      // The caller will observe the missing lease and remain unsupported.
+    }
     return record;
   }
 
   private releaseLeaseIfLeader(): void {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+    const storage = getRuntimeStorage();
+    if (!storage) {
       return;
     }
     const lease = this.readLease();
     if (!lease || lease.tabId !== this.tabId) {
       return;
     }
-    window.localStorage.removeItem(this.leaseStorageKey);
+    try {
+      storage.removeItem(this.leaseStorageKey);
+    } catch {
+      return;
+    }
     this.setLeaseState({
       role: "follower",
       currentTabId: this.tabId,
@@ -479,11 +823,59 @@ export class CrossTabRuntimeCoordinator {
     });
   }
 
-  private refreshLeaseState(preferAcquire = false): void {
-    if (
-      typeof window === "undefined" ||
-      typeof window.localStorage === "undefined"
-    ) {
+  private refreshLeaseState(preferAcquire = false): Promise<void> {
+    const refresh = async () => {
+      if (!this.started) {
+        return;
+      }
+      if (!getRuntimeStorage()) {
+        this.setLeaseState({
+          role: "unsupported",
+          currentTabId: this.tabId,
+          leaderTabId: null,
+          leaseExpiresAt: null,
+        });
+        return;
+      }
+
+      let lease = this.readLease();
+      if (
+        preferAcquire &&
+        (isLeaseExpired(lease) || lease?.tabId === this.tabId)
+      ) {
+        lease = await this.tryAcquireLease();
+      }
+
+      if (lease && !isLeaseExpired(lease)) {
+        this.setLeaseState({
+          role: lease.tabId === this.tabId ? "leader" : "follower",
+          currentTabId: this.tabId,
+          leaderTabId: lease.tabId,
+          leaseExpiresAt: lease.expiresAt,
+        });
+        return;
+      }
+
+      this.setLeaseState({
+        role: "follower",
+        currentTabId: this.tabId,
+        leaderTabId: null,
+        leaseExpiresAt: null,
+      });
+    };
+    const previous = this.leaseRefreshInFlight ?? Promise.resolve();
+    const next = previous.then(refresh, refresh);
+    const tracked = next.finally(() => {
+      if (this.leaseRefreshInFlight === tracked) {
+        this.leaseRefreshInFlight = null;
+      }
+    });
+    this.leaseRefreshInFlight = tracked;
+    return next;
+  }
+
+  private refreshLeaseStateImmediately(preferAcquire = false): void {
+    if (!getRuntimeStorage()) {
       this.setLeaseState({
         role: "unsupported",
         currentTabId: this.tabId,
@@ -492,15 +884,15 @@ export class CrossTabRuntimeCoordinator {
       });
       return;
     }
-
     let lease = this.readLease();
     if (
       preferAcquire &&
       (isLeaseExpired(lease) || lease?.tabId === this.tabId)
     ) {
-      lease = this.writeLease();
+      if (!getRuntimeLockManager() && lease?.tabId === this.tabId) {
+        lease = this.writeLease();
+      }
     }
-
     if (lease && !isLeaseExpired(lease)) {
       this.setLeaseState({
         role: lease.tabId === this.tabId ? "leader" : "follower",
@@ -510,24 +902,63 @@ export class CrossTabRuntimeCoordinator {
       });
       return;
     }
-
-    if (preferAcquire) {
-      const nextLease = this.writeLease();
+    if (!lease && !getRuntimeLockManager()) {
       this.setLeaseState({
-        role: "leader",
+        role: "unsupported",
         currentTabId: this.tabId,
-        leaderTabId: nextLease.tabId,
-        leaseExpiresAt: nextLease.expiresAt,
+        leaderTabId: null,
+        leaseExpiresAt: null,
       });
       return;
     }
-
     this.setLeaseState({
       role: "follower",
       currentTabId: this.tabId,
       leaderTabId: null,
       leaseExpiresAt: null,
     });
+  }
+
+  private async tryAcquireLease(): Promise<LeaseRecord | null> {
+    if (!this.started) {
+      return this.readLease();
+    }
+    const current = this.readLease();
+    if (current && !isLeaseExpired(current) && current.tabId !== this.tabId) {
+      return current;
+    }
+    const acquire = async () => {
+      if (!this.started) {
+        return this.readLease();
+      }
+      const latest = this.readLease();
+      if (latest && !isLeaseExpired(latest) && latest.tabId !== this.tabId) {
+        return latest;
+      }
+      this.writeLease();
+      return this.readLease();
+    };
+    const locks = getRuntimeLockManager();
+    if (locks) {
+      try {
+        return await locks.request(
+          `isolapurr.runtime.lease.${this.channelName}`,
+          { mode: "exclusive" },
+          acquire,
+        );
+      } catch {
+        return null;
+      }
+    }
+    if (current && current.tabId === this.tabId && !isLeaseExpired(current)) {
+      this.writeLease();
+      return this.readLease();
+    }
+    this.writeLease();
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    return this.readLease();
   }
 
   private notifyMessageListeners(message: RuntimeChannelMessage): void {

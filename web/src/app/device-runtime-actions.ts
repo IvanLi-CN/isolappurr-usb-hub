@@ -37,6 +37,7 @@ import {
   type DeviceRuntime,
   type DeviceTransport,
   getStablePowerLockOwner,
+  staleRuntimeMutationError,
 } from "./device-runtime-support";
 
 type UpdateRuntimeState = Dispatch<
@@ -77,13 +78,9 @@ type PushToast = (toast: {
 
 type CreateDeviceRuntimeActionsParams = {
   coordinator: CrossTabRuntimeCoordinator;
-  coordinationRole: "leader" | "follower" | "unsupported";
-  coordinationRoleRef: MutableRefObject<"leader" | "follower" | "unsupported">;
   currentTabId: string;
   deviceInfo: (deviceId: string) => Promise<Result<DeviceInfoResponse>>;
   devices: StoredDevice[];
-  isLeader: boolean;
-  isLeaderRef: MutableRefObject<boolean>;
   pushToast: PushToast;
   requestLeaderRpc: RequestLeaderRpc;
   refreshCanonicalPowerConfig: (
@@ -180,21 +177,17 @@ export function applyConfirmedPortsSnapshot(
 }
 
 export function shouldRequestLeaderRpc(
-  isLeader: boolean,
-  coordinationRole: "leader" | "follower" | "unsupported",
+  hasCurrentLease: boolean,
+  hasActiveLeader: boolean,
 ): boolean {
-  return !isLeader && coordinationRole !== "unsupported";
+  return !hasCurrentLease && hasActiveLeader;
 }
 
 export function createDeviceRuntimeActions({
   coordinator,
-  coordinationRole,
-  coordinationRoleRef,
   currentTabId,
   deviceInfo,
   devices,
-  isLeader,
-  isLeaderRef,
   pushToast,
   requestLeaderRpc,
   refreshCanonicalPowerConfig,
@@ -211,7 +204,10 @@ export function createDeviceRuntimeActions({
   syncPowerConfigSnapshot,
 }: CreateDeviceRuntimeActionsParams) {
   const shouldRequestLeader = () =>
-    shouldRequestLeaderRpc(isLeaderRef.current, coordinationRoleRef.current);
+    shouldRequestLeaderRpc(
+      coordinator.hasCurrentLease(),
+      coordinator.hasActiveLeader(),
+    );
 
   const { displayNameFor, setDeviceName, clearDeviceName } =
     createDeviceNameActions({
@@ -219,8 +215,6 @@ export function createDeviceRuntimeActions({
       devices,
       runtimeByIdRef,
       setRuntimeById,
-      isLeader,
-      coordinationRole,
       requestLeaderRpc,
       runDeviceCommand,
       runSharedMutation,
@@ -232,7 +226,7 @@ export function createDeviceRuntimeActions({
   const wifiConfig = async (
     deviceId: string,
   ): Promise<Result<WifiConfigResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("wifiConfig", [deviceId]);
     }
     return runDeviceCommand<WifiConfigResponse>(deviceId, "wifi.get");
@@ -242,7 +236,7 @@ export function createDeviceRuntimeActions({
     deviceId: string,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<IdentifyResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("identify", [deviceId]);
     }
     if (!runtimeByIdRef.current[deviceId]?.identityVerified) {
@@ -268,7 +262,7 @@ export function createDeviceRuntimeActions({
     input: WifiConfigInput,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<WifiMutationResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("saveWifiConfig", [deviceId, input]);
     }
     return runSharedMutation({
@@ -295,7 +289,7 @@ export function createDeviceRuntimeActions({
     deviceId: string,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<WifiMutationResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("clearWifiConfig", [deviceId]);
     }
     return runSharedMutation({
@@ -323,7 +317,7 @@ export function createDeviceRuntimeActions({
     scope: SettingsResetScope,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<SettingsResetResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("resetSettings", [deviceId, scope]);
     }
     return runSharedMutation({
@@ -354,7 +348,7 @@ export function createDeviceRuntimeActions({
     deviceId: string,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<RebootResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("rebootDevice", [deviceId]);
     }
     return runSharedMutation({
@@ -373,7 +367,7 @@ export function createDeviceRuntimeActions({
   const powerConfig = async (
     deviceId: string,
   ): Promise<Result<PowerConfigResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("powerConfig", [deviceId]);
     }
     return refreshCanonicalPowerConfig(deviceId);
@@ -382,7 +376,7 @@ export function createDeviceRuntimeActions({
   const pdDiagnostics = async (
     deviceId: string,
   ): Promise<Result<PdDiagnosticsResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("pdDiagnostics", [deviceId]);
     }
     const res = await runDeviceCommand<PdDiagnosticsResponse>(
@@ -398,7 +392,7 @@ export function createDeviceRuntimeActions({
   const idleBias = async (
     deviceId: string,
   ): Promise<Result<IdleBiasResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("idleBias", [deviceId]);
     }
     const res = await runDeviceCommand<IdleBiasResponse>(
@@ -417,7 +411,7 @@ export function createDeviceRuntimeActions({
     owner: number,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<PowerConfigResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("savePowerConfig", [deviceId, input, owner]);
     }
     return runSharedMutation({
@@ -463,7 +457,7 @@ export function createDeviceRuntimeActions({
     owner: number,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<PowerConfigResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("restorePowerDefaults", [deviceId, owner]);
     }
     return runSharedMutation({
@@ -497,7 +491,7 @@ export function createDeviceRuntimeActions({
     acquire: boolean,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<PowerConfigResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("setPowerLock", [deviceId, owner, acquire]);
     }
     return runSharedMutation({
@@ -534,7 +528,7 @@ export function createDeviceRuntimeActions({
     owner: number,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<IdleBiasResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("setIdleBiasCorrection", [
         deviceId,
         correctionEnabled,
@@ -566,7 +560,7 @@ export function createDeviceRuntimeActions({
     owner: number,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<IdleBiasResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("runIdleBiasCalibration", [deviceId, owner]);
     }
     return runSharedMutation({
@@ -593,7 +587,7 @@ export function createDeviceRuntimeActions({
     owner: number,
     options?: SharedMutationInvocationOptions,
   ): Promise<Result<IdleBiasResponse>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("clearIdleBiasCalibration", [deviceId, owner]);
     }
     return runSharedMutation({
@@ -824,7 +818,7 @@ export function createDeviceRuntimeActions({
     deviceId: string,
     portId: PortId,
   ): Promise<Result<{ accepted: true }>> => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("replug", [deviceId, portId]);
     }
     return runSharedMutation({
@@ -917,7 +911,7 @@ export function createDeviceRuntimeActions({
       persisted: boolean;
     }>
   > => {
-    if (!isLeader && coordinationRole !== "unsupported") {
+    if (shouldRequestLeader()) {
       return requestLeaderRpc("setUsbCDownstreamRoute", [deviceId, route]);
     }
     return runSharedMutation({
@@ -938,11 +932,20 @@ export function createDeviceRuntimeActions({
       },
     });
   };
-
   const handleRuntimeRpcRequest = async (
     message: Extract<RuntimeChannelMessage, { type: "runtime-rpc-request" }>,
   ) => {
     const deviceId = String(message.args[0] ?? "");
+    if (message.kind === "mutation" && !coordinator.hasCurrentLease()) {
+      coordinator.postMessage({
+        type: "runtime-rpc-response",
+        originTabId: currentTabId,
+        targetTabId: message.originTabId,
+        requestId: message.requestId,
+        result: { ok: false, error: staleRuntimeMutationError() },
+      });
+      return;
+    }
     try {
       let result:
         | Result<{ ok: true }>
@@ -1118,12 +1121,16 @@ export function createDeviceRuntimeActions({
           );
           break;
       }
+      const fencedResult =
+        message.kind === "mutation" && !coordinator.hasCurrentLease()
+          ? { ok: false as const, error: staleRuntimeMutationError() }
+          : result;
       coordinator.postMessage({
         type: "runtime-rpc-response",
         originTabId: currentTabId,
         targetTabId: message.originTabId,
         requestId: message.requestId,
-        result,
+        result: fencedResult,
       });
     } catch (err) {
       coordinator.postMessage({

@@ -169,6 +169,50 @@
   transport bootstrap, polling, command serialization, and lock heartbeat while
   every same-origin tab forwards power reads and writes through the shared
   runtime queue.
+- Hardened the shared mutation boundary so cross-tab RPC timeouts and stale
+  leaders return a takeover-retryable busy result, never start a new device
+  write after losing the lease, and keep the Power draft available to a manual
+  `Retry` toast action.
+- Verified browser lease acquisition after expired-lease takeover requests and
+  rechecked runtime authority as HTTP and Local USB requests leave their
+  queues and immediately before Web Serial writes, including fallback
+  transports. Queue contention tests prove stale mutations never reach those
+  dispatch boundaries. Shared mutations also fence the result after their
+  awaited canonical refresh, and RPC mutation responses apply the same final
+  authority check before reaching a follower.
+- Runtime coordinator shutdown now releases its active browser lease before
+  removing listeners, with coverage for stop/unmount-style replacement.
+- Runtime subscriptions now live for the coordinator's full provider lifetime;
+  leadership changes update the observed role without stopping and restarting
+  the coordinator, preventing a newly acquired lease from being released
+  during an in-flight device mutation.
+- Added a persisted per-device mutation fence around the shared mutation queue.
+  A second tab now receives the same takeover-retryable busy result while the
+  first tab's device request is still in flight, including when the first tab
+  is suspended after losing its browser lease. The 210-second fence covers the
+  longest supported Local USB JSONL request plus recovery margin and is
+  released after canonical refresh completes. Fence acquisition and
+  owner-safe release use a scoped Web Locks protocol, and live
+  and `?demo=true` fences use separate storage keys. Regression coverage also
+  exercises a follower takeover result and clears the unique Retry toast after
+  a later successful save. Browsers without Web Locks receive the same
+  takeover-retryable busy result without a device dispatch rather than using an
+  unsafe cross-context storage compare-and-swap approximation. The same safe
+  refusal applies when persistent browser storage is unavailable. Long-running
+  mutations hold the Web Lock through the full invoke lifecycle, while the
+  persisted record is renewed as an additional recovery signal. Local USB
+  registration, busy retries, devd dispatches, and legacy fallbacks all receive
+  the current mutation authorization guard immediately before their requests.
+- Added Power-panel interaction coverage proving `Retry` takes over first and
+  resubmits the latest draft for the failed save source: automatic Fixed PDO
+  retries preserve unsaved `Output mode` edits, while explicit `Save and apply`
+  retries include the latest `Output mode` draft. Successful retries trust
+  canonical readback; ordinary device-busy, offline, and API failures keep their
+  existing paths without exposing takeover actions.
+- Scoped snapshot hydration to coordinator changes so leadership-effect restarts
+  cannot replace initialized device state with an older empty snapshot; missing
+  poll generations now compare as `0` to avoid recursively restarting the first
+  poll.
 - Split the cross-tab Power runtime namespace by mode so `?demo=true` pages
   use a separate lease/snapshot scope from live saved-device pages. This keeps
   same-origin demo data from poisoning the live device card and Power snapshot.

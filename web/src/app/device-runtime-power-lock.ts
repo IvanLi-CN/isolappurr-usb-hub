@@ -14,11 +14,18 @@ type RunDeviceCommand = <T>(
   params?: Record<string, unknown>,
 ) => Promise<Result<T>>;
 
+type RunSharedMutation = <T>(params: {
+  deviceId: string;
+  method: "setPowerLock";
+  invoke: () => Promise<Result<T>>;
+}) => Promise<Result<T>>;
+
 export function useDeviceRuntimePowerLock({
   devices,
   isLeader,
   runtimeByIdRef,
   runDeviceCommand,
+  runSharedMutation,
   syncObservedPowerLock,
   syncPowerConfigSnapshot,
 }: {
@@ -26,6 +33,7 @@ export function useDeviceRuntimePowerLock({
   isLeader: boolean;
   runtimeByIdRef: MutableRefObject<Record<string, DeviceRuntime>>;
   runDeviceCommand: RunDeviceCommand;
+  runSharedMutation: RunSharedMutation;
   syncObservedPowerLock: (
     deviceId: string,
     lock: PowerConfigResponse["lock"] | null | undefined,
@@ -69,15 +77,24 @@ export function useDeviceRuntimePowerLock({
         const owner = getStablePowerLockOwner(device.id);
         if (!lock || lock.owner !== owner || !canResumePowerLock(device.id))
           continue;
-        const renewal = await runDeviceCommand<PowerConfigResponse>(
-          device.id,
-          "power.lock",
-          { owner, acquire: true },
-        );
+        const renewal = await runSharedMutation({
+          deviceId: device.id,
+          method: "setPowerLock",
+          invoke: async () => {
+            const result = await runDeviceCommand<PowerConfigResponse>(
+              device.id,
+              "power.lock",
+              { owner, acquire: true },
+            );
+            if (result.ok) {
+              await refreshCanonicalPowerConfig(device.id, owner, result.value);
+            }
+            return result;
+          },
+        });
         if (cancelled) return;
         if (renewal.ok) {
           markPowerLockHeld(device.id);
-          await refreshCanonicalPowerConfig(device.id, owner, renewal.value);
           continue;
         }
         const snapshot = await refreshCanonicalPowerConfig(device.id, owner);
@@ -96,6 +113,7 @@ export function useDeviceRuntimePowerLock({
     isLeader,
     refreshCanonicalPowerConfig,
     runDeviceCommand,
+    runSharedMutation,
     runtimeByIdRef,
   ]);
 

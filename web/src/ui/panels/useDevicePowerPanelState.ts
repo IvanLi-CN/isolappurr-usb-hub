@@ -51,6 +51,7 @@ export type DevicePowerPanelProps = {
   sharedPowerConfig: PowerConfigResponse | null;
   sharedIdleBiasSnapshot: IdleBiasResponse | null;
   sharedPdDiagnostics: PdDiagnosticsResponse | null;
+  requestRuntimeTakeover: () => Promise<CrossTabRuntimeLeaseState>;
   loadPowerConfig: () => Promise<Result<PowerConfigResponse>>;
   loadIdleBias: () => Promise<Result<IdleBiasResponse>>;
   savePowerConfig: (
@@ -90,6 +91,19 @@ function serializeAutoApplyForm(form: FormState): string {
   return JSON.stringify(form);
 }
 
+function autoApplyForm(
+  form: FormState,
+  canonicalConfig: PowerConfigResponse | null,
+): FormState {
+  if (!canonicalConfig) {
+    return form;
+  }
+  return applyOutputModeDraft(
+    form,
+    extractOutputModeDraft(cloneConfig(canonicalConfig)),
+  );
+}
+
 export function useDevicePowerPanelState({
   deviceKey,
   coordination,
@@ -101,6 +115,7 @@ export function useDevicePowerPanelState({
   sharedPowerConfig,
   sharedIdleBiasSnapshot,
   sharedPdDiagnostics,
+  requestRuntimeTakeover,
   loadPowerConfig,
   loadIdleBias,
   savePowerConfig,
@@ -109,7 +124,7 @@ export function useDevicePowerPanelState({
   setPowerRuntime,
   loadPdDiagnostics,
 }: DevicePowerPanelProps) {
-  const { pushToast } = useToast();
+  const { dismissToast, pushToast } = useToast();
   const [config, setConfig] = useState<PowerConfigResponse | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,8 +163,15 @@ export function useDevicePowerPanelState({
   const slowLockToastShownRef = useRef(false);
   const blockingCommandToastKeyRef = useRef<string | null>(null);
   const outputModeDraftRef = useRef<OutputModeDraft | null>(null);
+  const outputModeConflictRef = useRef(false);
   const outputModeBaselineSignatureRef = useRef<string | null>(null);
   const outputModeConflictToastKeyRef = useRef<string | null>(null);
+  const retrySaveRef = useRef<() => void>(() => undefined);
+  const retrySubmitSourceRef = useRef<"auto" | "output_mode">("auto");
+  const retryInFlightRef = useRef(false);
+  const retryToastSequenceRef = useRef(0);
+  const retryToastIdRef = useRef<string | null>(null);
+  outputModeConflictRef.current = outputModeConflict;
 
   const initializeLoadedConfig = useCallback(
     (nextConfig: PowerConfigResponse) => {
@@ -226,8 +248,15 @@ export function useDevicePowerPanelState({
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      retrySaveRef.current = () => undefined;
+      retryInFlightRef.current = false;
+      dismissToast(`${deviceKey}:power-save-failed`);
+      if (retryToastIdRef.current) {
+        dismissToast(retryToastIdRef.current);
+        retryToastIdRef.current = null;
+      }
     };
-  }, []);
+  }, [deviceKey, dismissToast]);
 
   useEffect(() => {
     if (!sharedPowerConfig) {
@@ -700,17 +729,40 @@ export function useDevicePowerPanelState({
   const activeProtocol = pdDiagnostics?.active_protocol ?? null;
   const submit = useCallback(
     async (nextForm: FormState, source: "auto" | "output_mode") => {
+      retrySubmitSourceRef.current = source;
       const submittedSnapshot = serializeAutoApplyForm(nextForm);
       saveStartedAtRef.current = Date.now();
       setSaveInFlight(true);
       setSlowSavePhase("idle");
       setError(null);
-      const res = await savePowerConfig(nextForm, ownerRef.current);
+      let res: Result<PowerConfigResponse>;
+      try {
+        res = await savePowerConfig(nextForm, ownerRef.current);
+      } catch (caught) {
+        res = {
+          ok: false,
+          error: {
+            kind: "api_error",
+            status: 500,
+            code: "power_save_failed",
+            message:
+              caught instanceof Error
+                ? caught.message
+                : "Power settings could not be saved.",
+            retryable: true,
+          },
+        };
+      }
       if (!mountedRef.current) {
         return;
       }
       setSaveInFlight(false);
       if (res.ok) {
+        dismissToast(`${deviceKey}:power-save-failed`);
+        if (retryToastIdRef.current) {
+          dismissToast(retryToastIdRef.current);
+          retryToastIdRef.current = null;
+        }
         const canonicalForm = cloneConfig(res.value);
         const canonicalOutputMode = extractOutputModeDraft(canonicalForm);
         const canonicalOutputModeSignature =
@@ -755,6 +807,7 @@ export function useDevicePowerPanelState({
         setOutputModeDraft(nextOutputModeDraft);
         outputModeBaselineSignatureRef.current = canonicalOutputModeSignature;
         setOutputModeConflict(false);
+        retrySubmitSourceRef.current = "auto";
         if (source === "output_mode" && nextOutputModeDraft === null) {
           pushToast({
             message: "Output mode saved and applied.",
@@ -762,9 +815,121 @@ export function useDevicePowerPanelState({
           });
         }
       } else {
-        if (source === "auto") {
+        const takeoverRecovery =
+          res.error.kind === "busy" && res.error.recovery === "takeover";
+        retrySubmitSourceRef.current = takeoverRecovery ? source : "auto";
+        if (source === "auto" || takeoverRecovery) {
           setAutoApplyFailed(true);
         }
+        setError(res.error.message);
+        pushToast({
+          id: `${deviceKey}:power-save-failed`,
+          message: takeoverRecovery
+            ? "Power settings were not saved. Take over this browser and retry."
+            : res.error.message,
+          variant: res.error.kind === "busy" ? "warning" : "error",
+          durationMs: takeoverRecovery ? Number.POSITIVE_INFINITY : 3200,
+          action: takeoverRecovery
+            ? { label: "Retry", onClick: () => retrySaveRef.current() }
+            : undefined,
+        });
+      }
+      return res;
+    },
+    [deviceKey, dismissToast, pushToast, savePowerConfig],
+  );
+
+  const retryPowerConfig = useCallback(async () => {
+    if (!formRef.current || retryInFlightRef.current) {
+      return;
+    }
+    retryInFlightRef.current = true;
+    retryToastSequenceRef.current += 1;
+    const retryToastId = `${deviceKey}:power-save-retry:${retryToastSequenceRef.current}`;
+    retryToastIdRef.current = retryToastId;
+    const retrySource = retrySubmitSourceRef.current;
+    try {
+      const lease = await requestRuntimeTakeover();
+      if (lease.role !== "leader" && lease.role !== "unsupported") {
+        pushToast({
+          id: retryToastId,
+          message:
+            "Another browser tab still controls the device. Retry after it releases control.",
+          variant: "warning",
+          durationMs: Number.POSITIVE_INFINITY,
+          action: { label: "Retry", onClick: () => retrySaveRef.current() },
+        });
+        return;
+      }
+      if (outputModeConflictRef.current) {
+        pushToast({
+          id: `${deviceKey}:output-mode-conflict`,
+          message:
+            "Output mode changed in another tab. Refresh the page before saving this draft.",
+          variant: "warning",
+          durationMs: 3200,
+        });
+        return;
+      }
+      const latestForm = formRef.current;
+      if (latestForm) {
+        const retryForm =
+          retrySource === "output_mode"
+            ? latestForm
+            : autoApplyForm(latestForm, config);
+        await submit(retryForm, retrySource);
+      }
+    } catch (caught) {
+      const message =
+        caught instanceof Error
+          ? `This browser tab could not take control: ${caught.message}`
+          : "This browser tab could not take control. The Power draft remains unsaved.";
+      setError(message);
+      pushToast({
+        id: retryToastId,
+        message,
+        variant: "warning",
+        durationMs: Number.POSITIVE_INFINITY,
+        action: { label: "Retry", onClick: () => retrySaveRef.current() },
+      });
+    } finally {
+      retryInFlightRef.current = false;
+    }
+  }, [config, deviceKey, pushToast, requestRuntimeTakeover, submit]);
+
+  useEffect(() => {
+    retrySaveRef.current = () => {
+      void retryPowerConfig();
+    };
+  }, [retryPowerConfig]);
+
+  const restoreDefaults = useCallback(async () => {
+    setBusy(true);
+    setRestoringDefaults(true);
+    setError(null);
+    try {
+      const res = await restorePowerDefaults(ownerRef.current);
+      if (res.ok) {
+        dismissToast(`${deviceKey}:power-save-failed`);
+        if (retryToastIdRef.current) {
+          dismissToast(retryToastIdRef.current);
+          retryToastIdRef.current = null;
+        }
+        const restoredForm = cloneConfig(res.value);
+        setConfig(res.value);
+        setForm(restoredForm);
+        setDirty(false);
+        setAutoApplyFailed(false);
+        setOutputModeDraft(null);
+        outputModeBaselineSignatureRef.current = serializeOutputModeDraft(
+          extractOutputModeDraft(restoredForm),
+        );
+        setOutputModeConflict(false);
+        pushToast({
+          message: "Power defaults restored.",
+          variant: "success",
+        });
+      } else {
         setError(res.error.message);
         pushToast({
           message: res.error.message,
@@ -772,42 +937,18 @@ export function useDevicePowerPanelState({
           durationMs: 3200,
         });
       }
-      return res;
-    },
-    [pushToast, savePowerConfig],
-  );
-
-  const restoreDefaults = useCallback(async () => {
-    setBusy(true);
-    setRestoringDefaults(true);
-    setError(null);
-    const res = await restorePowerDefaults(ownerRef.current);
-    setBusy(false);
-    setRestoringDefaults(false);
-    if (res.ok) {
-      const restoredForm = cloneConfig(res.value);
-      setConfig(res.value);
-      setForm(restoredForm);
-      setDirty(false);
-      setAutoApplyFailed(false);
-      setOutputModeDraft(null);
-      outputModeBaselineSignatureRef.current = serializeOutputModeDraft(
-        extractOutputModeDraft(restoredForm),
-      );
-      setOutputModeConflict(false);
-      pushToast({
-        message: "Power defaults restored.",
-        variant: "success",
-      });
-    } else {
-      setError(res.error.message);
-      pushToast({
-        message: res.error.message,
-        variant: res.error.kind === "busy" ? "warning" : "error",
-        durationMs: 3200,
-      });
+    } catch (caught) {
+      const message =
+        caught instanceof Error
+          ? caught.message
+          : "Power defaults could not be restored.";
+      setError(message);
+      pushToast({ message, variant: "error", durationMs: 3200 });
+    } finally {
+      setBusy(false);
+      setRestoringDefaults(false);
     }
-  }, [pushToast, restorePowerDefaults]);
+  }, [deviceKey, dismissToast, pushToast, restorePowerDefaults]);
 
   useEffect(() => {
     if (
@@ -823,13 +964,7 @@ export function useDevicePowerPanelState({
     ) {
       return;
     }
-    const currentForm =
-      config === null
-        ? form
-        : applyOutputModeDraft(
-            form,
-            extractOutputModeDraft(cloneConfig(config)),
-          );
+    const currentForm = autoApplyForm(form, config);
     const timeoutId = window.setTimeout(() => {
       void submit(currentForm, "auto");
     }, AUTO_APPLY_DELAY_MS);
