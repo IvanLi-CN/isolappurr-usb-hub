@@ -1021,6 +1021,7 @@ export function DeviceRuntimeProvider({
     isLeader,
     runtimeByIdRef,
     runDeviceCommand,
+    runSharedMutation,
     syncObservedPowerLock,
     syncPowerConfigSnapshot,
   });

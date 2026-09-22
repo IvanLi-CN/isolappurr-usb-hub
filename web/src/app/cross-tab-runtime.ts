@@ -459,7 +459,10 @@ export class CrossTabRuntimeCoordinator {
       };
       const locks = getRuntimeLockManager();
       if (!locks) {
-        return acquire();
+        // Storage has no cross-context compare-and-swap primitive. Refuse a
+        // mutation when Web Locks are unavailable instead of risking two
+        // tabs both believing they own the single-writer fence.
+        return false;
       }
       return locks.request(
         `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
@@ -500,13 +503,12 @@ export class CrossTabRuntimeCoordinator {
       };
       const locks = getRuntimeLockManager();
       if (!locks) {
-        await release();
         return;
       }
       await locks.request(
         `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
-        { mode: "exclusive", ifAvailable: true },
-        (lock) => (lock ? release() : Promise.resolve()),
+        { mode: "exclusive" },
+        () => release(),
       );
     } catch {
       // A failed cleanup only leaves the bounded fence to expire naturally.

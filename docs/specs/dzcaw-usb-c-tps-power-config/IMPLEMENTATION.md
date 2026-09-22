@@ -192,10 +192,12 @@
   is suspended after losing its browser lease. The 210-second fence covers the
   longest supported Local USB JSONL request plus recovery margin and is
   released after canonical refresh completes. Fence acquisition and
-  owner-safe release use a scoped `ifAvailable` Web Locks protocol, and live
+  owner-safe release use a scoped Web Locks protocol, and live
   and `?demo=true` fences use separate storage keys. Regression coverage also
   exercises a follower takeover result and clears the unique Retry toast after
-  a later successful save.
+  a later successful save. Browsers without Web Locks receive the same
+  takeover-retryable busy result without a device dispatch rather than using an
+  unsafe cross-context storage compare-and-swap approximation.
 - Added Power-panel interaction coverage proving `Retry` takes over first and
   resubmits the latest draft for the failed save source: automatic Fixed PDO
   retries preserve unsaved `Output mode` edits, while explicit `Save and apply`

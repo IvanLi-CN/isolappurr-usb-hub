@@ -463,7 +463,8 @@ for diagnostics.
   scoped non-blocking lock protocol, and the fence key MUST include the live or
   demo runtime scope. This prevents a new leader from overlapping an in-flight
   write from a suspended old leader without allowing demo state to block live
-  state.
+  state. If the browser does not expose Web Locks, the mutation MUST resolve
+  as the same takeover-retryable busy result without invoking the device.
 - Given a runtime mutation finishes its device request but loses the browser
   lease while canonical state is being refreshed, then the caller MUST receive
   the same takeover result instead of a successful mutation response.

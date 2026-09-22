@@ -400,8 +400,11 @@ export const CrossTabRetryScreenshotDark: Story = {
     const closeButton = toast?.querySelector<HTMLElement>(
       "[data-close-button]",
     );
+    const retryAction = toast?.querySelector<HTMLElement>(
+      "[data-button][data-action]",
+    );
 
-    if (!toast || !toaster || !closeButton) {
+    if (!toast || !toaster || !closeButton || !retryAction) {
       throw new Error("Expected the retry warning toast and its controls.");
     }
 
@@ -409,6 +412,10 @@ export const CrossTabRetryScreenshotDark: Story = {
     probe.style.backgroundColor = "var(--surface-warning-bg)";
     document.body.append(probe);
     const expectedBackground = getComputedStyle(probe).backgroundColor;
+    probe.style.backgroundColor = "var(--action-warning-bg)";
+    const expectedActionBackground = getComputedStyle(probe).backgroundColor;
+    probe.style.color = "var(--action-warning-text)";
+    const expectedActionText = getComputedStyle(probe).color;
     probe.remove();
 
     await waitFor(() =>
@@ -417,6 +424,10 @@ export const CrossTabRetryScreenshotDark: Story = {
     await expect(toast).toHaveStyle({ backgroundColor: expectedBackground });
     await expect(closeButton).toHaveStyle({
       backgroundColor: expectedBackground,
+    });
+    await expect(retryAction).toHaveStyle({
+      backgroundColor: expectedActionBackground,
+      color: expectedActionText,
     });
     await expect(toast).toHaveStyle({ color: "rgb(233, 238, 244)" });
   },

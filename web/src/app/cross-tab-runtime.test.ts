@@ -194,7 +194,7 @@ describe("CrossTabRuntimeCoordinator", () => {
   test("serializes concurrent fence acquisition through Web Locks", async () => {
     let firstLockEntered = false;
     let releaseFirstLock: (() => void) | null = null;
-    let lockTail = Promise.resolve();
+    let lockHeld = false;
     const navigatorWithLocks = globalThis.navigator as Navigator & {
       locks: {
         request: <T>(
@@ -207,15 +207,13 @@ describe("CrossTabRuntimeCoordinator", () => {
     navigatorWithLocks.locks = {
       request: async <T>(
         _name: string,
-        _options: { mode: "exclusive"; ifAvailable?: boolean },
+        options: { mode: "exclusive"; ifAvailable?: boolean },
         callback: (lock?: unknown) => Promise<T>,
       ) => {
-        const previous = lockTail;
-        let release: (() => void) | null = null;
-        lockTail = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        await previous;
+        if (options.ifAvailable && lockHeld) {
+          return callback(undefined);
+        }
+        lockHeld = true;
         if (!firstLockEntered) {
           firstLockEntered = true;
           await new Promise<void>((resolve) => {
@@ -225,7 +223,7 @@ describe("CrossTabRuntimeCoordinator", () => {
         try {
           return await callback({});
         } finally {
-          release?.();
+          lockHeld = false;
         }
       },
     };
@@ -237,10 +235,26 @@ describe("CrossTabRuntimeCoordinator", () => {
       "request-2",
     );
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await expect(secondAttempt).resolves.toBeFalse();
     releaseFirstLock?.();
 
     await expect(firstAttempt).resolves.toBeTrue();
-    await expect(secondAttempt).resolves.toBeFalse();
+  });
+
+  test("refuses mutation fences when Web Locks are unavailable", async () => {
+    const navigatorWithLocks = globalThis.navigator as Navigator & {
+      locks?: unknown;
+    };
+    navigatorWithLocks.locks = undefined;
+    const first = createCoordinator("storage-fence");
+    const second = createCoordinator("storage-fence");
+    const [firstResult, secondResult] = await Promise.all([
+      first.tryAcquireMutationFence("device-d", "request-1"),
+      second.tryAcquireMutationFence("device-d", "request-2"),
+    ]);
+
+    expect(firstResult).toBeFalse();
+    expect(secondResult).toBeFalse();
   });
 
   test("keeps live and demo mutation fences isolated", async () => {
