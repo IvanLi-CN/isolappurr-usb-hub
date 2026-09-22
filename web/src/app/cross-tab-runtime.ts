@@ -398,7 +398,7 @@ export class CrossTabRuntimeCoordinator {
       typeof window === "undefined" ||
       typeof window.localStorage === "undefined"
     ) {
-      return true;
+      return false;
     }
     const lease = this.readLease();
     return Boolean(
@@ -421,7 +421,7 @@ export class CrossTabRuntimeCoordinator {
       typeof window === "undefined" ||
       typeof window.localStorage === "undefined"
     ) {
-      return true;
+      return false;
     }
     try {
       const storageKey = scopedStorageKey(

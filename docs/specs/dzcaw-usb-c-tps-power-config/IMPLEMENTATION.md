@@ -197,7 +197,8 @@
   exercises a follower takeover result and clears the unique Retry toast after
   a later successful save. Browsers without Web Locks receive the same
   takeover-retryable busy result without a device dispatch rather than using an
-  unsafe cross-context storage compare-and-swap approximation.
+  unsafe cross-context storage compare-and-swap approximation. The same safe
+  refusal applies when persistent browser storage is unavailable.
 - Added Power-panel interaction coverage proving `Retry` takes over first and
   resubmits the latest draft for the failed save source: automatic Fixed PDO
   retries preserve unsaved `Output mode` edits, while explicit `Save and apply`

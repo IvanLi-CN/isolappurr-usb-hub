@@ -463,8 +463,9 @@ for diagnostics.
   scoped non-blocking lock protocol, and the fence key MUST include the live or
   demo runtime scope. This prevents a new leader from overlapping an in-flight
   write from a suspended old leader without allowing demo state to block live
-  state. If the browser does not expose Web Locks, the mutation MUST resolve
-  as the same takeover-retryable busy result without invoking the device.
+  state. If the browser does not expose Web Locks or persistent browser
+  storage, the mutation MUST resolve as the same takeover-retryable busy result
+  without invoking the device.
 - Given a runtime mutation finishes its device request but loses the browser
   lease while canonical state is being refreshed, then the caller MUST receive
   the same takeover result instead of a successful mutation response.
@@ -671,6 +672,24 @@ for diagnostics.
   take over the browser runtime lease.
 
 ![Device power panel cross-tab save retry](./assets/device-power-panel-cross-tab-save-retry.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/CrossTabRetryScreenshotDark`
+  state: takeover-retryable Power save failure with dark warning action
+  requested_viewport: `isolapurrLaptop` (1280x800 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `element`
+  margin_policy: `require_margin`
+  evidence_surface: `component`
+  surface_selector: `[data-visual-evidence-surface]`
+  target_selector: `[data-visual-evidence-target]`
+  target_program: `mock-only`
+  sensitive_exclusion: `N/A`
+  submission_gate: `pending-owner-approval`
+  evidence_note: verifies the same Retry recovery state keeps the warning
+  surface and action button on the dark semantic palette.
+
+![Device power panel cross-tab save retry dark](./assets/device-power-panel-cross-tab-save-retry-dark.png)
 
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/Default`

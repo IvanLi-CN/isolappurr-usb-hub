@@ -156,6 +156,19 @@ describe("CrossTabRuntimeCoordinator", () => {
     expect(follower.hasActiveLeader()).toBeTrue();
   });
 
+  test("refuses mutations when browser storage is unavailable", async () => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: undefined,
+    });
+    const coordinator = createCoordinator();
+
+    expect(coordinator.hasCurrentLease()).toBeFalse();
+    await expect(
+      coordinator.tryAcquireMutationFence("device-e", "request-1"),
+    ).resolves.toBeFalse();
+  });
+
   test("serializes device mutations across tabs with an expiring fence", async () => {
     const first = createCoordinator("mutation-fence");
     const second = createCoordinator("mutation-fence");

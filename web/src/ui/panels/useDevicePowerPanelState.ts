@@ -904,6 +904,11 @@ export function useDevicePowerPanelState({
     setBusy(false);
     setRestoringDefaults(false);
     if (res.ok) {
+      dismissToast(`${deviceKey}:power-save-failed`);
+      if (retryToastIdRef.current) {
+        dismissToast(retryToastIdRef.current);
+        retryToastIdRef.current = null;
+      }
       const restoredForm = cloneConfig(res.value);
       setConfig(res.value);
       setForm(restoredForm);
@@ -926,7 +931,7 @@ export function useDevicePowerPanelState({
         durationMs: 3200,
       });
     }
-  }, [pushToast, restorePowerDefaults]);
+  }, [deviceKey, dismissToast, pushToast, restorePowerDefaults]);
 
   useEffect(() => {
     if (

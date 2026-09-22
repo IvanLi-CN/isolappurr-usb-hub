@@ -376,6 +376,15 @@ export const CrossTabRetryScreenshot: Story = {
     skipToastProvider: true,
     viewport: { defaultViewport: "isolapurrLaptop" },
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Fixed PDO 12V" }),
+    );
+    const retryButton = await page.findByRole("button", { name: "Retry" });
+    await waitFor(() => expect(retryButton).toBeVisible());
+  },
 };
 
 export const CrossTabRetryScreenshotDark: Story = {
