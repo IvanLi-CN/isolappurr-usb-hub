@@ -248,8 +248,15 @@ export function useDevicePowerPanelState({
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      retrySaveRef.current = () => undefined;
+      retryInFlightRef.current = false;
+      dismissToast(`${deviceKey}:power-save-failed`);
+      if (retryToastIdRef.current) {
+        dismissToast(retryToastIdRef.current);
+        retryToastIdRef.current = null;
+      }
     };
-  }, []);
+  }, [deviceKey, dismissToast]);
 
   useEffect(() => {
     if (!sharedPowerConfig) {

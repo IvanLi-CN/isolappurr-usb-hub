@@ -388,11 +388,13 @@ export function DeviceRuntimeProvider({
                     agent,
                     target.deviceId,
                     request,
+                    () => getMutationDispatchAuthorizationError(method),
                   )
                 : await sendLocalUsbJsonlRequest(
                     agent,
                     target.portPath,
                     request,
+                    () => getMutationDispatchAuthorizationError(method),
                   );
             const envelope = response as JsonlEnvelope<T>;
             if (envelope?.ok && envelope.result !== undefined) {
@@ -418,11 +420,13 @@ export function DeviceRuntimeProvider({
                     agent,
                     target.deviceId,
                     request,
+                    () => getMutationDispatchAuthorizationError(method),
                   )
                 : await sendLocalUsbJsonlRequest(
                     agent,
                     target.portPath,
                     request,
+                    () => getMutationDispatchAuthorizationError(method),
                   ),
             method,
             params,

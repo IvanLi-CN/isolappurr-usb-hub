@@ -21,6 +21,7 @@ import {
   devdLocalUsbDeviceIdFromBaseUrl,
   type JsonlRequest,
   LocalUsbAgentHttpError,
+  LocalUsbDispatchAuthorizationError,
   nextJsonlRequestId,
 } from "../domain/hardwareConsole";
 import type {
@@ -591,6 +592,9 @@ export function resetLocalUsbRuntimeStateForDevice(
 }
 
 export function localUsbErrorToDeviceApiError(err: unknown): DeviceApiError {
+  if (err instanceof LocalUsbDispatchAuthorizationError) {
+    return err.deviceError;
+  }
   if (err instanceof LocalUsbAgentHttpError) {
     if (err.status === 409 && err.code === "busy") {
       return { kind: "busy", message: err.message, retryable: true };
