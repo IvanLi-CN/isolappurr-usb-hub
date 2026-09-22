@@ -191,7 +191,11 @@
   first tab's device request is still in flight, including when the first tab
   is suspended after losing its browser lease. The 210-second fence covers the
   longest supported Local USB JSONL request plus recovery margin and is
-  released after canonical refresh completes.
+  released after canonical refresh completes. Fence acquisition and
+  owner-safe release use a scoped `ifAvailable` Web Locks protocol, and live
+  and `?demo=true` fences use separate storage keys. Regression coverage also
+  exercises a follower takeover result and clears the unique Retry toast after
+  a later successful save.
 - Added Power-panel interaction coverage proving `Retry` takes over first and
   resubmits the latest draft for the failed save source: automatic Fixed PDO
   retries preserve unsaved `Output mode` edits, while explicit `Save and apply`

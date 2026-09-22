@@ -459,8 +459,11 @@ for diagnostics.
   valid for at least the longest supported Local USB JSONL request plus a
   bounded recovery margin (currently 210 seconds for the 178-second
   calibration request), and the owner MUST release it after the request and
-  canonical refresh finish. This prevents a new leader from overlapping an
-  in-flight write from a suspended old leader.
+  canonical refresh finish. Acquisition and owner release MUST use the same
+  scoped non-blocking lock protocol, and the fence key MUST include the live or
+  demo runtime scope. This prevents a new leader from overlapping an in-flight
+  write from a suspended old leader without allowing demo state to block live
+  state.
 - Given a runtime mutation finishes its device request but loses the browser
   lease while canonical state is being refreshed, then the caller MUST receive
   the same takeover result instead of a successful mutation response.
