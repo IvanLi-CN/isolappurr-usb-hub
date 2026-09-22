@@ -167,7 +167,7 @@ describe("CrossTabRuntimeCoordinator", () => {
       second.tryAcquireMutationFence("device-a", "request-2"),
     ).resolves.toBeFalse();
 
-    first.releaseMutationFence("device-a", "request-1");
+    await first.releaseMutationFence("device-a", "request-1");
     await expect(
       second.tryAcquireMutationFence("device-a", "request-2"),
     ).resolves.toBeTrue();

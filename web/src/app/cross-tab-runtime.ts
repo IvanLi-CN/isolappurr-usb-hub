@@ -471,7 +471,10 @@ export class CrossTabRuntimeCoordinator {
     }
   }
 
-  releaseMutationFence(deviceId: string, requestId: string): void {
+  async releaseMutationFence(
+    deviceId: string,
+    requestId: string,
+  ): Promise<void> {
     if (
       typeof window === "undefined" ||
       typeof window.localStorage === "undefined"
@@ -483,16 +486,28 @@ export class CrossTabRuntimeCoordinator {
         MUTATION_FENCE_STORAGE_KEY_PREFIX,
         `${this.channelName}.${deviceId}`,
       );
-      const current = parseMutationFenceRecord(
-        window.localStorage.getItem(storageKey),
-      );
-      if (
-        current &&
-        current.tabId === this.tabId &&
-        current.requestId === requestId
-      ) {
-        window.localStorage.removeItem(storageKey);
+      const release = async () => {
+        const current = parseMutationFenceRecord(
+          window.localStorage.getItem(storageKey),
+        );
+        if (
+          current &&
+          current.tabId === this.tabId &&
+          current.requestId === requestId
+        ) {
+          window.localStorage.removeItem(storageKey);
+        }
+      };
+      const locks = getRuntimeLockManager();
+      if (!locks) {
+        await release();
+        return;
       }
+      await locks.request(
+        `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+        { mode: "exclusive", ifAvailable: true },
+        (lock) => (lock ? release() : Promise.resolve()),
+      );
     } catch {
       // A failed cleanup only leaves the bounded fence to expire naturally.
     }

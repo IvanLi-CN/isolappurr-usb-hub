@@ -22,7 +22,10 @@ type CreateSharedMutationControllerParams = {
     deviceId: string,
     requestId: string,
   ) => Promise<boolean>;
-  releaseMutationFence?: (deviceId: string, requestId: string) => void;
+  releaseMutationFence?: (
+    deviceId: string,
+    requestId: string,
+  ) => void | Promise<void>;
 };
 
 type UpdateDeviceCommandParams = {
@@ -224,7 +227,7 @@ export function createSharedMutationController({
         }
         const postFenceAuthorizationError = canInvokeMutation?.() ?? null;
         if (postFenceAuthorizationError) {
-          releaseMutationFence?.(deviceId, requestId);
+          await releaseMutationFence?.(deviceId, requestId);
           finishDeviceCommandState({
             deviceId,
             requestId,
@@ -253,7 +256,7 @@ export function createSharedMutationController({
             },
           };
         } finally {
-          releaseMutationFence?.(deviceId, requestId);
+          await releaseMutationFence?.(deviceId, requestId);
         }
         const postInvokeAuthorizationError = canInvokeMutation?.() ?? null;
         const result: Result<T> = postInvokeAuthorizationError
