@@ -353,11 +353,42 @@ export const CrossTabManualSaveClearsRetry: Story = {
 
 export const CrossTabOutputModeSaveRetry: Story = {
   render: (args) => (
-    <CrossTabRetryHarness args={args} retryFails={false} takeoverFailures={2} />
+    <CrossTabRetryHarness args={args} retryFails={false} takeoverFailures={3} />
   ),
   args: CrossTabSaveRetry.args,
   tags: ["retry-recovery"],
   parameters: { skipToastProvider: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    const voltageInput = await canvas.findByDisplayValue("9 V");
+    await userEvent.clear(voltageInput);
+    await userEvent.type(voltageInput, "12 V");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Save and apply" }),
+    );
+    const firstRetry = await page.findByRole("button", { name: "Retry" });
+    await waitFor(() => expect(firstRetry).toBeVisible());
+    await userEvent.clear(voltageInput);
+    await userEvent.type(voltageInput, "15 V");
+    await userEvent.click(firstRetry);
+    await waitFor(() =>
+      expect(canvas.getByTestId("save-attempts")).toHaveTextContent("3"),
+    );
+    const secondRetry = await page.findByRole("button", { name: "Retry" });
+    await waitFor(() => expect(secondRetry).toBeVisible());
+    await userEvent.click(secondRetry);
+    await waitFor(() =>
+      expect(canvas.getByTestId("save-attempts")).toHaveTextContent("4"),
+    );
+    await expect(
+      canvas.getByTestId("last-submitted-output-mode"),
+    ).toHaveTextContent('{"tps_mode":"manual","voltage_mv":15000}');
+    await waitFor(() =>
+      expect(page.queryAllByRole("button", { name: "Retry" })).toHaveLength(0),
+    );
+  },
 };
 
 export const CrossTabRetryFailure: Story = {
