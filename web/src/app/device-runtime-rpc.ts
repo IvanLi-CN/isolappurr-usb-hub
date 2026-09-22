@@ -18,6 +18,22 @@ export type RuntimeRpcPendingRef = MutableRefObject<
   Record<string, PendingRuntimeRpc>
 >;
 
+export function settlePendingRuntimeRpc(
+  pendingRpc: RuntimeRpcPendingRef,
+  requestId: string,
+  result: unknown,
+  clearTimeoutFn: (timeoutId: number) => void,
+): boolean {
+  const pending = pendingRpc.current[requestId];
+  if (!pending) {
+    return false;
+  }
+  clearTimeoutFn(pending.timeoutId);
+  delete pendingRpc.current[requestId];
+  pending.resolve(result);
+  return true;
+}
+
 export function runtimeRpcTimeoutMs(method: RuntimeRpcMethod): number {
   if (method === "runIdleBiasCalibration") {
     return 190_000;

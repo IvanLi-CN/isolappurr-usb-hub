@@ -240,6 +240,35 @@ describe("CrossTabRuntimeCoordinator", () => {
     ).resolves.toBeTrue();
   });
 
+  test("renews an in-flight fence for the same owner", async () => {
+    const coordinator = createCoordinator("renew-fence");
+    const other = createCoordinator("renew-fence");
+    await expect(
+      coordinator.tryAcquireMutationFence("device-renew", "request-1"),
+    ).resolves.toBeTrue();
+    (
+      window.localStorage as Storage & {
+        setItemSilently: (key: string, value: string) => void;
+      }
+    ).setItemSilently(
+      "isolapurr.runtime.mutation-fence.v1.isolapurr.runtime.cross-tab.v1.renew-fence.device-renew",
+      JSON.stringify({
+        deviceId: "device-renew",
+        tabId: coordinator.getTabId(),
+        requestId: "request-1",
+        expiresAt: new Date(Date.now() - 1).toISOString(),
+        updatedAt: new Date(Date.now() - 2).toISOString(),
+      }),
+    );
+
+    await expect(
+      coordinator.renewMutationFence("device-renew", "request-1"),
+    ).resolves.toBeTrue();
+    await expect(
+      other.tryAcquireMutationFence("device-renew", "request-2"),
+    ).resolves.toBeFalse();
+  });
+
   test("serializes concurrent fence acquisition through Web Locks", async () => {
     let firstLockEntered = false;
     let releaseFirstLock: (() => void) | null = null;

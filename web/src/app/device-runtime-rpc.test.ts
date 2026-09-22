@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { CrossTabRuntimeCoordinator } from "./cross-tab-runtime";
-import { createRequestLeaderRpc } from "./device-runtime-rpc";
+import {
+  createRequestLeaderRpc,
+  settlePendingRuntimeRpc,
+} from "./device-runtime-rpc";
 
 const originalWindowDescriptor = Object.getOwnPropertyDescriptor(
   globalThis,
@@ -17,6 +20,32 @@ afterEach(() => {
 });
 
 describe("createRequestLeaderRpc", () => {
+  test("settles a normal response and clears its timeout", () => {
+    const resolved: unknown[] = [];
+    const pendingRpc = {
+      current: {
+        "request-1": {
+          resolve: (value: unknown) => resolved.push(value),
+          reject: () => undefined,
+          timeoutId: 42,
+        },
+      },
+    };
+    const cleared: number[] = [];
+
+    expect(
+      settlePendingRuntimeRpc(
+        pendingRpc,
+        "request-1",
+        { ok: true, value: "done" },
+        (timeoutId) => cleared.push(timeoutId),
+      ),
+    ).toBeTrue();
+    expect(cleared).toEqual([42]);
+    expect(resolved).toEqual([{ ok: true, value: "done" }]);
+    expect(pendingRpc.current).toEqual({});
+  });
+
   test("resolves a timeout Result and removes the pending request", async () => {
     Object.defineProperty(globalThis, "window", {
       configurable: true,

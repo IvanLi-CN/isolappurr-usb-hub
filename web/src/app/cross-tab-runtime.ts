@@ -146,6 +146,7 @@ const HEARTBEAT_INTERVAL_MS = 5_000;
 // JSONL power calibration can take 178s; keep the single-writer fence alive
 // through that request plus a bounded recovery margin.
 export const MUTATION_FENCE_TTL_MS = 210_000;
+export const MUTATION_FENCE_RENEW_INTERVAL_MS = 30_000;
 
 type RuntimeLockManager = {
   request: <T>(
@@ -530,6 +531,57 @@ export class CrossTabRuntimeCoordinator {
       // competing acquisition releases the Web Lock.
     } catch {
       // A failed cleanup only leaves the bounded fence to expire naturally.
+    }
+  }
+
+  async renewMutationFence(
+    deviceId: string,
+    requestId: string,
+  ): Promise<boolean> {
+    const storage = getRuntimeStorage();
+    if (!storage) {
+      return false;
+    }
+    try {
+      const storageKey = scopedStorageKey(
+        MUTATION_FENCE_STORAGE_KEY_PREFIX,
+        `${this.channelName}.${deviceId}`,
+      );
+      const renew = async () => {
+        const raw = storage.getItem(storageKey);
+        const current = parseMutationFenceRecord(raw);
+        if (
+          !current ||
+          current.tabId !== this.tabId ||
+          current.requestId !== requestId
+        ) {
+          return false;
+        }
+        const next: MutationFenceRecord = {
+          ...current,
+          updatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + MUTATION_FENCE_TTL_MS).toISOString(),
+        };
+        storage.setItem(storageKey, JSON.stringify(next));
+        const written = parseMutationFenceRecord(storage.getItem(storageKey));
+        return Boolean(
+          written &&
+            written.tabId === this.tabId &&
+            written.requestId === requestId &&
+            !isMutationFenceExpired(written),
+        );
+      };
+      const locks = getRuntimeLockManager();
+      if (!locks) {
+        return false;
+      }
+      return await locks.request(
+        `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+        { mode: "exclusive", ifAvailable: true },
+        (lock) => (lock ? renew() : Promise.resolve(false)),
+      );
+    } catch {
+      return false;
     }
   }
 

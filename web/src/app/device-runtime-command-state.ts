@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import type { DeviceApiError, Result } from "../domain/deviceApi";
 import type { RuntimeRpcMethod } from "./cross-tab-runtime";
+import { MUTATION_FENCE_RENEW_INTERVAL_MS } from "./cross-tab-runtime";
 import {
   type DeviceRuntime,
   runQueuedDeviceRequest,
@@ -26,6 +27,10 @@ type CreateSharedMutationControllerParams = {
     deviceId: string,
     requestId: string,
   ) => void | Promise<void>;
+  renewMutationFence?: (
+    deviceId: string,
+    requestId: string,
+  ) => Promise<boolean>;
 };
 
 type UpdateDeviceCommandParams = {
@@ -149,6 +154,7 @@ export function createSharedMutationController({
   releaseMutationFence,
   setRuntimeById,
   tryAcquireMutationFence,
+  renewMutationFence,
 }: CreateSharedMutationControllerParams) {
   const runSharedMutation = async <T>({
     deviceId,
@@ -238,6 +244,12 @@ export function createSharedMutationController({
           });
           return { ok: false, error: postFenceAuthorizationError };
         }
+        let fenceRenewalTimer: ReturnType<typeof setInterval> | null = null;
+        if (renewMutationFence) {
+          fenceRenewalTimer = setInterval(() => {
+            void renewMutationFence(deviceId, requestId).catch(() => undefined);
+          }, MUTATION_FENCE_RENEW_INTERVAL_MS);
+        }
         let invokedResult: Result<T>;
         try {
           invokedResult = await invoke();
@@ -256,6 +268,9 @@ export function createSharedMutationController({
             },
           };
         } finally {
+          if (fenceRenewalTimer !== null) {
+            clearInterval(fenceRenewalTimer);
+          }
           await releaseMutationFence?.(deviceId, requestId);
         }
         const postInvokeAuthorizationError = canInvokeMutation?.() ?? null;

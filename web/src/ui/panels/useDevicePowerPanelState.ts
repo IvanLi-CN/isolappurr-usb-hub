@@ -900,36 +900,46 @@ export function useDevicePowerPanelState({
     setBusy(true);
     setRestoringDefaults(true);
     setError(null);
-    const res = await restorePowerDefaults(ownerRef.current);
-    setBusy(false);
-    setRestoringDefaults(false);
-    if (res.ok) {
-      dismissToast(`${deviceKey}:power-save-failed`);
-      if (retryToastIdRef.current) {
-        dismissToast(retryToastIdRef.current);
-        retryToastIdRef.current = null;
+    try {
+      const res = await restorePowerDefaults(ownerRef.current);
+      if (res.ok) {
+        dismissToast(`${deviceKey}:power-save-failed`);
+        if (retryToastIdRef.current) {
+          dismissToast(retryToastIdRef.current);
+          retryToastIdRef.current = null;
+        }
+        const restoredForm = cloneConfig(res.value);
+        setConfig(res.value);
+        setForm(restoredForm);
+        setDirty(false);
+        setAutoApplyFailed(false);
+        setOutputModeDraft(null);
+        outputModeBaselineSignatureRef.current = serializeOutputModeDraft(
+          extractOutputModeDraft(restoredForm),
+        );
+        setOutputModeConflict(false);
+        pushToast({
+          message: "Power defaults restored.",
+          variant: "success",
+        });
+      } else {
+        setError(res.error.message);
+        pushToast({
+          message: res.error.message,
+          variant: res.error.kind === "busy" ? "warning" : "error",
+          durationMs: 3200,
+        });
       }
-      const restoredForm = cloneConfig(res.value);
-      setConfig(res.value);
-      setForm(restoredForm);
-      setDirty(false);
-      setAutoApplyFailed(false);
-      setOutputModeDraft(null);
-      outputModeBaselineSignatureRef.current = serializeOutputModeDraft(
-        extractOutputModeDraft(restoredForm),
-      );
-      setOutputModeConflict(false);
-      pushToast({
-        message: "Power defaults restored.",
-        variant: "success",
-      });
-    } else {
-      setError(res.error.message);
-      pushToast({
-        message: res.error.message,
-        variant: res.error.kind === "busy" ? "warning" : "error",
-        durationMs: 3200,
-      });
+    } catch (caught) {
+      const message =
+        caught instanceof Error
+          ? caught.message
+          : "Power defaults could not be restored.";
+      setError(message);
+      pushToast({ message, variant: "error", durationMs: 3200 });
+    } finally {
+      setBusy(false);
+      setRestoringDefaults(false);
     }
   }, [deviceKey, dismissToast, pushToast, restorePowerDefaults]);
 

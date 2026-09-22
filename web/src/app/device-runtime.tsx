@@ -54,6 +54,7 @@ import { useDeviceRuntimePowerLock } from "./device-runtime-power-lock";
 import {
   createRequestLeaderRpc,
   type PendingRuntimeRpc,
+  settlePendingRuntimeRpc,
 } from "./device-runtime-rpc";
 import {
   markDeviceRuntimeChannel,
@@ -192,13 +193,12 @@ export function DeviceRuntimeProvider({
         message.type === "runtime-rpc-response" &&
         message.targetTabId === currentTabId
       ) {
-        const pending = pendingRpc.current[message.requestId];
-        if (!pending) {
-          return;
-        }
-        window.clearTimeout(pending.timeoutId);
-        delete pendingRpc.current[message.requestId];
-        pending.resolve(message.result);
+        settlePendingRuntimeRpc(
+          pendingRpc,
+          message.requestId,
+          message.result,
+          window.clearTimeout,
+        );
         return;
       }
       if (message.type === "runtime-rpc-request" && isLeaderRef.current) {
@@ -305,6 +305,8 @@ export function DeviceRuntimeProvider({
       coordinator.tryAcquireMutationFence(deviceId, requestId),
     releaseMutationFence: (deviceId, requestId) =>
       coordinator.releaseMutationFence(deviceId, requestId),
+    renewMutationFence: (deviceId, requestId) =>
+      coordinator.renewMutationFence(deviceId, requestId),
     setRuntimeById,
   });
   const syncObservedPowerLock = useObservedPowerLockSync();
