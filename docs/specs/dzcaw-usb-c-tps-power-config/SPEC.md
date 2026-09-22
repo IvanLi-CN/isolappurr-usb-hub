@@ -657,9 +657,9 @@ for diagnostics.
 - source_type: storybook_canvas
   story_id_or_title: `Panels/DevicePowerPanel/CrossTabRetryScreenshot`
   state: takeover-retryable Power save failure with `Retry` notification
-  requested_viewport: `isolapurrLaptop`
+  requested_viewport: `isolapurrLaptop` (1280x800 CSS px)
   viewport_strategy: `storybook-viewport`
-  capture_scope: `element`
+  capture_scope: `browser-viewport`
   margin_policy: `require_margin`
   evidence_surface: `component`
   surface_selector: `[data-visual-evidence-surface]`
@@ -678,7 +678,7 @@ for diagnostics.
   state: takeover-retryable Power save failure with dark warning action
   requested_viewport: `isolapurrLaptop` (1280x800 CSS px)
   viewport_strategy: `storybook-viewport`
-  capture_scope: `element`
+  capture_scope: `browser-viewport`
   margin_policy: `require_margin`
   evidence_surface: `component`
   surface_selector: `[data-visual-evidence-surface]`
