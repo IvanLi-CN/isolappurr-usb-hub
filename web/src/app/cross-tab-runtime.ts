@@ -585,6 +585,77 @@ export class CrossTabRuntimeCoordinator {
     }
   }
 
+  async runMutationWithFence<T>(
+    deviceId: string,
+    requestId: string,
+    invoke: () => Promise<Result<T>>,
+  ): Promise<{ acquired: boolean; result?: Result<T> }> {
+    const storage = getRuntimeStorage();
+    const locks = getRuntimeLockManager();
+    if (!storage || !locks) {
+      return { acquired: false };
+    }
+    const storageKey = scopedStorageKey(
+      MUTATION_FENCE_STORAGE_KEY_PREFIX,
+      `${this.channelName}.${deviceId}`,
+    );
+    try {
+      return await locks.request(
+        `isolapurr.runtime.mutation-fence.${this.channelName}.${deviceId}`,
+        { mode: "exclusive", ifAvailable: true },
+        async (lock) => {
+          if (!lock) {
+            return { acquired: false };
+          }
+          const raw = storage.getItem(storageKey);
+          const current = parseMutationFenceRecord(raw);
+          if (raw !== null && !current) {
+            return { acquired: false };
+          }
+          if (
+            current &&
+            !isMutationFenceExpired(current) &&
+            (current.tabId !== this.tabId || current.requestId !== requestId)
+          ) {
+            return { acquired: false };
+          }
+          const next: MutationFenceRecord = {
+            deviceId,
+            tabId: this.tabId,
+            requestId,
+            updatedAt: new Date().toISOString(),
+            expiresAt: new Date(
+              Date.now() + MUTATION_FENCE_TTL_MS,
+            ).toISOString(),
+          };
+          storage.setItem(storageKey, JSON.stringify(next));
+          const written = parseMutationFenceRecord(storage.getItem(storageKey));
+          if (
+            !written ||
+            written.tabId !== this.tabId ||
+            written.requestId !== requestId
+          ) {
+            return { acquired: false };
+          }
+          try {
+            return { acquired: true, result: await invoke() };
+          } finally {
+            const owner = parseMutationFenceRecord(storage.getItem(storageKey));
+            if (
+              owner &&
+              owner.tabId === this.tabId &&
+              owner.requestId === requestId
+            ) {
+              storage.removeItem(storageKey);
+            }
+          }
+        },
+      );
+    } catch {
+      return { acquired: false };
+    }
+  }
+
   subscribeLease(listener: LeaseListener): () => void {
     this.leaseListeners.add(listener);
     listener(this.leaseState);

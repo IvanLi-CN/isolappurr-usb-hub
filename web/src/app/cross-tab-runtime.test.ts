@@ -269,6 +269,30 @@ describe("CrossTabRuntimeCoordinator", () => {
     ).resolves.toBeFalse();
   });
 
+  test("holds the Web Lock for the full mutation invocation", async () => {
+    const coordinator = createCoordinator("held-fence");
+    const other = createCoordinator("held-fence");
+    let releaseInvoke: (() => void) | null = null;
+    const mutation = coordinator.runMutationWithFence(
+      "device-held",
+      "request-1",
+      () =>
+        new Promise((resolve) => {
+          releaseInvoke = () =>
+            resolve({ ok: true, value: { accepted: true } });
+        }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(
+      other.tryAcquireMutationFence("device-held", "request-2"),
+    ).resolves.toBeFalse();
+    releaseInvoke?.();
+    await expect(mutation).resolves.toEqual({
+      acquired: true,
+      result: { ok: true, value: { accepted: true } },
+    });
+  });
+
   test("serializes concurrent fence acquisition through Web Locks", async () => {
     let firstLockEntered = false;
     let releaseFirstLock: (() => void) | null = null;

@@ -31,6 +31,11 @@ type CreateSharedMutationControllerParams = {
     deviceId: string,
     requestId: string,
   ) => Promise<boolean>;
+  runMutationWithFence?: <T>(
+    deviceId: string,
+    requestId: string,
+    invoke: () => Promise<Result<T>>,
+  ) => Promise<{ acquired: boolean; result?: Result<T> }>;
 };
 
 type UpdateDeviceCommandParams = {
@@ -155,6 +160,7 @@ export function createSharedMutationController({
   setRuntimeById,
   tryAcquireMutationFence,
   renewMutationFence,
+  runMutationWithFence,
 }: CreateSharedMutationControllerParams) {
   const runSharedMutation = async <T>({
     deviceId,
@@ -205,14 +211,25 @@ export function createSharedMutationController({
           });
           return { ok: false, error: authorizationError };
         }
-        if (tryAcquireMutationFence) {
-          let acquired = false;
+        let invokedResult: Result<T>;
+        if (runMutationWithFence) {
+          let fenced: { acquired: boolean; result?: Result<T> };
           try {
-            acquired = await tryAcquireMutationFence(deviceId, requestId);
+            fenced = await runMutationWithFence(
+              deviceId,
+              requestId,
+              async () => {
+                const error = canInvokeMutation?.() ?? null;
+                if (error) {
+                  return { ok: false, error };
+                }
+                return invoke();
+              },
+            );
           } catch {
-            acquired = false;
+            fenced = { acquired: false };
           }
-          if (!acquired) {
+          if (!fenced.acquired) {
             const fenceError = {
               kind: "busy" as const,
               message:
@@ -230,48 +247,86 @@ export function createSharedMutationController({
             });
             return { ok: false, error: fenceError };
           }
-        }
-        const postFenceAuthorizationError = canInvokeMutation?.() ?? null;
-        if (postFenceAuthorizationError) {
-          await releaseMutationFence?.(deviceId, requestId);
-          finishDeviceCommandState({
-            deviceId,
-            requestId,
-            succeeded: false,
-            incrementRevision: false,
-            errorMessage: postFenceAuthorizationError.message,
-            setRuntimeById,
-          });
-          return { ok: false, error: postFenceAuthorizationError };
-        }
-        let fenceRenewalTimer: ReturnType<typeof setInterval> | null = null;
-        if (renewMutationFence) {
-          fenceRenewalTimer = setInterval(() => {
-            void renewMutationFence(deviceId, requestId).catch(() => undefined);
-          }, MUTATION_FENCE_RENEW_INTERVAL_MS);
-        }
-        let invokedResult: Result<T>;
-        try {
-          invokedResult = await invoke();
-        } catch (caught) {
-          invokedResult = {
+          invokedResult = fenced.result ?? {
             ok: false,
             error: {
               kind: "api_error",
               status: 500,
-              code: "runtime_mutation_failed",
-              message:
-                caught instanceof Error
-                  ? caught.message
-                  : "Device mutation failed.",
+              code: "runtime_mutation_missing_result",
+              message: "Device mutation did not return a result.",
               retryable: true,
             },
           };
-        } finally {
-          if (fenceRenewalTimer !== null) {
-            clearInterval(fenceRenewalTimer);
+        } else {
+          if (tryAcquireMutationFence) {
+            let acquired = false;
+            try {
+              acquired = await tryAcquireMutationFence(deviceId, requestId);
+            } catch {
+              acquired = false;
+            }
+            if (!acquired) {
+              const fenceError = {
+                kind: "busy" as const,
+                message:
+                  "Another browser tab is still completing a device mutation. Retry after it finishes.",
+                retryable: true as const,
+                recovery: "takeover" as const,
+              };
+              finishDeviceCommandState({
+                deviceId,
+                requestId,
+                succeeded: false,
+                incrementRevision: false,
+                errorMessage: fenceError.message,
+                setRuntimeById,
+              });
+              return { ok: false, error: fenceError };
+            }
           }
-          await releaseMutationFence?.(deviceId, requestId);
+          const postFenceAuthorizationError = canInvokeMutation?.() ?? null;
+          if (postFenceAuthorizationError) {
+            await releaseMutationFence?.(deviceId, requestId);
+            finishDeviceCommandState({
+              deviceId,
+              requestId,
+              succeeded: false,
+              incrementRevision: false,
+              errorMessage: postFenceAuthorizationError.message,
+              setRuntimeById,
+            });
+            return { ok: false, error: postFenceAuthorizationError };
+          }
+          let fenceRenewalTimer: ReturnType<typeof setInterval> | null = null;
+          if (renewMutationFence) {
+            fenceRenewalTimer = setInterval(() => {
+              void renewMutationFence(deviceId, requestId).catch(
+                () => undefined,
+              );
+            }, MUTATION_FENCE_RENEW_INTERVAL_MS);
+          }
+          try {
+            invokedResult = await invoke();
+          } catch (caught) {
+            invokedResult = {
+              ok: false,
+              error: {
+                kind: "api_error",
+                status: 500,
+                code: "runtime_mutation_failed",
+                message:
+                  caught instanceof Error
+                    ? caught.message
+                    : "Device mutation failed.",
+                retryable: true,
+              },
+            };
+          } finally {
+            if (fenceRenewalTimer !== null) {
+              clearInterval(fenceRenewalTimer);
+            }
+            await releaseMutationFence?.(deviceId, requestId);
+          }
         }
         const postInvokeAuthorizationError = canInvokeMutation?.() ?? null;
         const result: Result<T> = postInvokeAuthorizationError

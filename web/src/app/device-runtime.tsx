@@ -307,6 +307,8 @@ export function DeviceRuntimeProvider({
       coordinator.releaseMutationFence(deviceId, requestId),
     renewMutationFence: (deviceId, requestId) =>
       coordinator.renewMutationFence(deviceId, requestId),
+    runMutationWithFence: (deviceId, requestId, invoke) =>
+      coordinator.runMutationWithFence(deviceId, requestId, invoke),
     setRuntimeById,
   });
   const syncObservedPowerLock = useObservedPowerLockSync();
