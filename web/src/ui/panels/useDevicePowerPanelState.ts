@@ -149,6 +149,7 @@ export function useDevicePowerPanelState({
   const [idleBiasRunning, setIdleBiasRunning] = useState(false);
   const lockedRef = useRef(false);
   const autoAcquireAttemptKeyRef = useRef<string | null>(null);
+  const lockRequestInFlightRef = useRef(false);
   const lockRequestSeqRef = useRef(0);
   const mountedRef = useRef(true);
   const loadPowerConfigRef = useRef(loadPowerConfig);
@@ -246,6 +247,7 @@ export function useDevicePowerPanelState({
   }, [outputModeDraft]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       retrySaveRef.current = () => undefined;
@@ -386,56 +388,75 @@ export function useDevicePowerPanelState({
 
   const requestControl = useCallback(
     async (reason: "manual" | "resume" | "unlocked") => {
+      if (lockRequestInFlightRef.current) {
+        return {
+          ok: false,
+          error: {
+            kind: "busy" as const,
+            message: "Power control acquisition is already in progress.",
+            retryable: true as const,
+          },
+        };
+      }
       const requestSeq = lockRequestSeqRef.current + 1;
       lockRequestSeqRef.current = requestSeq;
+      lockRequestInFlightRef.current = true;
       setError(null);
       setControlAcquisitionFailed(false);
       setLockBusy(true);
-      const res = await setPowerLockRef.current(ownerRef.current, true);
-      if (!mountedRef.current || lockRequestSeqRef.current !== requestSeq) {
-        return res;
-      }
-      setLockBusy(false);
-      if (res.ok) {
-        applyAcquiredControl(res.value);
-        if (reason === "manual") {
-          pushToast({
-            message: "Control acquired in this browser.",
-            variant: "success",
-          });
-        }
-        return res;
-      }
-      if (reason !== "manual") {
-        const snapshot = await loadPowerConfigRef.current();
+      try {
+        const res = await setPowerLockRef.current(ownerRef.current, true);
         if (!mountedRef.current || lockRequestSeqRef.current !== requestSeq) {
           return res;
         }
-        if (snapshot.ok) {
-          initializeLoadedConfig(snapshot.value);
-          setFreshConfigLoaded(true);
-          if (
-            snapshot.value.lock?.owner === ownerRef.current ||
-            (snapshot.value.lock &&
-              snapshot.value.lock.owner !== ownerRef.current)
-          ) {
-            setControlAcquisitionFailed(false);
-            setError(null);
+        if (res.ok) {
+          applyAcquiredControl(res.value);
+          if (reason === "manual") {
+            pushToast({
+              message: "Control acquired in this browser.",
+              variant: "success",
+            });
+          }
+          return res;
+        }
+        if (reason !== "manual") {
+          const snapshot = await loadPowerConfigRef.current();
+          if (!mountedRef.current || lockRequestSeqRef.current !== requestSeq) {
             return res;
           }
+          if (snapshot.ok) {
+            initializeLoadedConfig(snapshot.value);
+            setFreshConfigLoaded(true);
+            if (
+              snapshot.value.lock?.owner === ownerRef.current ||
+              (snapshot.value.lock &&
+                snapshot.value.lock.owner !== ownerRef.current)
+            ) {
+              setControlAcquisitionFailed(false);
+              setError(null);
+              return res;
+            }
+          }
+          setControlAcquisitionFailed(true);
+          setError(null);
+          return res;
         }
         setControlAcquisitionFailed(true);
-        setError(null);
+        setError(res.error.message);
+        pushToast({
+          message: res.error.message,
+          variant: res.error.kind === "busy" ? "warning" : "error",
+          durationMs: 3200,
+        });
         return res;
+      } finally {
+        if (lockRequestSeqRef.current === requestSeq) {
+          lockRequestInFlightRef.current = false;
+          if (mountedRef.current) {
+            setLockBusy(false);
+          }
+        }
       }
-      setControlAcquisitionFailed(true);
-      setError(res.error.message);
-      pushToast({
-        message: res.error.message,
-        variant: res.error.kind === "busy" ? "warning" : "error",
-        durationMs: 3200,
-      });
-      return res;
     },
     [applyAcquiredControl, initializeLoadedConfig, pushToast],
   );

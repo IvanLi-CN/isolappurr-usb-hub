@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, userEvent, waitFor, within } from "@storybook/test";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 
 import type {
   DeviceApiError,
@@ -26,6 +26,8 @@ import {
   ok,
   okIdle,
   pdDiagnostics,
+  ppsLiveDiagnostics,
+  unknownProtocolDiagnostics,
   withThermal,
 } from "./DevicePowerPanelStoryFixtures";
 
@@ -39,13 +41,21 @@ const meta: Meta<typeof DevicePowerPanel> = {
   decorators: [
     (Story, context) =>
       context.parameters.skipToastProvider ? (
-        <div className="min-h-screen bg-[var(--bg)]">
-          <Story />
+        <div
+          className="min-h-screen bg-[var(--bg)] p-12"
+          data-visual-evidence-surface
+        >
+          <div className="mx-auto max-w-[1280px]" data-visual-evidence-target>
+            <Story />
+          </div>
         </div>
       ) : (
         <ToastProvider>
-          <div className="min-h-screen bg-[var(--bg)] p-6">
-            <div className="mx-auto max-w-[1280px]">
+          <div
+            className="min-h-screen bg-[var(--bg)] p-12"
+            data-visual-evidence-surface
+          >
+            <div className="mx-auto max-w-[1280px]" data-visual-evidence-target>
               <Story />
             </div>
           </div>
@@ -57,6 +67,14 @@ const meta: Meta<typeof DevicePowerPanel> = {
 export default meta;
 
 type Story = StoryObj<typeof DevicePowerPanel>;
+
+function protocolStateArgs(diagnostics: PdDiagnosticsResponse): Story["args"] {
+  return {
+    ...defaultArgs,
+    sharedPdDiagnostics: diagnostics,
+    loadPdDiagnostics: () => Promise.resolve({ ok: true, value: diagnostics }),
+  };
+}
 
 function thermalStoryArgs(
   thermal: PdDiagnosticsResponse["thermal"],
@@ -92,7 +110,7 @@ export const Default: Story = {
       await canvas.findByRole("button", { name: "Acquire control" }),
     ).toBeVisible();
     await expect(
-      await canvas.findByTestId("PD-negotiation-badge"),
+      await canvas.findByTestId("PD Fixed-negotiation-badge"),
     ).toBeVisible();
     await expect(canvas.getByTestId("PPS-negotiation-badge")).toHaveTextContent(
       "CC",
@@ -110,6 +128,77 @@ export const Default: Story = {
     await expect(
       canvas.getByRole("button", { name: "Save and apply" }),
     ).toBeDisabled();
+  },
+};
+
+export const StrictModeControlAcquisition: Story = {
+  render: (args) => (
+    <StrictMode>
+      <DevicePowerPanel {...args} />
+    </StrictMode>
+  ),
+  args: {
+    ...defaultArgs,
+    loadPowerConfig: () => ok({ ...manualConfig, lock: null }),
+    setPowerLock: () => ok(controlledHereConfig),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Controlled here")).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Fixed PDO 9V" }),
+    ).toBeEnabled();
+  },
+};
+
+export const ActivePdFixed: Story = {
+  args: protocolStateArgs(pdDiagnostics),
+  tags: ["usb-c-protocol-state"],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByTestId("PD Fixed-negotiation-badge");
+    await waitFor(() => {
+      expect(
+        canvasElement.querySelector('[data-protocol="pd"]'),
+      ).toHaveAttribute("data-state", "active");
+    });
+    await expect(
+      canvas.getByTestId("PD Fixed-negotiation-badge"),
+    ).toHaveTextContent("CC");
+  },
+};
+
+export const ActivePps: Story = {
+  args: protocolStateArgs(ppsLiveDiagnostics),
+  tags: ["usb-c-protocol-state"],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByTestId("PPS-negotiation-badge");
+    await waitFor(() => {
+      expect(
+        canvasElement.querySelector('[data-protocol="pps"]'),
+      ).toHaveAttribute("data-state", "active");
+      expect(
+        canvasElement.querySelector('[data-protocol="pd"]'),
+      ).not.toHaveAttribute("data-state", "active");
+    });
+    await expect(canvas.getByTestId("PPS-negotiation-badge")).toHaveTextContent(
+      "CC",
+    );
+  },
+};
+
+export const UnknownProtocol: Story = {
+  args: protocolStateArgs(unknownProtocolDiagnostics),
+  tags: ["usb-c-protocol-state"],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByTestId("PD Fixed-negotiation-badge"),
+    ).toBeVisible();
+    expect(
+      canvasElement.querySelectorAll('[data-state="active"]'),
+    ).toHaveLength(0);
   },
 };
 

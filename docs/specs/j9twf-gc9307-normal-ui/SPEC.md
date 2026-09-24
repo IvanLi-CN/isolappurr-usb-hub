@@ -60,9 +60,9 @@
 - USB-C present 判定：满足任一条件即视为已插入并显示 U17 实测电参量：
   - U17 实测电压 `>= 3000mV` 且 U17 实测电流 `> 10mA`
   - SW2303 结构化状态显示 CC/设备在线已捕获（`cc_attached`）
-  - SW2303 结构化状态显示真实协议已协商（`negotiated_protocol` / `fast_protocol` / `fast_voltage` 任一有效）
+  - SW2303 当前读取的协议状态确认有活跃协议，或当前读取确认 CC/设备在线；缓存请求目标不得作为当前协议证据
 - USB-C 协议状态只用于 present/mode/badge 辅助，不得替代 U17 的实际电压、电流、功率读数。
-- USB-C mode 判定：真实 PD fixed 目标显示 `PD`；真实 PD 非固定目标显示 `PPS`；其它快充协议显示 `DC`；若仅由 U17 量测阈值触发 present 且协议状态不可用，则显示 `DC`。
+- USB-C mode 判定：SW2303 当前协议状态 ID `6` 显示 `PD FIXED`，ID `7` 显示 `PPS`，其它已确认活跃协议或确认无活跃协议显示 `DC`；USB-C 已连接但协议状态未知/不可用时显示中性 `UNKNOWN`，无连接显示 `OFF`。请求电压不得用于推断协议；协议未知不隐藏有效 U17 实测值。
 - USB-C 手动 TPS 输出判定：当 `tps_mode=manual` 且 `tps_setpoint.output_enabled=true`
   时，左 badge 必须显示手动设定 TPS 电压，格式为 `x.xxV`；若
   `manual.usb_c_path_mode=force`，右 badge 必须显示 `FOCUS`；其它手动路径模式

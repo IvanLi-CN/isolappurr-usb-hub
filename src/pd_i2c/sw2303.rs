@@ -1,6 +1,6 @@
 use embedded_hal_async::i2c::I2c;
 
-use super::{PowerRequest, SW2303_ADDR_7BIT};
+use super::{PowerRequest, ProtocolStatus, SW2303_ADDR_7BIT};
 use crate::power_config::{
     PowerConfig, Sw2303CapabilityReadback, Sw2303LineCompensation, Sw2303PathControl,
 };
@@ -320,7 +320,7 @@ where
     dev.trigger_cc_un_driving().await
 }
 
-/// Poll SW2303 status via structured driver APIs and decode them into a `PowerRequest`.
+/// Poll SW2303 status and decode the protocol ID from register 0x06.
 pub async fn read_power_request<I2C>(
     i2c: &mut I2C,
 ) -> Result<PowerRequest, sw2303::error::Error<I2C::Error>>
@@ -331,26 +331,29 @@ where
     let mut dev = sw2303::SW2303::new(i2c, SW2303_ADDR_7BIT);
 
     let req = dev.get_power_request().await?;
-    let status = dev.get_fast_charging_status().await;
+    let status = dev
+        .read_register(sw2303::registers::Register::FastChargingStatus)
+        .await;
     let fast_protocol = match &status {
-        Ok(status) => status.contains(sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL),
+        Ok(status) => *status & sw2303::registers::FastChargingFlags::IN_FAST_PROTOCOL.bits() != 0,
         Err(_) => false,
     };
     let fast_voltage = match &status {
-        Ok(status) => status.contains(sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE),
+        Ok(status) => *status & sw2303::registers::FastChargingFlags::IN_FAST_VOLTAGE.bits() != 0,
         Err(_) => false,
     };
-    let negotiated_protocol = dev.get_negotiated_protocol().await;
     let cc_attached = dev.is_sink_device_connected().await;
     let vbus_mv = dev.read_vbus_mv_12bit().await.ok();
-    let status_valid = status.is_ok() && negotiated_protocol.is_ok() && cc_attached.is_ok();
+    let protocol_status = match (&status, &cc_attached) {
+        (Ok(status), Ok(_)) => ProtocolStatus::from_sw2303_status_byte(*status),
+        _ => ProtocolStatus::Unknown,
+    };
 
     Ok(PowerRequest {
         fast_protocol,
         fast_voltage,
-        negotiated_protocol: negotiated_protocol.ok().flatten(),
-        cc_attached: cc_attached.ok().unwrap_or(false),
-        status_valid,
+        protocol_status,
+        cc_attached: cc_attached.unwrap_or(false),
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
         vbus_mv,
@@ -371,9 +374,8 @@ where
     Ok(PowerRequest {
         fast_protocol: false,
         fast_voltage: false,
-        negotiated_protocol: None,
+        protocol_status: ProtocolStatus::Unknown,
         cc_attached: false,
-        status_valid: false,
         v_req_mv: req.voltage_mv,
         i_req_ma: req.current_limit_ma,
         vbus_mv: None,

@@ -268,6 +268,22 @@ for diagnostics.
 - Web UI protocol cards MUST visually distinguish the currently active
   negotiated protocol from merely enabled protocols by consuming live PD
   diagnostics `active_protocol` instead of inferring it only from saved config.
+- Firmware MUST decode the active SW2303 protocol from `REG 0x06[3:0]`:
+  protocol ID `6` is fixed USB-PD and ID `7` is PPS. Other supported protocol
+  IDs MUST keep their existing mappings. Requested voltage MUST NOT be used to
+  infer protocol identity.
+- Protocol diagnostics MUST distinguish an active protocol, confirmed
+  inactivity, and unknown/unavailable status. A failed status/CC read or a
+  retry-backoff interval MUST expose `active_protocol=null`; cached requested
+  voltage/current MAY continue to drive the existing TPS fallback, but MUST
+  NOT count as current protocol, CC, or fast-charge evidence.
+- When USB-C is present but protocol status is unknown, Web display mode MUST
+  be `unknown` with label `Unknown`, and no protocol card may be highlighted.
+  No connection remains `Off`; confirmed inactivity and other confirmed
+  non-PD protocols retain the existing `DC` display behavior.
+- Web Power and Dashboard surfaces MUST label fixed USB-PD as `PD Fixed`, PPS
+  as `PPS`, and unknown protocol status as `Unknown`; live voltage/current
+  measurements remain visible in all three states.
 - Inline chips, radio segments, and toggles inside the active protocol card MUST
   consume the same warm-amber active palette as the card, with selected and
   unselected values remaining visually distinct from one another.
@@ -603,6 +619,16 @@ for diagnostics.
 - Given multiple protocols stay enabled, when live PD diagnostics report one
   `active_protocol`, then only that protocol card is visually highlighted as
   active while the remaining enabled cards keep the non-active enabled style.
+- Given SW2303 `REG 0x06[3:0]` is `6` or `7`, when diagnostics refresh, then
+  `active_protocol` is respectively `pd` or `pps`, independent of requested
+  voltage, and the UI labels them `PD Fixed` and `PPS`.
+- Given a protocol status read fails or is in retry backoff, when live power
+  state refreshes, then `active_protocol` is null, no protocol card is active,
+  and a connected Dashboard USB-C mode is neutral `Unknown`; cached request
+  voltage/current remain available only to the existing TPS fallback.
+- Given no active fast-charge protocol is confirmed, when the USB-C port is
+  present, then the existing `DC` mode remains; when the port is absent, the
+  mode is `Off`.
 - Given the GC9307 settings menu, when the owner opens Power Preset, then the
   screen shows the current preset and a second confirm restores defaults.
 - Given the GC9307 settings menu, when the owner opens Power Advanced, then the
@@ -1343,6 +1369,78 @@ for diagnostics.
   telemetry is no longer trustworthy.
 
 ![Device power panel thermal sensor fault](./assets/device-power-panel-thermal-sensor-fault.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ActivePdFixed`
+  state: confirmed SW2303 PD Fixed protocol
+  requested_viewport: `isolapurrDesktop` (1440x900 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the PD Fixed card is active only for the confirmed
+  fixed-PD status while live USB-C measurements remain visible.
+
+![USB-C Power PD Fixed protocol](./assets/device-power-protocol-pd-fixed-desktop-1440x900.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/ActivePps`
+  state: confirmed SW2303 PPS protocol
+  requested_viewport: `isolapurrDesktop` (1440x900 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies PPS is active while PD Fixed remains inactive and
+  live USB-C measurements remain visible.
+
+![USB-C Power PPS protocol](./assets/device-power-protocol-pps-desktop-1440x900.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DevicePowerPanel/UnknownProtocol`
+  state: protocol evidence unavailable
+  requested_viewport: `isolapurrDesktop` (1440x900 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies an unknown status does not activate a protocol card
+  and does not hide live USB-C measurements.
+
+![USB-C Power unknown protocol](./assets/device-power-protocol-unknown-desktop-1440x900.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/Default`
+  state: confirmed SW2303 PD Fixed protocol
+  requested_viewport: `isolapurrDesktop` (1440x900 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the Dashboard labels fixed USB-PD as `PD Fixed` and
+  retains the live USB-C voltage, current, and power readings.
+
+![USB-C Dashboard PD Fixed protocol](./assets/device-dashboard-protocol-pd-fixed-desktop-1440x900.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/LivePps`
+  state: confirmed SW2303 PPS protocol
+  requested_viewport: `isolapurrDesktop` (1440x900 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the Dashboard labels confirmed PPS and retains live
+  USB-C measurements.
+
+![USB-C Dashboard PPS protocol](./assets/device-dashboard-protocol-pps-desktop-1440x900.png)
+
+- source_type: storybook_canvas
+  story_id_or_title: `Panels/DeviceDashboardPanel/UnknownProtocol`
+  state: connected device with protocol evidence unavailable
+  requested_viewport: `isolapurrDesktop` (1440x900 CSS px)
+  viewport_strategy: `storybook-viewport`
+  capture_scope: `browser-viewport`
+  target_program: `mock-only`
+  evidence_note: verifies the Dashboard uses a neutral `Unknown` mode without
+  inferring a protocol and retains live USB-C measurements.
+
+![USB-C Dashboard unknown protocol](./assets/device-dashboard-protocol-unknown-desktop-1440x900.png)
 
 ## Risks
 

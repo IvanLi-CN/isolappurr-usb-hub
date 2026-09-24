@@ -98,6 +98,7 @@
   - `./assets/gc9307-shell-dashboard-example.framebuffer.bin`
 - Dashboard 示例渲染图必须通过 host-side firmware preview 链路生成：
   - 场景入口：`./tools/render_dashboard_preview.rs`
+  - 预览必须复用生产 Dashboard、surface、字体与数值格式化渲染实现；不得维护另一份手写绘制逻辑
   - Dashboard 字形资产：`src/display_ui/dashboard_font.rs`
   - raw framebuffer -> PNG：`$firmware-display-preview/scripts/fb_to_png.py`
 
@@ -157,7 +158,7 @@
 - **字符集约束**：实时界面默认只使用当前固件字形可稳定覆盖的字符集合：大写拉丁字母、数字、空格、`.`、`-`、`/`，避免依赖 CJK 或小写长串文本。
 - **长度约束**：
   - 左卡身份 token 最长 `5` 个可见字符单元（`USB-A`）
-  - 右卡模式 token 最长 `3` 个可见字符单元，限定在 `PD` / `PPS` / `DC`
+  - 右卡模式 token 最长 `8` 个可见字符单元，限定在 `PD FIXED` / `PPS` / `DC` / `OFF` / `UNKNOWN`，手动 TPS 输出仍可显示 `x.xxV`
   - 状态 / 档位标签最长 `4` 个可见字符单元，优先 `2~4` 字符
   - 每条常驻文本必须单行容纳，禁止换行、跑马灯、滚动字幕
 - **字号约束**：
@@ -219,7 +220,7 @@
   - Current：`X.XXA` → 超宽时降级为 `XX.XA`
   - Power：`X.XW` → 超宽时降级为 `XXW`
 - 若状态 / 档位标签超宽，必须先替换为更短 token（如 `READY` 不如 `5V` / `ON` 有效），不得挤占主读数空间。
-- 右卡模式 token 不允许退化为 `USB-C` 这类物理连接器名；固定 PDO 显示 `PD`，可调压协商显示 `PPS`，复用接口定压 / 定流输出显示 `DC`。
+- 右卡模式 token 不允许退化为 `USB-C` 这类物理连接器名；固定 USB-PD 显示 `PD FIXED`，PPS 显示 `PPS`，已确认无快充或其它非-PD 快充显示 `DC`，无连接显示 `OFF`，连接存在但协议状态未核实时显示 `UNKNOWN`。
 - 禁止使用自动滚动、裁切省略号或缩放到 `1x` 的方式处理常驻关键文本。
 
 ### 基线与实现约束
@@ -244,6 +245,7 @@
 
 - `Active / Online`：`Aqua` 填充或描边，文本走 `Deep Aqua`
 - `Standby / Not Present`：`Mist` 背景 + `ink_soft` 文本，数据使用占位符（例如 `--.--V`）
+- `Unknown`：使用中性弱化态，不使用 PD/PPS 活跃强调色；保留有效实时读数
 - `Warning / Over`：偏暖的 `#D58A63`，只用于该字段或该状态标签
 - `Error / Fault`：`Berry`，只用于错误 pill、关键数字标红或细描边
 
@@ -252,9 +254,11 @@
 - 默认 Dashboard 仍然是“双口电参量总览页”，本质上承接现有正常界面的信息目标，但信息组织方式改为卡片 dashboard。
 - 左卡 `USB-A` 与右卡高压 / 复用输出通道的基础数据仍是 `Voltage / Current / Power`。
 - 右卡标题语义采用“当前输出模式”而不是“物理接口名”：
-  - `PD`：固定 PDO / PD Fixed
+  - `PD FIXED`：固定 USB-PD PDO
   - `PPS`：Programmable Power Supply
   - `DC`：通过复用接口输出特定电压 / 电流
+  - `UNKNOWN`：端口连接存在，但最新 SW2303 协议证据不可用；不得高亮 PD/PPS
+  - `OFF`：端口不存在
 - 卡片之外默认不再单独展示 total power、online ports 或全局标题；若必须展示，必须证明它不重复且比扩大主读数更有价值。
 - 端口缺席时：
   - 卡片仍保留原位置
@@ -277,10 +281,19 @@
   Then：必须首先清楚读到左右两口的 `V / A / W`，且这些文字在正常观看距离下可辨认，不存在依赖 1x 小字的关键信息。
 - Given：查看 Dashboard 示例图
   When：检查所有常驻文字
-  Then：只能看到端口身份、极简状态 / 档位标签与 `V / A / W` 读数字符串本体；不得出现标题、口号、重复汇总或换行小字。
+  Then：只能看到端口身份、极简状态 / 档位标签与 `V / A / W` 读数字符串本体；模式标签可为 `PD FIXED`、`PPS`、`DC`、`OFF` 或 `UNKNOWN`，不得出现标题、口号、重复汇总或换行小字。
 - Given：右卡处于 `20V` 固定 PDO 场景
   When：查看 Header band
-  Then：左侧模式 token 显示 `PD`，而不是 `USB-C`；右侧档位标签显示 `20V`。
+  Then：左侧模式 token 显示 `PD FIXED`，而不是 `USB-C`；右侧档位标签显示 `20V`。
+- Given：USB-C 连接存在且 SW2303 协议状态不可用
+  When：查看 Dashboard
+  Then：左侧模式 token 显示中性 `UNKNOWN`，不使用 PD/PPS 活跃色，并继续显示有效 `V / A / W` 实测值。
+- Given：SW2303 状态确认当前协议为 PPS
+  When：查看 Dashboard
+  Then：左侧模式 token 显示 `PPS`，并继续显示有效 `V / A / W` 实测值。
+- Given：查看 PD FIXED、PPS 与 UNKNOWN 场景的固件预览
+  When：运行 `./tools/render_dashboard_preview.rs`
+  Then：预览使用生产 Dashboard renderer 与共用数值格式化实现，而非独立重写的绘图逻辑。
 - Given：查看 Dashboard 示例图
   When：检查对齐、留白与溢出
   Then：左右卡片主读数基线一致，文本不触边，状态标签不挤占主读数空间，且不存在靠缩小字号硬塞进去的情况。
@@ -354,17 +367,41 @@ Dashboard 示例图（由 `tools/render_dashboard_preview.rs` 生成 `framebuffe
 
 ![](./assets/gc9307-shell-dashboard-example.png)
 
-PR: include
 手动 TPS 强制输出时，右卡显示手动设定电压 + `FOCUS`，同时保持实测 `V / A / W`。
 ![](./assets/gc9307-shell-dashboard-usb-c-manual-focus.png)
 
-PR: include
 手动 TPS 非强制且 VBUS MOS 实际导通时，右卡显示手动设定电压 + `ON`。
 ![](./assets/gc9307-shell-dashboard-usb-c-manual-path-on.png)
 
-PR: include
 手动 TPS 非强制且 VBUS MOS 未导通时，右卡显示手动设定电压 + `OFF`，并保留实测 `0.00V / 0.00A / 0.00W`。
 ![](./assets/gc9307-shell-dashboard-usb-c-manual-path-off.png)
+
+source_type: firmware_preview
+renderer: production Dashboard renderer
+state: confirmed SW2303 PD Fixed protocol
+capture_scope: production-renderer-preview (320x172 px)
+target_program: mock-only
+evidence_note: verifies the local LCD labels confirmed fixed USB-PD as
+`PD Fixed` while retaining live voltage, current, and power readings.
+![](./assets/gc9307-shell-usb-c-protocol-pd-fixed.png)
+
+source_type: firmware_preview
+renderer: production Dashboard renderer
+state: confirmed SW2303 PPS protocol
+capture_scope: production-renderer-preview (320x172 px)
+target_program: mock-only
+evidence_note: verifies the local LCD labels confirmed PPS while retaining
+live voltage, current, and power readings.
+![](./assets/gc9307-shell-usb-c-protocol-pps.png)
+
+source_type: firmware_preview
+renderer: production Dashboard renderer
+state: connected device with protocol evidence unavailable
+capture_scope: production-renderer-preview (320x172 px)
+target_program: mock-only
+evidence_note: verifies the local LCD uses a neutral `UNKNOWN` mode without
+inferring a protocol and retains valid live measurements.
+![](./assets/gc9307-shell-usb-c-protocol-unknown.png)
 
 ## 参考（References）
 

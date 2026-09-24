@@ -38,7 +38,7 @@ type ProtocolGridProps = {
 };
 
 const protocols: readonly ProtocolDefinition[] = [
-  { key: "pd", label: "PD", negotiation: "cc" },
+  { key: "pd", label: "PD Fixed", negotiation: "cc" },
   { key: "pps", label: "PPS", negotiation: "cc" },
   { key: "qc20", label: "QC2", negotiation: "dpdm" },
   { key: "qc30", label: "QC3", negotiation: "dpdm" },

@@ -285,7 +285,7 @@ function buildDemoDevice({
       sw2303_last_valid_request: { mv: 9000, ma: 2000 },
       active_protocol: "pd",
       display: {
-        mode: { kind: "pd", label: "PD 9V" },
+        mode: { kind: "pd", label: "PD Fixed" },
         measurements_visible: true,
         badge: { kind: "on", label: "ON" },
       },

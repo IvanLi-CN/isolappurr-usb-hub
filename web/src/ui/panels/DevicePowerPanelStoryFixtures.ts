@@ -271,7 +271,7 @@ export const pdDiagnostics: PdDiagnosticsResponse = {
   sw2303_last_valid_request: { mv: 20000, ma: 3000 },
   active_protocol: "pd",
   display: {
-    mode: { kind: "pd", label: "PD" },
+    mode: { kind: "pd", label: "PD Fixed" },
     measurements_visible: true,
     badge: { kind: "on", label: "ON" },
   },
@@ -311,6 +311,26 @@ export const pdDiagnostics: PdDiagnosticsResponse = {
   },
   runtime_recovery_count: 0,
   sample_uptime_ms: 1000,
+};
+
+export const ppsLiveDiagnostics: PdDiagnosticsResponse = {
+  ...pdDiagnostics,
+  sw2303_request: { mv: 17_500, ma: 3_000 },
+  sw2303_vbus_mv: 17_554,
+  active_protocol: "pps",
+  display: {
+    ...pdDiagnostics.display,
+    mode: { kind: "pps", label: "PPS" },
+  },
+};
+
+export const unknownProtocolDiagnostics: PdDiagnosticsResponse = {
+  ...pdDiagnostics,
+  active_protocol: null,
+  display: {
+    ...pdDiagnostics.display,
+    mode: { kind: "unknown", label: "Unknown" },
+  },
 };
 
 export function withThermal(

@@ -1,5 +1,15 @@
 # History
 
+## Live Protocol Identity
+
+- Replaced request-voltage-based PD/PPS display inference with SW2303 status
+  register protocol-ID decoding, distinguishing fixed PD, PPS, other confirmed
+  protocols, confirmed inactivity, and unknown evidence.
+- Made read failures and retry backoff invalidate protocol evidence immediately
+  while preserving cached voltage/current only for the existing TPS fallback.
+- Aligned Web diagnostics, Power cards, Dashboard, and GC9307 display labels;
+  the deterministic LCD preview now exercises production rendering code.
+
 ## Runtime TPS Off Window
 
 - Established a 110 ms TPS output-off guard before a runtime restart, while
