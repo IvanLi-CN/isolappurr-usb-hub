@@ -1,373 +1,290 @@
+#![allow(dead_code)]
+
+use std::env;
 use std::fs;
 use std::path::PathBuf;
+
+#[path = "../../../../crates/isolapurr-firmware-core/src/pd_i2c.rs"]
+mod pd_i2c;
+
+mod power_config {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum TpsMode {
+        AutoFollow,
+        Manual,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum ManualUsbCPathMode {
+        Default,
+        Disconnect,
+        Force,
+    }
+}
+
+mod telemetry {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum Field<T> {
+        Ok(T),
+        Err,
+    }
+}
+
+#[path = "../../../../crates/isolapurr-firmware-core/src/display_ui.rs"]
+mod production_display_policy;
 
 #[path = "../../../../src/display_ui/dashboard_font.rs"]
 mod dashboard_font;
 
-const WIDTH: usize = 320;
-const HEIGHT: usize = 172;
+#[path = "../../../../src/display_ui/font6x8.rs"]
+mod font6x8;
 
-const WHITE: u16 = rgb565(0xFF, 0xFF, 0xFF);
-const AQUA: u16 = rgb565(0x4B, 0xA6, 0xC3);
-const INK: u16 = rgb565(0x21, 0x44, 0x57);
-const INK_SOFT: u16 = rgb565(0x6E, 0x84, 0x91);
-const BERRY: u16 = rgb565(0xB9, 0x49, 0x5A);
-const BORDER: u16 = rgb565(0xD6, 0xE5, 0xED);
+#[path = "../../../../src/display_ui/dashboard_format.rs"]
+mod dashboard_format;
 
-const fn rgb565(r: u8, g: u8, b: u8) -> u16 {
-    (((r as u16) & 0xF8) << 8) | (((g as u16) & 0xFC) << 3) | ((b as u16) >> 3)
+use dashboard_format::{
+    OkValueError, UI_STATUS_ERROR_RAW, UI_STATUS_NOT_PRESENT_RAW, UI_STATUS_OVER_RAW,
+    format_ok_value_6,
+};
+use pd_i2c::{PowerRequest, ProtocolStatus, Sw2303ActiveProtocol};
+use power_config::{ManualUsbCPathMode, TpsMode};
+use production_display_policy::{
+    NormalUiField, NormalUiPort, NormalUiPortBadge, NormalUiPortMode, NormalUiSnapshot,
+    USB_C_DISPLAY_TEXT_CAPACITY, UsbCDisplayInput, format_port_badge_text, format_port_mode_text,
+    resolve_usb_c_display,
+};
+use telemetry::Field;
+
+const DISPLAY_WIDTH: u16 = 320;
+const DISPLAY_HEIGHT: u16 = 172;
+const FRAME_PIXELS: usize = DISPLAY_WIDTH as usize * DISPLAY_HEIGHT as usize;
+const TILE_W: u16 = 24;
+const TILE_H: u16 = 48;
+const TILES_X: u16 = 13;
+const X_OFFSET: u16 = (DISPLAY_WIDTH - TILE_W * TILES_X) / 2;
+const Y_OFFSET: u16 = (DISPLAY_HEIGHT - TILE_H * 3) / 2;
+const GLYPH_SX: u16 = 3;
+const GLYPH_SY: u16 = 4;
+const TOAST_COMPACT_TILE_W: u16 = 16;
+const TOAST_COMPACT_TILE_H: u16 = 32;
+const TOAST_COMPACT_TILES_X: u16 = 20;
+const TOAST_COMPACT_X_OFFSET: u16 =
+    (DISPLAY_WIDTH - TOAST_COMPACT_TILE_W * TOAST_COMPACT_TILES_X) / 2;
+const TOAST_COMPACT_Y_OFFSET: u16 = (DISPLAY_HEIGHT - TOAST_COMPACT_TILE_H * 3) / 2;
+const TOAST_COMPACT_GLYPH_SX: u16 = 2;
+const TOAST_COMPACT_GLYPH_SY: u16 = 3;
+
+#[path = "../../../../src/display_ui/surface.rs"]
+mod surface;
+
+use surface::{FrameSurface, blend565, measure_text_aa, rgb565_raw};
+
+#[path = "../../../../src/display_ui/dashboard.rs"]
+mod dashboard;
+
+fn render_char_6x8_scaled(ch: u8, out: &mut [u8; 144]) {
+    font6x8::render_char_6x8_scaled_custom(ch, out, TILE_W, TILE_H, GLYPH_SX, GLYPH_SY);
 }
 
-#[derive(Clone)]
-struct Canvas {
-    pixels: Vec<u16>,
-}
-
-impl Canvas {
-    fn new(fill: u16) -> Self {
-        Self {
-            pixels: vec![fill; WIDTH * HEIGHT],
-        }
-    }
-
-    fn set(&mut self, x: i32, y: i32, color: u16) {
-        if x < 0 || y < 0 || x >= WIDTH as i32 || y >= HEIGHT as i32 {
-            return;
-        }
-        self.pixels[y as usize * WIDTH + x as usize] = color;
-    }
-
-    fn blend(&mut self, x: i32, y: i32, color: u16, alpha: u8) {
-        if x < 0 || y < 0 || x >= WIDTH as i32 || y >= HEIGHT as i32 {
-            return;
-        }
-        let idx = y as usize * WIDTH + x as usize;
-        self.pixels[idx] = blend565(self.pixels[idx], color, alpha);
-    }
-
-    fn fill_round_rect(&mut self, x: i32, y: i32, w: i32, h: i32, r: i32, color: u16) {
-        for yy in y..(y + h) {
-            for xx in x..(x + w) {
-                if point_in_round_rect(xx, yy, x, y, w, h, r) {
-                    self.set(xx, yy, color);
-                }
-            }
-        }
-    }
-
-    fn draw_hline(&mut self, x: i32, y: i32, w: i32, color: u16) {
-        for xx in x..(x + w) {
-            self.set(xx, y, color);
-        }
-    }
-
-    fn draw_text_aa(
-        &mut self,
-        x: i32,
-        y: i32,
-        font: &'static dashboard_font::AaFont,
-        spacing: i32,
-        text: &str,
-        color: u16,
-    ) {
-        let mut cursor_x = x;
-        for ch in text.bytes() {
-            let glyph = dashboard_font::lookup_glyph(font, ch);
-            self.draw_alpha_glyph(cursor_x, y, glyph, color);
-            cursor_x += glyph.advance as i32 + spacing;
-        }
-    }
-
-    fn draw_alpha_glyph(&mut self, x: i32, y: i32, glyph: &dashboard_font::AaGlyph, color: u16) {
-        let width = glyph.width as usize;
-        for gy in 0..glyph.height as usize {
-            let row = gy * width;
-            for gx in 0..width {
-                let alpha = glyph.alpha[row + gx];
-                if alpha == 0 {
-                    continue;
-                }
-                self.blend(
-                    x + gx as i32,
-                    y + glyph.y_offset as i32 + gy as i32,
-                    color,
-                    alpha,
-                );
-            }
-        }
-    }
-
-    fn draw_text_centered_aa(
-        &mut self,
-        x: i32,
-        y: i32,
-        w: i32,
-        h: i32,
-        font: &'static dashboard_font::AaFont,
-        spacing: i32,
-        text: &str,
-        color: u16,
-    ) {
-        let text_w = measure_text_aa(font, spacing, text);
-        let text_h = font.line_h as i32;
-        self.draw_text_aa(
-            x + (w - text_w) / 2,
-            y + (h - text_h) / 2,
-            font,
-            spacing,
-            text,
-            color,
-        );
-    }
-
-    fn write_rgb565_le(&self, path: &PathBuf) -> std::io::Result<()> {
-        let mut out = Vec::with_capacity(self.pixels.len() * 2);
-        for px in &self.pixels {
-            out.extend_from_slice(&px.to_le_bytes());
-        }
-        fs::write(path, out)
-    }
-}
-
-const fn measure_text_aa(font: &'static dashboard_font::AaFont, spacing: i32, text: &str) -> i32 {
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    let mut width = 0;
-    while i < bytes.len() {
-        let glyph = lookup_glyph_const(font, bytes[i]);
-        width += glyph.advance as i32;
-        if i + 1 < bytes.len() {
-            width += spacing;
-        }
-        i += 1;
-    }
-    width
-}
-
-const fn point_in_round_rect(px: i32, py: i32, x: i32, y: i32, w: i32, h: i32, r: i32) -> bool {
-    let rr = r * r;
-    let cx = if px < x + r {
-        x + r
-    } else if px >= x + w - r {
-        x + w - r - 1
-    } else {
-        px
-    };
-    let cy = if py < y + r {
-        y + r
-    } else if py >= y + h - r {
-        y + h - r - 1
-    } else {
-        py
-    };
-    let dx = px - cx;
-    let dy = py - cy;
-    dx * dx + dy * dy <= rr
-}
-
-const fn expand_565(c: u16) -> (u8, u8, u8) {
-    let r = ((c >> 11) & 0x1F) as u8;
-    let g = ((c >> 5) & 0x3F) as u8;
-    let b = (c & 0x1F) as u8;
-    (
-        (r << 3) | (r >> 2),
-        (g << 2) | (g >> 4),
-        (b << 3) | (b >> 2),
-    )
-}
-
-fn blend565(base: u16, over: u16, alpha: u8) -> u16 {
-    let (br, bg, bb) = expand_565(base);
-    let (or, og, ob) = expand_565(over);
-    let a = alpha as u32;
-    let inv = 255_u32 - a;
-    rgb565(
-        ((br as u32 * inv + or as u32 * a) / 255) as u8,
-        ((bg as u32 * inv + og as u32 * a) / 255) as u8,
-        ((bb as u32 * inv + ob as u32 * a) / 255) as u8,
-    )
-}
-
-const fn lookup_glyph_const(
-    font: &'static dashboard_font::AaFont,
+fn render_char_6x8_scaled_custom(
     ch: u8,
-) -> &'static dashboard_font::AaGlyph {
-    let mut i = 0;
-    while i < font.glyphs.len() {
-        if font.glyphs[i].ch == ch {
-            return &font.glyphs[i];
-        }
-        i += 1;
-    }
-    &font.glyphs[0]
-}
-
-fn draw_chip(
-    canvas: &mut Canvas,
-    x: i32,
-    y: i32,
-    font: &'static dashboard_font::AaFont,
-    spacing: i32,
-    pad_x: i32,
-    pad_y: i32,
-    text: &str,
-    fill: u16,
-    text_color: u16,
-    border: u16,
+    out: &mut [u8],
+    tile_w: u16,
+    tile_h: u16,
+    glyph_sx: u16,
+    glyph_sy: u16,
 ) {
-    let w = measure_text_aa(font, spacing, text) + pad_x * 2;
-    let h = font.line_h as i32 + pad_y * 2;
-    canvas.fill_round_rect(x, y, w, h, h / 2, border);
-    if w > 2 && h > 2 {
-        canvas.fill_round_rect(x + 1, y + 1, w - 2, h - 2, (h - 2) / 2, fill);
+    font6x8::render_char_6x8_scaled_custom(ch, out, tile_w, tile_h, glyph_sx, glyph_sy);
+}
+
+struct Scene {
+    mode: NormalUiPortMode,
+    badge: NormalUiPortBadge,
+    measurements_visible: bool,
+    usb_c_voltage_uv: u32,
+    usb_c_current_ua: u32,
+    usb_c_power_uw: u32,
+}
+
+fn resolve_scene(name: &str) -> Scene {
+    let (protocol_status, cc_attached, v_req_mv, vbus_mv, tps_mode, path_mode, setpoint_mv) =
+        match name {
+            "usb-c-pps" | "usb-c-pps-present" => (
+                ProtocolStatus::Active(Sw2303ActiveProtocol::Pps),
+                true,
+                17_500,
+                Some(17_554),
+                TpsMode::AutoFollow,
+                ManualUsbCPathMode::Default,
+                5_000,
+            ),
+            "usb-c-unknown" => (
+                ProtocolStatus::Unknown,
+                true,
+                17_500,
+                Some(17_554),
+                TpsMode::AutoFollow,
+                ManualUsbCPathMode::Default,
+                5_000,
+            ),
+            "usb-c-5v-idle-not-present" => (
+                ProtocolStatus::Inactive,
+                false,
+                5_000,
+                Some(0),
+                TpsMode::AutoFollow,
+                ManualUsbCPathMode::Default,
+                5_000,
+            ),
+            "usb-c-manual-focus" => (
+                ProtocolStatus::Unknown,
+                false,
+                5_000,
+                Some(0),
+                TpsMode::Manual,
+                ManualUsbCPathMode::Force,
+                3_300,
+            ),
+            "usb-c-manual-path-off" => (
+                ProtocolStatus::Unknown,
+                false,
+                9_000,
+                Some(0),
+                TpsMode::Manual,
+                ManualUsbCPathMode::Disconnect,
+                9_000,
+            ),
+            "usb-c-manual-path-on" => (
+                ProtocolStatus::Unknown,
+                false,
+                9_000,
+                Some(1_000),
+                TpsMode::Manual,
+                ManualUsbCPathMode::Default,
+                9_000,
+            ),
+            _ => (
+                ProtocolStatus::Active(Sw2303ActiveProtocol::PdFixed),
+                true,
+                9_000,
+                Some(9_012),
+                TpsMode::AutoFollow,
+                ManualUsbCPathMode::Default,
+                5_000,
+            ),
+        };
+    let is_off_scene = name == "usb-c-5v-idle-not-present";
+    let (voltage_mv, current_ma, power_mw) = match name {
+        "usb-c-pps" | "usb-c-pps-present" | "usb-c-unknown" => (17_554, 530, 9_290),
+        "usb-c-5v-idle-not-present" => (5_011, 0, 3),
+        "usb-c-manual-focus" => (5_011, 0, 3),
+        "usb-c-manual-path-off" => (0, 0, 0),
+        "usb-c-manual-path-on" => (9_012, 810, 7_318),
+        _ => (9_012, 810, 7_318),
+    };
+    let request = Some(PowerRequest {
+        fast_protocol: false,
+        fast_voltage: false,
+        protocol_status,
+        cc_attached,
+        v_req_mv,
+        i_req_ma: 3_000,
+        vbus_mv,
+    });
+    let display = resolve_usb_c_display(UsbCDisplayInput {
+        tps_mode,
+        manual_path_mode: path_mode,
+        manual_setpoint_mv: setpoint_mv,
+        tps_output_enabled: true,
+        port_power_enabled: !is_off_scene,
+        request,
+        voltage_mv: Field::Ok(voltage_mv),
+        current_ma: Field::Ok(current_ma),
+    });
+
+    Scene {
+        mode: display.mode,
+        badge: display.badge,
+        measurements_visible: display.measurements_visible,
+        usb_c_voltage_uv: voltage_mv * 1_000,
+        usb_c_current_ua: current_ma * 1_000,
+        usb_c_power_uw: power_mw * 1_000,
     }
-    canvas.draw_text_centered_aa(x, y, w, h, font, spacing, text, text_color);
 }
 
-fn draw_port(
-    canvas: &mut Canvas,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    accent: u16,
-    title: &str,
-    meta: &str,
-    voltage: &str,
-    current: &str,
-    power: &str,
-) {
-    canvas.fill_round_rect(x, y, w, h, 14, blend565(WHITE, accent, 10));
-    canvas.fill_round_rect(x + 1, y + 1, w - 2, h - 2, 13, WHITE);
-
-    const CHIP_SPACING: i32 = 0;
-    const CHIP_PAD_X: i32 = 8;
-    const CHIP_PAD_Y: i32 = 5;
-    let chip_font = &dashboard_font::SMALL;
-    let value_font = &dashboard_font::LARGE;
-    let secondary_font = &dashboard_font::MEDIUM;
-    let title_fill = blend565(WHITE, accent, 74);
-    let title_border = blend565(WHITE, accent, 132);
-    let meta_fill = blend565(accent, INK, 64);
-
-    draw_chip(
-        canvas,
-        x + 10,
-        y + 10,
-        chip_font,
-        CHIP_SPACING,
-        CHIP_PAD_X,
-        CHIP_PAD_Y,
-        title,
-        title_fill,
-        blend565(accent, INK, 24),
-        title_border,
-    );
-    let meta_w = measure_text_aa(chip_font, CHIP_SPACING, meta) + CHIP_PAD_X * 2;
-    let meta_h = chip_font.line_h as i32 + CHIP_PAD_Y * 2;
-    canvas.fill_round_rect(
-        x + w - meta_w - 10,
-        y + 10,
-        meta_w,
-        meta_h,
-        meta_h / 2,
-        meta_fill,
-    );
-    canvas.draw_text_centered_aa(
-        x + w - meta_w - 10,
-        y + 10,
-        meta_w,
-        meta_h,
-        chip_font,
-        CHIP_SPACING,
-        meta,
-        WHITE,
-    );
-
-    canvas.draw_text_aa(x + 12, y + 38, value_font, 0, voltage, INK);
-    canvas.draw_hline(x + 12, y + 86, w - 24, BORDER);
-    canvas.draw_text_aa(x + 12, y + 92, secondary_font, 0, current, INK_SOFT);
-    canvas.draw_hline(x + 12, y + 123, w - 24, BORDER);
-    canvas.draw_text_aa(x + 12, y + 129, secondary_font, 0, power, accent);
+fn port(
+    present: bool,
+    mode: NormalUiPortMode,
+    badge: NormalUiPortBadge,
+    voltage_uv: u32,
+    current_ua: u32,
+    power_uw: u32,
+) -> NormalUiPort {
+    NormalUiPort {
+        present,
+        mode,
+        badge,
+        voltage_uv: NormalUiField::Ok(voltage_uv),
+        current_ua: NormalUiField::Ok(current_ua),
+        power_uw: NormalUiField::Ok(power_uw),
+    }
 }
 
-fn draw_dashboard_example(canvas: &mut Canvas) {
-    draw_port(
-        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.03V", "0.48A", "2.4W",
-    );
-    draw_port(
-        canvas, 164, 6, 150, 160, BERRY, "PD", "20V", "20.1V", "3.12A", "62.7W",
-    );
-}
-
-fn draw_usb_c_pps_present_example(canvas: &mut Canvas) {
-    draw_port(
-        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
-    );
-    draw_port(
-        canvas, 164, 6, 150, 160, BERRY, "PPS", "7V", "7.02V", "0.51A", "3.6W",
-    );
-}
-
-fn draw_usb_c_5v_idle_not_present_example(canvas: &mut Canvas) {
-    draw_port(
-        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
-    );
-    draw_port(
-        canvas, 164, 6, 150, 160, BERRY, "OFF", "OFF", "--.--V", "--.--A", "--.--W",
-    );
-}
-
-fn draw_usb_c_manual_focus_example(canvas: &mut Canvas) {
-    draw_port(
-        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
-    );
-    draw_port(
-        canvas, 164, 6, 150, 160, BERRY, "3.30V", "FOCUS", "5.01V", "0.00A", "0.00W",
-    );
-}
-
-fn draw_usb_c_manual_path_on_example(canvas: &mut Canvas) {
-    draw_port(
-        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
-    );
-    draw_port(
-        canvas, 164, 6, 150, 160, BERRY, "9.00V", "ON", "9.01V", "0.81A", "7.3W",
-    );
-}
-
-fn draw_usb_c_manual_path_off_example(canvas: &mut Canvas) {
-    draw_port(
-        canvas, 6, 6, 150, 160, AQUA, "USB-A", "5V", "5.011V", "ERROR", "0.003W",
-    );
-    draw_port(
-        canvas, 164, 6, 150, 160, BERRY, "9.00V", "OFF", "0.00V", "0.00A", "0.00W",
-    );
+fn write_rgb565_le(pixels: &[u16], path: &PathBuf) -> std::io::Result<()> {
+    let mut bytes = Vec::with_capacity(pixels.len() * 2);
+    for pixel in pixels {
+        bytes.extend_from_slice(&pixel.to_le_bytes());
+    }
+    fs::write(path, bytes)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let root = std::env::current_dir()?;
+    let root = env::current_dir()?;
     let assets = root.join("docs/specs/3j4df-gc9307-shell-dashboard-ui/assets");
     fs::create_dir_all(&assets)?;
 
-    let framebuffer_path = std::env::var_os("GC9307_DASHBOARD_OUTPUT")
+    let scene_name = env::var("GC9307_DASHBOARD_SCENE").unwrap_or_else(|_| "usb-c-pd-fixed".into());
+    let framebuffer_path = env::var_os("GC9307_DASHBOARD_OUTPUT")
         .map(PathBuf::from)
-        .unwrap_or_else(|| assets.join("gc9307-shell-dashboard-example.framebuffer.bin"));
+        .unwrap_or_else(|| assets.join(format!("gc9307-{scene_name}.framebuffer.bin")));
     if let Some(parent) = framebuffer_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let mut canvas = Canvas::new(WHITE);
-    match std::env::var("GC9307_DASHBOARD_SCENE").as_deref() {
-        Ok("usb-c-pps-present") => draw_usb_c_pps_present_example(&mut canvas),
-        Ok("usb-c-5v-idle-not-present") => draw_usb_c_5v_idle_not_present_example(&mut canvas),
-        Ok("usb-c-manual-focus") => draw_usb_c_manual_focus_example(&mut canvas),
-        Ok("usb-c-manual-path-on") => draw_usb_c_manual_path_on_example(&mut canvas),
-        Ok("usb-c-manual-path-off") => draw_usb_c_manual_path_off_example(&mut canvas),
-        _ => draw_dashboard_example(&mut canvas),
-    }
-
-    canvas.write_rgb565_le(&framebuffer_path)?;
+    let scene = resolve_scene(&scene_name);
+    let snapshot = NormalUiSnapshot {
+        usb_a: port(
+            true,
+            NormalUiPortMode::UsbA,
+            NormalUiPortBadge::VoltageMv(5_000),
+            5_030_000,
+            420_000,
+            2_100_000,
+        ),
+        usb_c: port(
+            scene.measurements_visible,
+            scene.mode,
+            scene.badge,
+            scene.usb_c_voltage_uv,
+            scene.usb_c_current_ua,
+            scene.usb_c_power_uw,
+        ),
+    };
+    let mut pixels = vec![rgb565_raw(0xFF, 0xFF, 0xFF); FRAME_PIXELS];
+    let mut surface = FrameSurface::new(&mut pixels);
+    dashboard::render_dashboard_base(&mut surface);
+    dashboard::render_dashboard_dynamic(&mut surface, &snapshot);
+    write_rgb565_le(&pixels, &framebuffer_path)?;
     println!("{}", framebuffer_path.display());
+
+    let mut mode_buf = [b' '; USB_C_DISPLAY_TEXT_CAPACITY];
+    let mode_len = format_port_mode_text(scene.mode, &mut mode_buf);
+    let mut badge_buf = [b' '; USB_C_DISPLAY_TEXT_CAPACITY];
+    let badge_len = format_port_badge_text(scene.badge, &mut badge_buf);
+    println!(
+        "USB-C mode={} badge={}",
+        core::str::from_utf8(&mode_buf[..mode_len])?,
+        core::str::from_utf8(&badge_buf[..badge_len])?,
+    );
     Ok(())
 }

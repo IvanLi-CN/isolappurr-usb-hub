@@ -311,6 +311,23 @@ pub enum ApiActiveProtocol {
 }
 
 impl ApiActiveProtocol {
+    pub const fn from_sw2303(
+        protocol: isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol,
+    ) -> Self {
+        match protocol {
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::PdFixed => Self::Pd,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Pps => Self::Pps,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Qc20 => Self::Qc20,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Qc30 => Self::Qc30,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Fcp => Self::Fcp,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Afc => Self::Afc,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Scp => Self::Scp,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Pe20 => Self::Pe20,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Bc12 => Self::Bc12,
+            isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol::Sfcp => Self::Sfcp,
+        }
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pd => "pd",
@@ -981,6 +998,52 @@ mod tests {
     }
 
     #[test]
+    fn active_protocol_mapping_keeps_pd_fixed_pps_and_other_protocols_distinct() {
+        use isolapurr_firmware_core::pd_i2c::Sw2303ActiveProtocol;
+
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::PdFixed),
+            ApiActiveProtocol::Pd
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Pps),
+            ApiActiveProtocol::Pps
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Qc20),
+            ApiActiveProtocol::Qc20
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Qc30),
+            ApiActiveProtocol::Qc30
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Fcp),
+            ApiActiveProtocol::Fcp
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Afc),
+            ApiActiveProtocol::Afc
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Scp),
+            ApiActiveProtocol::Scp
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Pe20),
+            ApiActiveProtocol::Pe20
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Bc12),
+            ApiActiveProtocol::Bc12
+        );
+        assert_eq!(
+            ApiActiveProtocol::from_sw2303(Sw2303ActiveProtocol::Sfcp),
+            ApiActiveProtocol::Sfcp
+        );
+    }
+
+    #[test]
     fn idle_bias_json_keeps_dataset_object_open_only_once() {
         let idle_bias = ApiIdleBiasSnapshot {
             correction_enabled: true,
@@ -1003,7 +1066,7 @@ mod tests {
     #[test]
     fn pd_diagnostics_json_keeps_usb_c_actual_in_object() {
         let mut body = String::new();
-        let pd = ApiPdSnapshot {
+        let mut pd = ApiPdSnapshot {
             usb_c_power_enabled: true,
             sw2303_i2c_allowed: true,
             sw2303_profile_applied: true,
@@ -1058,9 +1121,27 @@ mod tests {
 
         write_pd_diagnostics_json(&mut body, &pd, &idle_bias);
 
+        assert!(body.contains("\"active_protocol\":\"pd\""));
+        assert!(body.contains("\"mode\":{\"kind\":\"pd\",\"label\":\"PD Fixed\"}"));
         assert!(body.contains("\"usb_c_actual\":{\"status\":\"ok\",\"voltage_mv\":8950,\"current_ma\":42,\"power_mw\":376,\"sample_uptime_ms\":1500},\"tps_setpoint\""));
         assert!(body.contains("\"iout_limit_ma\":3000,\"ilim_ma\":3000"));
         assert!(body.contains("\"thermal\":{\"sensors\":{\"mcu\":{\"temperature_deci_c\":795,\"status\":\"ok\"},\"tmp112\":{\"temperature_deci_c\":812,\"status\":\"ok\"}},\"hottest_temperature_deci_c\":812,\"state\":\"derating\",\"reason\":\"tmp112_hot\",\"effective_power_watts\":90,\"sample_uptime_ms\":1500}"));
+
+        body.clear();
+        pd.active_protocol = Some(ApiActiveProtocol::Pps);
+        pd.usb_c_display_mode = NormalUiPortMode::Pps;
+        write_pd_diagnostics_json(&mut body, &pd, &idle_bias);
+
+        assert!(body.contains("\"active_protocol\":\"pps\""));
+        assert!(body.contains("\"mode\":{\"kind\":\"pps\",\"label\":\"PPS\"}"));
+
+        body.clear();
+        pd.active_protocol = None;
+        pd.usb_c_display_mode = NormalUiPortMode::Unknown;
+        write_pd_diagnostics_json(&mut body, &pd, &idle_bias);
+
+        assert!(body.contains("\"active_protocol\":null"));
+        assert!(body.contains("\"mode\":{\"kind\":\"unknown\",\"label\":\"Unknown\"}"));
     }
 
     #[test]

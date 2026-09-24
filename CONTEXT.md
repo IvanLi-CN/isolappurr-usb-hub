@@ -102,10 +102,10 @@
   sink attaches. It does not mean the sink is currently using that protocol.
 
 - `active protocol`
-  The live protocol currently negotiated on USB-C, exposed by PD diagnostics.
-  The Web Power panel uses this term for the visually highlighted protocol
-  card. It is distinct from `enabled protocol`, because several protocols may
-  stay enabled while only one protocol is active at a time.
+  The concrete charging mode currently negotiated on USB-C, such as PD Fixed
+  or PPS. It is distinct from `enabled protocol`, because several protocols
+  may stay enabled while only one protocol is active at a time. If the live
+  mode cannot be confirmed, the active protocol is unknown.
 
 - `fast-charge profile`
   The saved per-protocol high-voltage and current-limit toggles that extend the

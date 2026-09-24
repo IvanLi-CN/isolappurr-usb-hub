@@ -1,4 +1,4 @@
-use crate::pd_i2c::PowerRequest;
+use crate::pd_i2c::{PowerRequest, ProtocolStatus, Sw2303ActiveProtocol};
 use crate::power_config::{ManualUsbCPathMode, TpsMode};
 use crate::telemetry::Field;
 
@@ -26,6 +26,7 @@ pub enum NormalUiPortMode {
     Dc,
     ManualVoltageMv(u16),
     Off,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,6 +65,7 @@ pub enum UsbCModeKind {
     Pps,
     Dc,
     Off,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,9 +73,8 @@ pub struct UsbCPolicyInput {
     pub voltage_mv: Option<u32>,
     pub current_ma: Option<u32>,
     pub cc_attached: bool,
-    pub protocol_active: bool,
-    pub pd_protocol: bool,
-    pub request_mv: Option<u16>,
+    pub protocol_activity_indicated: bool,
+    pub protocol_status: ProtocolStatus,
 }
 
 const USB_C_PRESENT_VOLTAGE_MV: u32 = 3_000;
@@ -89,7 +90,7 @@ pub const fn usb_c_present(input: UsbCPolicyInput) -> bool {
         None => false,
     };
 
-    (voltage_ready && current_ready) || input.cc_attached || input.protocol_active
+    (voltage_ready && current_ready) || input.cc_attached || input.protocol_activity_indicated
 }
 
 pub const fn usb_c_mode(input: UsbCPolicyInput) -> UsbCModeKind {
@@ -97,22 +98,17 @@ pub const fn usb_c_mode(input: UsbCPolicyInput) -> UsbCModeKind {
         return UsbCModeKind::Off;
     }
 
-    if input.pd_protocol {
-        return match input.request_mv {
-            Some(5_000 | 9_000 | 12_000 | 15_000 | 20_000) => UsbCModeKind::Pd,
-            Some(_) => UsbCModeKind::Pps,
-            None => UsbCModeKind::Pd,
-        };
+    match input.protocol_status {
+        ProtocolStatus::Active(Sw2303ActiveProtocol::PdFixed) => UsbCModeKind::Pd,
+        ProtocolStatus::Active(Sw2303ActiveProtocol::Pps) => UsbCModeKind::Pps,
+        ProtocolStatus::Active(_) | ProtocolStatus::Inactive => UsbCModeKind::Dc,
+        ProtocolStatus::Unknown => UsbCModeKind::Unknown,
     }
-
-    UsbCModeKind::Dc
 }
 
 pub fn normal_ui_usb_c_protocol_active(request: Option<PowerRequest>) -> bool {
     request
-        .map(|request| {
-            request.negotiated_protocol.is_some() || request.fast_protocol || request.fast_voltage
-        })
+        .map(|request| request.protocol_status.is_active())
         .unwrap_or(false)
 }
 
@@ -134,6 +130,7 @@ pub fn normal_ui_usb_c_mode(
         UsbCModeKind::Pps => NormalUiPortMode::Pps,
         UsbCModeKind::Dc => NormalUiPortMode::Dc,
         UsbCModeKind::Off => NormalUiPortMode::Off,
+        UsbCModeKind::Unknown => NormalUiPortMode::Unknown,
     }
 }
 
@@ -146,16 +143,21 @@ fn usb_c_policy_input(
         voltage_mv: field_ok(voltage_mv),
         current_ma: field_ok(current_ma),
         cc_attached: request.map(|request| request.cc_attached).unwrap_or(false),
-        protocol_active: normal_ui_usb_c_protocol_active(request),
-        pd_protocol: request
-            .map(|request| request.negotiated_protocol == Some(sw2303::ProtocolType::PD))
+        protocol_activity_indicated: request
+            .map(|request| {
+                normal_ui_usb_c_protocol_active(Some(request))
+                    || request.fast_protocol
+                    || request.fast_voltage
+            })
             .unwrap_or(false),
-        request_mv: request.map(|request| request.v_req_mv),
+        protocol_status: request
+            .map(|request| request.protocol_status)
+            .unwrap_or(ProtocolStatus::Unknown),
     }
 }
 
 pub const USB_C_VBUS_ON_THRESHOLD_MV: u32 = 1_000;
-pub const USB_C_DISPLAY_TEXT_CAPACITY: usize = 6;
+pub const USB_C_DISPLAY_TEXT_CAPACITY: usize = 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UsbCDisplayInput {
@@ -195,12 +197,18 @@ pub fn resolve_usb_c_display(input: UsbCDisplayInput) -> UsbCDisplayState {
             .request
             .map(|request| request.cc_attached)
             .unwrap_or(false),
-        protocol_active: normal_ui_usb_c_protocol_active(input.request),
-        pd_protocol: input
+        protocol_activity_indicated: input
             .request
-            .map(|request| request.negotiated_protocol == Some(sw2303::ProtocolType::PD))
+            .map(|request| {
+                normal_ui_usb_c_protocol_active(Some(request))
+                    || request.fast_protocol
+                    || request.fast_voltage
+            })
             .unwrap_or(false),
-        request_mv: input.request.map(|request| request.v_req_mv),
+        protocol_status: input
+            .request
+            .map(|request| request.protocol_status)
+            .unwrap_or(ProtocolStatus::Unknown),
     };
     let measurements_visible = usb_c_present(policy_input);
     let mode = match usb_c_mode(policy_input) {
@@ -208,6 +216,7 @@ pub fn resolve_usb_c_display(input: UsbCDisplayInput) -> UsbCDisplayState {
         UsbCModeKind::Pps => NormalUiPortMode::Pps,
         UsbCModeKind::Dc => NormalUiPortMode::Dc,
         UsbCModeKind::Off => NormalUiPortMode::Off,
+        UsbCModeKind::Unknown => NormalUiPortMode::Unknown,
     };
     let badge = if !measurements_visible {
         NormalUiPortBadge::Off
@@ -228,11 +237,12 @@ pub fn format_port_mode_text(
 ) -> usize {
     match mode {
         NormalUiPortMode::UsbA => copy_text(out, b"USB-A"),
-        NormalUiPortMode::Pd => copy_text(out, b"PD"),
+        NormalUiPortMode::Pd => copy_text(out, b"PD FIXED"),
         NormalUiPortMode::Pps => copy_text(out, b"PPS"),
         NormalUiPortMode::Dc => copy_text(out, b"DC"),
         NormalUiPortMode::ManualVoltageMv(mv) => format_mode_voltage_mv(mv, out),
         NormalUiPortMode::Off => copy_text(out, b"OFF"),
+        NormalUiPortMode::Unknown => copy_text(out, b"UNKNOWN"),
     }
 }
 
@@ -349,17 +359,15 @@ mod tests {
         voltage_mv: Option<u32>,
         current_ma: Option<u32>,
         cc_attached: bool,
-        protocol_active: bool,
-        pd_protocol: bool,
-        request_mv: Option<u16>,
+        protocol_activity_indicated: bool,
+        protocol_status: ProtocolStatus,
     ) -> UsbCPolicyInput {
         UsbCPolicyInput {
             voltage_mv,
             current_ma,
             cc_attached,
-            protocol_active,
-            pd_protocol,
-            request_mv,
+            protocol_activity_indicated,
+            protocol_status,
         }
     }
 
@@ -367,9 +375,20 @@ mod tests {
         PowerRequest {
             fast_protocol: false,
             fast_voltage: false,
-            negotiated_protocol: Some(sw2303::ProtocolType::PD),
+            protocol_status: ProtocolStatus::Active(Sw2303ActiveProtocol::PdFixed),
             cc_attached: true,
-            status_valid: true,
+            v_req_mv,
+            i_req_ma: 3_000,
+            vbus_mv,
+        }
+    }
+
+    const fn pps_request(v_req_mv: u16, vbus_mv: Option<u32>) -> PowerRequest {
+        PowerRequest {
+            fast_protocol: false,
+            fast_voltage: false,
+            protocol_status: ProtocolStatus::Active(Sw2303ActiveProtocol::Pps),
+            cc_attached: true,
             v_req_mv,
             i_req_ma: 3_000,
             vbus_mv,
@@ -383,24 +402,21 @@ mod tests {
             Some(0),
             false,
             false,
-            false,
-            None
+            ProtocolStatus::Inactive
         )));
         assert!(!usb_c_present(input(
             Some(2_999),
             Some(11),
             false,
             false,
-            false,
-            None
+            ProtocolStatus::Inactive
         )));
         assert!(usb_c_present(input(
             Some(3_000),
             Some(11),
             false,
             false,
-            false,
-            None
+            ProtocolStatus::Inactive
         )));
     }
 
@@ -411,16 +427,14 @@ mod tests {
             Some(10),
             false,
             false,
-            false,
-            None
+            ProtocolStatus::Inactive
         )));
         assert!(usb_c_present(input(
             Some(3_000),
             Some(11),
             false,
             false,
-            false,
-            None
+            ProtocolStatus::Inactive
         )));
     }
 
@@ -431,8 +445,7 @@ mod tests {
             Some(0),
             true,
             false,
-            false,
-            None
+            ProtocolStatus::Inactive
         )));
     }
 
@@ -443,34 +456,64 @@ mod tests {
             None,
             false,
             true,
-            true,
-            Some(5_000)
+            ProtocolStatus::Active(Sw2303ActiveProtocol::PdFixed)
         )));
     }
 
     #[test]
-    fn usb_c_mode_reports_pps_for_non_fixed_pd_voltage() {
+    fn usb_c_mode_uses_protocol_status_instead_of_requested_voltage() {
         assert_eq!(
             usb_c_mode(input(
                 Some(7_000),
                 Some(250),
                 false,
                 true,
+                ProtocolStatus::Active(Sw2303ActiveProtocol::PdFixed)
+            )),
+            UsbCModeKind::Pd
+        );
+        assert_eq!(
+            usb_c_mode(input(
+                Some(9_000),
+                Some(250),
+                false,
                 true,
-                Some(7_000)
+                ProtocolStatus::Active(Sw2303ActiveProtocol::Pps)
             )),
             UsbCModeKind::Pps
+        );
+        assert_eq!(
+            usb_c_mode(input(
+                Some(7_000),
+                Some(250),
+                false,
+                false,
+                ProtocolStatus::Unknown
+            )),
+            UsbCModeKind::Unknown
         );
     }
 
     #[test]
     fn usb_c_mode_falls_back_to_dc_when_only_measurement_is_present() {
         assert_eq!(
-            usb_c_mode(input(Some(3_000), Some(11), false, false, false, None)),
+            usb_c_mode(input(
+                Some(3_000),
+                Some(11),
+                false,
+                false,
+                ProtocolStatus::Inactive
+            )),
             UsbCModeKind::Dc
         );
         assert_eq!(
-            usb_c_mode(input(Some(5_000), Some(0), false, false, false, None)),
+            usb_c_mode(input(
+                Some(5_000),
+                Some(0),
+                false,
+                false,
+                ProtocolStatus::Inactive
+            )),
             UsbCModeKind::Off
         );
     }
@@ -544,7 +587,7 @@ mod tests {
             manual_setpoint_mv: 5_000,
             tps_output_enabled: false,
             port_power_enabled: true,
-            request: Some(request(7_000, Some(7_000))),
+            request: Some(pps_request(7_000, Some(7_000))),
             voltage_mv: Field::Ok(7_000),
             current_ma: Field::Ok(500),
         });
@@ -553,6 +596,32 @@ mod tests {
         assert_eq!(fixed.badge, NormalUiPortBadge::VoltageMv(9_000));
         assert_eq!(pps.mode, NormalUiPortMode::Pps);
         assert_eq!(pps.badge, NormalUiPortBadge::VoltageMv(7_000));
+    }
+
+    #[test]
+    fn unknown_mode_stays_neutral_and_keeps_live_measurements_visible() {
+        let state = resolve_usb_c_display(UsbCDisplayInput {
+            tps_mode: TpsMode::AutoFollow,
+            manual_path_mode: ManualUsbCPathMode::Default,
+            manual_setpoint_mv: 5_000,
+            tps_output_enabled: false,
+            port_power_enabled: true,
+            request: Some(PowerRequest {
+                fast_protocol: false,
+                fast_voltage: false,
+                protocol_status: ProtocolStatus::Unknown,
+                cc_attached: true,
+                v_req_mv: 7_000,
+                i_req_ma: 3_000,
+                vbus_mv: Some(7_000),
+            }),
+            voltage_mv: Field::Ok(7_000),
+            current_ma: Field::Ok(250),
+        });
+
+        assert_eq!(state.mode, NormalUiPortMode::Unknown);
+        assert_eq!(state.badge, NormalUiPortBadge::VoltageMv(7_000));
+        assert!(state.measurements_visible);
     }
 
     #[test]
@@ -599,5 +668,16 @@ mod tests {
 
         let len = format_port_mode_text(NormalUiPortMode::ManualVoltageMv(21_000), &mut out);
         assert_eq!(&out[..len], b"21.00V");
+    }
+
+    #[test]
+    fn format_port_mode_text_includes_specific_protocol_and_unknown_labels() {
+        let mut out = [b' '; USB_C_DISPLAY_TEXT_CAPACITY];
+
+        let len = format_port_mode_text(NormalUiPortMode::Pd, &mut out);
+        assert_eq!(&out[..len], b"PD FIXED");
+
+        let len = format_port_mode_text(NormalUiPortMode::Unknown, &mut out);
+        assert_eq!(&out[..len], b"UNKNOWN");
     }
 }

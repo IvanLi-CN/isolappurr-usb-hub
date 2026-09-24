@@ -284,7 +284,7 @@ export type PdDiagnosticsResponse = {
     | null;
   display: {
     mode: {
-      kind: "pd" | "pps" | "dc" | "off";
+      kind: "pd" | "pps" | "dc" | "off" | "unknown";
       label: string;
     };
     measurements_visible: boolean;

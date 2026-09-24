@@ -529,7 +529,8 @@
                         sw2303_error_latched = true;
                     }
                     sw2303_consecutive_errors = sw2303_consecutive_errors.saturating_add(1);
-                    let sp = last_valid_sw2303_request
+                    let cached_request = last_valid_sw2303_request;
+                    let sp = cached_request
                         .map(|request| {
                             requested_i_lim_ma = request.i_req_ma;
                             power_request_to_setpoint(request)
@@ -538,11 +539,15 @@
                             requested_i_lim_ma = boot_sp.i_lim_ma;
                             boot_sp
                         });
-                    (last_valid_sw2303_request, sp)
+                    (
+                        cached_request.map(PowerRequest::without_protocol_evidence),
+                        sp,
+                    )
                 }
             }
         } else {
-            let sp = last_valid_sw2303_request
+            let cached_request = last_valid_sw2303_request;
+            let sp = cached_request
                 .map(|request| {
                     requested_i_lim_ma = request.i_req_ma;
                     power_request_to_setpoint(request)
@@ -551,7 +556,10 @@
                     requested_i_lim_ma = boot_sp.i_lim_ma;
                     boot_sp
                 });
-            (last_valid_sw2303_request, sp)
+            (
+                cached_request.map(PowerRequest::without_protocol_evidence),
+                sp,
+            )
         };
 
         if !sw2303_was_in_error && sw2303_error_latched {
@@ -659,7 +667,7 @@
                     "pd request: fast_proto={} fast_v={} proto={:?} v_req_mv={} i_req_ma={}",
                     request.fast_protocol,
                     request.fast_voltage,
-                    defmt::Debug2Format(&request.negotiated_protocol),
+                    defmt::Debug2Format(&request.protocol_status),
                     request.v_req_mv,
                     request.i_req_ma
                 );
@@ -690,10 +698,9 @@
 
             let explicit_request_mv = request
                 .filter(|request| {
-                    request.status_valid
-                        && (request.negotiated_protocol.is_some()
-                            || request.fast_protocol
-                            || request.fast_voltage)
+                    request.protocol_status.is_active()
+                        || request.fast_protocol
+                        || request.fast_voltage
                 })
                 .map(|request| request.v_req_mv);
             let path_control = resolve_manual_path_control(

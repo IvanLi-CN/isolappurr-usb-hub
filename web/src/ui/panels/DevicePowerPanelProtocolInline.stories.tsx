@@ -158,7 +158,7 @@ export const Narrow: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText("PD");
+    await canvas.findByText("PD Fixed");
     await expect(
       await canvas.findByRole("button", { name: "Fixed PDO 9V" }),
     ).toBeVisible();
@@ -232,7 +232,7 @@ export const MediumWideCards: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
-      await canvas.findByTestId("PD-negotiation-badge"),
+      await canvas.findByTestId("PD Fixed-negotiation-badge"),
     ).toBeVisible();
     await expect(canvas.getByTestId("QC2-negotiation-badge")).toBeVisible();
   },
@@ -255,7 +255,7 @@ export const CompactDesktopCards: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText("PD");
+    await canvas.findByText("PD Fixed");
     const cards = Array.from(
       canvasElement.querySelectorAll<HTMLElement>(".protocol-card"),
     );

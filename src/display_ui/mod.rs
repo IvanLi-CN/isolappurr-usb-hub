@@ -2,12 +2,17 @@
 
 mod dashboard;
 mod dashboard_font;
+mod dashboard_format;
 mod font6x8;
 mod menu;
 mod surface;
 mod usb_c_display;
 
 pub use dashboard::DASHBOARD_BG_RGB8;
+use dashboard_format::{
+    OkValueError, UI_STATUS_ERROR_RAW, UI_STATUS_NOT_PRESENT_RAW, UI_STATUS_OVER_RAW,
+    format_ok_value_6,
+};
 pub use isolapurr_firmware_core::display_ui::{
     NormalUiField, NormalUiPort, NormalUiPortBadge, NormalUiPortMode, NormalUiSnapshot,
     normal_ui_usb_c_mode, normal_ui_usb_c_present, normal_ui_usb_c_protocol_active,
@@ -63,9 +68,6 @@ const TOAST_COMPACT_GLYPH_SY: u16 = 3;
 const FRAME_FG: Rgb565 = Rgb565::BLACK;
 const FRAME_BG: Rgb565 = Rgb565::WHITE;
 const UI_BG_RAW: u16 = 0xFFFF;
-const UI_STATUS_NOT_PRESENT_RAW: u16 = 0x4AAC;
-const UI_STATUS_ERROR_RAW: u16 = 0x98C3;
-const UI_STATUS_OVER_RAW: u16 = 0xC201;
 
 pub trait BacklightControl {
     fn on(&mut self);
@@ -586,57 +588,6 @@ fn format_ma_2dp_4(i: Field<u16>) -> [u8; 4] {
             ]
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OkValueError {
-    Over,
-}
-
-fn format_ok_value_6(micros: u32, unit: u8) -> Result<[u8; 6], OkValueError> {
-    let milli = (micros + 500) / 1_000;
-    if milli < 10_000 {
-        let int = milli / 1_000;
-        let frac = milli % 1_000;
-        return Ok([
-            b'0' + int as u8,
-            b'.',
-            b'0' + (frac / 100) as u8,
-            b'0' + ((frac / 10) % 10) as u8,
-            b'0' + (frac % 10) as u8,
-            unit,
-        ]);
-    }
-
-    let centi = (micros + 5_000) / 10_000;
-    if centi < 10_000 {
-        let int = centi / 100;
-        let frac = centi % 100;
-        return Ok([
-            b'0' + (int / 10) as u8,
-            b'0' + (int % 10) as u8,
-            b'.',
-            b'0' + (frac / 10) as u8,
-            b'0' + (frac % 10) as u8,
-            unit,
-        ]);
-    }
-
-    let deci = (micros + 50_000) / 100_000;
-    if deci < 10_000 {
-        let int = deci / 10;
-        let frac = deci % 10;
-        return Ok([
-            b'0' + (int / 100) as u8,
-            b'0' + ((int / 10) % 10) as u8,
-            b'0' + (int % 10) as u8,
-            b'.',
-            b'0' + frac as u8,
-            unit,
-        ]);
-    }
-
-    Err(OkValueError::Over)
 }
 
 fn render_char_6x8_scaled(ch: u8, out: &mut [u8; 144]) {

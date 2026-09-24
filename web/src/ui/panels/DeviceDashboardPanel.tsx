@@ -202,7 +202,7 @@ function shortChannelState(state: "online" | "offline" | "unknown"): string {
 function liveModeTone(
   kind: PdDiagnosticsResponse["display"]["mode"]["kind"],
 ): string {
-  if (kind === "off") {
+  if (kind === "off" || kind === "unknown") {
     return "border-[var(--border)] bg-[var(--panel)] text-[var(--muted)]";
   }
   return "border-[var(--protocol-live-border)] bg-[var(--protocol-live-bg)] text-[var(--protocol-live-text)]";

@@ -135,25 +135,10 @@ fn api_active_protocol(
     request: Option<isolapurr_usb_hub::pd_i2c::PowerRequest>,
 ) -> Option<net::ApiActiveProtocol> {
     let request = request?;
-    match request.negotiated_protocol {
-        Some(sw2303::ProtocolType::PD) => {
-            if request.v_req_mv >= 3_300 && request.v_req_mv != 5_000 && request.v_req_mv % 100 != 0
-            {
-                Some(net::ApiActiveProtocol::Pps)
-            } else {
-                Some(net::ApiActiveProtocol::Pd)
-            }
-        }
-        Some(sw2303::ProtocolType::QC20) => Some(net::ApiActiveProtocol::Qc20),
-        Some(sw2303::ProtocolType::QC30) => Some(net::ApiActiveProtocol::Qc30),
-        Some(sw2303::ProtocolType::FCP) => Some(net::ApiActiveProtocol::Fcp),
-        Some(sw2303::ProtocolType::AFC) => Some(net::ApiActiveProtocol::Afc),
-        Some(sw2303::ProtocolType::SCP) => Some(net::ApiActiveProtocol::Scp),
-        Some(sw2303::ProtocolType::PE20) => Some(net::ApiActiveProtocol::Pe20),
-        Some(sw2303::ProtocolType::BC12) => Some(net::ApiActiveProtocol::Bc12),
-        Some(sw2303::ProtocolType::SFCP) => Some(net::ApiActiveProtocol::Sfcp),
-        None => None,
-    }
+    request
+        .protocol_status
+        .active_protocol()
+        .map(net::ApiActiveProtocol::from_sw2303)
 }
 const TOAST_USB_C_PWR_ON: [[u8; 13]; 3] = [*b"USB-C PWRON  ", *b"DONE         ", *b"             "];
 const TOAST_USB_C_PWR_FAIL: [[u8; 13]; 3] =
@@ -508,9 +493,8 @@ fn power_request_changed_for_logging(last: Option<PowerRequest>, next: PowerRequ
         Some(last) => {
             last.fast_protocol != next.fast_protocol
                 || last.fast_voltage != next.fast_voltage
-                || last.negotiated_protocol != next.negotiated_protocol
+                || last.protocol_status != next.protocol_status
                 || last.cc_attached != next.cc_attached
-                || last.status_valid != next.status_valid
                 || last.v_req_mv != next.v_req_mv
                 || last.i_req_ma != next.i_req_ma
         }
@@ -520,12 +504,15 @@ fn power_request_changed_for_logging(last: Option<PowerRequest>, next: PowerRequ
 
 #[cfg(feature = "net_http")]
 fn idle_bias_attach_detected(request: PowerRequest) -> bool {
-    if !request.status_valid {
+    if matches!(
+        request.protocol_status,
+        isolapurr_usb_hub::pd_i2c::ProtocolStatus::Unknown
+    ) {
         return true;
     }
 
     request.cc_attached
-        || request.negotiated_protocol.is_some()
+        || request.protocol_status.is_active()
         || request.fast_protocol
         || request.fast_voltage
 }

@@ -1,5 +1,26 @@
 # Implementation
 
+## Live Protocol Diagnostics
+
+- `read_power_request()` reads SW2303 `FastChargingStatus` (`REG 0x06`) once
+  and decodes the low protocol-ID nibble: ID `6` maps to fixed USB-PD and ID
+  `7` maps to PPS; supported non-PD IDs retain their prior API mappings.
+- `PowerRequest.protocol_status` represents active, confirmed inactive, or
+  unknown evidence. Failed status/CC reads and retry backoff expose unknown and
+  `active_protocol=null`; cached request voltage/current are still used by the
+  existing TPS fallback without carrying protocol evidence.
+- Web diagnostics keep the existing `pd`/`pps`/null API values. The Power grid
+  and Dashboard label PD as `PD Fixed`; connected unknown state uses neutral
+  `Unknown` display mode without activating any protocol card.
+- The GC9307 LCD shows `PD FIXED`, `PPS`, `DC`, `UNKNOWN`, or `OFF` from the
+  same firmware display state while retaining live measurements and manual TPS
+  setpoint behavior.
+- `tools/render_dashboard_preview.rs` includes the production Dashboard,
+  surface, glyph assets, and shared numeric formatter, with only hardware
+  telemetry and dimensions stubbed for deterministic host rendering.
+- Web stories cover PD Fixed, PPS, and Unknown; the host LCD preview renders
+  the corresponding states from deterministic inputs.
+
 ## Web Telemetry Formatting
 
 - Added one shared Web formatter for live `mV/mA/mW` telemetry and used it in

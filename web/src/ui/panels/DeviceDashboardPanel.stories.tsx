@@ -18,6 +18,18 @@ const demoDevice: StoredDevice = {
   baseUrl: "http://isolapurr-usb-hub-aabbcc001122.local",
 };
 
+const ppsDevice: StoredDevice = {
+  id: "112233aabbcc",
+  name: "PPS Hub",
+  baseUrl: "http://isolapurr-usb-hub-112233aabbcc.local",
+};
+
+const unknownProtocolDevice: StoredDevice = {
+  id: "223344bbccdd",
+  name: "Unconfirmed Protocol Hub",
+  baseUrl: "http://isolapurr-usb-hub-223344bbccdd.local",
+};
+
 const legacyDevice: StoredDevice = {
   id: "bbccdd112233",
   name: "Legacy Hub",
@@ -123,7 +135,7 @@ const autoPdDiagnostics: PdDiagnosticsResponse = {
   sw2303_last_valid_request: { mv: 9000, ma: 3000 },
   active_protocol: "pd",
   display: {
-    mode: { kind: "pd", label: "PD" },
+    mode: { kind: "pd", label: "PD Fixed" },
     measurements_visible: true,
     badge: { kind: "voltage", label: "9V" },
   },
@@ -257,6 +269,24 @@ function mockHub(hostname: string) {
 }
 
 function mockUsbCTelemetry(hostname: string) {
+  if (hostname === "isolapurr-usb-hub-112233aabbcc.local") {
+    return {
+      status: "ok",
+      voltage_mv: 17554,
+      current_ma: 530,
+      power_mw: 9290,
+      sample_uptime_ms: 123_456,
+    };
+  }
+  if (hostname === "isolapurr-usb-hub-223344bbccdd.local") {
+    return {
+      status: "ok",
+      voltage_mv: 17554,
+      current_ma: 530,
+      power_mw: 9290,
+      sample_uptime_ms: 123_456,
+    };
+  }
   if (hostname === "isolapurr-usb-hub-ddee33445566.local") {
     return {
       status: "ok",
@@ -387,6 +417,47 @@ function mockUsbCDiagnostics(hostname: string): PdDiagnosticsResponse {
       },
     };
   }
+  if (hostname === "isolapurr-usb-hub-112233aabbcc.local") {
+    return {
+      ...autoPdDiagnostics,
+      sw2303_request: { mv: 17_500, ma: 3_000 },
+      sw2303_vbus_mv: 17_554,
+      active_protocol: "pps",
+      display: {
+        ...autoPdDiagnostics.display,
+        mode: { kind: "pps", label: "PPS" },
+        badge: { kind: "voltage", label: "18V" },
+      },
+      usb_c_actual: {
+        status: "ok",
+        voltage_mv: 17_554,
+        current_ma: 530,
+        power_mw: 9_290,
+        sample_uptime_ms: 123_456,
+      },
+    };
+  }
+  if (hostname === "isolapurr-usb-hub-223344bbccdd.local") {
+    return {
+      ...autoPdDiagnostics,
+      sw2303_request: { mv: 17_500, ma: 3_000 },
+      sw2303_vbus_mv: 17_554,
+      active_protocol: null,
+      display: {
+        ...autoPdDiagnostics.display,
+        mode: { kind: "unknown", label: "Unknown" },
+        badge: { kind: "voltage", label: "18V" },
+        measurements_visible: true,
+      },
+      usb_c_actual: {
+        status: "ok",
+        voltage_mv: 17_554,
+        current_ma: 530,
+        power_mw: 9_290,
+        sample_uptime_ms: 123_456,
+      },
+    };
+  }
   return autoPdDiagnostics;
 }
 
@@ -498,6 +569,8 @@ const mockDeviceApi = async (
 
   const knownHosts = new Set([
     "isolapurr-usb-hub-aabbcc001122.local",
+    "isolapurr-usb-hub-112233aabbcc.local",
+    "isolapurr-usb-hub-223344bbccdd.local",
     "isolapurr-usb-hub-bbccdd112233.local",
     "isolapurr-usb-hub-ccddee223344.local",
     "isolapurr-usb-hub-ddee33445566.local",
@@ -607,19 +680,24 @@ const meta: Meta<typeof DeviceDashboardPanel> = {
   component: DeviceDashboardPanel,
   tags: ["autodocs"],
   parameters: {
-    layout: "padded",
+    layout: "fullscreen",
   },
   decorators: [
     mockFetchDecorator(mockDeviceApi),
     (Story, context) => (
       <ToastProvider>
-        <DeviceRuntimeContext.Provider
-          value={dashboardRuntime(context.args.device ?? demoDevice)}
+        <div
+          className="min-h-screen bg-[var(--bg)] p-8"
+          data-visual-evidence-surface
         >
-          <div className="max-w-[980px]">
-            <Story />
-          </div>
-        </DeviceRuntimeContext.Provider>
+          <DeviceRuntimeContext.Provider
+            value={dashboardRuntime(context.args.device ?? demoDevice)}
+          >
+            <div className="mx-auto max-w-[980px]" data-visual-evidence-target>
+              <Story />
+            </div>
+          </DeviceRuntimeContext.Provider>
+        </div>
       </ToastProvider>
     ),
   ],
@@ -633,6 +711,7 @@ export default meta;
 type Story = StoryObj<typeof DeviceDashboardPanel>;
 
 export const Default: Story = {
+  tags: ["usb-c-protocol-state"],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await waitFor(
@@ -647,13 +726,46 @@ export const Default: Story = {
     ).toHaveTextContent("0.50 A");
     await expect(
       await canvas.findByTestId("dashboard-usb-c-live-mode"),
-    ).toHaveTextContent(/pd/i);
+    ).toHaveTextContent("PD Fixed");
     await expect(
       canvas.getByTestId("dashboard-usb-c-live-badge"),
     ).toHaveTextContent("9V");
     await expect(
       canvas.queryByText("USB-C source state"),
     ).not.toBeInTheDocument();
+  },
+};
+
+export const LivePps: Story = {
+  tags: ["usb-c-protocol-state"],
+  args: {
+    device: ppsDevice,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByTestId("dashboard-usb-c-live-mode"),
+    ).toHaveTextContent("PPS");
+    await expect(canvas.getByTestId("port-card-port_c")).toHaveTextContent(
+      "17.554V",
+    );
+  },
+};
+
+export const UnknownProtocol: Story = {
+  tags: ["usb-c-protocol-state"],
+  args: {
+    device: unknownProtocolDevice,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const mode = await canvas.findByTestId("dashboard-usb-c-live-mode");
+    await expect(mode).toHaveTextContent("Unknown");
+    expect(mode.className).toContain("text-[var(--muted)]");
+    expect(mode.className).not.toContain("protocol-live");
+    await expect(canvas.getByTestId("port-card-port_c")).toHaveTextContent(
+      "17.554V",
+    );
   },
 };
 

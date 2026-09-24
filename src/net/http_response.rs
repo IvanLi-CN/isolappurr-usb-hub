@@ -258,7 +258,11 @@ fn write_usb_c_display_mode_json(
     let _ = body.push_str(",\"label\":");
     let mut mode_buf = [0u8; isolapurr_usb_hub::display_ui::USB_C_DISPLAY_TEXT_CAPACITY];
     let len = isolapurr_usb_hub::display_ui::format_port_mode_text(mode, &mut mode_buf);
-    let label = core::str::from_utf8(&mode_buf[..len]).unwrap_or("OFF");
+    let label = match mode {
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::Pd => "PD Fixed",
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::Unknown => "Unknown",
+        _ => core::str::from_utf8(&mode_buf[..len]).unwrap_or("OFF"),
+    };
     write_json_string(body, label);
 }
 
@@ -283,6 +287,7 @@ fn usb_c_display_mode_kind(mode: isolapurr_usb_hub::display_ui::NormalUiPortMode
         isolapurr_usb_hub::display_ui::NormalUiPortMode::Dc => "dc",
         isolapurr_usb_hub::display_ui::NormalUiPortMode::ManualVoltageMv(_) => "dc",
         isolapurr_usb_hub::display_ui::NormalUiPortMode::Off => "off",
+        isolapurr_usb_hub::display_ui::NormalUiPortMode::Unknown => "unknown",
     }
 }
 

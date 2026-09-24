@@ -275,10 +275,9 @@
             if sw2303_i2c_allowed {
                 let explicit_request_mv = last_valid_sw2303_request
                     .filter(|request| {
-                        request.status_valid
-                            && (request.negotiated_protocol.is_some()
-                                || request.fast_protocol
-                                || request.fast_voltage)
+                        request.protocol_status.is_active()
+                            || request.fast_protocol
+                            || request.fast_voltage
                     })
                     .map(|request| request.v_req_mv);
                 let restored_path_control = previous_last_sw2303_path_control.unwrap_or_else(|| {
