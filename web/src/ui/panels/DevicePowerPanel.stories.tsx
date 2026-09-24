@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, userEvent, waitFor, within } from "@storybook/test";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 
 import type {
   DeviceApiError,
@@ -128,6 +128,26 @@ export const Default: Story = {
     await expect(
       canvas.getByRole("button", { name: "Save and apply" }),
     ).toBeDisabled();
+  },
+};
+
+export const StrictModeControlAcquisition: Story = {
+  render: (args) => (
+    <StrictMode>
+      <DevicePowerPanel {...args} />
+    </StrictMode>
+  ),
+  args: {
+    ...defaultArgs,
+    loadPowerConfig: () => ok({ ...manualConfig, lock: null }),
+    setPowerLock: () => ok(controlledHereConfig),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Controlled here")).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Fixed PDO 9V" }),
+    ).toBeEnabled();
   },
 };
 
