@@ -100,8 +100,17 @@ mod power_output_tests {
         let (_, path, body) =
             map_http_endpoint(Method::POST, "/ports/port_a/power?enabled=false", None)
                 .expect("power endpoint should map");
-        assert_eq!(path, "/api/v1/ports/port_a/power?enabled=false");
+        assert_eq!(path, "/api/v1/ports/port_a/power?enabled=0");
         assert!(body.is_none());
+
+        let (_, path, body) =
+            map_http_endpoint(Method::POST, "/ports/port_c/power?enabled=true", None)
+                .expect("power enable endpoint should map");
+        assert_eq!(path, "/api/v1/ports/port_c/power?enabled=1");
+        assert!(body.is_none());
+        assert!(
+            map_http_endpoint(Method::POST, "/ports/port_c/power?enabled=maybe", None).is_err()
+        );
 
         let (_, path, body) =
             map_http_endpoint(Method::POST, "/ports/port_c/data?connected=false", None)
