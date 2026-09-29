@@ -5,6 +5,9 @@
 - Port maintenance now includes the explicit runtime data-link command: `isolapurr ports data --port <id> --connected <true|false>`, IPC `device.port.data_set`, and the aligned device bridge route. The older replug command remains a compatibility pulse action. The released CLI workflow and user-operation guidance expose the command and its power-off rejection boundary.
 
 - `isolapurr-devd` and `isolapurr` host-tools package added under `tools/isolapurr-host`.
+- HTTP port-power requests normalize the CLI boolean to the firmware API's
+  required `enabled=0|1` query encoding; the Local USB/devd JSON path remains
+  boolean-based.
 - `isolapurr-devd serve` exposes a local IPC daemon by default: Unix domain socket on macOS/Linux and Windows named pipe on Windows. It tracks connected IPC clients and exits after the configured idle timeout when no clients remain.
 - `isolapurr-devd bridge-http` exposes the device-centric localhost HTTP bridge, token bootstrap, Local USB scanning, leases, session traces, storage import/list/save, Wi-Fi/ports/status/route/diagnostics/power-config proxy methods, firmware catalog validation, and guarded flash/reset endpoints.
 - `isolapurr` exposes released-style CLI entrypoints for hardware memory, discovery/devices/status, Wi-Fi, ports, flash, reset, monitor, and diagnostics over IPC, with sibling daemon auto-start when available.

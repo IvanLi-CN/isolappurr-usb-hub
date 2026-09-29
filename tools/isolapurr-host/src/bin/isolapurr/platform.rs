@@ -542,9 +542,13 @@ fn map_http_endpoint(
             let (port, query) = rest
                 .split_once("/power?")
                 .ok_or_else(|| anyhow!("invalid port power path"))?;
+            let enabled = parse_enabled_query(query)?;
             (
                 Method::POST,
-                format!("/api/v1/ports/{port}/power?{query}"),
+                format!(
+                    "/api/v1/ports/{port}/power?enabled={}",
+                    if enabled { 1 } else { 0 }
+                ),
                 None,
             )
         }
@@ -562,6 +566,18 @@ fn parse_connected_query(query: &str) -> anyhow::Result<bool> {
         Some("false" | "0") => Ok(false),
         Some(_) => Err(anyhow!("connected must be true, false, 1, or 0")),
         None => Err(anyhow!("connected query is required")),
+    }
+}
+
+fn parse_enabled_query(query: &str) -> anyhow::Result<bool> {
+    match query
+        .split('&')
+        .find_map(|part| part.strip_prefix("enabled="))
+    {
+        Some("true" | "1") => Ok(true),
+        Some("false" | "0") => Ok(false),
+        Some(_) => Err(anyhow!("enabled must be true, false, 1, or 0")),
+        None => Err(anyhow!("enabled query is required")),
     }
 }
 

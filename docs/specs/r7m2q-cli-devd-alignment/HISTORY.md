@@ -1,5 +1,8 @@
 # History
 
+- Fixed the released HTTP host-tools path so port-power booleans are encoded
+  as the firmware-required `enabled=0|1` query value.
+
 - Added the aligned runtime data-link command across CLI, IPC, bridge HTTP, USB JSONL, and Web transport while retaining the existing replug command.
 
 - Reworked the non-project recovery confirmation into a reusable Storybook
