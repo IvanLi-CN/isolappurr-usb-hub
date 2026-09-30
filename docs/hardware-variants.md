@@ -26,7 +26,7 @@
 
 当前硬件把 `TPS55288` 与 `SW2303` 分到两条 I2C 总线上，避免 `SW2303` 上电窗口拖住 `TPS55288` 配置路径。固件应通过 `SDA/SCL` 访问 `TPS55288(0x74)`，通过 `SDA_SW/SCL_SW` 访问 `SW2303(0x3C)`；`TPS55288 FB/INT` 进入共享 `INT` 线，后续固件需要在该线上处理多设备告警来源。
 
-## 固件相关网表变化
+## `tps-sw` 固件相关网表变化
 
 - `TPS55288` 不再位于旧 `SDA_TPS/SCL_TPS` 网络；后续固件应使用 `GPIO8/GPIO9` 对应的 `SDA/SCL` 总线访问。
 - `SW2303` 使用 `GPIO39/GPIO40` 对应的 `SDA_SW/SCL_SW` 独立总线访问。
@@ -47,7 +47,8 @@
 
 - 网表排查清单：`docs/netlist/tps-sw-checklist.md`
 - `tps-sw` MCU 使用规范：[`docs/mcu-resource-allocation-tps-sw.md`](mcu-resource-allocation-tps-sw.md)
-- 含 `SW2303` / `TPS55288` 的设计文档均按 `tps-sw` 方案维护。
+- 未标注 variant 的既有 `SW2303` 设计文档按 `tps-sw` 维护；
+  `TPS55288` 出现在多个 variant 中，不能仅凭芯片名称判断文档适用范围。
 - `tps-fusb` 设计入口：[`docs/tps-fusb-hardware-design.md`](tps-fusb-hardware-design.md)
 - `tps-fusb` 输入电源路径选择：[`docs/tps-fusb-input-power-path-selection.md`](tps-fusb-input-power-path-selection.md)
 - `tps-fusb` MCU 使用规范：[`docs/mcu-resource-allocation-tps-fusb.md`](mcu-resource-allocation-tps-fusb.md)

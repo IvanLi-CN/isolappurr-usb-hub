@@ -19,7 +19,19 @@
 
 - `shasum -a 256 hardware/tps-husb/netlist.enet`（与上文来源 SHA-256 比对）
 - `python3 .github/scripts/test_tps_husb_power_contract.py`
-- `git diff main -- hardware/tps-fusb hardware/tps-sw docs/tps-fusb-hardware-design.md docs/tps-fusb-input-power-path-selection.md docs/mcu-resource-allocation-tps-fusb.md docs/netlist/tps-fusb-checklist.md`
+- 旧版专属文件相对远程主干无差异：
+
+  ```sh
+  git fetch origin
+  git diff --exit-code origin/main -- \
+    hardware/tps-sw hardware/tps-fusb \
+    ':(glob)docs/**/*tps-sw*' ':(glob)docs/**/*tps-fusb*' \
+    ':(glob)docs/**/*tps-sw*/**' ':(glob)docs/**/*tps-fusb*/**'
+  test -z "$(git ls-files --others --exclude-standard -- \
+    hardware/tps-sw hardware/tps-fusb \
+    ':(glob)docs/**/*tps-sw*' ':(glob)docs/**/*tps-fusb*' \
+    ':(glob)docs/**/*tps-sw*/**' ':(glob)docs/**/*tps-fusb*/**')"
+  ```
 
 ## Remaining Gaps
 

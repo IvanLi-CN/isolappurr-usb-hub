@@ -69,6 +69,15 @@ class TpsHusbPowerContractTest(unittest.TestCase):
             {"1": "GND", "2": "U0TX", "3": "U0RX", "4": "BOOT0", "5": "CHIP_EN", "6": "GND", "7": "GND"},
         )
 
+    def test_variant_navigation(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        variants = (ROOT / "docs" / "hardware-variants.md").read_text(encoding="utf-8")
+        self.assertIn("(docs/mcu-resource-allocation-tps-husb.md)", readme)
+        self.assertIn("(docs/tps-husb-input-power-path-selection.md)", readme)
+        self.assertIn("hardware/tps-husb/netlist.enet", readme)
+        self.assertIn("## `tps-sw` 固件相关网表变化", variants)
+        self.assertIn("TPS55288` 出现在多个 variant", variants)
+
 
 if __name__ == "__main__":
     unittest.main()
