@@ -4,7 +4,8 @@
 来源：用户提供的只读 `Netlist_Schematic1_1_2026-09-30.enet`；两者
 SHA-256 均为
 `4dbb26d6a1d2dcb6d5ce968be72b4398958bac0b4d9f2919fa8c7dfe0e94ff2a`。
-旧版 `hardware/tps-fusb/`、`hardware/tps-sw/` 不属于此归档。
+本清单只检查 `tps-husb`，不检查旧版 `hardware/tps-fusb/` 或
+`hardware/tps-sw/`。
 
 ## 可从网表确认
 
