@@ -1,6 +1,6 @@
 # `tps-husb` 双 PD 电源路径硬件
 
-> 本文件定义独立硬件版本的长期合同；归档和验证进度见 `IMPLEMENTATION.md`。
+> 本文件定义独立硬件版本的长期合同；文件保存情况和验证进度见 `IMPLEMENTATION.md`。
 
 ## Context and Scope
 
@@ -39,8 +39,8 @@
 
 ### REQ-HUSB-005
 
-- 已投产硬件的网表与制造导出物 MUST 以独立、不可覆盖的快照保存；清单 MUST 绑定文件 SHA-256，并区分可编辑设计源与制造导出物。
-- 后续硬件修订 MUST 使用新的快照目录，不得替换 `tps-husb` 的既有投产材料，也不得修改 `tps-fusb` 或 `tps-sw` 的资料。
+- 本版网表与制造导出物 MUST 保存在独立、不可覆盖的版本文件集中；清单 MUST 记录文件 SHA-256，并区分可编辑设计源与制造导出物。
+- 后续硬件修订 MUST 使用新的版本目录，不得替换 `tps-husb` 已保存的文件，也不得修改 `tps-fusb` 或 `tps-sw` 的资料。
 
 ## Verification
 
@@ -58,7 +58,7 @@
 
 ### VER-HUSB-003
 
-- Method: 对照投产快照清单中的来源 SHA-256，检查归档 ZIP 完整性，并确认快照网表与本版设计网表字节一致。
+- Method: 对照文件清单中的 SHA-256，检查 Gerber ZIP 完整性，并确认保存的网表与本版设计网表字节一致。
 - covers: `REQ-HUSB-005`
 - Pass condition: 文件哈希匹配、ZIP 完整性检查通过、既有设计基线及其他硬件 variant 未被覆盖。
 

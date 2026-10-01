@@ -6,9 +6,9 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 NETLIST = ROOT / "hardware" / "tps-husb" / "netlist.enet"
-PRODUCTION_DIR = ROOT / "hardware" / "tps-husb" / "manufacturing" / "2026-09-30"
-PRODUCTION_NETLIST = PRODUCTION_DIR / "Netlist_Schematic1_1_2026-09-30.enet"
-PRODUCTION_GERBER = PRODUCTION_DIR / "Gerber_PCB1_1_2026-09-30.zip"
+EXPORT_SET_DIR = ROOT / "hardware" / "tps-husb" / "manufacturing" / "2026-09-30"
+SAVED_NETLIST = EXPORT_SET_DIR / "Netlist_Schematic1_1_2026-09-30.enet"
+SAVED_GERBER = EXPORT_SET_DIR / "Gerber_PCB1_1_2026-09-30.zip"
 
 
 class TpsHusbPowerContractTest(unittest.TestCase):
@@ -82,10 +82,10 @@ class TpsHusbPowerContractTest(unittest.TestCase):
         self.assertIn("## `tps-sw` 固件相关网表变化", variants)
         self.assertIn("TPS55288` 出现在多个 variant", variants)
 
-    def test_production_snapshot_is_locked(self) -> None:
-        manifest = (PRODUCTION_DIR / "MANIFEST.md").read_text(encoding="utf-8")
-        netlist_bytes = PRODUCTION_NETLIST.read_bytes()
-        gerber_bytes = PRODUCTION_GERBER.read_bytes()
+    def test_saved_hardware_files_match_manifest(self) -> None:
+        manifest = (EXPORT_SET_DIR / "MANIFEST.md").read_text(encoding="utf-8")
+        netlist_bytes = SAVED_NETLIST.read_bytes()
+        gerber_bytes = SAVED_GERBER.read_bytes()
 
         self.assertEqual(netlist_bytes, NETLIST.read_bytes())
         self.assertEqual(

@@ -10,11 +10,10 @@
 | --- | --- | --- | --- |
 | `tps-sw` | 当前版 | `CH224Q + TPS55288 + SW2303` | `hardware/tps-sw/netlist.enet`；[MCU 使用规范](mcu-resource-allocation-tps-sw.md) |
 | `tps-fusb` | 网表已归档，待验证 | `FUSB302B ×2 + TPS55288`，MCU 实现 PD 3.0 Fixed + PPS | `hardware/tps-fusb/netlist.enet`；[网表检查清单](netlist/tps-fusb-checklist.md)；[硬件设计](tps-fusb-hardware-design.md)；[输入电源路径](tps-fusb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-fusb.md) |
-| `tps-husb` | 已投产；网表与 Gerber 快照已归档，验证状态单独跟踪 | `HUSB311BLA + FUSB302B + LM74800-Q1 ×2 + TPS55288` | `hardware/tps-husb/netlist.enet`；[投产快照清单](../hardware/tps-husb/manufacturing/2026-09-30/MANIFEST.md)；[网表检查清单](netlist/tps-husb-checklist.md)；[硬件设计](tps-husb-hardware-design.md)；[输入电源路径](tps-husb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-husb.md) |
+| `tps-husb` | 独立版本；网表和 Gerber 制造文件已保存 | `HUSB311BLA + FUSB302B + LM74800-Q1 ×2 + TPS55288` | `hardware/tps-husb/netlist.enet`；[网表与 Gerber 文件清单](../hardware/tps-husb/manufacturing/2026-09-30/MANIFEST.md)；[网表检查清单](netlist/tps-husb-checklist.md)；[硬件设计](tps-husb-hardware-design.md)；[输入电源路径](tps-husb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-husb.md) |
 
 未显式标注 variant 的现有固件和网表文档仍按 `tps-sw` 维护。`tps-fusb`
 网表是独立的设计基线，不代表其 PCB、BOM、生产贴装或固件支持已经完成。
-`tps-husb` 的已投产 Gerber 归档不代表本版固件或实物验证已完成。
 
 ## `tps-sw` 关键供电关系
 

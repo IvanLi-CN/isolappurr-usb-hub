@@ -4,7 +4,7 @@
 
 ## Current Status
 
-- Implementation: 网表与 Gerber 投产快照已归档（由用户确认已投产）；独立固件、BOM 和实物验证记录仍需分别跟踪。
+- Implementation: 网表与 Gerber 制造文件已保存在本版目录；独立固件、BOM 和实物验证记录仍需分别跟踪。
 - Lifecycle: active
 - Catalog note: 独立新增版本，不替代 `tps-fusb` 或 `tps-sw`。
 
@@ -14,7 +14,7 @@
 - `REQ-HUSB-002`: 本版网表与 `docs/tps-husb-hardware-design.md` 描述 U10/U11/U14 分工及保留的 R28/R30。
 - `REQ-HUSB-003`: `docs/tps-husb-input-power-path-selection.md` 记录 DC/USB 拓扑和 `DC_CE` 极性。
 - `REQ-HUSB-004`: `docs/mcu-resource-allocation-tps-husb.md` 与 `docs/netlist/tps-husb-checklist.md` 记录 RN4 默认态和 GPIO/I2C 归属。
-- `REQ-HUSB-005`: `hardware/tps-husb/manufacturing/2026-09-30/` 保存用户提供的网表与 Gerber ZIP 原始字节；`MANIFEST.md` 记录 SHA-256、来源关系和导出物边界。
+- `REQ-HUSB-005`: `hardware/tps-husb/manufacturing/2026-09-30/` 保存网表与 Gerber ZIP 原始字节；`MANIFEST.md` 记录 SHA-256、来源关系和导出物边界。
 
 ## Verification Commands
 
@@ -39,7 +39,7 @@
 
 ## Remaining Gaps
 
-- 未归档可编辑 PCB 源文件、生产 BOM 或贴装文件；Gerber 是制造导出物。
+- 尚未保存可编辑 PCB 源文件、BOM 或贴装文件；Gerber 是制造导出物。
 - 独立固件 profile、冷启动、双输入、10 A 热设计、30 V 极限及 USB-PD 合同的实物验证状态未由本次材料证明。
 
 ## Related Changes

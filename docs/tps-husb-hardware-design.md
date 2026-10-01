@@ -3,11 +3,10 @@
 `tps-husb` 是从 `tps-fusb` 继续设计的独立新版本，不替换或重命名旧版。
 本版网表基线是 [`hardware/tps-husb/netlist.enet`](../hardware/tps-husb/netlist.enet)；
 长期约束见 [tps-husb 规格](specs/tps-husb-dual-pd-hardware/SPEC.md)，
-逐项连线见 [网表检查清单](netlist/tps-husb-checklist.md)。用户已确认本版
-进入投产；对应的网表和 Gerber 原始快照保存在
-[`hardware/tps-husb/manufacturing/2026-09-30/`](../hardware/tps-husb/manufacturing/2026-09-30/MANIFEST.md)。
-Gerber 是制造导出物，不是可编辑 PCB 源文件；快照中的网表与本版网表基线
-逐字节一致。后续硬件修订必须另建快照目录，不覆盖本投产记录。
+逐项连线见 [网表检查清单](netlist/tps-husb-checklist.md)。对应的网表和 Gerber
+制造文件保存在 [`hardware/tps-husb/manufacturing/2026-09-30/`](../hardware/tps-husb/manufacturing/2026-09-30/MANIFEST.md)。
+Gerber 是制造导出物，不是可编辑 PCB 源文件；保存的网表与本版网表基线逐字节
+一致。后续硬件修订必须使用独立版本目录，不覆盖现有文件。
 
 ## 电源与 PD 架构
 
@@ -37,13 +36,13 @@ Gerber 是制造导出物，不是可编辑 PCB 源文件；快照中的网表�
   二极管特性和电压决定实际承载。`DC_CE` 只能禁止 DC 路。
 
 TPS55288 的 `R28=200 kΩ`、`R30=36 kΩ` 属于本版已指定保留的现有配置；
-本次归档不修改这组器件。`U15` 为 5 位调试接口，信号是
+本次文件整理不修改这组器件。`U15` 为 5 位调试接口，信号是
 `GND/U0TX/U0RX/BOOT0/CHIP_EN`，另有两个接地安装脚。固件资源和
 上电顺序见 [MCU 使用规范](mcu-resource-allocation-tps-husb.md)。
 
 ## 验证边界
 
-本投产快照不代表 MOSFET SOA 与散热、30 V 极限、两路反灌电流、
-DC-only/USB-only/双输入冷启动和热插拔波形、USB-PD 合同与异常恢复均已
-完成实物验证。验证结果应与对应硬件快照关联记录；不得把旧版实测或资料
-视为本版验收证据。
+当前资料未包含 MOSFET SOA 与散热、30 V 极限、两路反灌电流、
+DC-only/USB-only/双输入冷启动和热插拔波形、USB-PD 合同与异常恢复的
+实测结果。后续验证结果应关联到对应的网表与 Gerber 文件版本；不得把旧版
+实测或资料视为本版验证证据。
