@@ -37,6 +37,11 @@
 - 复位默认态 MUST 由 RN4 的 100 kΩ、1% 电阻网络提供：`DC_CE` 和 `TPS_USB_C_VBUS_EN` 下拉至 GND，`CE_TPS` 上拉至 `3V3`。
 - MCU 资源合同 MUST 将 U10 放在 `SDA2/SCL2` 与 `INT2`，U11 放在 `SDA/SCL` 与 `INT`，并为新版本独立的固件 profile 预留上述语义。
 
+### REQ-HUSB-005
+
+- 已投产硬件的网表与制造导出物 MUST 以独立、不可覆盖的快照保存；清单 MUST 绑定文件 SHA-256，并区分可编辑设计源与制造导出物。
+- 后续硬件修订 MUST 使用新的快照目录，不得替换 `tps-husb` 的既有投产材料，也不得修改 `tps-fusb` 或 `tps-sw` 的资料。
+
 ## Verification
 
 ### VER-HUSB-001
@@ -50,6 +55,12 @@
 - Method: 解析网表的器件料号、引脚网络和电阻值，并对照本版设计文档。
 - covers: `REQ-HUSB-002`, `REQ-HUSB-003`, `REQ-HUSB-004`
 - Pass condition: U10/U11、U14、U20/U25、Q2/Q3/Q10、RN4、GPIO35 与文档逐项一致；固件接管和断电边界可在 bring-up 中复验。
+
+### VER-HUSB-003
+
+- Method: 对照投产快照清单中的来源 SHA-256，检查归档 ZIP 完整性，并确认快照网表与本版设计网表字节一致。
+- covers: `REQ-HUSB-005`
+- Pass condition: 文件哈希匹配、ZIP 完整性检查通过、既有设计基线及其他硬件 variant 未被覆盖。
 
 ## Related ADRs
 

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import pathlib
 import unittest
@@ -5,6 +6,9 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 NETLIST = ROOT / "hardware" / "tps-husb" / "netlist.enet"
+PRODUCTION_DIR = ROOT / "hardware" / "tps-husb" / "manufacturing" / "2026-09-30"
+PRODUCTION_NETLIST = PRODUCTION_DIR / "Netlist_Schematic1_1_2026-09-30.enet"
+PRODUCTION_GERBER = PRODUCTION_DIR / "Gerber_PCB1_1_2026-09-30.zip"
 
 
 class TpsHusbPowerContractTest(unittest.TestCase):
@@ -77,6 +81,22 @@ class TpsHusbPowerContractTest(unittest.TestCase):
         self.assertIn("hardware/tps-husb/netlist.enet", readme)
         self.assertIn("## `tps-sw` 固件相关网表变化", variants)
         self.assertIn("TPS55288` 出现在多个 variant", variants)
+
+    def test_production_snapshot_is_locked(self) -> None:
+        manifest = (PRODUCTION_DIR / "MANIFEST.md").read_text(encoding="utf-8")
+        netlist_bytes = PRODUCTION_NETLIST.read_bytes()
+        gerber_bytes = PRODUCTION_GERBER.read_bytes()
+
+        self.assertEqual(netlist_bytes, NETLIST.read_bytes())
+        self.assertEqual(
+            hashlib.sha256(netlist_bytes).hexdigest(),
+            "4dbb26d6a1d2dcb6d5ce968be72b4398958bac0b4d9f2919fa8c7dfe0e94ff2a",
+        )
+        self.assertEqual(
+            hashlib.sha256(gerber_bytes).hexdigest(),
+            "e9e4e1322c54ab7cffd15682913fb9d5eea49ee6b571135b722b1c080e95c8df",
+        )
+        self.assertIn("Gerber_PCB1_1_2026-09-30.zip", manifest)
 
 
 if __name__ == "__main__":

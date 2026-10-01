@@ -13,6 +13,7 @@
 ## Related Changes
 
 - 本版资料入口：`docs/tps-husb-hardware-design.md`。
+- 用户确认的 `PCB1_1` 投产文件已按原始字节归档在 `hardware/tps-husb/manufacturing/2026-09-30/`；该目录绑定网表与 Gerber 哈希，不取代可编辑设计源。
 
 ## References
 

@@ -4,7 +4,7 @@
 
 ## Current Status
 
-- Implementation: 设计网表与资料基线已建立；PCB、BOM、固件与实物验证未完成。
+- Implementation: 网表与 Gerber 投产快照已归档（由用户确认已投产）；独立固件、BOM 和实物验证记录仍需分别跟踪。
 - Lifecycle: active
 - Catalog note: 独立新增版本，不替代 `tps-fusb` 或 `tps-sw`。
 
@@ -14,10 +14,14 @@
 - `REQ-HUSB-002`: 本版网表与 `docs/tps-husb-hardware-design.md` 描述 U10/U11/U14 分工及保留的 R28/R30。
 - `REQ-HUSB-003`: `docs/tps-husb-input-power-path-selection.md` 记录 DC/USB 拓扑和 `DC_CE` 极性。
 - `REQ-HUSB-004`: `docs/mcu-resource-allocation-tps-husb.md` 与 `docs/netlist/tps-husb-checklist.md` 记录 RN4 默认态和 GPIO/I2C 归属。
+- `REQ-HUSB-005`: `hardware/tps-husb/manufacturing/2026-09-30/` 保存用户提供的网表与 Gerber ZIP 原始字节；`MANIFEST.md` 记录 SHA-256、来源关系和导出物边界。
 
 ## Verification Commands
 
 - `shasum -a 256 hardware/tps-husb/netlist.enet`（与上文来源 SHA-256 比对）
+- `shasum -a 256 hardware/tps-husb/manufacturing/2026-09-30/*`
+- `cmp hardware/tps-husb/netlist.enet hardware/tps-husb/manufacturing/2026-09-30/Netlist_Schematic1_1_2026-09-30.enet`
+- `unzip -t hardware/tps-husb/manufacturing/2026-09-30/Gerber_PCB1_1_2026-09-30.zip`
 - `python3 .github/scripts/test_tps_husb_power_contract.py`
 - 旧版专属文件相对远程主干无差异：
 
@@ -35,8 +39,8 @@
 
 ## Remaining Gaps
 
-- 尚无与本版对应的 PCB、生产 BOM、贴装文件或独立固件 profile。
-- 冷启动、双输入、10 A 热设计、30 V 极限及 USB-PD 合同需通过实物验证。
+- 未归档可编辑 PCB 源文件、生产 BOM 或贴装文件；Gerber 是制造导出物。
+- 独立固件 profile、冷启动、双输入、10 A 热设计、30 V 极限及 USB-PD 合同的实物验证状态未由本次材料证明。
 
 ## Related Changes
 

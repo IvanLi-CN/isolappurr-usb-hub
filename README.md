@@ -41,7 +41,10 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
   - 硬件方案产物：当前 `tps-sw` 网表位于 `hardware/tps-sw/netlist.enet`；
     `tps-fusb` 与 `tps-husb` 的独立设计基线分别位于
     `hardware/tps-fusb/netlist.enet` 和 `hardware/tps-husb/netlist.enet`。
-    两份设计基线均未完成 PCB、BOM、生产贴装或固件验证，不能视为已发布硬件。
+    `tps-husb` 已投产网表与 Gerber 快照见
+    [`hardware/tps-husb/manufacturing/2026-09-30/`](hardware/tps-husb/manufacturing/2026-09-30/MANIFEST.md)；
+    该归档不代表固件或实物验证已完成。`tps-fusb` 仍是设计基线，不代表
+    PCB、BOM、生产贴装或固件支持已经完成。
 - `docs/datasheets/`  
   - `ch224q-datasheet.md` – CH224Q/CH224A/CH224K/CH224D/CH221K 的官方手册 Markdown 版。  
   - `ch217-datasheet.md` – CH217 USB 限流配电开关芯片手册 Markdown 版。  

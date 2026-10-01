@@ -1,10 +1,13 @@
 # `tps-husb` 硬件设计
 
 `tps-husb` 是从 `tps-fusb` 继续设计的独立新版本，不替换或重命名旧版。
-本版唯一的网表基线是 [`hardware/tps-husb/netlist.enet`](../hardware/tps-husb/netlist.enet)；
+本版网表基线是 [`hardware/tps-husb/netlist.enet`](../hardware/tps-husb/netlist.enet)；
 长期约束见 [tps-husb 规格](specs/tps-husb-dual-pd-hardware/SPEC.md)，
-逐项连线见 [网表检查清单](netlist/tps-husb-checklist.md)。网表归档并不表示
-PCB、BOM、固件或实物验证完成。
+逐项连线见 [网表检查清单](netlist/tps-husb-checklist.md)。用户已确认本版
+进入投产；对应的网表和 Gerber 原始快照保存在
+[`hardware/tps-husb/manufacturing/2026-09-30/`](../hardware/tps-husb/manufacturing/2026-09-30/MANIFEST.md)。
+Gerber 是制造导出物，不是可编辑 PCB 源文件；快照中的网表与本版网表基线
+逐字节一致。后续硬件修订必须另建快照目录，不覆盖本投产记录。
 
 ## 电源与 PD 架构
 
@@ -40,6 +43,7 @@ TPS55288 的 `R28=200 kΩ`、`R30=36 kΩ` 属于本版已指定保留的现有�
 
 ## 验证边界
 
-正式出板前仍需独立检查 MOSFET SOA 与散热、30 V 极限、两路反灌电流、
-DC-only/USB-only/双输入冷启动和热插拔波形、USB-PD 合同与异常恢复。
-本次只建立新版本的可追溯设计基线，不把旧版实测或旧版资料视为本版验收。
+本投产快照不代表 MOSFET SOA 与散热、30 V 极限、两路反灌电流、
+DC-only/USB-only/双输入冷启动和热插拔波形、USB-PD 合同与异常恢复均已
+完成实物验证。验证结果应与对应硬件快照关联记录；不得把旧版实测或资料
+视为本版验收证据。
