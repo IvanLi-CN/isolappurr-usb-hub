@@ -1,14 +1,16 @@
 # 硬件方案（Hardware Variant）
 
-本仓库同时维护当前版 `tps-sw` 和设计中的下一版 `tps-fusb`。两版硬件
-不会互相取代；后续分别使用独立的编译期固件 profile 和固件镜像。
+本仓库维护 `tps-sw`、`tps-fusb`，以及从 `tps-fusb` 迭代出的独立版本
+`tps-husb`。各版不会互相取代；分别使用独立的编译期
+固件 profile 和固件镜像。
 
 ## 方案
 
-| 方案 | 状态 | 关键芯片（核心差异） | 网表 / 设计入口 |
-| --- | --- | --- | --- |
-| `tps-sw` | 当前版 | `CH224Q + TPS55288 + SW2303` | `hardware/tps-sw/netlist.enet`；[MCU 使用规范](mcu-resource-allocation-tps-sw.md) |
-| `tps-fusb` | 网表已归档，待验证 | `FUSB302B ×2 + TPS55288`，MCU 实现 PD 3.0 Fixed + PPS | `hardware/tps-fusb/netlist.enet`；[网表检查清单](netlist/tps-fusb-checklist.md)；[硬件设计](tps-fusb-hardware-design.md)；[输入电源路径](tps-fusb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-fusb.md) |
+| 方案 | 关键芯片（核心差异） | 网表 / 设计入口 |
+| --- | --- | --- |
+| `tps-sw` | `CH224Q + TPS55288 + SW2303` | `hardware/tps-sw/netlist.enet`；[MCU 使用规范](mcu-resource-allocation-tps-sw.md) |
+| `tps-fusb` | `FUSB302B ×2 + TPS55288`，MCU 实现 PD 3.0 Fixed + PPS | `hardware/tps-fusb/netlist.enet`；[网表检查清单](netlist/tps-fusb-checklist.md)；[硬件设计](tps-fusb-hardware-design.md)；[输入电源路径](tps-fusb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-fusb.md) |
+| `tps-husb` | `HUSB311BLA + FUSB302B + LM74800-Q1 ×2 + TPS55288` | `hardware/tps-husb/netlist.enet`；[网表与 Gerber 文件清单](../hardware/tps-husb/manufacturing/2026-09-30/MANIFEST.md)；[网表检查清单](netlist/tps-husb-checklist.md)；[硬件设计](tps-husb-hardware-design.md)；[输入电源路径](tps-husb-input-power-path-selection.md)；[MCU 使用规范](mcu-resource-allocation-tps-husb.md) |
 
 未显式标注 variant 的现有固件和网表文档仍按 `tps-sw` 维护。`tps-fusb`
 网表是独立的设计基线，不代表其 PCB、BOM、生产贴装或固件支持已经完成。
@@ -24,7 +26,7 @@
 
 当前硬件把 `TPS55288` 与 `SW2303` 分到两条 I2C 总线上，避免 `SW2303` 上电窗口拖住 `TPS55288` 配置路径。固件应通过 `SDA/SCL` 访问 `TPS55288(0x74)`，通过 `SDA_SW/SCL_SW` 访问 `SW2303(0x3C)`；`TPS55288 FB/INT` 进入共享 `INT` 线，后续固件需要在该线上处理多设备告警来源。
 
-## 固件相关网表变化
+## `tps-sw` 固件相关网表变化
 
 - `TPS55288` 不再位于旧 `SDA_TPS/SCL_TPS` 网络；后续固件应使用 `GPIO8/GPIO9` 对应的 `SDA/SCL` 总线访问。
 - `SW2303` 使用 `GPIO39/GPIO40` 对应的 `SDA_SW/SCL_SW` 独立总线访问。
@@ -39,14 +41,21 @@
 
 - `tps-sw`：`bb281174e58a39d6e06f5ea9a9d986ab450386dccb49be98d4a517c8c84e8a5a`
 - `tps-fusb`：`57003ebd01c22c00ccdacd2a8e6bbf9386a9c057b86df1573b677835aadb85db`
+- `tps-husb`：`4dbb26d6a1d2dcb6d5ce968be72b4398958bac0b4d9f2919fa8c7dfe0e94ff2a`
 
 ## 文档适用范围
 
 - 网表排查清单：`docs/netlist/tps-sw-checklist.md`
 - `tps-sw` MCU 使用规范：[`docs/mcu-resource-allocation-tps-sw.md`](mcu-resource-allocation-tps-sw.md)
-- 含 `SW2303` / `TPS55288` 的设计文档均按 `tps-sw` 方案维护。
+- 未标注 variant 的既有 `SW2303` 设计文档按 `tps-sw` 维护；
+  `TPS55288` 出现在多个 variant 中，不能仅凭芯片名称判断文档适用范围。
 - `tps-fusb` 设计入口：[`docs/tps-fusb-hardware-design.md`](tps-fusb-hardware-design.md)
 - `tps-fusb` 输入电源路径选择：[`docs/tps-fusb-input-power-path-selection.md`](tps-fusb-input-power-path-selection.md)
 - `tps-fusb` MCU 使用规范：[`docs/mcu-resource-allocation-tps-fusb.md`](mcu-resource-allocation-tps-fusb.md)
 - `tps-fusb` 网表检查清单：[`docs/netlist/tps-fusb-checklist.md`](netlist/tps-fusb-checklist.md)
 - `tps-fusb` 长期规格：[`#m7q4v`](specs/m7q4v-tps-fusb-dual-pd-hardware/SPEC.md)
+- `tps-husb` 设计入口：[`docs/tps-husb-hardware-design.md`](tps-husb-hardware-design.md)
+- `tps-husb` 输入电源路径：[`docs/tps-husb-input-power-path-selection.md`](tps-husb-input-power-path-selection.md)
+- `tps-husb` MCU 使用规范：[`docs/mcu-resource-allocation-tps-husb.md`](mcu-resource-allocation-tps-husb.md)
+- `tps-husb` 网表检查清单：[`docs/netlist/tps-husb-checklist.md`](netlist/tps-husb-checklist.md)
+- `tps-husb` 长期规格：[`tps-husb`](specs/tps-husb-dual-pd-hardware/SPEC.md)

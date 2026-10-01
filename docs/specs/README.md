@@ -59,6 +59,7 @@
 | Brand marketing asset themes | active | implemented | `brand-marketing-asset-themes/SPEC.md` | - | Reproducible light and dark poster/social marketing exports |
 | Device display name | active | implemented | `device-display-name/SPEC.md` | - | Hardware-owned UTF-8 label with stable device identity and cross-transport client fallback |
 | Worktree bootstrap | active | implemented | `worktree-bootstrap/SPEC.md` | - | Lefthook linked-worktree dependency recovery with required smoke coverage |
+| tps-husb dual-PD hardware | active | production netlist and Gerber snapshot archived; bring-up pending | `tps-husb-dual-pd-hardware/SPEC.md` | - | Independent variant; HUSB311BLA input, FUSB302B output, NMOS input paths |
 
 ## Legacy Index
 

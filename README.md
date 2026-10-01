@@ -5,18 +5,21 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
 - 上行：USB‑C 口（数据 + 供电），使用 **CH334P** 做 USB2.0 Hub 控制。  
 - 下行 USB‑A ×1：使用 **URB2405S‑3WR3** 隔离 DC/DC 模块独立供电，实现数据与电源隔离。  
 - USB‑C 供电与可调输出按硬件 variant 实现：当前 `tps-sw` 使用
-  **CH224Q + TPS55288 + SW2303**；下一版 `tps-fusb` 计划使用两颗
+  **CH224Q + TPS55288 + SW2303**；设计中的 `tps-fusb` 使用两颗
   **FUSB302B + TPS55288**，由 MCU 固件分别实现 USB‑PD sink/source 的
-  PD 3.0 Fixed + PPS。variant 状态与适用文档见
+  PD 3.0 Fixed + PPS。独立迭代的 `tps-husb` 使用 HUSB311BLA 输入 TCPC、
+  FUSB302B 输出 PHY 和 LM74800-Q1 外部 NMOS 输入路径。variant 状态与适用文档见
   [`docs/hardware-variants.md`](docs/hardware-variants.md)。
-- 两版 MCU 使用规范分别见
-  [`tps-sw`](docs/mcu-resource-allocation-tps-sw.md) 和
-  [`tps-fusb`](docs/mcu-resource-allocation-tps-fusb.md)，不得跨 variant 混用。
+- 各版 MCU 使用规范分别见 [`tps-sw`](docs/mcu-resource-allocation-tps-sw.md)、
+  [`tps-fusb`](docs/mcu-resource-allocation-tps-fusb.md) 和
+  [`tps-husb`](docs/mcu-resource-allocation-tps-husb.md)，不得跨 variant 混用。
 - 电源输入按 variant 区分：当前 `tps-sw` 使用 USB‑PD 输入与 DC5025 的
   既有 OR-ing 路径；设计中的 `tps-fusb` 将由 MCU 在两路 PMOS 输入之间
   执行 DC 优先的 PMOS 主动增强互斥控制，避免两路输入同时被 gate driver
   主动导通；单 PMOS 体二极管冷启动路径仍然存在。模块规范见
   [`docs/tps-fusb-input-power-path-selection.md`](docs/tps-fusb-input-power-path-selection.md)。
+  `tps-husb` 的 DC 双 NMOS 路与 USB 单 NMOS 理想二极管路另见
+  [`docs/tps-husb-input-power-path-selection.md`](docs/tps-husb-input-power-path-selection.md)。
 
 本仓库将包含完整的原理图、PCB、固件以及相关文档与数据手册的 Markdown 版本。
 
@@ -36,8 +39,12 @@ IsolaPurr USB Hub 是一个带 USB‑C 上行口、一个 USB‑C 下行口和�
   - `vercel-labs/skills` 兼容的 Agent skills：`isolapurr-user-operations` 用于 released host tools 用户操作，`isolapurr-developer-operations` 用于源码开发/维护操作，`isolapurr-maintainer-workflow` 是本仓内部维护入口。
 - `hardware/`
   - 硬件方案产物：当前 `tps-sw` 网表位于 `hardware/tps-sw/netlist.enet`；
-    `tps-fusb` 设计基线位于 `hardware/tps-fusb/netlist.enet`。后者尚未完成
-    PCB、BOM、生产贴装或固件验证，不能视为已发布硬件。
+    `tps-fusb` 与 `tps-husb` 的独立设计基线分别位于
+    `hardware/tps-fusb/netlist.enet` 和 `hardware/tps-husb/netlist.enet`。
+    `tps-husb` 网表与 Gerber 制造文件保存在
+    [`hardware/tps-husb/manufacturing/2026-09-30/`](hardware/tps-husb/manufacturing/2026-09-30/MANIFEST.md)。
+    `tps-fusb` 仍是设计基线，不代表
+    PCB、BOM、生产贴装或固件支持已经完成。
 - `docs/datasheets/`  
   - `ch224q-datasheet.md` – CH224Q/CH224A/CH224K/CH224D/CH221K 的官方手册 Markdown 版。  
   - `ch217-datasheet.md` – CH217 USB 限流配电开关芯片手册 Markdown 版。  
