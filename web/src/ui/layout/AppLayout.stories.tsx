@@ -1,9 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { expect, within } from "@storybook/test";
+import { expect, userEvent, within } from "@storybook/test";
+import { useState } from "react";
 import { MemoryRouter } from "react-router";
 
 import { AddDeviceUiProvider } from "../../app/add-device-ui";
-import { DemoModeProvider } from "../../app/demo-mode";
+import { DemoModeProvider, useDemoMode } from "../../app/demo-mode";
 import { DemoLink } from "../../app/demo-navigation";
 import { DesktopAgentProvider } from "../../app/desktop-agent-ui";
 import { DeviceRuntimeProvider } from "../../app/device-runtime";
@@ -16,6 +17,34 @@ import { DeviceListPanel } from "../panels/DeviceListPanel";
 import { ToastProvider } from "../toast/ToastProvider";
 import { AppLayout } from "./AppLayout";
 import { formatDeviceClipboardContent } from "./deviceClipboard";
+
+function RuntimeScopeResetProbe() {
+  const { enabled, bootstrap } = useDemoMode();
+  const [endpoint, setEndpoint] = useState("Unavailable");
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <div data-testid="runtime-scope-state">
+        {enabled ? "Demo" : "Live"}: {endpoint}
+      </div>
+      <button
+        type="button"
+        onClick={() => setEndpoint("http://192.168.31.224")}
+      >
+        Set endpoint
+      </button>
+      <button type="button" onClick={() => bootstrap("/", "?demo=false")}>
+        Set live scope
+      </button>
+      <button
+        type="button"
+        onClick={() => bootstrap("/", enabled ? "?demo=false" : "?demo=true")}
+      >
+        Switch runtime scope
+      </button>
+    </div>
+  );
+}
 
 function deviceHeaderInfo(connection: string, endpoint: string) {
   const title = "isolapurr-usb-hub-856a141cdbd4";
@@ -145,6 +174,40 @@ export const Default: Story = {
         </div>
       </div>
     ),
+  },
+};
+
+export const RuntimeScopeSwitchClearsState: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    children: <RuntimeScopeResetProbe />,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Set live scope" }),
+    );
+    await expect(canvas.getByTestId("runtime-scope-state")).toHaveTextContent(
+      "Live: Unavailable",
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Set endpoint" }));
+    await expect(canvas.getByTestId("runtime-scope-state")).toHaveTextContent(
+      "http://192.168.31.224",
+    );
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Switch runtime scope" }),
+    );
+    await expect(canvas.getByTestId("runtime-scope-state")).toHaveTextContent(
+      "Demo: Unavailable",
+    );
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Switch runtime scope" }),
+    );
+    await expect(canvas.getByTestId("runtime-scope-state")).toHaveTextContent(
+      "Live: Unavailable",
+    );
   },
 };
 

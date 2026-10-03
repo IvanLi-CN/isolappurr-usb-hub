@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   CrossTabRuntimeCoordinator,
   DEMO_RUNTIME_SCOPE,
+  isCurrentLeaderSnapshot,
   LIVE_RUNTIME_SCOPE,
   runtimeRpcMethodKind,
 } from "./cross-tab-runtime";
@@ -154,6 +155,26 @@ describe("CrossTabRuntimeCoordinator", () => {
     );
     expect(follower.hasCurrentLease()).toBeFalse();
     expect(follower.hasActiveLeader()).toBeTrue();
+  });
+
+  test("only accepts snapshots from the active lease leader", () => {
+    const followerLease = {
+      role: "follower" as const,
+      currentTabId: "follower-tab",
+      leaderTabId: "new-leader-tab",
+      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+
+    expect(isCurrentLeaderSnapshot("new-leader-tab", followerLease)).toBeTrue();
+    expect(
+      isCurrentLeaderSnapshot("old-leader-tab", followerLease),
+    ).toBeFalse();
+    expect(
+      isCurrentLeaderSnapshot("old-leader-tab", {
+        ...followerLease,
+        leaderTabId: null,
+      }),
+    ).toBeFalse();
   });
 
   test("refuses mutations when browser storage is unavailable", async () => {

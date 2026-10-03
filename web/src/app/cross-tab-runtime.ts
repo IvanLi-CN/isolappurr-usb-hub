@@ -46,6 +46,16 @@ export type SharedRuntimeSnapshot = {
   runtimeById: Record<string, DeviceRuntime>;
 };
 
+export function isCurrentLeaderSnapshot(
+  snapshotOriginTabId: string,
+  leaseState: CrossTabRuntimeLeaseState,
+): boolean {
+  return (
+    leaseState.leaderTabId !== null &&
+    snapshotOriginTabId === leaseState.leaderTabId
+  );
+}
+
 export type RuntimeRpcMethod =
   | "refreshDevice"
   | "deviceInfo"

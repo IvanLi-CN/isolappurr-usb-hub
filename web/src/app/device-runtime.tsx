@@ -40,6 +40,7 @@ import {
   type CrossTabRuntimeLeaseState,
   DEMO_RUNTIME_SCOPE,
   getSharedCrossTabRuntimeCoordinator,
+  isCurrentLeaderSnapshot,
   LIVE_RUNTIME_SCOPE,
   type RuntimeChannelMessage,
 } from "./cross-tab-runtime";
@@ -117,8 +118,25 @@ export function DeviceRuntimeProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { devices, rebindHttpBaseUrl, updateDeviceNameCache } = useDevices();
   const { enabled: demoEnabled } = useDemoMode();
+  return (
+    <DeviceRuntimeScopeProvider
+      key={demoEnabled ? DEMO_RUNTIME_SCOPE : LIVE_RUNTIME_SCOPE}
+      demoEnabled={demoEnabled}
+    >
+      {children}
+    </DeviceRuntimeScopeProvider>
+  );
+}
+
+function DeviceRuntimeScopeProvider({
+  children,
+  demoEnabled,
+}: {
+  children: React.ReactNode;
+  demoEnabled: boolean;
+}) {
+  const { devices, rebindHttpBaseUrl, updateDeviceNameCache } = useDevices();
   const coordinator = useMemo(
     () =>
       getSharedCrossTabRuntimeCoordinator(
@@ -131,6 +149,8 @@ export function DeviceRuntimeProvider({
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(
     {},
   );
+  const devicesRef = useRef(devices);
+  devicesRef.current = devices;
   const snapshotHydratedFor = useRef<CrossTabRuntimeCoordinator | null>(null);
   const [coordination, setCoordination] = useState(() =>
     coordinator.getLeaseState(),
@@ -155,7 +175,6 @@ export function DeviceRuntimeProvider({
   }, []);
   const runtimeByIdRef = useRef(runtimeById);
   const localUsbAgent = useRef<DesktopAgent | null>(null);
-  const lastDemoEnabled = useRef(demoEnabled);
   const localUsbPortByDevice = useRef<Record<string, string>>({});
   const localUsbRequestQueues = useRef<Record<string, Promise<void>>>({});
   const httpRequestQueues = useRef<Record<string, Promise<void>>>({});
@@ -194,13 +213,28 @@ export function DeviceRuntimeProvider({
     runtimeByIdRef.current = runtimeById;
   }, [runtimeById]);
 
+  useEffect(
+    () => () => {
+      for (const device of devicesRef.current) {
+        forgetWebSerialDeviceTransport(device.id);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     const currentTabId = coordinator.getTabId();
     coordinator.start();
     if (snapshotHydratedFor.current !== coordinator) {
       snapshotHydratedFor.current = coordinator;
       const cachedSnapshot = coordinator.readSnapshot();
-      if (cachedSnapshot) {
+      if (
+        cachedSnapshot &&
+        isCurrentLeaderSnapshot(
+          cachedSnapshot.originTabId,
+          coordinator.getLeaseState(),
+        )
+      ) {
         setNow(cachedSnapshot.now);
         setRuntimeById(cachedSnapshot.runtimeById);
       }
@@ -210,7 +244,12 @@ export function DeviceRuntimeProvider({
       if (
         message.type === "runtime-snapshot" &&
         message.originTabId !== currentTabId &&
-        !isLeaderRef.current
+        !isLeaderRef.current &&
+        message.snapshot.originTabId === message.originTabId &&
+        isCurrentLeaderSnapshot(
+          message.originTabId,
+          coordinator.getLeaseState(),
+        )
       ) {
         setNow(message.snapshot.now);
         setRuntimeById(message.snapshot.runtimeById);
@@ -354,25 +393,6 @@ export function DeviceRuntimeProvider({
       localUsbAgent.current = agent;
       return agent;
     }, [demoEnabled]);
-  useEffect(() => {
-    if (lastDemoEnabled.current === demoEnabled) {
-      return;
-    }
-    lastDemoEnabled.current = demoEnabled;
-    localUsbAgent.current = null;
-    localUsbPortByDevice.current = {};
-    for (const device of devices) {
-      invalidateDevicePoll(device.id);
-    }
-    for (const [deviceId, transport] of Object.entries(
-      preferredTransportByDevice.current,
-    )) {
-      if (transport === "local_usb") {
-        delete preferredTransportByDevice.current[deviceId];
-      }
-    }
-    setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
-  }, [demoEnabled, devices, invalidateDevicePoll]);
   const requestLocalUsb = useCallback(
     async <T,>(
       deviceId: string,
