@@ -17,6 +17,8 @@ function runtime(): DeviceRuntime {
     lastOkAt: null,
     lastError: { kind: "offline", message: "stale" },
     transport: "http",
+    activeEndpoint: null,
+    identityVerified: false,
     channels: {
       http: { lastOkAt: null, lastError: null },
       web_serial: { lastOkAt: null, lastError: null },

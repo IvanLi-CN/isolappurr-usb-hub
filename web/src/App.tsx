@@ -53,20 +53,9 @@ function RootLayout() {
     selectedDevice && selectedDevice.id.length > 6
       ? selectedDevice.id.slice(0, 6)
       : selectedDevice?.id;
-  const activeTransport = selectedDevice
-    ? runtime.transport(selectedDevice.id)
+  const connectionPresentation = selectedDevice
+    ? runtime.connectionPresentation(selectedDevice.id)
     : null;
-  const isDeviceOnline = selectedDevice
-    ? runtime.connectionState(selectedDevice.id) === "online"
-    : false;
-  const connectionLabel =
-    isDeviceOnline && activeTransport
-      ? activeTransport === "http"
-        ? "Wi-Fi / LAN"
-        : activeTransport === "web_serial"
-          ? "Web Serial"
-          : "Local USB"
-      : "Not connected";
   const headerInfo =
     isDeviceDetailRoute && selectedDevice
       ? {
@@ -76,12 +65,14 @@ function RootLayout() {
               ?.device_name === true,
           onSaveName: (value: string) =>
             runtime.setDeviceName(selectedDevice.id, value),
-          subtitle: `id: ${shortId} • ${selectedDevice.baseUrl}`,
+          subtitle: `id: ${shortId} • ${connectionPresentation?.endpointLabel ?? "Unavailable"}`,
           title: runtime.displayName(selectedDevice.id),
           clipboardContent: formatDeviceClipboardContent({
             deviceName: runtime.displayName(selectedDevice.id),
             deviceId: selectedDevice.id,
-            connection: connectionLabel,
+            connection:
+              connectionPresentation?.connectionLabel ?? "Not connected",
+            endpoint: connectionPresentation?.endpointLabel ?? "Unavailable",
           }),
         }
       : null;

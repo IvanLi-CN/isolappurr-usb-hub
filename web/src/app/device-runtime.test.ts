@@ -9,6 +9,7 @@ import {
   orderedDeviceTransports,
   resetLocalUsbRuntimeState,
   resolveActiveDeviceTransport,
+  resolvePolledActiveEndpoint,
   resolveTransportBadgeState,
   runQueuedDeviceRequest,
   shortApiError,
@@ -108,6 +109,92 @@ describe("shouldReuseLocalUsbAgentForDemoMode", () => {
   });
 });
 
+describe("resolvePolledActiveEndpoint", () => {
+  const httpEndpoint = {
+    kind: "http" as const,
+    url: "http://192.168.31.224",
+  };
+
+  test("accepts the actual HTTP URL only after a matching identity poll", () => {
+    expect(
+      resolvePolledActiveEndpoint({
+        currentGeneration: true,
+        identityVerified: true,
+        transportLocked: false,
+        portsBinding: "http://192.168.31.224",
+        infoBinding: "http://192.168.31.224",
+        portsEndpoint: httpEndpoint,
+        infoEndpoint: httpEndpoint,
+      }),
+    ).toEqual(httpEndpoint);
+  });
+
+  test("accepts the actual Local USB path without using an HTTP address", () => {
+    const endpoint = {
+      kind: "local_usb" as const,
+      portPath: "/dev/cu.usbmodem21231401",
+    };
+    expect(
+      resolvePolledActiveEndpoint({
+        currentGeneration: true,
+        identityVerified: true,
+        transportLocked: false,
+        portsBinding: "port:/dev/cu.usbmodem21231401",
+        infoBinding: "port:/dev/cu.usbmodem21231401",
+        portsEndpoint: endpoint,
+        infoEndpoint: endpoint,
+      }),
+    ).toEqual(endpoint);
+  });
+
+  test("accepts Web Serial metadata from one held transport object", () => {
+    const transport = {};
+    const endpoint = {
+      kind: "web_serial" as const,
+      usbVendorId: 0x303a,
+      usbProductId: 0x1001,
+    };
+    expect(
+      resolvePolledActiveEndpoint({
+        currentGeneration: true,
+        identityVerified: true,
+        transportLocked: false,
+        portsBinding: transport,
+        infoBinding: transport,
+        portsEndpoint: endpoint,
+        infoEndpoint: endpoint,
+      }),
+    ).toEqual(endpoint);
+  });
+
+  test("rejects delayed, switched-target, unverified, and exclusive results", () => {
+    const valid = {
+      currentGeneration: true,
+      identityVerified: true,
+      transportLocked: false,
+      portsBinding: "http://192.168.31.224",
+      infoBinding: "http://192.168.31.224",
+      portsEndpoint: httpEndpoint,
+      infoEndpoint: httpEndpoint,
+    };
+    expect(
+      resolvePolledActiveEndpoint({ ...valid, currentGeneration: false }),
+    ).toBeNull();
+    expect(
+      resolvePolledActiveEndpoint({
+        ...valid,
+        infoBinding: "http://192.168.31.225",
+      }),
+    ).toBeNull();
+    expect(
+      resolvePolledActiveEndpoint({ ...valid, identityVerified: false }),
+    ).toBeNull();
+    expect(
+      resolvePolledActiveEndpoint({ ...valid, transportLocked: true }),
+    ).toBeNull();
+  });
+});
+
 describe("resetLocalUsbRuntimeState", () => {
   test("clears local usb transport state after a mode switch", () => {
     expect(
@@ -116,6 +203,11 @@ describe("resetLocalUsbRuntimeState", () => {
           lastOkAt: 1,
           lastError: null,
           transport: "local_usb",
+          activeEndpoint: {
+            kind: "local_usb",
+            portPath: "/dev/cu.usbmodem21221401",
+          },
+          identityVerified: true,
           channels: {
             http: { lastOkAt: 2, lastError: null },
             web_serial: { lastOkAt: 3, lastError: null },
@@ -134,6 +226,8 @@ describe("resetLocalUsbRuntimeState", () => {
         lastOkAt: 1,
         lastError: null,
         transport: null,
+        activeEndpoint: null,
+        identityVerified: true,
         channels: {
           http: { lastOkAt: 2, lastError: null },
           web_serial: { lastOkAt: 3, lastError: null },
@@ -231,6 +325,8 @@ describe("resolveActiveDeviceTransport", () => {
           lastOkAt: Date.now(),
           lastError: null,
           transport: "web_serial",
+          activeEndpoint: null,
+          identityVerified: false,
           channels: {
             http: { lastOkAt: Date.now(), lastError: null },
             web_serial: { lastOkAt: Date.now(), lastError: null },
@@ -260,6 +356,8 @@ describe("resolveActiveDeviceTransport", () => {
             message: "Web Serial transport disconnected",
           },
           transport: "web_serial",
+          activeEndpoint: null,
+          identityVerified: false,
           channels: {
             http: { lastOkAt: Date.now(), lastError: null },
             web_serial: {

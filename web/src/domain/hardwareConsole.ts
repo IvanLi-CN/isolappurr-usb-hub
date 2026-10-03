@@ -495,7 +495,23 @@ export async function sendDevdLocalUsbJsonlRequest(
   request: JsonlRequest,
   getDispatchAuthorizationError?: LocalUsbDispatchGuard,
 ): Promise<unknown> {
-  await ensureDevdLocalUsbDeviceRegistered(
+  return (
+    await sendDevdLocalUsbJsonlRequestWithPortPath(
+      agent,
+      deviceId,
+      request,
+      getDispatchAuthorizationError,
+    )
+  ).response;
+}
+
+export async function sendDevdLocalUsbJsonlRequestWithPortPath(
+  agent: DesktopAgent,
+  deviceId: string,
+  request: JsonlRequest,
+  getDispatchAuthorizationError?: LocalUsbDispatchGuard,
+): Promise<{ response: unknown; portPath: string | null }> {
+  const { portPath } = await ensureDevdLocalUsbDeviceRegistered(
     agent,
     deviceId,
     getDispatchAuthorizationError,
@@ -528,7 +544,7 @@ export async function sendDevdLocalUsbJsonlRequest(
         json?.error?.retryable,
       );
     }
-    return json?.response ?? json;
+    return { response: json?.response ?? json, portPath };
   } finally {
     if (lease) {
       await releaseLocalUsbLease(agent, lease.lease_id);
@@ -540,13 +556,13 @@ async function ensureDevdLocalUsbDeviceRegistered(
   agent: DesktopAgent,
   deviceId: string,
   getDispatchAuthorizationError?: LocalUsbDispatchGuard,
-): Promise<void> {
+): Promise<{ portPath: string | null }> {
   assertLocalUsbDispatchAuthorized(getDispatchAuthorizationError);
   const res = await agentFetch(agent, "/api/v1/devices/scan", {
     method: "POST",
   });
   const json = (await res.json().catch(() => null)) as {
-    devices?: Array<{ id?: string }>;
+    devices?: Array<{ id?: string; usb?: { portPath?: string } }>;
     error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!res.ok) {
@@ -557,9 +573,12 @@ async function ensureDevdLocalUsbDeviceRegistered(
       json?.error?.retryable,
     );
   }
-  if (!json?.devices?.some((device) => device.id === deviceId)) {
+  const device = json?.devices?.find((candidate) => candidate.id === deviceId);
+  if (!device) {
     throw new Error(`Local USB device is not available: ${deviceId}`);
   }
+  const portPath = device.usb?.portPath?.trim();
+  return { portPath: portPath || null };
 }
 
 async function sendLocalUsbJsonlRequestNow(

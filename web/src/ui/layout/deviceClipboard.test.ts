@@ -25,12 +25,13 @@ describe("device clipboard content", () => {
         deviceName: "Bench\nHub",
         deviceId: " AABBCC001122 ",
         connection: "Wi-Fi / LAN",
+        endpoint: "http://192.168.31.224",
       }),
     ).toEqual({
       plainText:
-        "Device name: Bench Hub, Device ID: aabbcc001122, Connection: Wi-Fi / LAN",
+        "Device name: Bench Hub, Device ID: aabbcc001122, Connection: Wi-Fi / LAN, Endpoint: http://192.168.31.224",
       markdown:
-        "**Device name:** Bench Hub, **Device ID:** `aabbcc001122`, **Connection:** Wi-Fi / LAN",
+        "**Device name:** Bench Hub, **Device ID:** `aabbcc001122`, **Connection:** Wi-Fi / LAN, **Endpoint:** http://192\\.168\\.31\\.224",
     });
   });
 
@@ -66,6 +67,7 @@ describe("device clipboard content", () => {
       deviceName: "Bench Hub",
       deviceId: "aabbcc001122",
       connection: "Web Serial",
+      endpoint: "Browser-authorized serial port (VID 0x303A, PID 0x1001)",
     });
     await writeDeviceClipboard(content);
 
@@ -103,9 +105,12 @@ describe("device clipboard content", () => {
       deviceName: "Bench Hub",
       deviceId: "aabbcc001122",
       connection: "Not connected",
+      endpoint: "Unavailable",
     });
     await writeDeviceClipboard(content);
 
-    expect(plainText).toBe(content.plainText);
+    expect(plainText).toBe(
+      "Device name: Bench Hub, Device ID: aabbcc001122, Connection: Not connected, Endpoint: Unavailable",
+    );
   });
 });

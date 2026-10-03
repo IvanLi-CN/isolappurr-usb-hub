@@ -257,6 +257,26 @@ export class WebSerialJsonlTransport {
     return port;
   }
 
+  getActivePortUsbInfo(): {
+    usbVendorId?: number;
+    usbProductId?: number;
+  } | null {
+    if (!this.port) {
+      return null;
+    }
+    try {
+      const info = this.port.getInfo?.();
+      return info
+        ? {
+            usbVendorId: info.usbVendorId,
+            usbProductId: info.usbProductId,
+          }
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
   async request(
     request: JsonlRequest,
     options: WebSerialOperationOptions = {},

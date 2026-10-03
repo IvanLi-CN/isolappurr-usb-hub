@@ -20,6 +20,7 @@ import {
 import {
   nextJsonlRequestId,
   sendDevdLocalUsbJsonlRequest,
+  sendDevdLocalUsbJsonlRequestWithPortPath,
   sendLocalUsbJsonlRequest,
 } from "../domain/hardwareConsole";
 import {
@@ -63,6 +64,7 @@ import {
   syncDeviceRuntimePowerConfig,
 } from "./device-runtime-snapshots";
 import {
+  type ActiveConnectionEndpoint,
   createEmptyChannels,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
@@ -83,6 +85,7 @@ import {
   resolveActiveDeviceTransport,
   resolveLocalUsbTarget,
   resolveOrderedDeviceTransports,
+  resolvePolledActiveEndpoint,
   runQueuedDeviceRequestWithAuthorization,
   runtimeMutationDispatchError,
   shouldResetLocalUsbConnectionCache,
@@ -92,14 +95,22 @@ import {
 } from "./device-runtime-support";
 import { requestHttpTransport } from "./device-runtime-transport";
 import { buildDeviceRuntimeContextValue } from "./device-runtime-value";
-import { createWebSerialRequester } from "./device-runtime-web-serial";
+import { createWebSerialEndpointRequester } from "./device-runtime-web-serial";
 import { useDevices } from "./devices-store";
 
 export { useDeviceRuntime } from "./device-runtime-context";
 export type {
+  ActiveConnectionEndpoint,
+  ConnectionPresentation,
   ConnectionState,
   DeviceTransport,
 } from "./device-runtime-support";
+
+type TransportDispatch<T> = {
+  result: Result<T>;
+  binding: object | string | null;
+  endpoint: ActiveConnectionEndpoint | null;
+};
 
 export function DeviceRuntimeProvider({
   children,
@@ -126,6 +137,22 @@ export function DeviceRuntimeProvider({
   );
   const inflight = useRef<Set<string>>(new Set());
   const pollGeneration = useRef<Record<string, number>>({});
+  const invalidateDevicePoll = useCallback((deviceId: string) => {
+    pollGeneration.current[deviceId] =
+      (pollGeneration.current[deviceId] ?? 0) + 1;
+  }, []);
+  const clearActiveEndpoint = useCallback((deviceId: string) => {
+    setRuntimeById((prev) => {
+      const current = prev[deviceId];
+      if (!current || current.activeEndpoint === null) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [deviceId]: { ...current, activeEndpoint: null },
+      };
+    });
+  }, []);
   const runtimeByIdRef = useRef(runtimeById);
   const localUsbAgent = useRef<DesktopAgent | null>(null);
   const lastDemoEnabled = useRef(demoEnabled);
@@ -155,9 +182,9 @@ export function DeviceRuntimeProvider({
       runtimeMutationDispatchError(method, coordinator.hasCurrentLease()),
     [coordinator],
   );
-  const requestWebSerial = useMemo(
+  const requestWebSerialWithEndpoint = useMemo(
     () =>
-      createWebSerialRequester({
+      createWebSerialEndpointRequester({
         getDispatchAuthorizationError: getMutationDispatchAuthorizationError,
       }),
     [getMutationDispatchAuthorizationError],
@@ -256,6 +283,7 @@ export function DeviceRuntimeProvider({
             lastOkAt: null,
             lastError: null,
             transport: null,
+            activeEndpoint: null,
             identityVerified: false,
             channels: createEmptyChannels(),
             hub: null,
@@ -333,6 +361,9 @@ export function DeviceRuntimeProvider({
     lastDemoEnabled.current = demoEnabled;
     localUsbAgent.current = null;
     localUsbPortByDevice.current = {};
+    for (const device of devices) {
+      invalidateDevicePoll(device.id);
+    }
     for (const [deviceId, transport] of Object.entries(
       preferredTransportByDevice.current,
     )) {
@@ -341,18 +372,25 @@ export function DeviceRuntimeProvider({
       }
     }
     setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
-  }, [demoEnabled]);
+  }, [demoEnabled, devices, invalidateDevicePoll]);
   const requestLocalUsb = useCallback(
     async <T,>(
       deviceId: string,
       method: string,
       params?: Record<string, unknown>,
-    ): Promise<Result<T>> => {
+    ): Promise<TransportDispatch<T>> => {
       const agent = await getLocalUsbAgent();
       if (!agent) {
         return {
-          ok: false,
-          error: { kind: "offline", message: "Local USB service unavailable" },
+          result: {
+            ok: false,
+            error: {
+              kind: "offline",
+              message: "Local USB service unavailable",
+            },
+          },
+          binding: null,
+          endpoint: null,
         };
       }
       const target = resolveLocalUsbTarget({
@@ -366,17 +404,30 @@ export function DeviceRuntimeProvider({
       }
       if (!target) {
         return {
-          ok: false,
-          error: { kind: "offline", message: "Local USB device not found" },
+          result: {
+            ok: false,
+            error: {
+              kind: "offline",
+              message: "Local USB device not found",
+            },
+          },
+          binding: null,
+          endpoint: null,
         };
       }
       const timeoutMs = jsonlTimeoutMsForMethod(method, params);
-      return runQueuedDeviceRequestWithAuthorization(
+      const queued = await runQueuedDeviceRequestWithAuthorization(
         localUsbRequestQueues.current,
         deviceId,
         () => getMutationDispatchAuthorizationError(method),
-        async () => {
+        async (): Promise<Result<TransportDispatch<T>>> => {
           let caughtError: unknown = null;
+          let portPath = target.kind === "port_path" ? target.portPath : null;
+          let binding: string | null = portPath
+            ? `port:${portPath}`
+            : target.kind === "devd_device"
+              ? `devd:${target.deviceId}`
+              : null;
           try {
             const request = {
               id: nextJsonlRequestId(),
@@ -384,32 +435,53 @@ export function DeviceRuntimeProvider({
               params,
               timeoutMs,
             };
-            const response =
-              target.kind === "devd_device"
-                ? await sendDevdLocalUsbJsonlRequest(
-                    agent,
-                    target.deviceId,
-                    request,
-                    () => getMutationDispatchAuthorizationError(method),
-                  )
-                : await sendLocalUsbJsonlRequest(
-                    agent,
-                    target.portPath,
-                    request,
-                    () => getMutationDispatchAuthorizationError(method),
-                  );
+            let response: unknown;
+            if (target.kind === "devd_device") {
+              const dispatched = await sendDevdLocalUsbJsonlRequestWithPortPath(
+                agent,
+                target.deviceId,
+                request,
+                () => getMutationDispatchAuthorizationError(method),
+              );
+              response = dispatched.response;
+              portPath = dispatched.portPath;
+              binding = portPath ? `port:${portPath}` : binding;
+            } else {
+              response = await sendLocalUsbJsonlRequest(
+                agent,
+                target.portPath,
+                request,
+                () => getMutationDispatchAuthorizationError(method),
+              );
+            }
             const envelope = response as JsonlEnvelope<T>;
             if (envelope?.ok && envelope.result !== undefined) {
-              return { ok: true, value: envelope.result };
+              const result = { ok: true, value: envelope.result } as const;
+              return {
+                ok: true,
+                value: {
+                  result,
+                  binding,
+                  endpoint: portPath ? { kind: "local_usb", portPath } : null,
+                },
+              };
             }
             return {
-              ok: false,
-              error: {
-                kind: "api_error",
-                status: 500,
-                code: envelope?.error?.code ?? "local_usb_error",
-                message: envelope?.error?.message ?? "Local USB request failed",
-                retryable: envelope?.error?.retryable ?? false,
+              ok: true,
+              value: {
+                result: {
+                  ok: false,
+                  error: {
+                    kind: "api_error",
+                    status: 500,
+                    code: envelope?.error?.code ?? "local_usb_error",
+                    message:
+                      envelope?.error?.message ?? "Local USB request failed",
+                    retryable: envelope?.error?.retryable ?? false,
+                  },
+                },
+                binding,
+                endpoint: null,
               },
             };
           } catch (err) {
@@ -434,20 +506,86 @@ export function DeviceRuntimeProvider({
             params,
           );
           if (recovered) {
-            return recovered;
+            return {
+              ok: true,
+              value: {
+                result: recovered,
+                binding,
+                endpoint:
+                  recovered.ok && portPath
+                    ? { kind: "local_usb", portPath }
+                    : null,
+              },
+            };
           }
           if (shouldResetLocalUsbConnectionCache(caughtError)) {
             localUsbAgent.current = null;
             delete localUsbPortByDevice.current[deviceId];
+            if (runtimeByIdRef.current[deviceId]?.transport === "local_usb") {
+              invalidateDevicePoll(deviceId);
+              clearActiveEndpoint(deviceId);
+            }
           }
           return {
-            ok: false,
-            error: localUsbErrorToDeviceApiError(caughtError),
+            ok: true,
+            value: {
+              result: {
+                ok: false,
+                error: localUsbErrorToDeviceApiError(caughtError),
+              },
+              binding,
+              endpoint: null,
+            },
           };
         },
       );
+      return queued.ok
+        ? queued.value
+        : { result: queued, binding: null, endpoint: null };
     },
-    [devices, getLocalUsbAgent, getMutationDispatchAuthorizationError],
+    [
+      clearActiveEndpoint,
+      devices,
+      getLocalUsbAgent,
+      getMutationDispatchAuthorizationError,
+      invalidateDevicePoll,
+    ],
+  );
+
+  const requestTransportWithEndpoint = useCallback(
+    async <T,>(
+      deviceId: string,
+      baseUrl: string,
+      transport: DeviceTransport,
+      method: string,
+      params?: Record<string, unknown>,
+    ): Promise<TransportDispatch<T>> => {
+      if (transport === "http") {
+        const result = await runQueuedDeviceRequestWithAuthorization(
+          httpRequestQueues.current,
+          deviceId,
+          () => getMutationDispatchAuthorizationError(method),
+          () => requestHttpTransport<T>(baseUrl, method, params),
+        );
+        return {
+          result,
+          binding: baseUrl,
+          endpoint:
+            result.ok && baseUrl.trim()
+              ? { kind: "http", url: baseUrl.trim() }
+              : null,
+        };
+      }
+      if (transport === "web_serial") {
+        return requestWebSerialWithEndpoint<T>(deviceId, method, params);
+      }
+      return requestLocalUsb<T>(deviceId, method, params);
+    },
+    [
+      getMutationDispatchAuthorizationError,
+      requestLocalUsb,
+      requestWebSerialWithEndpoint,
+    ],
   );
 
   const requestTransport = useCallback(
@@ -457,21 +595,17 @@ export function DeviceRuntimeProvider({
       transport: DeviceTransport,
       method: string,
       params?: Record<string, unknown>,
-    ): Promise<Result<T>> => {
-      if (transport === "http") {
-        return runQueuedDeviceRequestWithAuthorization(
-          httpRequestQueues.current,
+    ): Promise<Result<T>> =>
+      (
+        await requestTransportWithEndpoint<T>(
           deviceId,
-          () => getMutationDispatchAuthorizationError(method),
-          () => requestHttpTransport<T>(baseUrl, method, params),
-        );
-      }
-      if (transport === "web_serial") {
-        return requestWebSerial<T>(deviceId, method, params);
-      }
-      return requestLocalUsb<T>(deviceId, method, params);
-    },
-    [getMutationDispatchAuthorizationError, requestLocalUsb, requestWebSerial],
+          baseUrl,
+          transport,
+          method,
+          params,
+        )
+      ).result,
+    [requestTransportWithEndpoint],
   );
 
   const markChannelResult = useCallback(
@@ -537,6 +671,7 @@ export function DeviceRuntimeProvider({
         let transport: DeviceTransport | null = null;
         let identityVerified = false;
         let infoSnapshot: DeviceInfoResponse | undefined;
+        let endpointSnapshot: ActiveConnectionEndpoint | null = null;
         for (const candidate of orderedTransports(deviceId)) {
           const candidateBaseUrl =
             candidate === "http"
@@ -548,23 +683,27 @@ export function DeviceRuntimeProvider({
                   },
                 )
               : baseUrl;
-          const candidateRes = await requestTransport<PortsResponse>(
-            deviceId,
-            candidateBaseUrl,
-            candidate,
-            "ports.get",
-          );
+          const portsDispatch =
+            await requestTransportWithEndpoint<PortsResponse>(
+              deviceId,
+              candidateBaseUrl,
+              candidate,
+              "ports.get",
+            );
+          const candidateRes = portsDispatch.result;
           markChannelResult(deviceId, candidate, candidateRes);
           if (candidateRes.ok) {
             res = candidateRes;
             transport = candidate;
             preferredTransportByDevice.current[deviceId] = candidate;
-            const infoRes = await requestTransport<DeviceInfoResponse>(
-              deviceId,
-              candidateBaseUrl,
-              candidate,
-              "info",
-            );
+            const infoDispatch =
+              await requestTransportWithEndpoint<DeviceInfoResponse>(
+                deviceId,
+                candidateBaseUrl,
+                candidate,
+                "info",
+              );
+            const infoRes = infoDispatch.result;
             identityVerified =
               infoRes.ok &&
               isDeviceInfoResponse(infoRes.value) &&
@@ -577,6 +716,16 @@ export function DeviceRuntimeProvider({
             ) {
               infoSnapshot = infoRes.value;
             }
+            endpointSnapshot = resolvePolledActiveEndpoint({
+              currentGeneration:
+                (pollGeneration.current[deviceId] ?? 0) === generation,
+              identityVerified,
+              transportLocked: isLocalUsbSuppressedForFlashDevice(deviceId),
+              portsBinding: portsDispatch.binding,
+              infoBinding: infoDispatch.binding,
+              portsEndpoint: portsDispatch.endpoint,
+              infoEndpoint: infoDispatch.endpoint,
+            });
             break;
           }
           res = candidateRes;
@@ -610,6 +759,7 @@ export function DeviceRuntimeProvider({
                     message:
                       "missing port_a or port_c in /api/v1/ports response",
                   },
+                  activeEndpoint: stalePoll ? current.activeEndpoint : null,
                 },
               };
             }
@@ -621,6 +771,11 @@ export function DeviceRuntimeProvider({
                 lastError: null,
                 transport,
                 identityVerified,
+                activeEndpoint: stalePoll
+                  ? current.activeEndpoint
+                  : isLocalUsbSuppressedForFlashDevice(deviceId)
+                    ? null
+                    : endpointSnapshot,
                 deviceInfo: stalePoll
                   ? current.deviceInfo
                   : (infoSnapshot ?? current.deviceInfo),
@@ -659,6 +814,7 @@ export function DeviceRuntimeProvider({
               ...current,
               lastError: res.error,
               transport: activeTransport,
+              activeEndpoint: stalePoll ? current.activeEndpoint : null,
             },
           };
         });
@@ -683,7 +839,7 @@ export function DeviceRuntimeProvider({
       devices,
       markChannelResult,
       orderedTransports,
-      requestTransport,
+      requestTransportWithEndpoint,
       updateDeviceNameCache,
     ],
   );
@@ -696,6 +852,8 @@ export function DeviceRuntimeProvider({
       return () => {};
     }
     return subscribeLocalUsbDeviceLinks((link) => {
+      invalidateDevicePoll(link.deviceId);
+      clearActiveEndpoint(link.deviceId);
       localUsbPortByDevice.current[link.deviceId] = link.portPath;
       preferredTransportByDevice.current[link.deviceId] = "local_usb";
       const device = devices.find((d) => d.id === link.deviceId);
@@ -703,20 +861,40 @@ export function DeviceRuntimeProvider({
         void pollDevice(link.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, isLeader, pollDevice]);
+  }, [
+    clearActiveEndpoint,
+    devices,
+    invalidateDevicePoll,
+    isLeader,
+    pollDevice,
+  ]);
 
   useEffect(() => {
     if (!isLeader) {
       return () => {};
     }
     return subscribeWebSerialDeviceLinks((link) => {
-      preferredTransportByDevice.current[link.deviceId] = "web_serial";
+      invalidateDevicePoll(link.deviceId);
+      clearActiveEndpoint(link.deviceId);
+      if (link.transport) {
+        preferredTransportByDevice.current[link.deviceId] = "web_serial";
+      } else if (
+        preferredTransportByDevice.current[link.deviceId] === "web_serial"
+      ) {
+        delete preferredTransportByDevice.current[link.deviceId];
+      }
       const device = devices.find((d) => d.id === link.deviceId);
       if (device) {
         void pollDevice(link.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, isLeader, pollDevice]);
+  }, [
+    clearActiveEndpoint,
+    devices,
+    invalidateDevicePoll,
+    isLeader,
+    pollDevice,
+  ]);
 
   useEffect(() => {
     if (!isLeader) {
@@ -724,12 +902,23 @@ export function DeviceRuntimeProvider({
     }
     return subscribeFlashTransportLocks((lock) => {
       if (lock.deviceId === FLASH_TRANSPORT_LOCK_ALL) {
-        setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
+        setRuntimeById((prev) => {
+          const next = { ...prev };
+          for (const [deviceId, current] of Object.entries(prev)) {
+            if (current.activeEndpoint) {
+              next[deviceId] = { ...current, activeEndpoint: null };
+            }
+          }
+          return resetLocalUsbRuntimeState(next);
+        });
         for (const device of devices) {
+          invalidateDevicePoll(device.id);
           void pollDevice(device.id, httpBaseUrlForDevice(device));
         }
         return;
       }
+      invalidateDevicePoll(lock.deviceId);
+      clearActiveEndpoint(lock.deviceId);
       delete localUsbPortByDevice.current[lock.deviceId];
       if (lock.transport === "web_serial") {
         preferredTransportByDevice.current[lock.deviceId] = "web_serial";
@@ -748,7 +937,13 @@ export function DeviceRuntimeProvider({
         void pollDevice(lock.deviceId, httpBaseUrlForDevice(device));
       }
     });
-  }, [devices, isLeader, pollDevice]);
+  }, [
+    clearActiveEndpoint,
+    devices,
+    invalidateDevicePoll,
+    isLeader,
+    pollDevice,
+  ]);
 
   useEffect(() => {
     if (!isLeader) {
@@ -760,12 +955,23 @@ export function DeviceRuntimeProvider({
         value: { baseUrl: link.baseUrl },
       });
       const currentTransport = runtimeById[link.deviceId]?.transport;
+      if (currentTransport === "http") {
+        invalidateDevicePoll(link.deviceId);
+        clearActiveEndpoint(link.deviceId);
+      }
       if (!currentTransport) {
         preferredTransportByDevice.current[link.deviceId] = "http";
       }
       void pollDevice(link.deviceId, link.baseUrl);
     });
-  }, [isLeader, markChannelResult, pollDevice, runtimeById]);
+  }, [
+    clearActiveEndpoint,
+    invalidateDevicePoll,
+    isLeader,
+    markChannelResult,
+    pollDevice,
+    runtimeById,
+  ]);
 
   useEffect(() => {
     if (!isLeader) {
@@ -1033,11 +1239,6 @@ export function DeviceRuntimeProvider({
     syncObservedPowerLock,
     syncPowerConfigSnapshot,
   });
-
-  const invalidateDevicePoll = useCallback((deviceId: string) => {
-    pollGeneration.current[deviceId] =
-      (pollGeneration.current[deviceId] ?? 0) + 1;
-  }, []);
 
   const {
     clearIdleBias,

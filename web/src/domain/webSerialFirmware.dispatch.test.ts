@@ -3,6 +3,34 @@ import { describe, expect, test } from "bun:test";
 import { WebSerialJsonlTransport } from "./webSerialFirmware";
 
 describe("WebSerialJsonlTransport dispatch guards", () => {
+  test("reports USB metadata only from the currently held serial port", async () => {
+    const port = {
+      readable: null as ReadableStream<Uint8Array> | null,
+      writable: null as WritableStream<Uint8Array> | null,
+      open: async () => {
+        port.readable = new ReadableStream<Uint8Array>();
+        port.writable = new WritableStream<Uint8Array>();
+      },
+      close: async () => undefined,
+      getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
+    };
+    const transport = new WebSerialJsonlTransport();
+    await transport.connectToPort(port as never);
+
+    try {
+      expect(transport.getActivePortUsbInfo()).toEqual({
+        usbVendorId: 0x303a,
+        usbProductId: 0x1001,
+      });
+      port.getInfo = () => ({});
+      expect(transport.getActivePortUsbInfo()).toEqual({});
+    } finally {
+      await transport.disconnect();
+    }
+
+    expect(transport.getActivePortUsbInfo()).toBeNull();
+  });
+
   test("does not write a queued request after its dispatch guard rejects it", async () => {
     let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
     let notifyFirstWrite: (() => void) | null = null;

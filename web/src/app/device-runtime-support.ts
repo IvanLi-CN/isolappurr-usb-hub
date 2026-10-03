@@ -35,6 +35,49 @@ import type { CrossTabRuntimeLeaseState } from "./cross-tab-runtime";
 
 export type ConnectionState = "online" | "offline" | "unknown";
 export type DeviceTransport = "http" | "web_serial" | "local_usb";
+export type ActiveConnectionEndpoint =
+  | { kind: "http"; url: string }
+  | { kind: "local_usb"; portPath: string }
+  | {
+      kind: "web_serial";
+      usbVendorId?: number;
+      usbProductId?: number;
+    };
+
+export type ConnectionPresentation = {
+  connectionLabel: string;
+  endpointLabel: string;
+};
+
+export function resolvePolledActiveEndpoint({
+  currentGeneration,
+  identityVerified,
+  transportLocked,
+  portsBinding,
+  infoBinding,
+  portsEndpoint,
+  infoEndpoint,
+}: {
+  currentGeneration: boolean;
+  identityVerified: boolean;
+  transportLocked: boolean;
+  portsBinding: object | string | null;
+  infoBinding: object | string | null;
+  portsEndpoint: ActiveConnectionEndpoint | null;
+  infoEndpoint: ActiveConnectionEndpoint | null;
+}): ActiveConnectionEndpoint | null {
+  if (
+    !currentGeneration ||
+    !identityVerified ||
+    transportLocked ||
+    portsBinding === null ||
+    portsBinding !== infoBinding ||
+    JSON.stringify(portsEndpoint) !== JSON.stringify(infoEndpoint)
+  ) {
+    return null;
+  }
+  return infoEndpoint;
+}
 
 export const RUNTIME_MUTATION_METHODS = new Set([
   "identify",
@@ -138,6 +181,7 @@ export type DeviceRuntime = {
   lastOkAt: number | null;
   lastError: DeviceApiError | null;
   transport: DeviceTransport | null;
+  activeEndpoint: ActiveConnectionEndpoint | null;
   identityVerified: boolean;
   channels: Record<DeviceTransport, ChannelRuntime>;
   hub: HubState | null;
@@ -191,6 +235,7 @@ export type DeviceRuntimeContextValue = {
   lastOkAt: (deviceId: string) => number | null;
   lastErrorLabel: (deviceId: string) => string | null;
   transport: (deviceId: string) => DeviceTransport | null;
+  connectionPresentation: (deviceId: string) => ConnectionPresentation;
   wifiManagementTransport: (deviceId: string) => DeviceTransport | null;
   channelState: (
     deviceId: string,
@@ -534,6 +579,10 @@ export function resetLocalUsbRuntimeState(
   for (const [deviceId, runtime] of Object.entries(runtimeById)) {
     const transport =
       runtime.transport === "local_usb" ? null : runtime.transport;
+    const activeEndpoint =
+      runtime.activeEndpoint?.kind === "local_usb"
+        ? null
+        : runtime.activeEndpoint;
     const localUsbChannel =
       runtime.channels.local_usb.lastOkAt === null &&
       runtime.channels.local_usb.lastError === null
@@ -541,6 +590,7 @@ export function resetLocalUsbRuntimeState(
         : { lastOkAt: null, lastError: null };
     if (
       transport !== runtime.transport ||
+      activeEndpoint !== runtime.activeEndpoint ||
       localUsbChannel !== runtime.channels.local_usb
     ) {
       changed = true;
@@ -548,6 +598,7 @@ export function resetLocalUsbRuntimeState(
     next[deviceId] = {
       ...runtime,
       transport,
+      activeEndpoint,
       channels: {
         ...runtime.channels,
         local_usb: localUsbChannel,
@@ -567,6 +618,10 @@ export function resetLocalUsbRuntimeStateForDevice(
   }
   const transport =
     current.transport === "local_usb" ? null : current.transport;
+  const activeEndpoint =
+    current.activeEndpoint?.kind === "local_usb"
+      ? null
+      : current.activeEndpoint;
   const localUsbChannel =
     current.channels.local_usb.lastOkAt === null &&
     current.channels.local_usb.lastError === null
@@ -574,6 +629,7 @@ export function resetLocalUsbRuntimeStateForDevice(
       : { lastOkAt: null, lastError: null };
   if (
     transport === current.transport &&
+    activeEndpoint === current.activeEndpoint &&
     localUsbChannel === current.channels.local_usb
   ) {
     return runtimeById;
@@ -583,6 +639,7 @@ export function resetLocalUsbRuntimeStateForDevice(
     [deviceId]: {
       ...current,
       transport,
+      activeEndpoint,
       channels: {
         ...current.channels,
         local_usb: localUsbChannel,

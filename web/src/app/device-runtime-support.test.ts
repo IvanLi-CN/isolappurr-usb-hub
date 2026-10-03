@@ -134,6 +134,8 @@ function runtimeWithVerifiedHttp(): DeviceRuntime {
     lastOkAt: now,
     lastError: null,
     transport: null,
+    activeEndpoint: null,
+    identityVerified: false,
     channels: {
       http: { lastOkAt: now, lastError: null },
       web_serial: { lastOkAt: null, lastError: null },

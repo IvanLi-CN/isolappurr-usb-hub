@@ -69,3 +69,20 @@ ten minutes, keeps live and demo browser sessions separate, and keeps a
 multi-result dialog open until its final addable result is saved. Desktop scan
 results use an opaque monotonic run identifier and remain separate from live
 service discovery.
+
+## 2026-10-04
+
+The original saved-device copy contract intentionally included only the device
+name, canonical ID, and active connection label, so copying omitted the current
+endpoint by design. The subtitle was independently populated from the saved
+profile `baseUrl`, which could describe a historical or alternate HTTP address
+when Local USB or Web Serial was active. Those two independent sources caused
+the header and copied details to disagree about the connection.
+
+The runtime now publishes a current endpoint only after a successful ports
+request and matching full `device_id` confirmation from the same transport
+target and poll generation. The header subtitle and clipboard share one
+resolver; disconnects and exclusive flash handoffs report an unavailable
+endpoint without reusing saved or historical data. The copy contract now has
+four fields, and the Web Serial endpoint uses metadata from the port held by
+the active browser transport.

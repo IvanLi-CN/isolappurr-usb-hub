@@ -29,10 +29,11 @@ const meta: Meta<typeof DeviceHeaderName> = {
     onSave: async (value) => ({ ok: true, value: { display_name: value } }),
     clipboardContent: {
       plainText:
-        "Device name: Studio 猫, Device ID: aabbcc001122, Connection: Web Serial",
+        "Device name: Studio 猫, Device ID: aabbcc001122, Connection: Web Serial, Endpoint: Browser-authorized serial port (VID 0x303A, PID 0x1001)",
       markdown:
-        "**Device name:** Studio 猫, **Device ID:** `aabbcc001122`, **Connection:** Web Serial",
+        "**Device name:** Studio 猫, **Device ID:** `aabbcc001122`, **Connection:** Web Serial, **Endpoint:** Browser-authorized serial port (VID 0x303A, PID 0x1001)",
     },
+    writeClipboard: fn(),
   },
 };
 
@@ -41,6 +42,42 @@ export default meta;
 type Story = StoryObj<typeof DeviceHeaderName>;
 
 export const Resting: Story = {};
+
+export const CopyCurrentEndpoint: Story = {
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Copy device info" }),
+    );
+    await expect(args.writeClipboard).toHaveBeenCalledWith({
+      plainText:
+        "Device name: Studio 猫, Device ID: aabbcc001122, Connection: Web Serial, Endpoint: Browser-authorized serial port (VID 0x303A, PID 0x1001)",
+      markdown:
+        "**Device name:** Studio 猫, **Device ID:** `aabbcc001122`, **Connection:** Web Serial, **Endpoint:** Browser-authorized serial port (VID 0x303A, PID 0x1001)",
+    });
+  },
+};
+
+export const CopyDisconnected: Story = {
+  args: {
+    clipboardContent: {
+      plainText:
+        "Device name: Studio 猫, Device ID: aabbcc001122, Connection: Not connected, Endpoint: Unavailable",
+      markdown:
+        "**Device name:** Studio 猫, **Device ID:** `aabbcc001122`, **Connection:** Not connected, **Endpoint:** Unavailable",
+    },
+    writeClipboard: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Copy device info" }),
+    );
+    await expect(args.writeClipboard).toHaveBeenCalledWith(
+      args.clipboardContent,
+    );
+  },
+};
 
 export const InlineEditAndSave: Story = {
   play: async ({ canvasElement }) => {

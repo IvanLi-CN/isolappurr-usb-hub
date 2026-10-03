@@ -15,13 +15,22 @@ import { PwaInstallProvider } from "../../pwa/install";
 import { DeviceListPanel } from "../panels/DeviceListPanel";
 import { ToastProvider } from "../toast/ToastProvider";
 import { AppLayout } from "./AppLayout";
+import { formatDeviceClipboardContent } from "./deviceClipboard";
 
-const deviceClipboardContent = {
-  plainText:
-    "Device name: isolapurr-usb-hub-856a141cdbd4, Device ID: 856a141cdbd4, Connection: Wi-Fi / LAN",
-  markdown:
-    "**Device name:** isolapurr-usb-hub-856a141cdbd4, **Device ID:** `856a141cdbd4`, **Connection:** Wi-Fi / LAN",
-};
+function deviceHeaderInfo(connection: string, endpoint: string) {
+  const title = "isolapurr-usb-hub-856a141cdbd4";
+  return {
+    title,
+    subtitle: `id: 856a14 • ${endpoint}`,
+    mobileTitle: title,
+    clipboardContent: formatDeviceClipboardContent({
+      deviceName: title,
+      deviceId: "856a141cdbd4",
+      connection,
+      endpoint,
+    }),
+  };
+}
 
 const devices: StoredDevice[] = [
   { id: "demo-a", name: "Demo Hub A", baseUrl: "http://192.168.1.23" },
@@ -167,25 +176,79 @@ export const DeviceHeaderDesktop: Story = {
   ...Default,
   args: {
     ...Default.args,
-    headerInfo: {
-      title: "isolapurr-usb-hub-856a141cdbd4",
-      subtitle: "id: 856a14 • http://192.168.31.122",
-      mobileTitle: "isolapurr-usb-hub-856a141cdbd4",
-      clipboardContent: deviceClipboardContent,
-    },
+    headerInfo: deviceHeaderInfo("Wi-Fi / LAN", "http://192.168.31.122"),
   },
   parameters: {
     route: "/devices/demo-a",
     viewport: { defaultViewport: "isolapurrDesktop" },
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(
       canvas.getByTestId("app-header-device-title"),
-    ).toHaveTextContent("isolapurr-usb-hub-856a141cdbd4");
+    ).toHaveTextContent(args.headerInfo?.title ?? "");
     await expect(
       canvas.getByTestId("app-header-device-subtitle"),
-    ).toHaveTextContent("id: 856a14 • http://192.168.31.122");
+    ).toHaveTextContent(args.headerInfo?.subtitle ?? "");
+  },
+};
+
+export const DeviceHeaderLocalUsb: Story = {
+  ...DeviceHeaderDesktop,
+  args: {
+    ...DeviceHeaderDesktop.args,
+    headerInfo: deviceHeaderInfo("Local USB", "/dev/cu.usbmodem21231401"),
+  },
+};
+
+export const DeviceHeaderWebSerial: Story = {
+  ...DeviceHeaderDesktop,
+  args: {
+    ...DeviceHeaderDesktop.args,
+    headerInfo: deviceHeaderInfo(
+      "Web Serial",
+      "Browser-authorized serial port (VID 0x303A, PID 0x1001)",
+    ),
+  },
+};
+
+export const DeviceHeaderWebSerialDetailsUnavailable: Story = {
+  ...DeviceHeaderDesktop,
+  args: {
+    ...DeviceHeaderDesktop.args,
+    headerInfo: deviceHeaderInfo(
+      "Web Serial",
+      "Browser-authorized serial port (details unavailable)",
+    ),
+  },
+};
+
+export const DeviceHeaderDisconnected: Story = {
+  ...DeviceHeaderDesktop,
+  args: {
+    ...DeviceHeaderDesktop.args,
+    headerInfo: deviceHeaderInfo("Not connected", "Unavailable"),
+  },
+};
+
+export const DeviceHeaderLongEndpoint: Story = {
+  ...DeviceHeaderDesktop,
+  args: {
+    ...DeviceHeaderDesktop.args,
+    headerInfo: deviceHeaderInfo(
+      "Local USB",
+      "/dev/serial/by-id/usb-IsolaPurr_USB_Hub_0123456789abcdef-if00",
+    ),
+  },
+  parameters: {
+    route: "/devices/demo-a",
+    viewport: { defaultViewport: "isolapurrMobile" },
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByTestId("app-header-mobile-subtitle"),
+    ).toHaveTextContent(args.headerInfo?.subtitle ?? "");
   },
 };
 
@@ -213,12 +276,10 @@ export const DeviceHeaderMobileDrawer: Story = {
   ...Default,
   args: {
     ...Default.args,
-    headerInfo: {
-      title: "isolapurr-usb-hub-856a141cdbd4",
-      subtitle: "id: 856a14 • http://192.168.31.122",
-      mobileTitle: "isolapurr-usb-hub-856a141cdbd4",
-      clipboardContent: deviceClipboardContent,
-    },
+    headerInfo: deviceHeaderInfo(
+      "Web Serial",
+      "Browser-authorized serial port (VID 0x303A, PID 0x1001)",
+    ),
     showMobileSidebarDrawer: true,
   },
   tags: ["skip-test"],
@@ -232,8 +293,50 @@ export const DeviceHeaderMobileDrawer: Story = {
       canvas.getByTestId("app-header-mobile-title"),
     ).toHaveTextContent("isolapurr-usb-hub-856a141cdbd4");
     await expect(
+      canvas.getByTestId("app-header-mobile-subtitle"),
+    ).toHaveTextContent(
+      "id: 856a14 • Browser-authorized serial port (VID 0x303A, PID 0x1001)",
+    );
+    await expect(
       canvas.getByTestId("mobile-device-drawer-trigger"),
     ).toBeVisible();
+  },
+};
+
+export const DeviceHeaderMobileEndpoint: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    headerInfo: deviceHeaderInfo(
+      "Web Serial",
+      "Browser-authorized serial port (VID 0x303A, PID 0x1001)",
+    ),
+  },
+  parameters: {
+    route: "/devices/demo-a",
+    viewport: { defaultViewport: "isolapurrMobile" },
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByTestId("app-header-mobile-subtitle"),
+    ).toHaveTextContent(args.headerInfo?.subtitle ?? "");
+  },
+};
+
+export const DeviceHeaderMobileHttp: Story = {
+  ...DeviceHeaderMobileEndpoint,
+  args: {
+    ...DeviceHeaderMobileEndpoint.args,
+    headerInfo: deviceHeaderInfo("Wi-Fi / LAN", "http://192.168.31.122"),
+  },
+};
+
+export const DeviceHeaderMobileDisconnected: Story = {
+  ...DeviceHeaderMobileEndpoint,
+  args: {
+    ...DeviceHeaderMobileEndpoint.args,
+    headerInfo: deviceHeaderInfo("Not connected", "Unavailable"),
   },
 };
 

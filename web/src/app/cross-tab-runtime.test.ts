@@ -529,10 +529,37 @@ describe("CrossTabRuntimeCoordinator", () => {
       at: new Date().toISOString(),
       originTabId: leader.getTabId(),
       now: 1_234,
-      runtimeById: {},
+      runtimeById: {
+        aabbcc001122: {
+          lastOkAt: 1_234,
+          lastError: null,
+          transport: "http",
+          activeEndpoint: {
+            kind: "http",
+            url: "http://192.168.31.224",
+          },
+          identityVerified: true,
+          channels: {
+            http: { lastOkAt: 1_234, lastError: null },
+            web_serial: { lastOkAt: null, lastError: null },
+            local_usb: { lastOkAt: null, lastError: null },
+          },
+          hub: null,
+          ports: null,
+          pending: { port_a: false, port_c: false },
+          powerConfig: null,
+          idleBias: null,
+          pdDiagnostics: null,
+          revision: 0,
+          command: null,
+        },
+      },
     });
 
     expect(seenSnapshotOrigin).toBe(leader.getTabId());
+    expect(
+      follower.readSnapshot()?.runtimeById.aabbcc001122.activeEndpoint,
+    ).toEqual({ kind: "http", url: "http://192.168.31.224" });
     unsubscribe();
   });
 
@@ -643,6 +670,8 @@ describe("CrossTabRuntimeCoordinator", () => {
           lastOkAt: null,
           lastError: null,
           transport: null,
+          activeEndpoint: null,
+          identityVerified: false,
           channels: {
             http: { lastOkAt: null, lastError: null },
             web_serial: { lastOkAt: null, lastError: null },

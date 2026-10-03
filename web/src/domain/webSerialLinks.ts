@@ -7,6 +7,10 @@ export type WebSerialDeviceLink = {
   transport: WebSerialJsonlTransport;
 };
 
+export type WebSerialDeviceLinkChange =
+  | WebSerialDeviceLink
+  | { deviceId: string; transport: null };
+
 const transports = new Map<string, WebSerialJsonlTransport>();
 
 function publishWebSerialDeviceLink(link: WebSerialDeviceLink): void {
@@ -41,6 +45,13 @@ export async function disconnectWebSerialDeviceTransport(
   const transport = transports.get(deviceId);
   transports.delete(deviceId);
   if (transport) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<WebSerialDeviceLinkChange>(EVENT_NAME, {
+          detail: { deviceId, transport: null },
+        }),
+      );
+    }
     await transport.disconnect();
   }
 }
@@ -53,14 +64,14 @@ export function setWebSerialDeviceTransport(
 }
 
 export function subscribeWebSerialDeviceLinks(
-  callback: (link: WebSerialDeviceLink) => void,
+  callback: (link: WebSerialDeviceLinkChange) => void,
 ): () => void {
   if (typeof window === "undefined") {
     return () => {};
   }
   const onEvent = (event: Event) => {
-    const detail = (event as CustomEvent<WebSerialDeviceLink>).detail;
-    if (!detail?.deviceId || !detail.transport) {
+    const detail = (event as CustomEvent<WebSerialDeviceLinkChange>).detail;
+    if (!detail?.deviceId) {
       return;
     }
     callback(detail);

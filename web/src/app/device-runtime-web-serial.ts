@@ -5,13 +5,20 @@ import {
   getWebSerialDeviceTransport,
 } from "../domain/webSerialLinks";
 import {
+  type ActiveConnectionEndpoint,
   type JsonlEnvelope,
   jsonlTimeoutMsForMethod,
   recoverWifiClearLikeTimeout,
   shouldForgetWebSerialTransport,
 } from "./device-runtime-support";
 
-export function createWebSerialRequester({
+export type WebSerialDispatchResult<T> = {
+  result: Result<T>;
+  binding: object | null;
+  endpoint: ActiveConnectionEndpoint | null;
+};
+
+export function createWebSerialEndpointRequester({
   getDispatchAuthorizationError,
 }: {
   getDispatchAuthorizationError: (method: string) => DeviceApiError | null;
@@ -20,14 +27,26 @@ export function createWebSerialRequester({
     deviceId: string,
     method: string,
     params?: Record<string, unknown>,
-  ): Promise<Result<T>> => {
+  ): Promise<WebSerialDispatchResult<T>> => {
     const transport = getWebSerialDeviceTransport(deviceId);
     if (!transport) {
       return {
-        ok: false,
-        error: { kind: "offline", message: "Web Serial not connected" },
+        result: {
+          ok: false,
+          error: { kind: "offline", message: "Web Serial not connected" },
+        },
+        binding: null,
+        endpoint: null,
       };
     }
+    const withEndpoint = (result: Result<T>): WebSerialDispatchResult<T> => {
+      const info = result.ok ? transport.getActivePortUsbInfo() : null;
+      return {
+        result,
+        binding: transport,
+        endpoint: info ? { kind: "web_serial", ...info } : null,
+      };
+    };
     let authorizationError: DeviceApiError | null = null;
     try {
       const response = await transport.request(
@@ -46,9 +65,9 @@ export function createWebSerialRequester({
       );
       const envelope = response as JsonlEnvelope<T>;
       if (envelope?.ok && envelope.result !== undefined) {
-        return { ok: true, value: envelope.result };
+        return withEndpoint({ ok: true, value: envelope.result });
       }
-      return {
+      return withEndpoint({
         ok: false,
         error: {
           kind: "api_error",
@@ -57,10 +76,10 @@ export function createWebSerialRequester({
           message: envelope?.error?.message ?? "Web Serial request failed",
           retryable: envelope?.error?.retryable ?? false,
         },
-      };
+      });
     } catch (err) {
       if (authorizationError) {
-        return { ok: false, error: authorizationError };
+        return withEndpoint({ ok: false, error: authorizationError });
       }
       const recovered = await recoverWifiClearLikeTimeout<T>(
         async (request) => transport.request(request),
@@ -68,19 +87,19 @@ export function createWebSerialRequester({
         params,
       );
       if (recovered) {
-        return recovered;
+        return withEndpoint(recovered);
       }
       if (shouldForgetWebSerialTransport(err)) {
         forgetWebSerialDeviceTransport(deviceId);
       }
-      return {
+      return withEndpoint({
         ok: false,
         error: {
           kind: "offline",
           message:
             err instanceof Error ? err.message : "Web Serial request failed",
         },
-      };
+      });
     }
   };
 }

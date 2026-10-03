@@ -23,7 +23,9 @@
 
 - `USB port ID`
   The OS-visible Local USB `port_path`, such as `/dev/cu.usbmodem21221401`.
-  It is only valid for advanced Local USB flows such as first flash, firmware upgrade, add-device bootstrap, and development maintenance.
+  It describes a Local USB connection endpoint. As a user-supplied selector,
+  it is only valid for advanced Local USB flows such as first flash, firmware
+  upgrade, add-device bootstrap, and development maintenance.
   It is not a second device identity.
 
 ## Connection paths
@@ -31,6 +33,13 @@
 - `active transport`
   The connection path currently used to communicate with a saved Hub. It describes the current path, not every available path or the client's saved preference.
   _Avoid_: preferred transport, available transport.
+
+- `active connection endpoint`
+  The transport-specific address or port information for a Hub's current
+  primary connection. It belongs to that connection, can change independently
+  of the Hub's identity, and is unavailable when the Hub is disconnected.
+  A saved address or a last successful connection is not a current endpoint.
+  _Avoid_: device identity, saved endpoint, last endpoint.
 
 ## Excluded terms
 
