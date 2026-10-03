@@ -75,6 +75,7 @@ import {
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
   isLinkedTransportActive,
+  isRuntimeIdentityVerifiedForTransport,
   type JsonlEnvelope,
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
@@ -89,6 +90,7 @@ import {
   resolvePolledActiveEndpoint,
   runQueuedDeviceRequestWithAuthorization,
   runtimeMutationDispatchError,
+  runtimeMutationIdentityError,
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
   takeoverRecoveryError,
@@ -1161,6 +1163,16 @@ function DeviceRuntimeScopeProvider({
         };
       }
       for (const transport of transports) {
+        const identityError = runtimeMutationIdentityError(
+          method,
+          isRuntimeIdentityVerifiedForTransport(
+            runtimeById[deviceId],
+            transport,
+          ),
+        );
+        if (identityError) {
+          return { ok: false, error: identityError };
+        }
         const authorizationError =
           getMutationDispatchAuthorizationError(method);
         if (authorizationError) {
@@ -1247,6 +1259,7 @@ function DeviceRuntimeScopeProvider({
       markChannelResult,
       orderedTransports,
       requestTransport,
+      runtimeById,
     ],
   );
 

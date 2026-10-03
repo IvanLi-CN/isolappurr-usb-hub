@@ -4,6 +4,7 @@ import { createDemoDesktopAgent } from "../domain/desktopAgent";
 import { LocalUsbAgentHttpError } from "../domain/hardwareConsole";
 import { ensureDemoFetchInterceptor, resetDemoModeSession } from "./demo-mode";
 import {
+  isRuntimeIdentityVerifiedForTransport,
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   orderedDeviceTransports,
@@ -12,6 +13,7 @@ import {
   resolvePolledActiveEndpoint,
   resolveTransportBadgeState,
   runQueuedDeviceRequest,
+  runtimeMutationIdentityError,
   shortApiError,
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
@@ -70,6 +72,40 @@ describe("localUsbErrorToDeviceApiError", () => {
       message: "connected device firmware version `0.0.1` is incompatible",
       retryable: false,
     });
+  });
+});
+
+describe("runtimeMutationIdentityError", () => {
+  test("blocks mutations until the canonical device identity is confirmed", () => {
+    expect(runtimeMutationIdentityError("port.power_set", false)).toEqual({
+      kind: "invalid_response",
+      message: "device identity is not confirmed",
+    });
+    expect(runtimeMutationIdentityError("port.power_set", true)).toBeNull();
+    expect(runtimeMutationIdentityError("ports.get", false)).toBeNull();
+  });
+});
+
+describe("isRuntimeIdentityVerifiedForTransport", () => {
+  const httpRuntime = {
+    identityVerified: true,
+    transport: "http" as const,
+    activeEndpoint: { kind: "http" as const, url: "http://hub.local" },
+  };
+
+  test("requires identity verification for the exact active transport", () => {
+    expect(isRuntimeIdentityVerifiedForTransport(httpRuntime, "http")).toBe(
+      true,
+    );
+    expect(
+      isRuntimeIdentityVerifiedForTransport(httpRuntime, "web_serial"),
+    ).toBe(false);
+    expect(
+      isRuntimeIdentityVerifiedForTransport(
+        { ...httpRuntime, activeEndpoint: null },
+        "http",
+      ),
+    ).toBe(false);
   });
 });
 

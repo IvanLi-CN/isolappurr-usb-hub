@@ -158,22 +158,40 @@ describe("CrossTabRuntimeCoordinator", () => {
   });
 
   test("only accepts snapshots from the active lease leader", () => {
+    const now = Date.now();
     const followerLease = {
       role: "follower" as const,
       currentTabId: "follower-tab",
       leaderTabId: "new-leader-tab",
-      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      leaseExpiresAt: new Date(now + 60_000).toISOString(),
     };
 
-    expect(isCurrentLeaderSnapshot("new-leader-tab", followerLease)).toBeTrue();
     expect(
-      isCurrentLeaderSnapshot("old-leader-tab", followerLease),
+      isCurrentLeaderSnapshot("new-leader-tab", followerLease, now),
+    ).toBeTrue();
+    expect(
+      isCurrentLeaderSnapshot("old-leader-tab", followerLease, now),
     ).toBeFalse();
     expect(
-      isCurrentLeaderSnapshot("old-leader-tab", {
-        ...followerLease,
-        leaderTabId: null,
-      }),
+      isCurrentLeaderSnapshot(
+        "old-leader-tab",
+        {
+          ...followerLease,
+          leaderTabId: null,
+        },
+        now,
+      ),
+    ).toBeFalse();
+    expect(
+      isCurrentLeaderSnapshot(
+        "old-leader-tab",
+        {
+          ...followerLease,
+          leaderTabId: "old-leader-tab",
+          leaseExpiresAt: new Date(now - 1).toISOString(),
+        },
+        now,
+      ),
     ).toBeFalse();
   });
 

@@ -1,6 +1,6 @@
 # USB 通信、固件更新与 Wi-Fi provisioning
 
-## Background
+## Context and Scope
 
 IsolaPurr USB Hub 需要在同一套 Web / Desktop 控制台里支持三类连接路径：
 
@@ -99,6 +99,7 @@ Default selection is only defined after more than one path is immediately usable
 - Runtime control MUST treat Wi-Fi / LAN, Web Serial, and Local USB as concurrent channels for the same saved device. The active channel is the current primary; if it fails, another available channel MUST be promoted without creating a duplicate device entry.
 - Browser-managed Web runtime MUST use one same-origin single-writer coordinator per browser profile. Exactly one leader tab may bootstrap USB-capable transports, poll device snapshots, or execute hardware writes at a time, but every same-origin tab MUST submit reads and writes through that shared runtime and receive the same canonical snapshot updates.
 - The browser single-writer runtime MUST synchronize leader lease, active transport, runtime snapshots, shared command state, and browser-local transport handoff events through a same-origin cross-tab channel with a storage-backed fallback so a second tab cannot silently start a competing poller or transport owner.
+- REQ-LEASE-SNAPSHOT: The browser single-writer runtime MUST reject a shared runtime snapshot when its origin is not the current lease leader or that leader lease has expired; a delayed snapshot from an expired leader MUST NOT replace the current runtime state.
 - The browser single-writer runtime MUST scope its cross-tab lease, snapshot, and command channels by runtime mode. Live saved-device pages and `?demo=true` pages MUST NOT share the same leader election or cached snapshot namespace even when they run on the same origin.
 - Browser-local permission or transport acquisition flows such as `navigator.serial.requestPort()` MAY trigger an internal leader handoff, but ordinary saved-device reads and writes MUST NOT require an owner-facing takeover step or imply that non-leader tabs are a different product role.
 - When multiple channels are immediately available, the runtime MAY choose a default preference based on the last successful channel for that device. This preference is a selection rule only and MUST NOT be documented as a quality ranking.
@@ -116,10 +117,11 @@ Default selection is only defined after more than one path is immediately usable
 - Web UI command controls MUST use one shared action system: `primary` for normal task completion, `secondary` for cancellation or safe alternatives, `quiet` for low-emphasis disclosure, `warning` for reset/clear or disruptive actions, and `danger` for saved-device deletion and irreversible final confirmation.
 - Shared action and form surfaces MUST use theme tokens for resting, hover, focus-visible, disabled, and loading states in `isolapurr`, `isolapurr-dark`, and `system` themes. The `system` choice MUST remove the explicit theme attribute and follow the host color-scheme preference.
 - Saved-device detail routes (`Overview`, `Settings`, `Power`) MUST promote the selected device identity into the shared app-shell header. On `lg` and wider viewports, the header MUST align to the main content column; on narrower viewports, it MUST retain a compact subtitle below the device name. The route body MUST NOT duplicate that same identity block above the tabs.
-- The shared saved-device header MUST present the selected device's name, short canonical `device_id` prefix, and active connection endpoint in its subtitle. The subtitle and copy action MUST resolve from the same current runtime connection snapshot.
-- The shared saved-device header copy action MUST write the current resolved device name, complete lowercase canonical `device_id`, active connection label, and active connection endpoint as one comma-separated single line in that order. `text/plain` MUST use `Device name: <name>, Device ID: <device_id>, Connection: <label>, Endpoint: <endpoint>` and `text/markdown` MUST provide the same four values as Markdown; when rich clipboard MIME support is unavailable, it MUST fall back to the complete plain-text payload.
-- The copy action MUST label the connection `Wi-Fi / LAN`, `Web Serial`, or `Local USB` only when the device is online and that transport is active. When the device is disconnected or has no active transport, it MUST use `Connection: Not connected, Endpoint: Unavailable`. When it is online but endpoint metadata is unavailable or the active connection identity is not verified, it MUST retain the active transport label and use `Endpoint: Unavailable`. The endpoint MUST describe only the current connection; saved URLs, endpoints from other transports, daemon URLs, internal devd target IDs, and historical endpoints MUST NOT be used as a fallback. The copy action MUST remain hidden while the device name is being edited.
-- For an active `Wi-Fi / LAN` connection, the endpoint MUST be the HTTP base URL actually used by the identity-verified runtime request. For `Local USB`, it MUST be the OS-visible serial `portPath` used by the current request. For `Web Serial`, it MUST describe the browser-authorized port held by the active transport and include its actual USB VID/PID when available; missing USB metadata MUST be stated as unavailable, and VID/PID MUST NOT be treated as a unique device identity or reusable port path.
+- REQ-HEADER-ENDPOINT: The shared saved-device header MUST present the selected device's name, short canonical `device_id` prefix, and active connection endpoint in its subtitle. The subtitle and copy action MUST resolve from the same current runtime connection snapshot.
+- REQ-ENDPOINT-CLIPBOARD: The shared saved-device header copy action MUST write the current resolved device name, complete lowercase canonical `device_id`, active connection label, and active connection endpoint as one comma-separated single line in that order. `text/plain` MUST use `Device name: <name>, Device ID: <device_id>, Connection: <label>, Endpoint: <endpoint>` and `text/markdown` MUST provide the same four values as Markdown; when rich clipboard MIME support is unavailable, it MUST fall back to the complete plain-text payload.
+- REQ-ENDPOINT-STATE: The copy action MUST label the connection `Wi-Fi / LAN`, `Web Serial`, or `Local USB` only when the device is online and that transport is active. When the device is disconnected or has no active transport, it MUST use `Connection: Not connected, Endpoint: Unavailable`. When it is online but endpoint metadata is unavailable or the active connection identity is not verified, it MUST retain the active transport label and use `Endpoint: Unavailable`. The endpoint MUST describe only the current connection; saved URLs, endpoints from other transports, daemon URLs, internal devd target IDs, and historical endpoints MUST NOT be used as a fallback. The copy action MUST remain hidden while the device name is being edited.
+- REQ-ENDPOINT-SOURCES: For an active `Wi-Fi / LAN` connection, the endpoint MUST be the HTTP base URL actually used by the identity-verified runtime request. For `Local USB`, it MUST be the OS-visible serial `portPath` used by the current request. For `Web Serial`, it MUST describe the browser-authorized port held by the active transport and include its actual USB VID/PID when available; missing USB metadata MUST be stated as unavailable, and VID/PID MUST NOT be treated as a unique device identity or reusable port path.
+- REQ-MUTATION-IDENTITY: Before dispatching a device mutation, the runtime MUST verify the canonical device identity on the exact transport selected for that dispatch and confirm that transport is the current active connection. It MUST reject the mutation without dispatch when identity is unconfirmed or belongs to another transport.
 - On viewports narrower than `lg`, the Dashboard and saved-device detail routes MUST replace the inline device list with a right-side device drawer opened from the header. That drawer MUST reuse the saved-device list panel, include `+ Add`, expose an `About` entry, and close before opening Add device, navigating to `About`, or selecting another saved device.
 - The app-shell sidebar breakpoint MUST switch to the left-column layout at `lg` rather than `xl`, so `lg` and wider viewports keep the stable two-column saved-device shell while narrower viewports use the header-triggered drawer contract.
 - Storybook MUST cover the Add device and saved-device Hardware page states before visual evidence is accepted.
@@ -252,6 +254,20 @@ This is a product control console for people using IsolaPurr USB Hub in bench or
 - Given the saved-device Settings page renders on Wi-Fi / LAN, when Wi-Fi save/clear and Wi-Fi reset are unavailable, then they use the shared disabled action state while the available `Other` reset uses warning treatment and the firmware workbench keeps the primary action treatment.
 - Given a user opens saved-device deletion or an irreversible recovery action, when the confirmation layer renders, then cancellation is secondary and the final destructive command is visually distinct as a solid danger action.
 - Given an action or disabled form field renders in `isolapurr`, `isolapurr-dark`, or `system`, then it retains readable token-driven text, border, and fill contrast without a framework-default light surface leaking into dark mode.
+
+## Verification
+
+### VER-ENDPOINT-PRESENTATION
+
+- Method: Web runtime resolver and clipboard tests, plus the saved-device header Storybook interactions and production demo evidence.
+- covers: `REQ-HEADER-ENDPOINT`, `REQ-ENDPOINT-CLIPBOARD`, `REQ-ENDPOINT-STATE`, `REQ-ENDPOINT-SOURCES`
+- Pass condition: The subtitle, plain-text clipboard, Markdown clipboard, and plain-text fallback agree on the active transport endpoint and use the exact unavailable behavior for disconnected or unverified state.
+
+### VER-RUNTIME-SAFETY
+
+- Method: Cross-tab lease tests, runtime mutation-dispatch tests, and the AppLayout runtime-scope Storybook interaction.
+- covers: `REQ-LEASE-SNAPSHOT`, `REQ-MUTATION-IDENTITY`
+- Pass condition: Expired-leader snapshots and mutations whose identity is unconfirmed or belongs to another transport cannot update or control the current runtime.
 
 ## Visual Evidence
 

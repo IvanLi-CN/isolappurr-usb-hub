@@ -49,10 +49,13 @@ export type SharedRuntimeSnapshot = {
 export function isCurrentLeaderSnapshot(
   snapshotOriginTabId: string,
   leaseState: CrossTabRuntimeLeaseState,
+  now = Date.now(),
 ): boolean {
   return (
     leaseState.leaderTabId !== null &&
-    snapshotOriginTabId === leaseState.leaderTabId
+    snapshotOriginTabId === leaseState.leaderTabId &&
+    leaseState.leaseExpiresAt !== null &&
+    Date.parse(leaseState.leaseExpiresAt) > now
   );
 }
 

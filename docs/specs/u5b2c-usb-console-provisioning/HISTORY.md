@@ -86,3 +86,11 @@ resolver; disconnects and exclusive flash handoffs report an unavailable
 endpoint without reusing saved or historical data. The copy contract now has
 four fields, and the Web Serial endpoint uses metadata from the port held by
 the active browser transport.
+
+The Tier 3 review found that a delayed snapshot from a lease-expired leader
+could still be accepted, and a device mutation could reuse identity confirmed
+on a different transport. The runtime now rejects expired-leader snapshots and
+requires the exact active transport to have confirmed the canonical device
+identity before dispatching mutations. Regression coverage exercises lease
+expiry, cross-transport identity rejection, and held Web Serial cleanup during
+live/demo scope changes.

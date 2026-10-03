@@ -127,6 +127,33 @@ export function runtimeMutationDispatchError(
   );
 }
 
+export function runtimeMutationIdentityError(
+  method: string,
+  identityVerified: boolean,
+): DeviceApiError | null {
+  if (!RUNTIME_MUTATION_METHODS.has(method) || identityVerified) {
+    return null;
+  }
+  return {
+    kind: "invalid_response",
+    message: "device identity is not confirmed",
+  };
+}
+
+export function isRuntimeIdentityVerifiedForTransport(
+  runtime:
+    | Pick<DeviceRuntime, "identityVerified" | "transport" | "activeEndpoint">
+    | null
+    | undefined,
+  transport: DeviceTransport,
+): boolean {
+  return (
+    runtime?.identityVerified === true &&
+    runtime.transport === transport &&
+    runtime.activeEndpoint?.kind === transport
+  );
+}
+
 export function crossTabRuntimeTimeoutResult<T>(method: string): Result<T> {
   return {
     ok: false,
