@@ -4,6 +4,7 @@ import { createDemoDesktopAgent } from "../domain/desktopAgent";
 import { LocalUsbAgentHttpError } from "../domain/hardwareConsole";
 import { ensureDemoFetchInterceptor, resetDemoModeSession } from "./demo-mode";
 import {
+  isRuntimeIdentityVerifiedForBinding,
   isRuntimeIdentityVerifiedForTransport,
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
@@ -104,6 +105,44 @@ describe("isRuntimeIdentityVerifiedForTransport", () => {
       isRuntimeIdentityVerifiedForTransport(
         { ...httpRuntime, activeEndpoint: null },
         "http",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isRuntimeIdentityVerifiedForBinding", () => {
+  test("requires the same Web Serial transport object as the identity poll", () => {
+    const confirmedPort = {};
+    const replacementPort = {};
+    const runtime = {
+      identityVerified: true,
+      transport: "web_serial" as const,
+      activeEndpoint: {
+        kind: "web_serial" as const,
+        usbVendorId: 0x303a,
+        usbProductId: 0x1001,
+      },
+    };
+    const confirmedBinding = {
+      transport: "web_serial" as const,
+      binding: confirmedPort,
+      endpoint: runtime.activeEndpoint,
+    };
+
+    expect(
+      isRuntimeIdentityVerifiedForBinding(
+        runtime,
+        "web_serial",
+        confirmedBinding,
+        confirmedPort,
+      ),
+    ).toBe(true);
+    expect(
+      isRuntimeIdentityVerifiedForBinding(
+        runtime,
+        "web_serial",
+        confirmedBinding,
+        replacementPort,
       ),
     ).toBe(false);
   });

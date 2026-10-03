@@ -75,12 +75,13 @@ import {
   httpBaseUrlForDevice,
   isDeviceInfoResponse,
   isLinkedTransportActive,
-  isRuntimeIdentityVerifiedForTransport,
+  isRuntimeIdentityVerifiedForBinding,
   type JsonlEnvelope,
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   localUsbPortPathForDevice,
   RUNTIME_MUTATION_METHODS,
+  type RuntimeIdentityBinding,
   recoverWifiClearLikeTimeout,
   resetLocalUsbRuntimeState,
   resetLocalUsbRuntimeStateForDevice,
@@ -151,6 +152,10 @@ function DeviceRuntimeScopeProvider({
   const [runtimeById, setRuntimeById] = useState<Record<string, DeviceRuntime>>(
     {},
   );
+  const runtimeByIdRef = useRef(runtimeById);
+  const identityBindingByDevice = useRef<
+    Record<string, RuntimeIdentityBinding | undefined>
+  >({});
   const devicesRef = useRef(devices);
   devicesRef.current = devices;
   const snapshotHydratedFor = useRef<CrossTabRuntimeCoordinator | null>(null);
@@ -164,6 +169,7 @@ function DeviceRuntimeScopeProvider({
       (pollGeneration.current[deviceId] ?? 0) + 1;
   }, []);
   const clearActiveEndpoint = useCallback((deviceId: string) => {
+    delete identityBindingByDevice.current[deviceId];
     setRuntimeById((prev) => {
       const current = prev[deviceId];
       if (!current || current.activeEndpoint === null) {
@@ -175,7 +181,6 @@ function DeviceRuntimeScopeProvider({
       };
     });
   }, []);
-  const runtimeByIdRef = useRef(runtimeById);
   const localUsbAgent = useRef<DesktopAgent | null>(null);
   const localUsbPortByDevice = useRef<Record<string, string>>({});
   const localUsbRequestQueues = useRef<Record<string, Promise<void>>>({});
@@ -203,12 +208,55 @@ function DeviceRuntimeScopeProvider({
       runtimeMutationDispatchError(method, coordinator.hasCurrentLease()),
     [coordinator],
   );
+  const getMutationDispatchIdentityError = useCallback(
+    (
+      deviceId: string,
+      method: string,
+      transport: DeviceTransport,
+      binding: object | string | null | undefined,
+    ) =>
+      runtimeMutationIdentityError(
+        method,
+        isRuntimeIdentityVerifiedForBinding(
+          runtimeByIdRef.current[deviceId],
+          transport,
+          identityBindingByDevice.current[deviceId],
+          binding,
+        ),
+      ),
+    [],
+  );
+  const getMutationDispatchError = useCallback(
+    (
+      deviceId: string,
+      method: string,
+      transport: DeviceTransport,
+      binding: object | string | null | undefined,
+    ) =>
+      getMutationDispatchAuthorizationError(method) ??
+      getMutationDispatchIdentityError(deviceId, method, transport, binding),
+    [getMutationDispatchAuthorizationError, getMutationDispatchIdentityError],
+  );
   const requestWebSerialWithEndpoint = useMemo(
     () =>
       createWebSerialEndpointRequester({
         getDispatchAuthorizationError: getMutationDispatchAuthorizationError,
+        getDispatchIdentityError: (deviceId, method, transport) => {
+          if (
+            RUNTIME_MUTATION_METHODS.has(method) &&
+            getWebSerialDeviceTransport(deviceId) !== transport
+          ) {
+            return runtimeMutationIdentityError(method, false);
+          }
+          return getMutationDispatchIdentityError(
+            deviceId,
+            method,
+            "web_serial",
+            transport,
+          );
+        },
       }),
-    [getMutationDispatchAuthorizationError],
+    [getMutationDispatchAuthorizationError, getMutationDispatchIdentityError],
   );
 
   useEffect(() => {
@@ -296,6 +344,7 @@ function DeviceRuntimeScopeProvider({
     if (wasLeaderRef.current && !isLeader) {
       localUsbAgent.current = null;
       localUsbPortByDevice.current = {};
+      identityBindingByDevice.current = {};
       for (const device of devices) {
         forgetWebSerialDeviceTransport(device.id);
       }
@@ -311,6 +360,7 @@ function DeviceRuntimeScopeProvider({
       for (const id of Object.keys(next)) {
         if (!alive.has(id)) {
           delete next[id];
+          delete identityBindingByDevice.current[id];
           delete localUsbPortByDevice.current[id];
           delete localUsbRequestQueues.current[id];
           delete httpRequestQueues.current[id];
@@ -437,11 +487,54 @@ function DeviceRuntimeScopeProvider({
           endpoint: null,
         };
       }
+      const getLocalUsbDispatchError = (portPath?: string | null) => {
+        const authorizationError =
+          getMutationDispatchAuthorizationError(method);
+        if (authorizationError || !RUNTIME_MUTATION_METHODS.has(method)) {
+          return authorizationError;
+        }
+        const currentTarget = resolveLocalUsbTarget({
+          deviceId,
+          devices: devicesRef.current,
+          cachedPortPath: localUsbPortByDevice.current[deviceId],
+          linkedPortPath: getLocalUsbDeviceLink(deviceId),
+        });
+        const sameTarget =
+          currentTarget?.kind === target.kind &&
+          (target.kind === "port_path"
+            ? currentTarget.kind === "port_path" &&
+              currentTarget.portPath === target.portPath
+            : currentTarget.kind === "devd_device" &&
+              currentTarget.deviceId === target.deviceId);
+        if (
+          !sameTarget ||
+          (target.kind === "port_path" &&
+            portPath !== undefined &&
+            portPath !== target.portPath)
+        ) {
+          return runtimeMutationIdentityError(method, false);
+        }
+        const binding =
+          portPath === undefined
+            ? identityBindingByDevice.current[deviceId]?.binding
+            : portPath
+              ? `port:${portPath}`
+              : null;
+        return getMutationDispatchIdentityError(
+          deviceId,
+          method,
+          "local_usb",
+          binding,
+        );
+      };
       const timeoutMs = jsonlTimeoutMsForMethod(method, params);
       const queued = await runQueuedDeviceRequestWithAuthorization(
         localUsbRequestQueues.current,
         deviceId,
-        () => getMutationDispatchAuthorizationError(method),
+        () =>
+          getLocalUsbDispatchError(
+            target.kind === "port_path" ? target.portPath : undefined,
+          ),
         async (): Promise<Result<TransportDispatch<T>>> => {
           let caughtError: unknown = null;
           let portPath = target.kind === "port_path" ? target.portPath : null;
@@ -463,7 +556,7 @@ function DeviceRuntimeScopeProvider({
                 agent,
                 target.deviceId,
                 request,
-                () => getMutationDispatchAuthorizationError(method),
+                getLocalUsbDispatchError,
               );
               response = dispatched.response;
               portPath = dispatched.portPath;
@@ -473,7 +566,7 @@ function DeviceRuntimeScopeProvider({
                 agent,
                 target.portPath,
                 request,
-                () => getMutationDispatchAuthorizationError(method),
+                getLocalUsbDispatchError,
               );
             }
             const envelope = response as JsonlEnvelope<T>;
@@ -516,13 +609,13 @@ function DeviceRuntimeScopeProvider({
                     agent,
                     target.deviceId,
                     request,
-                    () => getMutationDispatchAuthorizationError(method),
+                    getLocalUsbDispatchError,
                   )
                 : await sendLocalUsbJsonlRequest(
                     agent,
                     target.portPath,
                     request,
-                    () => getMutationDispatchAuthorizationError(method),
+                    getLocalUsbDispatchError,
                   ),
             method,
             params,
@@ -570,6 +663,7 @@ function DeviceRuntimeScopeProvider({
       devices,
       getLocalUsbAgent,
       getMutationDispatchAuthorizationError,
+      getMutationDispatchIdentityError,
       invalidateDevicePoll,
     ],
   );
@@ -586,7 +680,19 @@ function DeviceRuntimeScopeProvider({
         const result = await runQueuedDeviceRequestWithAuthorization(
           httpRequestQueues.current,
           deviceId,
-          () => getMutationDispatchAuthorizationError(method),
+          () => {
+            const currentDevice = devicesRef.current.find(
+              (device) => device.id === deviceId,
+            );
+            if (
+              RUNTIME_MUTATION_METHODS.has(method) &&
+              (!currentDevice ||
+                httpBaseUrlForDevice(currentDevice) !== baseUrl)
+            ) {
+              return runtimeMutationIdentityError(method, false);
+            }
+            return getMutationDispatchError(deviceId, method, "http", baseUrl);
+          },
           () => requestHttpTransport<T>(baseUrl, method, params),
         );
         return {
@@ -603,11 +709,7 @@ function DeviceRuntimeScopeProvider({
       }
       return requestLocalUsb<T>(deviceId, method, params);
     },
-    [
-      getMutationDispatchAuthorizationError,
-      requestLocalUsb,
-      requestWebSerialWithEndpoint,
-    ],
+    [getMutationDispatchError, requestLocalUsb, requestWebSerialWithEndpoint],
   );
 
   const requestTransport = useCallback(
@@ -694,6 +796,7 @@ function DeviceRuntimeScopeProvider({
         let identityVerified = false;
         let infoSnapshot: DeviceInfoResponse | undefined;
         let endpointSnapshot: ActiveConnectionEndpoint | null = null;
+        let identityBindingSnapshot: RuntimeIdentityBinding | null = null;
         for (const candidate of orderedTransports(deviceId)) {
           const candidateBaseUrl =
             candidate === "http"
@@ -748,6 +851,13 @@ function DeviceRuntimeScopeProvider({
               portsEndpoint: portsDispatch.endpoint,
               infoEndpoint: infoDispatch.endpoint,
             });
+            if (endpointSnapshot && portsDispatch.binding !== null) {
+              identityBindingSnapshot = {
+                transport: candidate,
+                binding: portsDispatch.binding,
+                endpoint: endpointSnapshot,
+              };
+            }
             break;
           }
           res = candidateRes;
@@ -757,6 +867,21 @@ function DeviceRuntimeScopeProvider({
         }
         const stalePoll =
           (pollGeneration.current[deviceId] ?? 0) !== generation;
+        const parsedRuntimePorts = res.ok
+          ? runtimePortsFromResponse(res.value)
+          : null;
+        if (!stalePoll) {
+          if (
+            res.ok &&
+            parsedRuntimePorts &&
+            identityBindingSnapshot &&
+            !isLocalUsbSuppressedForFlashDevice(deviceId)
+          ) {
+            identityBindingByDevice.current[deviceId] = identityBindingSnapshot;
+          } else {
+            delete identityBindingByDevice.current[deviceId];
+          }
+        }
         setRuntimeById((prev) => {
           const current = prev[deviceId];
           if (!current) {
@@ -770,7 +895,7 @@ function DeviceRuntimeScopeProvider({
                     res.value.hub.capabilities ?? res.value.capabilities,
                 }
               : null;
-            const ports = runtimePortsFromResponse(res.value);
+            const ports = parsedRuntimePorts;
             if (!ports) {
               return {
                 ...prev,
@@ -924,6 +1049,7 @@ function DeviceRuntimeScopeProvider({
     }
     return subscribeFlashTransportLocks((lock) => {
       if (lock.deviceId === FLASH_TRANSPORT_LOCK_ALL) {
+        identityBindingByDevice.current = {};
         setRuntimeById((prev) => {
           const next = { ...prev };
           for (const [deviceId, current] of Object.entries(prev)) {
@@ -1163,11 +1289,33 @@ function DeviceRuntimeScopeProvider({
         };
       }
       for (const transport of transports) {
+        const confirmedBinding = identityBindingByDevice.current[deviceId];
+        let dispatchBinding: object | string | null = null;
+        if (transport === "http") {
+          dispatchBinding = httpBaseUrlForDevice(device);
+        } else if (transport === "web_serial") {
+          dispatchBinding = getWebSerialDeviceTransport(deviceId);
+        } else {
+          const target = resolveLocalUsbTarget({
+            deviceId,
+            devices,
+            cachedPortPath: localUsbPortByDevice.current[deviceId],
+            linkedPortPath: getLocalUsbDeviceLink(deviceId),
+          });
+          dispatchBinding =
+            target?.kind === "port_path"
+              ? `port:${target.portPath}`
+              : target
+                ? (confirmedBinding?.binding ?? null)
+                : null;
+        }
         const identityError = runtimeMutationIdentityError(
           method,
-          isRuntimeIdentityVerifiedForTransport(
+          isRuntimeIdentityVerifiedForBinding(
             runtimeById[deviceId],
             transport,
+            confirmedBinding,
+            dispatchBinding,
           ),
         );
         if (identityError) {

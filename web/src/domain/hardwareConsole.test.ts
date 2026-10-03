@@ -1027,6 +1027,7 @@ describe("Local USB runtime power route", () => {
   });
 
   test("returns the scanned OS port path for a devd-backed request", async () => {
+    const dispatchGuardPortPaths: Array<string | null | undefined> = [];
     globalThis.fetch = async (input) => {
       const url = String(input);
       if (url.endsWith("/api/v1/devices/scan")) {
@@ -1060,9 +1061,18 @@ describe("Local USB runtime power route", () => {
         method: "power.runtime_set",
         params: { action: "output", enabled: false, owner: 7 },
       },
+      (portPath) => {
+        dispatchGuardPortPaths.push(portPath);
+        return null;
+      },
     );
 
     expect(response.portPath).toBe("/dev/cu.usbmodem21221401");
+    expect(dispatchGuardPortPaths).toEqual([
+      undefined,
+      "/dev/cu.usbmodem21221401",
+      "/dev/cu.usbmodem21221401",
+    ]);
     expect(response.response).toEqual({
       ok: true,
       result: { runtime: { output_enabled: false } },

@@ -44,6 +44,12 @@ export type ActiveConnectionEndpoint =
       usbProductId?: number;
     };
 
+export type RuntimeIdentityBinding = {
+  transport: DeviceTransport;
+  binding: object | string;
+  endpoint: ActiveConnectionEndpoint;
+};
+
 export type ConnectionPresentation = {
   connectionLabel: string;
   endpointLabel: string;
@@ -151,6 +157,44 @@ export function isRuntimeIdentityVerifiedForTransport(
     runtime?.identityVerified === true &&
     runtime.transport === transport &&
     runtime.activeEndpoint?.kind === transport
+  );
+}
+
+export function isRuntimeIdentityVerifiedForBinding(
+  runtime:
+    | Pick<DeviceRuntime, "identityVerified" | "transport" | "activeEndpoint">
+    | null
+    | undefined,
+  transport: DeviceTransport,
+  confirmedBinding: RuntimeIdentityBinding | null | undefined,
+  dispatchBinding: object | string | null | undefined,
+): boolean {
+  return (
+    isRuntimeIdentityVerifiedForTransport(runtime, transport) &&
+    confirmedBinding?.transport === transport &&
+    confirmedBinding.binding === dispatchBinding &&
+    sameActiveEndpoint(runtime?.activeEndpoint, confirmedBinding.endpoint)
+  );
+}
+
+function sameActiveEndpoint(
+  left: ActiveConnectionEndpoint | null | undefined,
+  right: ActiveConnectionEndpoint | null | undefined,
+): boolean {
+  if (!left || !right || left.kind !== right.kind) {
+    return false;
+  }
+  if (left.kind === "http" && right.kind === "http") {
+    return left.url === right.url;
+  }
+  if (left.kind === "local_usb" && right.kind === "local_usb") {
+    return left.portPath === right.portPath;
+  }
+  return (
+    left.kind === "web_serial" &&
+    right.kind === "web_serial" &&
+    left.usbVendorId === right.usbVendorId &&
+    left.usbProductId === right.usbProductId
   );
 }
 

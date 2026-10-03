@@ -20,8 +20,14 @@ export type WebSerialDispatchResult<T> = {
 
 export function createWebSerialEndpointRequester({
   getDispatchAuthorizationError,
+  getDispatchIdentityError,
 }: {
   getDispatchAuthorizationError: (method: string) => DeviceApiError | null;
+  getDispatchIdentityError: (
+    deviceId: string,
+    method: string,
+    transport: object,
+  ) => DeviceApiError | null;
 }) {
   return async <T>(
     deviceId: string,
@@ -48,21 +54,22 @@ export function createWebSerialEndpointRequester({
       };
     };
     let authorizationError: DeviceApiError | null = null;
+    const request = (jsonlRequest: Parameters<typeof transport.request>[0]) =>
+      transport.request(jsonlRequest, {
+        beforeDispatch: () => {
+          authorizationError =
+            getDispatchAuthorizationError(method) ??
+            getDispatchIdentityError(deviceId, method, transport);
+          return authorizationError === null;
+        },
+      });
     try {
-      const response = await transport.request(
-        {
-          id: nextJsonlRequestId(),
-          method,
-          params,
-          timeoutMs: jsonlTimeoutMsForMethod(method, params),
-        },
-        {
-          beforeDispatch: () => {
-            authorizationError = getDispatchAuthorizationError(method);
-            return authorizationError === null;
-          },
-        },
-      );
+      const response = await request({
+        id: nextJsonlRequestId(),
+        method,
+        params,
+        timeoutMs: jsonlTimeoutMsForMethod(method, params),
+      });
       const envelope = response as JsonlEnvelope<T>;
       if (envelope?.ok && envelope.result !== undefined) {
         return withEndpoint({ ok: true, value: envelope.result });
@@ -82,7 +89,7 @@ export function createWebSerialEndpointRequester({
         return withEndpoint({ ok: false, error: authorizationError });
       }
       const recovered = await recoverWifiClearLikeTimeout<T>(
-        async (request) => transport.request(request),
+        async (retryRequest) => request(retryRequest),
         method,
         params,
       );
