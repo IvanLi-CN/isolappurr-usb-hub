@@ -73,7 +73,9 @@ import {
   fenceRuntimeMutationResult,
   getStablePowerLockOwner,
   httpBaseUrlForDevice,
+  httpRequestBaseUrlForDevice,
   isDeviceInfoResponse,
+  isDevicePollCurrent,
   isLinkedTransportActive,
   isRuntimeIdentityVerifiedForBinding,
   type JsonlEnvelope,
@@ -83,6 +85,7 @@ import {
   RUNTIME_MUTATION_METHODS,
   type RuntimeIdentityBinding,
   recoverWifiClearLikeTimeout,
+  resetDeviceRuntimeConnectionState,
   resetLocalUsbRuntimeState,
   resetLocalUsbRuntimeStateForDevice,
   resolveActiveDeviceTransport,
@@ -95,6 +98,7 @@ import {
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
   takeoverRecoveryError,
+  takePendingDevicePollBaseUrl,
   verifiedWifiHttpBaseUrl,
 } from "./device-runtime-support";
 import { requestHttpTransport } from "./device-runtime-transport";
@@ -164,6 +168,9 @@ function DeviceRuntimeScopeProvider({
   );
   const inflight = useRef<Set<string>>(new Set());
   const pollGeneration = useRef<Record<string, number>>({});
+  const pendingPollBaseUrlByDevice = useRef<Record<string, string | undefined>>(
+    {},
+  );
   const invalidateDevicePoll = useCallback((deviceId: string) => {
     pollGeneration.current[deviceId] =
       (pollGeneration.current[deviceId] ?? 0) + 1;
@@ -346,12 +353,15 @@ function DeviceRuntimeScopeProvider({
       localUsbPortByDevice.current = {};
       identityBindingByDevice.current = {};
       for (const device of devices) {
+        invalidateDevicePoll(device.id);
+        delete pendingPollBaseUrlByDevice.current[device.id];
+        delete preferredTransportByDevice.current[device.id];
         forgetWebSerialDeviceTransport(device.id);
       }
-      setRuntimeById((prev) => resetLocalUsbRuntimeState(prev));
+      setRuntimeById((prev) => resetDeviceRuntimeConnectionState(prev));
     }
     wasLeaderRef.current = isLeader;
-  }, [devices, isLeader]);
+  }, [devices, invalidateDevicePoll, isLeader]);
 
   useEffect(() => {
     setRuntimeById((prev) => {
@@ -362,6 +372,7 @@ function DeviceRuntimeScopeProvider({
           delete next[id];
           delete identityBindingByDevice.current[id];
           delete localUsbPortByDevice.current[id];
+          delete pendingPollBaseUrlByDevice.current[id];
           delete localUsbRequestQueues.current[id];
           delete httpRequestQueues.current[id];
           delete deviceMutationQueues.current[id];
@@ -684,11 +695,7 @@ function DeviceRuntimeScopeProvider({
             const currentDevice = devicesRef.current.find(
               (device) => device.id === deviceId,
             );
-            if (
-              RUNTIME_MUTATION_METHODS.has(method) &&
-              (!currentDevice ||
-                httpBaseUrlForDevice(currentDevice) !== baseUrl)
-            ) {
+            if (RUNTIME_MUTATION_METHODS.has(method) && !currentDevice) {
               return runtimeMutationIdentityError(method, false);
             }
             return getMutationDispatchError(deviceId, method, "http", baseUrl);
@@ -781,14 +788,27 @@ function DeviceRuntimeScopeProvider({
   );
 
   const pollDeviceRef = useRef<
-    (deviceId: string, baseUrl: string) => Promise<void>
+    (
+      deviceId: string,
+      baseUrl: string,
+      queueIfInFlight?: boolean,
+    ) => Promise<void>
   >(() => Promise.resolve());
   const pollDevice = useCallback(
-    async (deviceId: string, baseUrl: string) => {
+    async (deviceId: string, baseUrl: string, queueIfInFlight = false) => {
       if (inflight.current.has(deviceId)) {
+        if (queueIfInFlight) {
+          pendingPollBaseUrlByDevice.current[deviceId] = baseUrl;
+        }
         return;
       }
       const generation = pollGeneration.current[deviceId] ?? 0;
+      const isCurrentPoll = () =>
+        isDevicePollCurrent(
+          isLeaderRef.current && coordinator.hasCurrentLease(),
+          generation,
+          pollGeneration.current[deviceId] ?? 0,
+        );
       inflight.current.add(deviceId);
       try {
         let res: Result<PortsResponse> | null = null;
@@ -805,6 +825,9 @@ function DeviceRuntimeScopeProvider({
               candidate,
               "ports.get",
             );
+          if (!isCurrentPoll()) {
+            return;
+          }
           const candidateRes = portsDispatch.result;
           markChannelResult(deviceId, candidate, candidateRes);
           if (candidateRes.ok) {
@@ -818,6 +841,9 @@ function DeviceRuntimeScopeProvider({
                 candidate,
                 "info",
               );
+            if (!isCurrentPoll()) {
+              return;
+            }
             const infoRes = infoDispatch.result;
             identityVerified =
               infoRes.ok &&
@@ -855,24 +881,26 @@ function DeviceRuntimeScopeProvider({
         if (!res) {
           return;
         }
-        const stalePoll =
-          (pollGeneration.current[deviceId] ?? 0) !== generation;
+        if (!isCurrentPoll()) {
+          return;
+        }
         const parsedRuntimePorts = res.ok
           ? runtimePortsFromResponse(res.value)
           : null;
-        if (!stalePoll) {
-          if (
-            res.ok &&
-            parsedRuntimePorts &&
-            identityBindingSnapshot &&
-            !isLocalUsbSuppressedForFlashDevice(deviceId)
-          ) {
-            identityBindingByDevice.current[deviceId] = identityBindingSnapshot;
-          } else {
-            delete identityBindingByDevice.current[deviceId];
-          }
+        if (
+          res.ok &&
+          parsedRuntimePorts &&
+          identityBindingSnapshot &&
+          !isLocalUsbSuppressedForFlashDevice(deviceId)
+        ) {
+          identityBindingByDevice.current[deviceId] = identityBindingSnapshot;
+        } else {
+          delete identityBindingByDevice.current[deviceId];
         }
         setRuntimeById((prev) => {
+          if (!isCurrentPoll()) {
+            return prev;
+          }
           const current = prev[deviceId];
           if (!current) {
             return prev;
@@ -896,7 +924,7 @@ function DeviceRuntimeScopeProvider({
                     message:
                       "missing port_a or port_c in /api/v1/ports response",
                   },
-                  activeEndpoint: stalePoll ? current.activeEndpoint : null,
+                  activeEndpoint: null,
                 },
               };
             }
@@ -908,14 +936,10 @@ function DeviceRuntimeScopeProvider({
                 lastError: null,
                 transport,
                 identityVerified,
-                activeEndpoint: stalePoll
-                  ? current.activeEndpoint
-                  : isLocalUsbSuppressedForFlashDevice(deviceId)
-                    ? null
-                    : endpointSnapshot,
-                deviceInfo: stalePoll
-                  ? current.deviceInfo
-                  : (infoSnapshot ?? current.deviceInfo),
+                activeEndpoint: isLocalUsbSuppressedForFlashDevice(deviceId)
+                  ? null
+                  : endpointSnapshot,
+                deviceInfo: infoSnapshot ?? current.deviceInfo,
                 hub,
                 ports,
               },
@@ -951,11 +975,11 @@ function DeviceRuntimeScopeProvider({
               ...current,
               lastError: res.error,
               transport: activeTransport,
-              activeEndpoint: stalePoll ? current.activeEndpoint : null,
+              activeEndpoint: null,
             },
           };
         });
-        if (!stalePoll && infoSnapshot && identityVerified) {
+        if (infoSnapshot && identityVerified) {
           const cache = deviceNameCacheFromInfo(infoSnapshot);
           if (cache.state !== "unknown") {
             void updateDeviceNameCache(
@@ -967,13 +991,21 @@ function DeviceRuntimeScopeProvider({
         }
       } finally {
         inflight.current.delete(deviceId);
-        if ((pollGeneration.current[deviceId] ?? 0) !== generation) {
-          void pollDeviceRef.current(deviceId, baseUrl);
+        const retryBaseUrl = takePendingDevicePollBaseUrl(
+          pendingPollBaseUrlByDevice.current,
+          deviceId,
+          (pollGeneration.current[deviceId] ?? 0) !== generation
+            ? baseUrl
+            : null,
+        );
+        if (isLeaderRef.current && retryBaseUrl) {
+          void pollDeviceRef.current(deviceId, retryBaseUrl);
         }
       }
     },
     [
       devices,
+      coordinator,
       markChannelResult,
       orderedTransports,
       requestTransportWithEndpoint,
@@ -1093,14 +1125,15 @@ function DeviceRuntimeScopeProvider({
         value: { baseUrl: link.baseUrl },
       });
       const currentTransport = runtimeById[link.deviceId]?.transport;
-      if (currentTransport === "http") {
-        invalidateDevicePoll(link.deviceId);
-        clearActiveEndpoint(link.deviceId);
+      if (currentTransport && currentTransport !== "http") {
+        return;
       }
+      invalidateDevicePoll(link.deviceId);
+      clearActiveEndpoint(link.deviceId);
       if (!currentTransport) {
         preferredTransportByDevice.current[link.deviceId] = "http";
       }
-      void pollDevice(link.deviceId, link.baseUrl);
+      void pollDevice(link.deviceId, link.baseUrl, true);
     });
   }, [
     clearActiveEndpoint,
@@ -1124,7 +1157,10 @@ function DeviceRuntimeScopeProvider({
       }
       await Promise.all(
         devices.map((d) =>
-          pollDeviceRef.current(d.id, httpBaseUrlForDevice(d)),
+          pollDeviceRef.current(
+            d.id,
+            httpRequestBaseUrlForDevice(d, runtimeByIdRef.current[d.id]),
+          ),
         ),
       );
     };
@@ -1147,9 +1183,12 @@ function DeviceRuntimeScopeProvider({
       if (!device) {
         return;
       }
-      await pollDevice(deviceId, httpBaseUrlForDevice(device));
+      await pollDevice(
+        deviceId,
+        httpRequestBaseUrlForDevice(device, runtimeById[deviceId]),
+      );
     },
-    [coordinator, devices, pollDevice, requestLeaderRpc],
+    [coordinator, devices, pollDevice, requestLeaderRpc, runtimeById],
   );
 
   const deviceInfo = useCallback(
@@ -1179,7 +1218,7 @@ function DeviceRuntimeScopeProvider({
       const res = await requestTransport<DeviceInfoResponse>(
         deviceId,
         activeTransport === "http"
-          ? httpBaseUrlForDevice(device)
+          ? httpRequestBaseUrlForDevice(device, runtimeById[deviceId])
           : device.baseUrl,
         activeTransport,
         "info",
@@ -1282,7 +1321,10 @@ function DeviceRuntimeScopeProvider({
         const confirmedBinding = identityBindingByDevice.current[deviceId];
         let dispatchBinding: object | string | null = null;
         if (transport === "http") {
-          dispatchBinding = httpBaseUrlForDevice(device);
+          dispatchBinding = httpRequestBaseUrlForDevice(
+            device,
+            runtimeById[deviceId],
+          );
         } else if (transport === "web_serial") {
           dispatchBinding = getWebSerialDeviceTransport(deviceId);
         } else {
@@ -1321,7 +1363,9 @@ function DeviceRuntimeScopeProvider({
         }
         const candidate = await requestTransport<T>(
           deviceId,
-          transport === "http" ? httpBaseUrlForDevice(device) : device.baseUrl,
+          transport === "http"
+            ? httpRequestBaseUrlForDevice(device, runtimeById[deviceId])
+            : device.baseUrl,
           transport,
           method,
           params,

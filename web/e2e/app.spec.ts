@@ -538,13 +538,27 @@ test("shows the identity-verified live endpoint in the desktop shell header", as
   );
 
   await routeOnlineDeviceWithLegacyPdDiagnostics(page);
+  let releaseSavedUrlInfo: (() => void) | undefined;
+  let notifySavedUrlInfoStarted: (() => void) | undefined;
+  let blockSavedUrlInfo = true;
+  const savedUrlInfoStarted = new Promise<void>((resolve) => {
+    notifySavedUrlInfoStarted = resolve;
+  });
+  await page.route("**/api/v1/info", async (route) => {
+    if (blockSavedUrlInfo && route.request().url().startsWith(device.baseUrl)) {
+      blockSavedUrlInfo = false;
+      notifySavedUrlInfoStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseSavedUrlInfo = resolve;
+      });
+    }
+    await route.fallback();
+  });
   await page.goto("/devices/aabbcc001122");
+  await savedUrlInfoStarted;
 
   await expect(page.getByTestId("app-header-device-title")).toHaveText(
     "Demo Hub",
-  );
-  await expect(page.getByTestId("app-header-device-subtitle")).toHaveText(
-    "id: aabbcc • http://isolapurr-usb-hub-aabbcc001122.local",
   );
 
   const discoveredBaseUrl = "http://192.168.31.224";
@@ -558,6 +572,7 @@ test("shows the identity-verified live endpoint in the desktop shell header", as
     },
     { deviceId: device.id, baseUrl: discoveredBaseUrl },
   );
+  releaseSavedUrlInfo?.();
   await expect(page.getByTestId("app-header-device-subtitle")).toHaveText(
     `id: aabbcc • ${discoveredBaseUrl}`,
   );

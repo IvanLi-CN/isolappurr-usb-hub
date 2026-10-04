@@ -1,5 +1,6 @@
 # History
 
+- The endpoint convergence review found that a network-link URL could be dropped while a poll was in flight, and the confirmed URL was not reused for later HTTP writes. The runtime now retries the newest candidate first, uses the verified active URL for follow-up polls and mutations, and discards poll results after generation invalidation or leader demotion.
 - The active-endpoint copy fix exposed a mutation race: identity was confirmed for one binding, but a queued mutation checked only the transport kind before dispatch. The runtime now retains the identity-confirmed binding in leader-local memory and rechecks the actual HTTP URL, Local USB path, or held Web Serial transport at dispatch; no binding object is added to cross-tab snapshots.
 - Added the explicit runtime `port.data_set` contract so Web controls can keep a data link disabled or enabled without redefining the legacy 250ms `port.replug` pulse.
 

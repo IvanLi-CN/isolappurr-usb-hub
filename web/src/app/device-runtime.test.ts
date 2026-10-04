@@ -4,11 +4,14 @@ import { createDemoDesktopAgent } from "../domain/desktopAgent";
 import { LocalUsbAgentHttpError } from "../domain/hardwareConsole";
 import { ensureDemoFetchInterceptor, resetDemoModeSession } from "./demo-mode";
 import {
+  httpRequestBaseUrlForDevice,
+  isDevicePollCurrent,
   isRuntimeIdentityVerifiedForBinding,
   isRuntimeIdentityVerifiedForTransport,
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   orderedDeviceTransports,
+  resetDeviceRuntimeConnectionState,
   resetLocalUsbRuntimeState,
   resolveActiveDeviceTransport,
   resolvePolledActiveEndpoint,
@@ -19,6 +22,7 @@ import {
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
+  takePendingDevicePollBaseUrl,
 } from "./device-runtime-support";
 
 function mockDemoSessionStorage() {
@@ -111,6 +115,39 @@ describe("isRuntimeIdentityVerifiedForTransport", () => {
 });
 
 describe("isRuntimeIdentityVerifiedForBinding", () => {
+  test("binds HTTP mutations to the verified active URL, not the saved URL", () => {
+    const activeUrl = "http://192.168.31.224";
+    const savedUrl = "http://hub.local";
+    const endpoint = { kind: "http" as const, url: activeUrl };
+    const runtime = {
+      identityVerified: true,
+      transport: "http" as const,
+      activeEndpoint: endpoint,
+    };
+    const confirmedBinding = {
+      transport: "http" as const,
+      binding: activeUrl,
+      endpoint,
+    };
+
+    expect(
+      isRuntimeIdentityVerifiedForBinding(
+        runtime,
+        "http",
+        confirmedBinding,
+        activeUrl,
+      ),
+    ).toBe(true);
+    expect(
+      isRuntimeIdentityVerifiedForBinding(
+        runtime,
+        "http",
+        confirmedBinding,
+        savedUrl,
+      ),
+    ).toBe(false);
+  });
+
   test("requires the same Web Serial transport object as the identity poll", () => {
     const confirmedPort = {};
     const replacementPort = {};
@@ -267,6 +304,82 @@ describe("resolvePolledActiveEndpoint", () => {
     expect(
       resolvePolledActiveEndpoint({ ...valid, transportLocked: true }),
     ).toBeNull();
+  });
+});
+
+describe("runtime poll ownership helpers", () => {
+  test("commits only current leader poll results", () => {
+    expect(isDevicePollCurrent(true, 4, 4)).toBe(true);
+    expect(isDevicePollCurrent(false, 4, 4)).toBe(false);
+    expect(isDevicePollCurrent(true, 4, 5)).toBe(false);
+  });
+
+  test("retries the newest queued poll URL before a stale request URL", () => {
+    const pending = { d1: "http://192.168.31.224" };
+    expect(
+      takePendingDevicePollBaseUrl(pending, "d1", "http://hub.local"),
+    ).toBe("http://192.168.31.224");
+    expect(pending).toEqual({});
+    expect(takePendingDevicePollBaseUrl(pending, "d1", null)).toBeNull();
+  });
+
+  test("uses the verified active HTTP URL for later requests", () => {
+    const device = {
+      id: "aabbcc001122",
+      name: "Hub",
+      baseUrl: "http://hub.local",
+    };
+    const runtime = {
+      identityVerified: true,
+      transport: "http" as const,
+      activeEndpoint: {
+        kind: "http" as const,
+        url: "http://192.168.31.224",
+      },
+    };
+    expect(httpRequestBaseUrlForDevice(device, runtime)).toBe(
+      "http://192.168.31.224",
+    );
+    expect(
+      httpRequestBaseUrlForDevice(device, {
+        ...runtime,
+        identityVerified: false,
+      }),
+    ).toBe("http://hub.local");
+  });
+
+  test("drops connection authority when this tab loses the leader lease", () => {
+    const runtime = {
+      lastOkAt: 100,
+      lastError: null,
+      transport: "http" as const,
+      activeEndpoint: { kind: "http" as const, url: "http://hub.local" },
+      identityVerified: true,
+      channels: {
+        http: { lastOkAt: 100, lastError: null },
+        web_serial: { lastOkAt: null, lastError: null },
+        local_usb: { lastOkAt: null, lastError: null },
+      },
+      hub: null,
+      ports: null,
+      pending: { port_a: false, port_c: false },
+      powerConfig: null,
+      idleBias: null,
+      pdDiagnostics: null,
+      revision: 0,
+      command: null,
+    };
+    expect(resetDeviceRuntimeConnectionState({ d1: runtime }).d1).toMatchObject(
+      {
+        lastOkAt: null,
+        transport: null,
+        activeEndpoint: null,
+        identityVerified: false,
+        channels: {
+          http: { lastOkAt: null, lastError: null },
+        },
+      },
+    );
   });
 });
 

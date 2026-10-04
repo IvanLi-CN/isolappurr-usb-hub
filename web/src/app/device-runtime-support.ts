@@ -266,6 +266,60 @@ export type DeviceRuntime = {
   command: SharedRuntimeCommandState | null;
 };
 
+export function isDevicePollCurrent(
+  isLeader: boolean,
+  generation: number,
+  currentGeneration: number,
+): boolean {
+  return isLeader && generation === currentGeneration;
+}
+
+export function takePendingDevicePollBaseUrl(
+  pendingByDevice: Record<string, string | undefined>,
+  deviceId: string,
+  retryBaseUrl: string | null,
+): string | null {
+  const pendingBaseUrl = pendingByDevice[deviceId] ?? null;
+  delete pendingByDevice[deviceId];
+  return pendingBaseUrl ?? retryBaseUrl;
+}
+
+export function resetDeviceRuntimeConnectionState(
+  runtimeById: Record<string, DeviceRuntime>,
+): Record<string, DeviceRuntime> {
+  let changed = false;
+  const next: Record<string, DeviceRuntime> = {};
+  for (const [deviceId, runtime] of Object.entries(runtimeById)) {
+    const channels = Object.fromEntries(
+      Object.entries(runtime.channels).map(([transport]) => [
+        transport,
+        { lastOkAt: null, lastError: null },
+      ]),
+    ) as Record<DeviceTransport, ChannelRuntime>;
+    if (
+      runtime.lastOkAt !== null ||
+      runtime.transport !== null ||
+      runtime.activeEndpoint !== null ||
+      runtime.identityVerified ||
+      Object.values(runtime.channels).some(
+        (channel) => channel.lastOkAt !== null || channel.lastError !== null,
+      )
+    ) {
+      changed = true;
+    }
+    next[deviceId] = {
+      ...runtime,
+      lastOkAt: null,
+      lastError: null,
+      transport: null,
+      activeEndpoint: null,
+      identityVerified: false,
+      channels,
+    };
+  }
+  return changed ? next : runtimeById;
+}
+
 export function applyOptimisticPowerConfig(
   current: PowerConfigResponse | null | undefined,
   input: PowerConfigInput,
@@ -407,6 +461,23 @@ type PowerLockOwnerRecord = {
 
 export function httpBaseUrlForDevice(device: StoredDevice): string {
   return device.transports?.httpBaseUrl ?? device.baseUrl;
+}
+
+export function httpRequestBaseUrlForDevice(
+  device: StoredDevice,
+  runtime:
+    | Pick<DeviceRuntime, "transport" | "activeEndpoint" | "identityVerified">
+    | null
+    | undefined,
+): string {
+  if (
+    runtime?.identityVerified &&
+    runtime.transport === "http" &&
+    runtime.activeEndpoint?.kind === "http"
+  ) {
+    return runtime.activeEndpoint.url;
+  }
+  return httpBaseUrlForDevice(device);
 }
 
 export function verifiedWifiHttpBaseUrl(
