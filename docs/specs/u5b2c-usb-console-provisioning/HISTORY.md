@@ -95,3 +95,11 @@ requires the exact active transport to have confirmed the canonical device
 identity before dispatching mutations. Regression coverage exercises lease
 expiry, cross-transport identity rejection, and held Web Serial cleanup during
 live/demo scope changes.
+
+A follow-up review found that polling could replace a newly discovered HTTP
+candidate with the saved profile URL, and partial Web Serial USB metadata could
+omit which VID/PID field was unavailable. Polls now use their supplied request
+URL, retain it only after matching identity confirmation, and render missing
+VID/PID fields explicitly. E2E coverage exercises a network-link URL that
+differs from the saved address, while resolver tests and a Storybook state cover
+partial Web Serial metadata.
