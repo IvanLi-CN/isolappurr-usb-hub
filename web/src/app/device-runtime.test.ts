@@ -4,17 +4,25 @@ import { createDemoDesktopAgent } from "../domain/desktopAgent";
 import { LocalUsbAgentHttpError } from "../domain/hardwareConsole";
 import { ensureDemoFetchInterceptor, resetDemoModeSession } from "./demo-mode";
 import {
+  httpRequestBaseUrlForDevice,
+  isDevicePollCurrent,
+  isRuntimeIdentityVerifiedForBinding,
+  isRuntimeIdentityVerifiedForTransport,
   jsonlTimeoutMsForMethod,
   localUsbErrorToDeviceApiError,
   orderedDeviceTransports,
+  resetDeviceRuntimeConnectionState,
   resetLocalUsbRuntimeState,
   resolveActiveDeviceTransport,
+  resolvePolledActiveEndpoint,
   resolveTransportBadgeState,
   runQueuedDeviceRequest,
+  runtimeMutationIdentityError,
   shortApiError,
   shouldForgetWebSerialTransport,
   shouldResetLocalUsbConnectionCache,
   shouldReuseLocalUsbAgentForDemoMode,
+  takePendingDevicePollBaseUrl,
 } from "./device-runtime-support";
 
 function mockDemoSessionStorage() {
@@ -72,6 +80,111 @@ describe("localUsbErrorToDeviceApiError", () => {
   });
 });
 
+describe("runtimeMutationIdentityError", () => {
+  test("blocks mutations until the canonical device identity is confirmed", () => {
+    expect(runtimeMutationIdentityError("port.power_set", false)).toEqual({
+      kind: "invalid_response",
+      message: "device identity is not confirmed",
+    });
+    expect(runtimeMutationIdentityError("port.power_set", true)).toBeNull();
+    expect(runtimeMutationIdentityError("ports.get", false)).toBeNull();
+  });
+});
+
+describe("isRuntimeIdentityVerifiedForTransport", () => {
+  const httpRuntime = {
+    identityVerified: true,
+    transport: "http" as const,
+    activeEndpoint: { kind: "http" as const, url: "http://hub.local" },
+  };
+
+  test("requires identity verification for the exact active transport", () => {
+    expect(isRuntimeIdentityVerifiedForTransport(httpRuntime, "http")).toBe(
+      true,
+    );
+    expect(
+      isRuntimeIdentityVerifiedForTransport(httpRuntime, "web_serial"),
+    ).toBe(false);
+    expect(
+      isRuntimeIdentityVerifiedForTransport(
+        { ...httpRuntime, activeEndpoint: null },
+        "http",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isRuntimeIdentityVerifiedForBinding", () => {
+  test("binds HTTP mutations to the verified active URL, not the saved URL", () => {
+    const activeUrl = "http://192.168.31.224";
+    const savedUrl = "http://hub.local";
+    const endpoint = { kind: "http" as const, url: activeUrl };
+    const runtime = {
+      identityVerified: true,
+      transport: "http" as const,
+      activeEndpoint: endpoint,
+    };
+    const confirmedBinding = {
+      transport: "http" as const,
+      binding: activeUrl,
+      endpoint,
+    };
+
+    expect(
+      isRuntimeIdentityVerifiedForBinding(
+        runtime,
+        "http",
+        confirmedBinding,
+        activeUrl,
+      ),
+    ).toBe(true);
+    expect(
+      isRuntimeIdentityVerifiedForBinding(
+        runtime,
+        "http",
+        confirmedBinding,
+        savedUrl,
+      ),
+    ).toBe(false);
+  });
+
+  test("requires the same Web Serial transport object as the identity poll", () => {
+    const confirmedPort = {};
+    const replacementPort = {};
+    const runtime = {
+      identityVerified: true,
+      transport: "web_serial" as const,
+      activeEndpoint: {
+        kind: "web_serial" as const,
+        usbVendorId: 0x303a,
+        usbProductId: 0x1001,
+      },
+    };
+    const confirmedBinding = {
+      transport: "web_serial" as const,
+      binding: confirmedPort,
+      endpoint: runtime.activeEndpoint,
+    };
+
+    expect(
+      isRuntimeIdentityVerifiedForBinding(
+        runtime,
+        "web_serial",
+        confirmedBinding,
+        confirmedPort,
+      ),
+    ).toBe(true);
+    expect(
+      isRuntimeIdentityVerifiedForBinding(
+        runtime,
+        "web_serial",
+        confirmedBinding,
+        replacementPort,
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("shouldResetLocalUsbConnectionCache", () => {
   test("keeps cached agent and device links for structured devd errors", () => {
     expect(
@@ -108,6 +221,168 @@ describe("shouldReuseLocalUsbAgentForDemoMode", () => {
   });
 });
 
+describe("resolvePolledActiveEndpoint", () => {
+  const httpEndpoint = {
+    kind: "http" as const,
+    url: "http://192.168.31.224",
+  };
+
+  test("accepts the actual HTTP URL only after a matching identity poll", () => {
+    expect(
+      resolvePolledActiveEndpoint({
+        currentGeneration: true,
+        identityVerified: true,
+        transportLocked: false,
+        portsBinding: "http://192.168.31.224",
+        infoBinding: "http://192.168.31.224",
+        portsEndpoint: httpEndpoint,
+        infoEndpoint: httpEndpoint,
+      }),
+    ).toEqual(httpEndpoint);
+  });
+
+  test("accepts the actual Local USB path without using an HTTP address", () => {
+    const endpoint = {
+      kind: "local_usb" as const,
+      portPath: "/dev/cu.usbmodem21231401",
+    };
+    expect(
+      resolvePolledActiveEndpoint({
+        currentGeneration: true,
+        identityVerified: true,
+        transportLocked: false,
+        portsBinding: "port:/dev/cu.usbmodem21231401",
+        infoBinding: "port:/dev/cu.usbmodem21231401",
+        portsEndpoint: endpoint,
+        infoEndpoint: endpoint,
+      }),
+    ).toEqual(endpoint);
+  });
+
+  test("accepts Web Serial metadata from one held transport object", () => {
+    const transport = {};
+    const endpoint = {
+      kind: "web_serial" as const,
+      usbVendorId: 0x303a,
+      usbProductId: 0x1001,
+    };
+    expect(
+      resolvePolledActiveEndpoint({
+        currentGeneration: true,
+        identityVerified: true,
+        transportLocked: false,
+        portsBinding: transport,
+        infoBinding: transport,
+        portsEndpoint: endpoint,
+        infoEndpoint: endpoint,
+      }),
+    ).toEqual(endpoint);
+  });
+
+  test("rejects delayed, switched-target, unverified, and exclusive results", () => {
+    const valid = {
+      currentGeneration: true,
+      identityVerified: true,
+      transportLocked: false,
+      portsBinding: "http://192.168.31.224",
+      infoBinding: "http://192.168.31.224",
+      portsEndpoint: httpEndpoint,
+      infoEndpoint: httpEndpoint,
+    };
+    expect(
+      resolvePolledActiveEndpoint({ ...valid, currentGeneration: false }),
+    ).toBeNull();
+    expect(
+      resolvePolledActiveEndpoint({
+        ...valid,
+        infoBinding: "http://192.168.31.225",
+      }),
+    ).toBeNull();
+    expect(
+      resolvePolledActiveEndpoint({ ...valid, identityVerified: false }),
+    ).toBeNull();
+    expect(
+      resolvePolledActiveEndpoint({ ...valid, transportLocked: true }),
+    ).toBeNull();
+  });
+});
+
+describe("runtime poll ownership helpers", () => {
+  test("commits only current leader poll results", () => {
+    expect(isDevicePollCurrent(true, 4, 4)).toBe(true);
+    expect(isDevicePollCurrent(false, 4, 4)).toBe(false);
+    expect(isDevicePollCurrent(true, 4, 5)).toBe(false);
+  });
+
+  test("retries the newest queued poll URL before a stale request URL", () => {
+    const pending = { d1: "http://192.168.31.224" };
+    expect(
+      takePendingDevicePollBaseUrl(pending, "d1", "http://hub.local"),
+    ).toBe("http://192.168.31.224");
+    expect(pending).toEqual({});
+    expect(takePendingDevicePollBaseUrl(pending, "d1", null)).toBeNull();
+  });
+
+  test("uses the verified active HTTP URL for later requests", () => {
+    const device = {
+      id: "aabbcc001122",
+      name: "Hub",
+      baseUrl: "http://hub.local",
+    };
+    const runtime = {
+      identityVerified: true,
+      transport: "http" as const,
+      activeEndpoint: {
+        kind: "http" as const,
+        url: "http://192.168.31.224",
+      },
+    };
+    expect(httpRequestBaseUrlForDevice(device, runtime)).toBe(
+      "http://192.168.31.224",
+    );
+    expect(
+      httpRequestBaseUrlForDevice(device, {
+        ...runtime,
+        identityVerified: false,
+      }),
+    ).toBe("http://hub.local");
+  });
+
+  test("drops connection authority when this tab loses the leader lease", () => {
+    const runtime = {
+      lastOkAt: 100,
+      lastError: null,
+      transport: "http" as const,
+      activeEndpoint: { kind: "http" as const, url: "http://hub.local" },
+      identityVerified: true,
+      channels: {
+        http: { lastOkAt: 100, lastError: null },
+        web_serial: { lastOkAt: null, lastError: null },
+        local_usb: { lastOkAt: null, lastError: null },
+      },
+      hub: null,
+      ports: null,
+      pending: { port_a: false, port_c: false },
+      powerConfig: null,
+      idleBias: null,
+      pdDiagnostics: null,
+      revision: 0,
+      command: null,
+    };
+    expect(resetDeviceRuntimeConnectionState({ d1: runtime }).d1).toMatchObject(
+      {
+        lastOkAt: null,
+        transport: null,
+        activeEndpoint: null,
+        identityVerified: false,
+        channels: {
+          http: { lastOkAt: null, lastError: null },
+        },
+      },
+    );
+  });
+});
+
 describe("resetLocalUsbRuntimeState", () => {
   test("clears local usb transport state after a mode switch", () => {
     expect(
@@ -116,6 +391,11 @@ describe("resetLocalUsbRuntimeState", () => {
           lastOkAt: 1,
           lastError: null,
           transport: "local_usb",
+          activeEndpoint: {
+            kind: "local_usb",
+            portPath: "/dev/cu.usbmodem21221401",
+          },
+          identityVerified: true,
           channels: {
             http: { lastOkAt: 2, lastError: null },
             web_serial: { lastOkAt: 3, lastError: null },
@@ -134,6 +414,8 @@ describe("resetLocalUsbRuntimeState", () => {
         lastOkAt: 1,
         lastError: null,
         transport: null,
+        activeEndpoint: null,
+        identityVerified: true,
         channels: {
           http: { lastOkAt: 2, lastError: null },
           web_serial: { lastOkAt: 3, lastError: null },
@@ -231,6 +513,8 @@ describe("resolveActiveDeviceTransport", () => {
           lastOkAt: Date.now(),
           lastError: null,
           transport: "web_serial",
+          activeEndpoint: null,
+          identityVerified: false,
           channels: {
             http: { lastOkAt: Date.now(), lastError: null },
             web_serial: { lastOkAt: Date.now(), lastError: null },
@@ -260,6 +544,8 @@ describe("resolveActiveDeviceTransport", () => {
             message: "Web Serial transport disconnected",
           },
           transport: "web_serial",
+          activeEndpoint: null,
+          identityVerified: false,
           channels: {
             http: { lastOkAt: Date.now(), lastError: null },
             web_serial: {

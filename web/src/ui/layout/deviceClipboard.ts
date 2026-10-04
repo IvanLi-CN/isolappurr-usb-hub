@@ -18,17 +18,20 @@ export function formatDeviceClipboardContent({
   deviceName,
   deviceId,
   connection,
+  endpoint,
 }: {
   deviceName: string;
   deviceId: string;
   connection: string;
+  endpoint: string;
 }): DeviceClipboardContent {
   const name = singleLine(deviceName);
   const id = singleLine(deviceId.trim().toLowerCase());
   const transport = singleLine(connection);
+  const activeEndpoint = singleLine(endpoint);
   return {
-    plainText: `Device name: ${name}, Device ID: ${id}, Connection: ${transport}`,
-    markdown: `**Device name:** ${escapeMarkdown(name)}, **Device ID:** \`${id}\`, **Connection:** ${escapeMarkdown(transport)}`,
+    plainText: `Device name: ${name}, Device ID: ${id}, Connection: ${transport}, Endpoint: ${activeEndpoint}`,
+    markdown: `**Device name:** ${escapeMarkdown(name)}, **Device ID:** \`${id}\`, **Connection:** ${escapeMarkdown(transport)}, **Endpoint:** ${escapeMarkdown(activeEndpoint)}`,
   };
 }
 

@@ -1,5 +1,7 @@
 # History
 
+- The endpoint convergence review found that a network-link URL could be dropped while a poll was in flight, and the confirmed URL was not reused for later HTTP writes. The runtime now retries the newest candidate first, uses the verified active URL for follow-up polls and mutations, and discards poll results after generation invalidation or leader demotion.
+- The active-endpoint copy fix exposed a mutation race: identity was confirmed for one binding, but a queued mutation checked only the transport kind before dispatch. The runtime now retains the identity-confirmed binding in leader-local memory and rechecks the actual HTTP URL, Local USB path, or held Web Serial transport at dispatch; no binding object is added to cross-tab snapshots.
 - Added the explicit runtime `port.data_set` contract so Web controls can keep a data link disabled or enabled without redefining the legacy 250ms `port.replug` pulse.
 
 ## Creation
@@ -69,3 +71,36 @@ ten minutes, keeps live and demo browser sessions separate, and keeps a
 multi-result dialog open until its final addable result is saved. Desktop scan
 results use an opaque monotonic run identifier and remain separate from live
 service discovery.
+
+## 2026-10-04
+
+The original saved-device copy contract intentionally included only the device
+name, canonical ID, and active connection label, so copying omitted the current
+endpoint by design. The subtitle was independently populated from the saved
+profile `baseUrl`, which could describe a historical or alternate HTTP address
+when Local USB or Web Serial was active. Those two independent sources caused
+the header and copied details to disagree about the connection.
+
+The runtime now publishes a current endpoint only after a successful ports
+request and matching full `device_id` confirmation from the same transport
+target and poll generation. The header subtitle and clipboard share one
+resolver; disconnects and exclusive flash handoffs report an unavailable
+endpoint without reusing saved or historical data. The copy contract now has
+four fields, and the Web Serial endpoint uses metadata from the port held by
+the active browser transport.
+
+The Tier 3 review found that a delayed snapshot from a lease-expired leader
+could still be accepted, and a device mutation could reuse identity confirmed
+on a different transport. The runtime now rejects expired-leader snapshots and
+requires the exact active transport to have confirmed the canonical device
+identity before dispatching mutations. Regression coverage exercises lease
+expiry, cross-transport identity rejection, and held Web Serial cleanup during
+live/demo scope changes.
+
+A follow-up review found that polling could replace a newly discovered HTTP
+candidate with the saved profile URL, and partial Web Serial USB metadata could
+omit which VID/PID field was unavailable. Polls now use their supplied request
+URL, retain it only after matching identity confirmation, and render missing
+VID/PID fields explicitly. E2E coverage exercises a network-link URL that
+differs from the saved address, while resolver tests and a Storybook state cover
+partial Web Serial metadata.

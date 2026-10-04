@@ -2,6 +2,7 @@ import { resolveStoredDeviceDisplayName } from "../domain/deviceName";
 import type { StoredDevice } from "../domain/devices";
 import type { PortId } from "../domain/ports";
 import {
+  type ConnectionPresentation,
   type ConnectionState,
   type DeviceRuntime,
   type DeviceRuntimeContextValue,
@@ -46,6 +47,71 @@ type DeviceRuntimeValueParams = {
 >;
 
 const OFFLINE_THRESHOLD_MS = 10_000;
+
+function transportLabel(transport: DeviceTransport): string {
+  if (transport === "http") {
+    return "Wi-Fi / LAN";
+  }
+  return transport === "local_usb" ? "Local USB" : "Web Serial";
+}
+
+export function resolveConnectionPresentation(
+  state: ConnectionState,
+  runtime: DeviceRuntime | null | undefined,
+): ConnectionPresentation {
+  if (state !== "online" || !runtime?.transport) {
+    return { connectionLabel: "Not connected", endpointLabel: "Unavailable" };
+  }
+
+  if (!runtime.identityVerified) {
+    return {
+      connectionLabel: transportLabel(runtime.transport),
+      endpointLabel: "Unavailable",
+    };
+  }
+
+  const endpoint = runtime.activeEndpoint;
+  if (!endpoint || endpoint.kind !== runtime.transport) {
+    return {
+      connectionLabel: transportLabel(runtime.transport),
+      endpointLabel: "Unavailable",
+    };
+  }
+
+  if (endpoint.kind === "http") {
+    return {
+      connectionLabel: transportLabel(runtime.transport),
+      endpointLabel: endpoint.url.trim() || "Unavailable",
+    };
+  }
+  if (endpoint.kind === "local_usb") {
+    return {
+      connectionLabel: transportLabel(runtime.transport),
+      endpointLabel: endpoint.portPath.trim() || "Unavailable",
+    };
+  }
+
+  const vendorId = endpoint.usbVendorId;
+  const productId = endpoint.usbProductId;
+  if (vendorId === undefined && productId === undefined) {
+    return {
+      connectionLabel: transportLabel(runtime.transport),
+      endpointLabel: "Browser-authorized serial port (details unavailable)",
+    };
+  }
+  const details = [
+    vendorId === undefined
+      ? "VID unavailable"
+      : `VID 0x${vendorId.toString(16).padStart(4, "0").toUpperCase()}`,
+    productId === undefined
+      ? "PID unavailable"
+      : `PID 0x${productId.toString(16).padStart(4, "0").toUpperCase()}`,
+  ];
+  return {
+    connectionLabel: transportLabel(runtime.transport),
+    endpointLabel: `Browser-authorized serial port (${details.join(", ")})`,
+  };
+}
 
 export function buildDeviceRuntimeContextValue({
   now,
@@ -103,6 +169,12 @@ export function buildDeviceRuntimeContextValue({
 
   const transport = (deviceId: string): DeviceTransport | null =>
     runtimeById[deviceId]?.transport ?? null;
+
+  const connectionPresentation = (deviceId: string) =>
+    resolveConnectionPresentation(
+      connectionState(deviceId),
+      runtimeById[deviceId],
+    );
 
   const wifiManagementTransport = (
     deviceId: string,
@@ -162,6 +234,7 @@ export function buildDeviceRuntimeContextValue({
     lastOkAt,
     lastErrorLabel,
     transport,
+    connectionPresentation,
     wifiManagementTransport,
     channelState,
     hub,

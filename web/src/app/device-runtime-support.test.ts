@@ -8,12 +8,14 @@ import {
   type DeviceRuntime,
   fenceRuntimeMutationResult,
   getStablePowerLockOwner,
+  isRuntimeIdentityVerifiedForBinding,
   markPowerLockHeld,
   resolveActiveDeviceTransport,
   resolveOrderedDeviceTransports,
   runQueuedDeviceRequest,
   runQueuedDeviceRequestWithAuthorization,
   runtimeMutationDispatchError,
+  runtimeMutationIdentityError,
   takeoverRecoveryError,
 } from "./device-runtime-support";
 
@@ -126,6 +128,75 @@ describe("runQueuedDeviceRequestWithAuthorization", () => {
     });
     expect(dispatchCalled).toBe(false);
   });
+
+  test("blocks a mutation when its identity-bound endpoint changes in queue", async () => {
+    const queues: Record<string, Promise<void>> = {};
+    let releaseFirst: (() => void) | null = null;
+    let notifyFirstStarted: (() => void) | null = null;
+    const firstStarted = new Promise<void>((resolve) => {
+      notifyFirstStarted = resolve;
+    });
+    const first = runQueuedDeviceRequest(queues, "device-a", async () => {
+      notifyFirstStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+    });
+    await firstStarted;
+
+    let runtime = {
+      identityVerified: true,
+      transport: "http" as const,
+      activeEndpoint: { kind: "http" as const, url: "http://hub-a.local" },
+    };
+    let confirmedBinding = {
+      transport: "http" as const,
+      binding: "http://hub-a.local",
+      endpoint: runtime.activeEndpoint,
+    };
+    let dispatchCalled = false;
+    const second = runQueuedDeviceRequestWithAuthorization(
+      queues,
+      "device-a",
+      () =>
+        runtimeMutationIdentityError(
+          "power.config_set",
+          isRuntimeIdentityVerifiedForBinding(
+            runtime,
+            "http",
+            confirmedBinding,
+            "http://hub-a.local",
+          ),
+        ),
+      async () => {
+        dispatchCalled = true;
+        return { ok: true, value: "written" };
+      },
+    );
+
+    runtime = {
+      identityVerified: true,
+      transport: "http",
+      activeEndpoint: { kind: "http", url: "http://hub-b.local" },
+    };
+    confirmedBinding = {
+      transport: "http",
+      binding: "http://hub-b.local",
+      endpoint: runtime.activeEndpoint,
+    };
+    releaseFirst?.();
+    await first;
+    const result = await second;
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: "invalid_response",
+        message: "device identity is not confirmed",
+      },
+    });
+    expect(dispatchCalled).toBe(false);
+  });
 });
 
 function runtimeWithVerifiedHttp(): DeviceRuntime {
@@ -134,6 +205,8 @@ function runtimeWithVerifiedHttp(): DeviceRuntime {
     lastOkAt: now,
     lastError: null,
     transport: null,
+    activeEndpoint: null,
+    identityVerified: false,
     channels: {
       http: { lastOkAt: now, lastError: null },
       web_serial: { lastOkAt: null, lastError: null },

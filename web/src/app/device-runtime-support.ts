@@ -35,6 +35,55 @@ import type { CrossTabRuntimeLeaseState } from "./cross-tab-runtime";
 
 export type ConnectionState = "online" | "offline" | "unknown";
 export type DeviceTransport = "http" | "web_serial" | "local_usb";
+export type ActiveConnectionEndpoint =
+  | { kind: "http"; url: string }
+  | { kind: "local_usb"; portPath: string }
+  | {
+      kind: "web_serial";
+      usbVendorId?: number;
+      usbProductId?: number;
+    };
+
+export type RuntimeIdentityBinding = {
+  transport: DeviceTransport;
+  binding: object | string;
+  endpoint: ActiveConnectionEndpoint;
+};
+
+export type ConnectionPresentation = {
+  connectionLabel: string;
+  endpointLabel: string;
+};
+
+export function resolvePolledActiveEndpoint({
+  currentGeneration,
+  identityVerified,
+  transportLocked,
+  portsBinding,
+  infoBinding,
+  portsEndpoint,
+  infoEndpoint,
+}: {
+  currentGeneration: boolean;
+  identityVerified: boolean;
+  transportLocked: boolean;
+  portsBinding: object | string | null;
+  infoBinding: object | string | null;
+  portsEndpoint: ActiveConnectionEndpoint | null;
+  infoEndpoint: ActiveConnectionEndpoint | null;
+}): ActiveConnectionEndpoint | null {
+  if (
+    !currentGeneration ||
+    !identityVerified ||
+    transportLocked ||
+    portsBinding === null ||
+    portsBinding !== infoBinding ||
+    JSON.stringify(portsEndpoint) !== JSON.stringify(infoEndpoint)
+  ) {
+    return null;
+  }
+  return infoEndpoint;
+}
 
 export const RUNTIME_MUTATION_METHODS = new Set([
   "identify",
@@ -81,6 +130,71 @@ export function runtimeMutationDispatchError(
   }
   return takeoverRecoveryError(
     "This browser tab no longer controls the device. Take over control and retry.",
+  );
+}
+
+export function runtimeMutationIdentityError(
+  method: string,
+  identityVerified: boolean,
+): DeviceApiError | null {
+  if (!RUNTIME_MUTATION_METHODS.has(method) || identityVerified) {
+    return null;
+  }
+  return {
+    kind: "invalid_response",
+    message: "device identity is not confirmed",
+  };
+}
+
+export function isRuntimeIdentityVerifiedForTransport(
+  runtime:
+    | Pick<DeviceRuntime, "identityVerified" | "transport" | "activeEndpoint">
+    | null
+    | undefined,
+  transport: DeviceTransport,
+): boolean {
+  return (
+    runtime?.identityVerified === true &&
+    runtime.transport === transport &&
+    runtime.activeEndpoint?.kind === transport
+  );
+}
+
+export function isRuntimeIdentityVerifiedForBinding(
+  runtime:
+    | Pick<DeviceRuntime, "identityVerified" | "transport" | "activeEndpoint">
+    | null
+    | undefined,
+  transport: DeviceTransport,
+  confirmedBinding: RuntimeIdentityBinding | null | undefined,
+  dispatchBinding: object | string | null | undefined,
+): boolean {
+  return (
+    isRuntimeIdentityVerifiedForTransport(runtime, transport) &&
+    confirmedBinding?.transport === transport &&
+    confirmedBinding.binding === dispatchBinding &&
+    sameActiveEndpoint(runtime?.activeEndpoint, confirmedBinding.endpoint)
+  );
+}
+
+function sameActiveEndpoint(
+  left: ActiveConnectionEndpoint | null | undefined,
+  right: ActiveConnectionEndpoint | null | undefined,
+): boolean {
+  if (!left || !right || left.kind !== right.kind) {
+    return false;
+  }
+  if (left.kind === "http" && right.kind === "http") {
+    return left.url === right.url;
+  }
+  if (left.kind === "local_usb" && right.kind === "local_usb") {
+    return left.portPath === right.portPath;
+  }
+  return (
+    left.kind === "web_serial" &&
+    right.kind === "web_serial" &&
+    left.usbVendorId === right.usbVendorId &&
+    left.usbProductId === right.usbProductId
   );
 }
 
@@ -138,6 +252,7 @@ export type DeviceRuntime = {
   lastOkAt: number | null;
   lastError: DeviceApiError | null;
   transport: DeviceTransport | null;
+  activeEndpoint: ActiveConnectionEndpoint | null;
   identityVerified: boolean;
   channels: Record<DeviceTransport, ChannelRuntime>;
   hub: HubState | null;
@@ -150,6 +265,60 @@ export type DeviceRuntime = {
   revision: number;
   command: SharedRuntimeCommandState | null;
 };
+
+export function isDevicePollCurrent(
+  isLeader: boolean,
+  generation: number,
+  currentGeneration: number,
+): boolean {
+  return isLeader && generation === currentGeneration;
+}
+
+export function takePendingDevicePollBaseUrl(
+  pendingByDevice: Record<string, string | undefined>,
+  deviceId: string,
+  retryBaseUrl: string | null,
+): string | null {
+  const pendingBaseUrl = pendingByDevice[deviceId] ?? null;
+  delete pendingByDevice[deviceId];
+  return pendingBaseUrl ?? retryBaseUrl;
+}
+
+export function resetDeviceRuntimeConnectionState(
+  runtimeById: Record<string, DeviceRuntime>,
+): Record<string, DeviceRuntime> {
+  let changed = false;
+  const next: Record<string, DeviceRuntime> = {};
+  for (const [deviceId, runtime] of Object.entries(runtimeById)) {
+    const channels = Object.fromEntries(
+      Object.entries(runtime.channels).map(([transport]) => [
+        transport,
+        { lastOkAt: null, lastError: null },
+      ]),
+    ) as Record<DeviceTransport, ChannelRuntime>;
+    if (
+      runtime.lastOkAt !== null ||
+      runtime.transport !== null ||
+      runtime.activeEndpoint !== null ||
+      runtime.identityVerified ||
+      Object.values(runtime.channels).some(
+        (channel) => channel.lastOkAt !== null || channel.lastError !== null,
+      )
+    ) {
+      changed = true;
+    }
+    next[deviceId] = {
+      ...runtime,
+      lastOkAt: null,
+      lastError: null,
+      transport: null,
+      activeEndpoint: null,
+      identityVerified: false,
+      channels,
+    };
+  }
+  return changed ? next : runtimeById;
+}
 
 export function applyOptimisticPowerConfig(
   current: PowerConfigResponse | null | undefined,
@@ -191,6 +360,7 @@ export type DeviceRuntimeContextValue = {
   lastOkAt: (deviceId: string) => number | null;
   lastErrorLabel: (deviceId: string) => string | null;
   transport: (deviceId: string) => DeviceTransport | null;
+  connectionPresentation: (deviceId: string) => ConnectionPresentation;
   wifiManagementTransport: (deviceId: string) => DeviceTransport | null;
   channelState: (
     deviceId: string,
@@ -291,6 +461,23 @@ type PowerLockOwnerRecord = {
 
 export function httpBaseUrlForDevice(device: StoredDevice): string {
   return device.transports?.httpBaseUrl ?? device.baseUrl;
+}
+
+export function httpRequestBaseUrlForDevice(
+  device: StoredDevice,
+  runtime:
+    | Pick<DeviceRuntime, "transport" | "activeEndpoint" | "identityVerified">
+    | null
+    | undefined,
+): string {
+  if (
+    runtime?.identityVerified &&
+    runtime.transport === "http" &&
+    runtime.activeEndpoint?.kind === "http"
+  ) {
+    return runtime.activeEndpoint.url;
+  }
+  return httpBaseUrlForDevice(device);
 }
 
 export function verifiedWifiHttpBaseUrl(
@@ -534,6 +721,10 @@ export function resetLocalUsbRuntimeState(
   for (const [deviceId, runtime] of Object.entries(runtimeById)) {
     const transport =
       runtime.transport === "local_usb" ? null : runtime.transport;
+    const activeEndpoint =
+      runtime.activeEndpoint?.kind === "local_usb"
+        ? null
+        : runtime.activeEndpoint;
     const localUsbChannel =
       runtime.channels.local_usb.lastOkAt === null &&
       runtime.channels.local_usb.lastError === null
@@ -541,6 +732,7 @@ export function resetLocalUsbRuntimeState(
         : { lastOkAt: null, lastError: null };
     if (
       transport !== runtime.transport ||
+      activeEndpoint !== runtime.activeEndpoint ||
       localUsbChannel !== runtime.channels.local_usb
     ) {
       changed = true;
@@ -548,6 +740,7 @@ export function resetLocalUsbRuntimeState(
     next[deviceId] = {
       ...runtime,
       transport,
+      activeEndpoint,
       channels: {
         ...runtime.channels,
         local_usb: localUsbChannel,
@@ -567,6 +760,10 @@ export function resetLocalUsbRuntimeStateForDevice(
   }
   const transport =
     current.transport === "local_usb" ? null : current.transport;
+  const activeEndpoint =
+    current.activeEndpoint?.kind === "local_usb"
+      ? null
+      : current.activeEndpoint;
   const localUsbChannel =
     current.channels.local_usb.lastOkAt === null &&
     current.channels.local_usb.lastError === null
@@ -574,6 +771,7 @@ export function resetLocalUsbRuntimeStateForDevice(
       : { lastOkAt: null, lastError: null };
   if (
     transport === current.transport &&
+    activeEndpoint === current.activeEndpoint &&
     localUsbChannel === current.channels.local_usb
   ) {
     return runtimeById;
@@ -583,6 +781,7 @@ export function resetLocalUsbRuntimeStateForDevice(
     [deviceId]: {
       ...current,
       transport,
+      activeEndpoint,
       channels: {
         ...current.channels,
         local_usb: localUsbChannel,

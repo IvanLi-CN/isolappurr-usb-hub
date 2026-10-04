@@ -192,15 +192,24 @@ export function AppLayout({
                     variant={headerBrandVariant}
                   />
                 </DemoLink>
-                <DeviceHeaderName
-                  compact
-                  editable={headerInfo?.nameEditable}
-                  onSave={headerInfo?.onSaveName}
-                  title={mobileBrandLabel ?? "IsolaPurr USB Hub"}
-                  titleTestId="app-header-mobile-title"
-                  clipboardContent={headerInfo.clipboardContent}
-                  writeClipboard={headerInfo.writeClipboard}
-                />
+                <div className="min-w-0 flex-1">
+                  <DeviceHeaderName
+                    compact
+                    editable={headerInfo?.nameEditable}
+                    onSave={headerInfo?.onSaveName}
+                    title={mobileBrandLabel ?? "IsolaPurr USB Hub"}
+                    titleTestId="app-header-mobile-title"
+                    clipboardContent={headerInfo.clipboardContent}
+                    writeClipboard={headerInfo.writeClipboard}
+                  />
+                  <div
+                    className="truncate font-mono text-[10px] font-semibold text-[var(--muted)]"
+                    data-testid="app-header-mobile-subtitle"
+                    title={headerInfo.subtitle}
+                  >
+                    {headerInfo.subtitle}
+                  </div>
+                </div>
               </div>
             ) : null}
             <div className="flex shrink-0 items-center gap-2">
@@ -267,6 +276,7 @@ export function AppLayout({
                   <div
                     className="mt-1 truncate font-mono text-[12px] font-semibold text-[var(--muted)]"
                     data-testid="app-header-device-subtitle"
+                    title={headerInfo.subtitle}
                   >
                     {headerInfo.subtitle}
                   </div>

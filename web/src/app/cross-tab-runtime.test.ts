@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   CrossTabRuntimeCoordinator,
   DEMO_RUNTIME_SCOPE,
+  isCurrentLeaderSnapshot,
   LIVE_RUNTIME_SCOPE,
   runtimeRpcMethodKind,
 } from "./cross-tab-runtime";
@@ -154,6 +155,44 @@ describe("CrossTabRuntimeCoordinator", () => {
     );
     expect(follower.hasCurrentLease()).toBeFalse();
     expect(follower.hasActiveLeader()).toBeTrue();
+  });
+
+  test("only accepts snapshots from the active lease leader", () => {
+    const now = Date.now();
+    const followerLease = {
+      role: "follower" as const,
+      currentTabId: "follower-tab",
+      leaderTabId: "new-leader-tab",
+      leaseExpiresAt: new Date(now + 60_000).toISOString(),
+    };
+
+    expect(
+      isCurrentLeaderSnapshot("new-leader-tab", followerLease, now),
+    ).toBeTrue();
+    expect(
+      isCurrentLeaderSnapshot("old-leader-tab", followerLease, now),
+    ).toBeFalse();
+    expect(
+      isCurrentLeaderSnapshot(
+        "old-leader-tab",
+        {
+          ...followerLease,
+          leaderTabId: null,
+        },
+        now,
+      ),
+    ).toBeFalse();
+    expect(
+      isCurrentLeaderSnapshot(
+        "old-leader-tab",
+        {
+          ...followerLease,
+          leaderTabId: "old-leader-tab",
+          leaseExpiresAt: new Date(now - 1).toISOString(),
+        },
+        now,
+      ),
+    ).toBeFalse();
   });
 
   test("refuses mutations when browser storage is unavailable", async () => {
@@ -529,10 +568,37 @@ describe("CrossTabRuntimeCoordinator", () => {
       at: new Date().toISOString(),
       originTabId: leader.getTabId(),
       now: 1_234,
-      runtimeById: {},
+      runtimeById: {
+        aabbcc001122: {
+          lastOkAt: 1_234,
+          lastError: null,
+          transport: "http",
+          activeEndpoint: {
+            kind: "http",
+            url: "http://192.168.31.224",
+          },
+          identityVerified: true,
+          channels: {
+            http: { lastOkAt: 1_234, lastError: null },
+            web_serial: { lastOkAt: null, lastError: null },
+            local_usb: { lastOkAt: null, lastError: null },
+          },
+          hub: null,
+          ports: null,
+          pending: { port_a: false, port_c: false },
+          powerConfig: null,
+          idleBias: null,
+          pdDiagnostics: null,
+          revision: 0,
+          command: null,
+        },
+      },
     });
 
     expect(seenSnapshotOrigin).toBe(leader.getTabId());
+    expect(
+      follower.readSnapshot()?.runtimeById.aabbcc001122.activeEndpoint,
+    ).toEqual({ kind: "http", url: "http://192.168.31.224" });
     unsubscribe();
   });
 
@@ -643,6 +709,8 @@ describe("CrossTabRuntimeCoordinator", () => {
           lastOkAt: null,
           lastError: null,
           transport: null,
+          activeEndpoint: null,
+          identityVerified: false,
           channels: {
             http: { lastOkAt: null, lastError: null },
             web_serial: { lastOkAt: null, lastError: null },
