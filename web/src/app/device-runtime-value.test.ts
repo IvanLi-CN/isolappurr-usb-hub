@@ -82,6 +82,27 @@ describe("resolveConnectionPresentation", () => {
     ).toBe("Browser-authorized serial port (details unavailable)");
   });
 
+  test("marks either missing Web Serial USB ID as unavailable", () => {
+    expect(
+      resolveConnectionPresentation(
+        "online",
+        runtime("web_serial", {
+          kind: "web_serial",
+          usbVendorId: 0x303a,
+        }),
+      ).endpointLabel,
+    ).toBe("Browser-authorized serial port (VID 0x303A, PID unavailable)");
+    expect(
+      resolveConnectionPresentation(
+        "online",
+        runtime("web_serial", {
+          kind: "web_serial",
+          usbProductId: 0x1001,
+        }),
+      ).endpointLabel,
+    ).toBe("Browser-authorized serial port (VID unavailable, PID 0x1001)");
+  });
+
   test("does not reuse saved or previous endpoints when unverified or disconnected", () => {
     const active = runtime("http", {
       kind: "http",

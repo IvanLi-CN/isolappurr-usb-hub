@@ -798,20 +798,10 @@ function DeviceRuntimeScopeProvider({
         let endpointSnapshot: ActiveConnectionEndpoint | null = null;
         let identityBindingSnapshot: RuntimeIdentityBinding | null = null;
         for (const candidate of orderedTransports(deviceId)) {
-          const candidateBaseUrl =
-            candidate === "http"
-              ? httpBaseUrlForDevice(
-                  devices.find((device) => device.id === deviceId) ?? {
-                    id: deviceId,
-                    name: deviceId,
-                    baseUrl,
-                  },
-                )
-              : baseUrl;
           const portsDispatch =
             await requestTransportWithEndpoint<PortsResponse>(
               deviceId,
-              candidateBaseUrl,
+              baseUrl,
               candidate,
               "ports.get",
             );
@@ -824,7 +814,7 @@ function DeviceRuntimeScopeProvider({
             const infoDispatch =
               await requestTransportWithEndpoint<DeviceInfoResponse>(
                 deviceId,
-                candidateBaseUrl,
+                baseUrl,
                 candidate,
                 "info",
               );

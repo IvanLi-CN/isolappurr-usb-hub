@@ -93,20 +93,23 @@ export function resolveConnectionPresentation(
 
   const vendorId = endpoint.usbVendorId;
   const productId = endpoint.usbProductId;
+  if (vendorId === undefined && productId === undefined) {
+    return {
+      connectionLabel: transportLabel(runtime.transport),
+      endpointLabel: "Browser-authorized serial port (details unavailable)",
+    };
+  }
   const details = [
     vendorId === undefined
-      ? null
+      ? "VID unavailable"
       : `VID 0x${vendorId.toString(16).padStart(4, "0").toUpperCase()}`,
     productId === undefined
-      ? null
+      ? "PID unavailable"
       : `PID 0x${productId.toString(16).padStart(4, "0").toUpperCase()}`,
-  ].filter((value): value is string => value !== null);
+  ];
   return {
     connectionLabel: transportLabel(runtime.transport),
-    endpointLabel:
-      details.length > 0
-        ? `Browser-authorized serial port (${details.join(", ")})`
-        : "Browser-authorized serial port (details unavailable)",
+    endpointLabel: `Browser-authorized serial port (${details.join(", ")})`,
   };
 }
 

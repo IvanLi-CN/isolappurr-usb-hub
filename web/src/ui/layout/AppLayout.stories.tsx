@@ -434,6 +434,23 @@ export const DeviceHeaderWebSerialDetailsUnavailable: Story = {
   },
 };
 
+export const DeviceHeaderWebSerialPartialDetails: Story = {
+  ...DeviceHeaderDesktop,
+  args: {
+    ...DeviceHeaderDesktop.args,
+    headerInfo: deviceHeaderInfo(
+      "Web Serial",
+      "Browser-authorized serial port (VID 0x303A, PID unavailable)",
+    ),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByTestId("app-header-device-subtitle"),
+    ).toHaveTextContent(args.headerInfo?.subtitle ?? "");
+  },
+};
+
 export const DeviceHeaderDisconnected: Story = {
   ...DeviceHeaderDesktop,
   args: {

@@ -520,7 +520,7 @@ test("renders devices list and mock dashboard", async ({ page }) => {
   await expect(page.getByTestId("port-card-port_c")).toBeVisible();
 });
 
-test("promotes saved-device identity into the desktop shell header", async ({
+test("shows the identity-verified live endpoint in the desktop shell header", async ({
   page,
 }) => {
   const storageKey = "isolapurr_usb_hub.devices";
@@ -537,6 +537,7 @@ test("promotes saved-device identity into the desktop shell header", async ({
     { storageKey, device },
   );
 
+  await routeOnlineDeviceWithLegacyPdDiagnostics(page);
   await page.goto("/devices/aabbcc001122");
 
   await expect(page.getByTestId("app-header-device-title")).toHaveText(
@@ -544,6 +545,21 @@ test("promotes saved-device identity into the desktop shell header", async ({
   );
   await expect(page.getByTestId("app-header-device-subtitle")).toHaveText(
     "id: aabbcc • http://isolapurr-usb-hub-aabbcc001122.local",
+  );
+
+  const discoveredBaseUrl = "http://192.168.31.224";
+  await page.evaluate(
+    ({ deviceId, baseUrl }) => {
+      window.dispatchEvent(
+        new CustomEvent("isolapurr-network-link", {
+          detail: { deviceId, baseUrl },
+        }),
+      );
+    },
+    { deviceId: device.id, baseUrl: discoveredBaseUrl },
+  );
+  await expect(page.getByTestId("app-header-device-subtitle")).toHaveText(
+    `id: aabbcc • ${discoveredBaseUrl}`,
   );
   await expect(
     page
