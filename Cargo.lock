@@ -1158,6 +1158,8 @@ dependencies = [
 name = "isolapurr-firmware-core"
 version = "0.1.0"
 dependencies = [
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "heapless 0.8.0",
  "sw2303",
 ]

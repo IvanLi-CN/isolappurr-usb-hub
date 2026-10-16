@@ -96,6 +96,7 @@ either timer or fabricate a successful runtime-output response.
 
 ## Guardrails / Reuse Notes
 
+- A recurring 60-second profile retry can be caused by incomplete configuration writes. Compare the saved config, actual register readback, and `matches_config` before attributing USB detach to a host application or overload. The pinned SW2303 driver's `configure_pd` preserves `PD_CONFIG1.PPS3_3A_LIMIT`; the caller must explicitly set or clear that bit for the saved PPS3 limit. Exercise the production writer with the real pinned driver and a register model, including failed and ignored writes. A passing register model does not prove that physical VBUS interruptions are resolved; confirm that with a separately authorized candidate comparison.
 - Keep the measured TPS off hold separate from `SW2303_POR_RELEASE_MS`; the
   former is a runtime restart guard, while the latter starts only after TPS 5 V
   boot application.

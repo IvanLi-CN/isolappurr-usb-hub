@@ -1,5 +1,13 @@
 # Implementation
 
+## PPS3 Current-Limit Application
+
+`apply_enable_profile` explicitly read-modify-writes `PD_CONFIG1.PPS3_3A_LIMIT` after `configure_pd`: the pinned driver preserves that bit but does not apply `capability.current.pps3_limit_ma`. A saved `3000` sets bit 6; `5000` clears it. Other B4 flags, the independent `pd_pps_5a` setting, EEPROM encoding, and the full readback success gate retain their existing behavior.
+
+`crates/isolapurr-firmware-core/tests/sw2303_profile.rs` imports the production profile implementation and exercises the actual pinned async driver through an I2C register model. It covers 60 W / 3 A application from a 5 A register state, independent PD/PPS 5 A configuration, restoration from a 3 A register state, repeated application, preservation of the other B4 bits, write failure, and ignored-write readback mismatch. The tests run with the existing `just firmware-core-test` and firmware CI host-test step.
+
+Before the explicit write, the 3 A regression reads back `5000` instead of `3000`; restoring defaults also leaves a stale 3 A bit. The corrected implementation passes these register-model cases. A persistent readback mismatch keeps `sw2303_profile_applied=false` and makes the existing runtime retry after 60 seconds. Host tests establish the missing write and readback correction; they do not establish sink-visible capabilities, physical output current, or that correcting this mismatch eliminates a particular source's periodic VBUS interruption. Those observations require a reviewed candidate followed by separately authorized hardware validation.
+
 ## Live Protocol Diagnostics
 
 - `read_power_request()` reads SW2303 `FastChargingStatus` (`REG 0x06`) once
