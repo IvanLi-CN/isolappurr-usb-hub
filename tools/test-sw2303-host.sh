@@ -29,6 +29,11 @@ esac
 
 WORK_DIR="$CACHE_DIR/repo"
 
+if [ -L "$WORK_DIR" ]; then
+  echo "error: SW2303 host-test checkout must not be a symlink" >&2
+  exit 2
+fi
+
 HOST_TARGET=$(rustc +stable -vV | sed -n 's/^host: //p')
 if [ -z "$HOST_TARGET" ]; then
   echo "error: failed to detect rust host target from stable toolchain" >&2
