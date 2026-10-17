@@ -6,6 +6,8 @@
 
 `crates/isolapurr-firmware-core/tests/sw2303_profile.rs` imports the production profile implementation and exercises the actual async driver from the pinned PR head through an I2C register model. It covers 60 W / 3 A application from a 5 A register state, independent PD/PPS 5 A configuration, restoration from a 3 A register state, repeated application, preservation of the other B4 bits, write failure, and ignored-write readback mismatch. The tests run with the existing `just firmware-core-test` and firmware CI host-test step.
 
+The standalone `tools/test-sw2303-host.sh` helper checks out the same driver commit in a host-temporary cache outside the IsolaPurr workspace before running the driver tests, so Cargo does not misclassify the external driver as a workspace member.
+
 Before the typed driver call, the 3 A regression reads back `5000` instead of `3000`; restoring defaults also leaves a stale 3 A bit. The corrected implementation passes these register-model cases. A persistent readback mismatch keeps `sw2303_profile_applied=false` and makes the existing runtime retry after 60 seconds. Host tests establish the typed call path, driver read-modify-write, and readback correction; they do not establish sink-visible capabilities, physical output current, or that correcting this mismatch eliminates a particular source's periodic VBUS interruption. Those observations require a reviewed candidate followed by separately authorized hardware validation.
 
 ## Live Protocol Diagnostics

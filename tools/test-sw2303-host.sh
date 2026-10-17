@@ -3,8 +3,8 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 SW2303_REPO="https://github.com/IvanLi-CN/sw2303-rs.git"
-SW2303_REV="3e720b7c0570144edca2a0789d7e166bcfd37e0f"
-WORK_DIR="$ROOT_DIR/target/sw2303-host-tests/repo"
+SW2303_REV="0bd533359cd033396ea18c67d0a79c41f1a89584"
+WORK_DIR="${TMPDIR:-/tmp}/isolapurr-usb-hub-sw2303-host-tests/repo"
 TARGET_DIR="$ROOT_DIR/target/sw2303-host-tests/target"
 
 HOST_TARGET=$(rustc +stable -vV | sed -n 's/^host: //p')
