@@ -1727,8 +1727,8 @@ dependencies = [
 
 [[package]]
 name = "sw2303"
-version = "0.0.0"
-source = "git+https://github.com/IvanLi-CN/sw2303-rs?rev=3e720b7c0570144edca2a0789d7e166bcfd37e0f#3e720b7c0570144edca2a0789d7e166bcfd37e0f"
+version = "0.0.1"
+source = "git+https://github.com/IvanLi-CN/sw2303-rs?rev=0bd533359cd033396ea18c67d0a79c41f1a89584#0bd533359cd033396ea18c67d0a79c41f1a89584"
 dependencies = [
  "bitflags 2.10.0",
  "embedded-hal 1.0.0",

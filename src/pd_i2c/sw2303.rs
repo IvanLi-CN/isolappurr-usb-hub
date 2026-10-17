@@ -31,7 +31,7 @@ impl EnableProfileStatus {
 /// - enable all protocols/tiers
 /// - cap power at 100W
 ///
-/// Uses driver APIs, including read-modify-write for the separate PPS3 limit bit.
+/// Uses the driver's typed PPS3 current-limit API for the separate limit setting.
 pub async fn apply_enable_profile_full<I2C>(
     i2c: &mut I2C,
 ) -> Result<EnableProfileStatus, sw2303::error::Error<I2C::Error>>
@@ -92,13 +92,12 @@ where
     })
     .await?;
 
-    // configure_pd preserves PPS3_3A_LIMIT; it does not apply the saved limit.
-    let mut pd_config1 = dev.get_pd_config_1_raw().await?;
-    pd_config1.set(
-        sw2303::registers::PdConfig1Flags::PPS3_3A_LIMIT,
-        config.capability.current.pps3_limit_ma == 3_000,
-    );
-    dev.set_pd_config_1_raw(pd_config1).await?;
+    let pps3_limit = if config.capability.current.pps3_limit_ma == 3_000 {
+        sw2303::Pps3CurrentLimit::I3A
+    } else {
+        sw2303::Pps3CurrentLimit::I5A
+    };
+    dev.set_pps3_current_limit(pps3_limit).await?;
 
     dev.configure_fast_charge(sw2303::FastChargeConfiguration {
         qc_enabled: config.capability.qc20_enabled || config.capability.qc30_enabled,

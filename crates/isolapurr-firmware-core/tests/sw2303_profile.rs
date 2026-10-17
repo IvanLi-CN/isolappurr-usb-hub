@@ -4,7 +4,9 @@ use isolapurr_firmware_core::pd_i2c::{PowerRequest, ProtocolStatus};
 use isolapurr_firmware_core::power_config::{self, PowerConfig};
 use std::future::Future;
 use std::task::{Context, Poll, Waker};
-use sw2303::registers::{PdConfig1Flags, Register};
+use sw2303::registers::Register;
+
+const PPS3_CURRENT_LIMIT_MASK: u8 = 1 << 6;
 
 // Parent-module bindings used by the production file on the SW2303 bus.
 const SW2303_ADDR_7BIT: u8 = 0x3c;
@@ -37,7 +39,7 @@ impl Registers {
             ignore_current_limit_write: false,
         };
         if three_amp {
-            bus.values[Register::PdConfig1 as usize] = PdConfig1Flags::PPS3_3A_LIMIT.bits();
+            bus.values[Register::PdConfig1 as usize] = PPS3_CURRENT_LIMIT_MASK;
         }
         bus
     }
@@ -61,7 +63,7 @@ impl embedded_hal_async::i2c::I2c for Registers {
                     for (offset, byte) in bytes[1..].iter().enumerate() {
                         let register = self.cursor + offset;
                         if register == Register::PdConfig1 as usize {
-                            let mask = PdConfig1Flags::PPS3_3A_LIMIT.bits();
+                            let mask = PPS3_CURRENT_LIMIT_MASK;
                             if self.fail_current_limit_write
                                 && (byte ^ self.values[register]) & mask != 0
                             {
@@ -136,7 +138,7 @@ fn restoring_defaults_clears_three_amp_limit_and_preserves_pd_configuration() {
     assert!(status.matches_config(&config));
     assert_eq!(
         bus.values[Register::PdConfig1 as usize],
-        default_pd_config1 | PdConfig1Flags::PPS3_3A_LIMIT.bits(),
+        default_pd_config1 | PPS3_CURRENT_LIMIT_MASK,
         "current selection must preserve every other B4 bit"
     );
     let repeated = run(sw2303_profile::apply_enable_profile(&mut bus, &config)).unwrap();

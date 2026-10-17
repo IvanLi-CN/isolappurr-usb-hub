@@ -32,7 +32,7 @@ esp-alloc = "0.9.0"
 esp-println = { version = "0.16", default-features = false, features = ["esp32s3", "uart", "defmt-espflash"] }
 esp-rtos = { version = "0.2.0", features = ["defmt", "embassy", "esp32s3"] }
 isolapurr-firmware-core = { path = "crates/isolapurr-firmware-core" }
-sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "3e720b7c0570144edca2a0789d7e166bcfd37e0f", features = ["async"] }
+sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "0bd533359cd033396ea18c67d0a79c41f1a89584", features = ["async"] }
 tps55288 = { package = "tps55288-rs", git = "https://github.com/IvanLi-CN/tps55288-rs", rev = "e451aa816ef97fb08ae162ed2baca414d0b22823", features = ["async"] }
 
 # Async runtime (used by Plan #0003 networking + future tasks)

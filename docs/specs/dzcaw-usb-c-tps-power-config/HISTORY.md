@@ -2,7 +2,7 @@
 
 ## PPS3 Current-Limit Register
 
-- Corrected the profile writer to apply the persisted PPS3 3 A / 5 A choice to `PD_CONFIG1` bit 6. The pinned driver's `configure_pd` preserved this bit, so a saved 3 A limit could keep reading back as 5 A and prevent profile convergence.
+- Corrected the profile writer to call the typed `sw2303-rs` PPS3 current-limit API for the persisted 3 A / 5 A choice. The driver owns `PD_CONFIG1` bit 6 read-modify-write semantics, so unrelated bits remain preserved and a saved 3 A limit no longer keeps reading back as 5 A and preventing profile convergence.
 - Added host integration coverage of the production writer and pinned driver, including error and readback-mismatch cases. Physical source-capability and periodic-interruption verification remain separate from this register-model proof.
 
 ## Live Protocol Identity
