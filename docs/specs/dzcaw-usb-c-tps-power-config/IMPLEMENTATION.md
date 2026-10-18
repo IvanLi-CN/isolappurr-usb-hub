@@ -1,5 +1,15 @@
 # Implementation
 
+## PPS3 Current-Limit Application
+
+`apply_enable_profile` calls the typed `sw2303` `set_pps3_current_limit` API after `configure_pd`. Firmware and firmware-core resolve the published crates.io `sw2303` version `0.0.2` through `Cargo.lock`, whose registry checksum identifies the release package. The driver owns the PPS3 current-limit register semantics, performs the read-modify-write, preserves unrelated bits, and propagates I2C errors. A saved `3000` selects `Pps3CurrentLimit::I3A`; `5000` selects `Pps3CurrentLimit::I5A`. The independent `pd_pps_5a` setting, EEPROM encoding, and full readback success gate retain their existing behavior.
+
+`crates/isolapurr-firmware-core/tests/sw2303_profile.rs` imports the production profile implementation and exercises the published async driver through an I2C register model. It covers 60 W / 3 A application from a 5 A register state, independent PD/PPS 5 A configuration, restoration from a 3 A register state, repeated application, preservation of the other B4 bits, write failure, and ignored-write readback mismatch. The tests run with the existing `just firmware-core-test` and firmware CI host-test step.
+
+The standalone `tools/test-sw2303-host.sh` helper checks out the published `0.0.2` release commit `12268070f94e1d6ba82fe834261ec696766e900e` in a host-temporary cache outside the IsolaPurr workspace before running the driver tests. This commit matches both the `release/0.0.2` tag and the registry package's `.cargo_vcs_info.json`. The helper rejects in-workspace temporary paths and symlink checkout entries, keeping Cargo from misclassifying the external driver as a workspace member; product dependencies use the registry rather than that checkout.
+
+Before the typed driver call, the 3 A regression reads back `5000` instead of `3000`; restoring defaults also leaves a stale 3 A bit. The corrected implementation passes these register-model cases. A persistent readback mismatch keeps `sw2303_profile_applied=false` and makes the existing runtime retry after 60 seconds. Host tests establish the typed call path, driver read-modify-write, and readback correction; they do not establish sink-visible capabilities, physical output current, or that correcting this mismatch eliminates a particular source's periodic VBUS interruption. Those observations require a reviewed candidate followed by separately authorized hardware validation.
+
 ## Live Protocol Diagnostics
 
 - `read_power_request()` reads SW2303 `FastChargingStatus` (`REG 0x06`) once

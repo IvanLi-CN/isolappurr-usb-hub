@@ -1158,6 +1158,8 @@ dependencies = [
 name = "isolapurr-firmware-core"
 version = "0.1.0"
 dependencies = [
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "heapless 0.8.0",
  "sw2303",
 ]
@@ -1725,8 +1727,9 @@ dependencies = [
 
 [[package]]
 name = "sw2303"
-version = "0.0.0"
-source = "git+https://github.com/IvanLi-CN/sw2303-rs?rev=3e720b7c0570144edca2a0789d7e166bcfd37e0f#3e720b7c0570144edca2a0789d7e166bcfd37e0f"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "571763e171076e9705e7bedeb2e2f8f96ccd33644ecc8fb101e06c5f57b2970c"
 dependencies = [
  "bitflags 2.10.0",
  "embedded-hal 1.0.0",
