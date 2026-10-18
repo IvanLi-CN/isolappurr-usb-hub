@@ -19,6 +19,10 @@ case "$HOST_TMP_ROOT/" in
 esac
 
 CACHE_DIR="$HOST_TMP_ROOT/isolapurr-usb-hub-sw2303-host-tests"
+if [ -L "$CACHE_DIR" ]; then
+  echo "error: SW2303 host-test cache must not be a symlink" >&2
+  exit 2
+fi
 mkdir -p "$CACHE_DIR"
 CACHE_DIR=$(CDPATH= cd -P -- "$CACHE_DIR" && pwd)
 case "$CACHE_DIR/" in
