@@ -1727,8 +1727,9 @@ dependencies = [
 
 [[package]]
 name = "sw2303"
-version = "0.0.1"
-source = "git+https://github.com/IvanLi-CN/sw2303-rs?rev=0bd533359cd033396ea18c67d0a79c41f1a89584#0bd533359cd033396ea18c67d0a79c41f1a89584"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "571763e171076e9705e7bedeb2e2f8f96ccd33644ecc8fb101e06c5f57b2970c"
 dependencies = [
  "bitflags 2.10.0",
  "embedded-hal 1.0.0",

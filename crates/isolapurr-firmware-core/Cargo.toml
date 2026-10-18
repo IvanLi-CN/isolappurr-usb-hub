@@ -8,10 +8,10 @@ publish = false
 
 [dependencies]
 heapless = "0.8"
-sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "0bd533359cd033396ea18c67d0a79c41f1a89584" }
+sw2303 = "0.0.2"
 
 [dev-dependencies]
 embedded-hal = "1"
 embedded-hal-async = "1"
-sw2303 = { git = "https://github.com/IvanLi-CN/sw2303-rs", rev = "0bd533359cd033396ea18c67d0a79c41f1a89584", features = ["async"] }
+sw2303 = { version = "0.0.2", features = ["async"] }
 

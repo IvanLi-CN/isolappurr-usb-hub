@@ -5,6 +5,7 @@
 - Corrected the profile writer to call the typed `sw2303-rs` PPS3 current-limit API for the persisted 3 A / 5 A choice. The driver owns `PD_CONFIG1` bit 6 read-modify-write semantics, so unrelated bits remain preserved and a saved 3 A limit no longer keeps reading back as 5 A and preventing profile convergence.
 - Added host integration coverage of the production writer and pinned driver, including error and readback-mismatch cases. Physical source-capability and periodic-interruption verification remain separate from this register-model proof.
 - Pinned the standalone SW2303 host-test helper to the same driver commit, kept its checkout outside the firmware workspace, and rejected symlinked checkout entries so Cargo resolves the driver as an independent package.
+- The typed driver implementation merged in [sw2303 PR #4](https://github.com/IvanLi-CN/sw2303-rs/pull/4) and shipped as crates.io `sw2303 0.0.2` after [version preparation PR #6](https://github.com/IvanLi-CN/sw2303-rs/pull/6). Firmware and firmware-core use the published registry package, replacing the development Git revision; the standalone driver tests track the matching published release commit.
 
 ## Live Protocol Identity
 

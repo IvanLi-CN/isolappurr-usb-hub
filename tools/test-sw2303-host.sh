@@ -3,7 +3,8 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -P -- "$(dirname -- "$0")/.." && pwd)
 SW2303_REPO="https://github.com/IvanLi-CN/sw2303-rs.git"
-SW2303_REV="0bd533359cd033396ea18c67d0a79c41f1a89584"
+# Published sw2303 0.0.2 (release/0.0.2); firmware uses the crates.io package.
+SW2303_REV="12268070f94e1d6ba82fe834261ec696766e900e"
 TARGET_DIR="$ROOT_DIR/target/sw2303-host-tests/target"
 
 HOST_TMP_ROOT="${TMPDIR:-/tmp}"
