@@ -28,7 +28,7 @@ jobs:
 
   web:
     name: CI / Web (quality gates)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
